@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime as dt
 import hashlib
 import http.client
+import http.cookiejar
 from html.parser import HTMLParser
 import json
 import os
@@ -25,6 +26,9 @@ CITIES = '济南 青岛 淄博 枣庄 东营 烟台 潍坊 济宁 泰安 威海 
 SOURCES = [
     {'id': 'nankai', 'name': '南开大学就业网', 'url': 'https://career.nankai.edu.cn/correcruit/index.html'},
     {'id': 'jinan', 'name': '济南市政府 · 求职招聘', 'url': 'https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/index.html'},
+    {'id': 'sdu', 'name': '山东大学就业信息网', 'url': 'https://jobcareer.sdu.edu.cn/eweb/jygl/index.so?modcode=null&subsyscode=zpfw&type=ssoSearchZxzp&xxlb=5100'},
+    {'id': 'hrss', 'name': '济南市人社局 · 事业单位招聘', 'url': 'https://jnhrss.jinan.gov.cn/col/col18625/index.html'},
+    {'id': 'gzw', 'name': '济南市国资委 · 国企招聘', 'url': 'https://jngzw.jinan.gov.cn/col/col23870/index.html'},
 ]
 VOID = {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}
 
@@ -59,7 +63,7 @@ class HTTPSHandler(urllib.request.HTTPSHandler):
         return self.do_open(HTTPSConnection,req,context=self._context)
 
 
-OPENER=urllib.request.build_opener(HTTPSHandler())
+OPENER=urllib.request.build_opener(HTTPSHandler(), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
 
 class Node:
@@ -169,12 +173,13 @@ def gov_query(html):
 def gov_list(html, base):
     root = Tree(html).root
     items = []
-    for li in root.find('li',cls='collist'):
+    for li in root.find('li') + root.find('tr'):
         links = li.find('a')
         if not links:
             continue
         a = links[0]
-        title = clean(a.text())
+        title = clean(a.attrs.get('title') or a.text())
+        title = re.sub(r'\s*20\d{2}年\d{2}月\d{2}日$', '', title)
         # Exclude only clearly unrelated notices, retain ambiguous opportunities.
         if not re.search(r'招聘|招录|补录|选聘|岗位|招考',title):
             continue
@@ -184,6 +189,20 @@ def gov_list(html, base):
     count = int(pagination[0].attrs.get('count','0')) if pagination else 0
     rows = int(pagination[0].attrs.get('rows','15')) if pagination else 15
     return items, max(1,(count+rows-1)//rows)
+
+
+def sdu_list(html, base):
+    root=Tree(html).root
+    items=[]
+    for a in root.find('a',cls='omit'):
+        match=re.search(r"viewZpxx\('([^']+)'",a.attrs.get('onclick',''))
+        if not match: continue
+        row=a.parent.parent
+        date=re.search(r'20\d{2}-\d{2}-\d{2}',row.text()) if row else None
+        url=urllib.parse.urljoin(base,'/eweb/jygl/index.so?')+urllib.parse.urlencode({'modcode':'jygl_zpxxck','subsyscode':'zpfw','rklx':'jyw','lmxhV':'0402','type':'ssoZxzpView','id':match[1]})
+        items.append({'url':url,'title':clean(a.text()),'published_at':date[0] if date else None})
+    next_links=[safe_url(a.attrs.get('href',''),base) for a in root.find('a') if 'pageMethod=next' in a.attrs.get('href','')]
+    return items, next_links[0] if next_links else None
 
 
 def deadline(text):
@@ -229,6 +248,16 @@ def parse_detail(html, item, source):
         dates=root.find(cls='date')
         date_match=re.search(r'发布时间：(20\d{2}-\d{2}-\d{2})',dates[0].text()) if dates else None
         published=date_match[1] if date_match else item.get('published_at')
+    elif source['id']=='sdu':
+        contents=root.find(cls='bd_one')
+        if not contents: raise ValueError('announcement body missing')
+        body=contents[0]
+        titles=root.find(cls='ggName')
+        title=clean(titles[0].text()) if titles else item['title']
+        company=''
+        dates=root.find(cls='ggTime')
+        match=re.search(r'20\d{2}-\d{2}-\d{2}',dates[0].text()) if dates else None
+        published=match[0] if match else item.get('published_at')
     else:
         contents=root.find(id='zoom')
         if not contents:
@@ -331,13 +360,17 @@ def run(args):
         status=dict(source,last_attempt_at=now,last_success_at=previous['sources'].get(source['id'],{}).get('last_success_at'),pages=0,discovered=0,parsed=0,errors=[],status='ok',coverage='近期分页，非全量历史')
         try:
             first=fetch(source['url'])
-            if source['id']=='jinan': query,endpoint=gov_query(first)
+            if source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
             items=[]
             for page in range(1,args.pages+1):
                 if source['id']=='nankai':
                     html=first if page==1 else fetch(f'https://career.nankai.edu.cn/correcruit/index/p/{page}.html')
                     found,total=nankai_list(html,source['url'])
+                elif source['id']=='sdu':
+                    html=first if page==1 else fetch(next_page)
+                    found,next_page=sdu_list(html,source['url'])
+                    total=args.pages if next_page else page
                 else:
                     q=dict(query,paramJson=json.dumps({'pageNo':page,'pageSize':15}))
                     html=json.loads(fetch(urllib.parse.urljoin(source['url'],endpoint)+'?'+urllib.parse.urlencode(q)))['data']['html']
@@ -372,11 +405,20 @@ def run(args):
                         status['parsed']+=1
                     except Exception as e:
                         status['errors'].append({'url':item['url'],'reason':str(e)[:200]})
+                        # Keep verified list discoveries when external detail templates are unsupported.
+                        # Never replace a previously parsed record with a weaker fallback.
+                        identifier=hashlib.sha256(item['url'].encode()).hexdigest()[:20]
+                        if identifier not in previous['jobs']:
+                            fallback=parse_detail('<div id="zoom">详情尚未读取，请打开原公告核对岗位、工作地点与报名要求。</div>',item,{'id':'fallback','name':source['name']})
+                            fallback.update(source_id=source['id'],classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
+                            incoming.append(fallback)
                     atomic_json(ROOT/'data/checkpoint.json',{'run_at':now,'incoming':incoming,'source':status})
                     if (status['parsed']+len(status['errors']))%10==0:
                         print(source['id'],'progress',status['parsed'],'/',len(items),flush=True)
-            if status['errors']: status['status']='partial'
-            if not status['parsed']: status['status']='failed'
+            if status['errors']:
+                status['status']='partial'
+            elif not status['parsed']:
+                status['status']='failed'
             if status['status']=='ok': status['last_success_at']=dt.datetime.now(TZ).isoformat(timespec='seconds')
         except Exception as e:
             status['status']='failed'

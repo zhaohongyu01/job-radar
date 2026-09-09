@@ -25,6 +25,16 @@ const job = {
   first_seen_at: '2026-09-02T00:00:00Z',
   updated_at: '2026-09-02T00:00:00Z',
 } as unknown as Job;
+void test('newest publication comes first even with uncertain location; unknown date last', () => {
+  const newer = { ...job, id: 'newer', published_at: '2026-09-09', cities: [] };
+  const undated = { ...job, id: 'undated', published_at: null };
+  assert.deepEqual(
+    filterJobs([job, undated, newer], defaultFilters, {}, null).map(
+      (j) => j.id,
+    ),
+    ['newer', job.id, 'undated'],
+  );
+});
 void test('default shows opportunities without requesting personal qualifications', () =>
   assert.equal(filterJobs([job], defaultFilters, {}, null).length, 1));
 void test('campus cohort and social switch respect classification', () => {

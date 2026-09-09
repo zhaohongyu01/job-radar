@@ -1,0 +1,603 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+    <head>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+        <meta name="renderer" content="webkit"/>
+        <meta charset="utf-8"/>
+		<title>山东大学-在线招聘</title>
+        <link rel="stylesheet" type="text/css" href="/eweb/jygl/index/newjyw/css/reset.css"/>
+        <link rel="stylesheet" type="text/css" href="/eweb/jygl/index/newjyw/css/style_red.css"/>
+        <script type="text/javascript"	src="/eweb/dwr/engine.js"></script>
+<script type="text/javascript"	src="/eweb/dwr/util.js"></script>
+<script type="text/javascript"	src="/eweb/dwr/interface/codeLoad.js"></script>
+<script type="text/javascript"	src="/eweb/dwr/interface/supload.js"></script>
+<script type="text/javascript"	src="/eweb/dwr/interface/jygldwr.js"></script>
+
+        <script language="JavaScript" type="text/javascript" src="/eweb/wfc/js/wfc.js"></script>
+		<script language="JavaScript" type="text/javascript" src="/eweb/jygl/js/jygl.js"></script>
+    </head>
+    <body>
+           
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script language="JavaScript" type="text/javascript">
+	function testAuto(thisId, needLeng) {
+		var element = document.getElementById(thisId);
+		var nowLeng = element.innerText.length;
+		if (nowLeng > needLeng) {
+			var nowWord = element.innerText.substr(0, needLeng) + '...';
+			element.innerHTML = nowWord;
+		}
+	}
+	function picDispatcher(url){
+		if(url!=null&&url!="undefined"&&url!=""&&url!="null"){
+			window.open(url);
+		}
+	}
+	// 退出登陆
+	function loginout(){
+		window.location.href = "/eweb/jygl/tpsjtu/logout.jsp";
+	}
+	//搜索
+	function queryInfo(){
+		var strTitle = document.getElementById("strTitle").value;
+		if(strTitle!=null && strTitle.length>0){
+			var url ="/eweb/jygl/index.so?modcode=jyw_xwgg&subsyscode=jyw&type=searchNews&newsType=jyw&title=" + strTitle;
+			window.open(url);
+		}
+	}
+	function openLink(obj){
+    	if(obj.value !='#'){
+    		window.open(obj.value);
+    	}
+    }
+</script>
+<!--头部-->
+<div class="header_bj">
+            <div class="header mar0">
+                       <img style="margin-top:30px" src="/eweb/jygl/css/sjtuimgs/logo-zpfw.png" />
+
+            </div>
+            <ul class="nav_red">
+         
+                 <li class="first"><a href="https://www.job.sdu.edu.cn">首页</a></li>
+
+            </ul>
+        </div><!-- header_bj  --> 
+			
+        <div class="outside">
+        	
+            <div class="moreList">
+			  <!-- 招聘信息通栏 -->
+                <div class="moreListR-long fr">
+                    <h1>首页 / 在线招聘 / 在线招聘</h1>
+                    <!-- 查询条件 -->
+		        	<div>
+		        		<form id="dataForm" action=""  method="post">
+			        		<table style='width:978px;'>
+			        			<tr>
+			        				<td>
+			        					单位性质:
+			        				</td>
+			        				<td style='width:160px;'>
+			        					<select name='xzyj' id='xzyj' style='width:150px;'></select>
+			        				</td>
+			        				<td>
+			        					单位名称:
+			        				</td>
+			        				<td style='width:160px;'>
+			        					<input name='dwmc' id='dwmc' style='width:150px;'/>
+			        				</td>
+			        				<td>
+			        					工作地点:
+			        				</td>
+			        				<td style='width:180px;'>
+			        					<select name='szss' id='szss' style='width:80px;' onchange='loadS();'></select>
+			        					<select name='szs' id='szs' style='width:80px;'></select>
+			        				</td>
+			        				<td>
+			        					学历要求:
+			        				</td>
+			        				<td>
+			        					<select name='xl' id='xl'></select>
+			        				</td>
+			        				<td rowspan="2">
+			        					<input type='hidden' name='xxlb' id='xxlb' value='5100'/>
+			        					<input type='button' value='查询' class="search_inputButton" onclick="searchBtn()"/>
+			        				</td>
+			        			</tr>
+			        			
+			        			<tr>
+			        				<td>
+			        					关键词
+			        				</td>
+			        				<td colspan="7">
+			        					<input name='gjc' id='gjc' style='width:150px;'/>
+			        				</td>
+			        			</tr>
+			        			
+			        		</table>
+		        		</form>
+		        	</div>
+		        	
+        	 		<!-- 内容列表 -->
+                    <ul>
+                        <hr style="border:none;"></hr>
+                        <!-- 标题 -->
+                       	<li>
+					   		<div style='float:left;width:140px;background:none;padding-left:0'>
+						      	发布日期
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	招聘单位
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	单位性质
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	招聘截止日期
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	          点击量
+						  	  </div>
+					   	</li>	
+                        
+						 
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('G1YmGHuNdWt6rnz4mGsxFp', 'jygl_zpxxck')">2026-05-13</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('G1YmGHuNdWt6rnz4mGsxFp', 'jygl_zpxxck')">山东社会科学院2026年度专业技术中级及博士后岗位招聘公告</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('G1YmGHuNdWt6rnz4mGsxFp', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('G1YmGHuNdWt6rnz4mGsxFp', 'jygl_zpxxck')">2026-12-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('G1YmGHuNdWt6rnz4mGsxFp', 'jygl_zpxxck')">2073</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Tfybysr1YuZe8FsNygeUXy', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('Tfybysr1YuZe8FsNygeUXy', 'jygl_zpxxck')">养生堂有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Tfybysr1YuZe8FsNygeUXy', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Tfybysr1YuZe8FsNygeUXy', 'jygl_zpxxck')">2026-10-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Tfybysr1YuZe8FsNygeUXy', 'jygl_zpxxck')">1</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('DSqNCMFLEu2jKgPVMpwobp', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('DSqNCMFLEu2jKgPVMpwobp', 'jygl_zpxxck')">中建三局集团（深圳）有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('DSqNCMFLEu2jKgPVMpwobp', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('DSqNCMFLEu2jKgPVMpwobp', 'jygl_zpxxck')">2027-06-30</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('DSqNCMFLEu2jKgPVMpwobp', 'jygl_zpxxck')">9</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('B38WonDQcW1dyQ77Cgcq6z', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('B38WonDQcW1dyQ77Cgcq6z', 'jygl_zpxxck')">威海康立船舶工程有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('B38WonDQcW1dyQ77Cgcq6z', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('B38WonDQcW1dyQ77Cgcq6z', 'jygl_zpxxck')">2027-12-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('B38WonDQcW1dyQ77Cgcq6z', 'jygl_zpxxck')">12</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('ADwyjpooDWxns6Gsw3ro9p', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('ADwyjpooDWxns6Gsw3ro9p', 'jygl_zpxxck')">山东世纪阳光纸业集团有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('ADwyjpooDWxns6Gsw3ro9p', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('ADwyjpooDWxns6Gsw3ro9p', 'jygl_zpxxck')">2027-07-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('ADwyjpooDWxns6Gsw3ro9p', 'jygl_zpxxck')">15</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('HD7MbCkpLwpqx8nwPjsEhe', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('HD7MbCkpLwpqx8nwPjsEhe', 'jygl_zpxxck')">深圳市金证科技股份有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('HD7MbCkpLwpqx8nwPjsEhe', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('HD7MbCkpLwpqx8nwPjsEhe', 'jygl_zpxxck')">2026-11-30</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('HD7MbCkpLwpqx8nwPjsEhe', 'jygl_zpxxck')">8</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('QSvUBLPHrEpfZJsiWnaNKd', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('QSvUBLPHrEpfZJsiWnaNKd', 'jygl_zpxxck')">中机国际工程设计研究院有限责任公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('QSvUBLPHrEpfZJsiWnaNKd', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('QSvUBLPHrEpfZJsiWnaNKd', 'jygl_zpxxck')">2027-07-01</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('QSvUBLPHrEpfZJsiWnaNKd', 'jygl_zpxxck')">113</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('GL7b6qokzPbiETEL9NXRMR', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('GL7b6qokzPbiETEL9NXRMR', 'jygl_zpxxck')">中国工商银行股份有限公司重庆市分行招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('GL7b6qokzPbiETEL9NXRMR', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('GL7b6qokzPbiETEL9NXRMR', 'jygl_zpxxck')">2026-10-08</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('GL7b6qokzPbiETEL9NXRMR', 'jygl_zpxxck')">6</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('CUxhgmgVdV4wcwTQJJFTr3', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('CUxhgmgVdV4wcwTQJJFTr3', 'jygl_zpxxck')">西安外事学院招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('CUxhgmgVdV4wcwTQJJFTr3', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('CUxhgmgVdV4wcwTQJJFTr3', 'jygl_zpxxck')">2026-12-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('CUxhgmgVdV4wcwTQJJFTr3', 'jygl_zpxxck')">10</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('5XAEi9mkMXQ7PXbAprZLf3', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('5XAEi9mkMXQ7PXbAprZLf3', 'jygl_zpxxck')">深圳明锐理想科技股份有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('5XAEi9mkMXQ7PXbAprZLf3', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('5XAEi9mkMXQ7PXbAprZLf3', 'jygl_zpxxck')">2027-07-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('5XAEi9mkMXQ7PXbAprZLf3', 'jygl_zpxxck')">8</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('F5dRKV8BYTucoT6bLSE83x', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('F5dRKV8BYTucoT6bLSE83x', 'jygl_zpxxck')">新东方教育科技集团校园招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('F5dRKV8BYTucoT6bLSE83x', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('F5dRKV8BYTucoT6bLSE83x', 'jygl_zpxxck')">2027-09-09</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('F5dRKV8BYTucoT6bLSE83x', 'jygl_zpxxck')">12</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Pw4SqfAuHGJE7tJ7hWU5PT', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('Pw4SqfAuHGJE7tJ7hWU5PT', 'jygl_zpxxck')">瑞声光电科技（常州）有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Pw4SqfAuHGJE7tJ7hWU5PT', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Pw4SqfAuHGJE7tJ7hWU5PT', 'jygl_zpxxck')">2026-12-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Pw4SqfAuHGJE7tJ7hWU5PT', 'jygl_zpxxck')">8</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('GkYQR2oifz5MTHmvgvrSRi', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('GkYQR2oifz5MTHmvgvrSRi', 'jygl_zpxxck')">成都鼎桥通信技术有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('GkYQR2oifz5MTHmvgvrSRi', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('GkYQR2oifz5MTHmvgvrSRi', 'jygl_zpxxck')">2026-12-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('GkYQR2oifz5MTHmvgvrSRi', 'jygl_zpxxck')">36</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('4ZWGyGcyru7YgiyWM7nv7s', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('4ZWGyGcyru7YgiyWM7nv7s', 'jygl_zpxxck')">中建壹品投资发展有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('4ZWGyGcyru7YgiyWM7nv7s', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('4ZWGyGcyru7YgiyWM7nv7s', 'jygl_zpxxck')">2027-06-30</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('4ZWGyGcyru7YgiyWM7nv7s', 'jygl_zpxxck')">17</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('9uY97RCXcwLSGTP4pi7p12', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('9uY97RCXcwLSGTP4pi7p12', 'jygl_zpxxck')">北京市十一学校石景山实验中学招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('9uY97RCXcwLSGTP4pi7p12', 'jygl_zpxxck')">事业单位</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('9uY97RCXcwLSGTP4pi7p12', 'jygl_zpxxck')">2027-03-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('9uY97RCXcwLSGTP4pi7p12', 'jygl_zpxxck')">16</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('9FfYUqqHx7cebJERouX3H2', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('9FfYUqqHx7cebJERouX3H2', 'jygl_zpxxck')">上海浦东发展银行股份有限公司青岛分行招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('9FfYUqqHx7cebJERouX3H2', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('9FfYUqqHx7cebJERouX3H2', 'jygl_zpxxck')">2026-10-08</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('9FfYUqqHx7cebJERouX3H2', 'jygl_zpxxck')">18</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('XnrjiMYGG8NtNaJBjiUSRx', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('XnrjiMYGG8NtNaJBjiUSRx', 'jygl_zpxxck')">三角轮胎股份有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('XnrjiMYGG8NtNaJBjiUSRx', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('XnrjiMYGG8NtNaJBjiUSRx', 'jygl_zpxxck')">2027-08-01</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('XnrjiMYGG8NtNaJBjiUSRx', 'jygl_zpxxck')">394</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Mkz5XNtj2SAufpo2wu9nW6', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('Mkz5XNtj2SAufpo2wu9nW6', 'jygl_zpxxck')">连云港杰瑞电子有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Mkz5XNtj2SAufpo2wu9nW6', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Mkz5XNtj2SAufpo2wu9nW6', 'jygl_zpxxck')">2027-03-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('Mkz5XNtj2SAufpo2wu9nW6', 'jygl_zpxxck')">20</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('THcwTs4dyDNytfrE65Ru8T', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('THcwTs4dyDNytfrE65Ru8T', 'jygl_zpxxck')">新特能源股份有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('THcwTs4dyDNytfrE65Ru8T', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('THcwTs4dyDNytfrE65Ru8T', 'jygl_zpxxck')">2026-12-31</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('THcwTs4dyDNytfrE65Ru8T', 'jygl_zpxxck')">34</a>
+						  	  </div>
+						  </li>
+						
+						  <li>
+						      <div style='float:left;width:120px;'>
+						      	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('L6n3LKfABNFtHQFwqwrcSK', 'jygl_zpxxck')">2026-09-09</a>
+						      </div>
+						  	  <div style='float:left;width:500px;'>
+						  	  	<a class="sy_a omit" href="javascript:void(0);" onclick="viewZpxx('L6n3LKfABNFtHQFwqwrcSK', 'jygl_zpxxck')">小红书科技有限公司招聘</a>
+						  	  </div>
+						  	  <div style='float:left;width:128px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('L6n3LKfABNFtHQFwqwrcSK', 'jygl_zpxxck')">企业</a>
+						  	  </div>
+						  	  <div style='float:left;width:110px;'>
+						  	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('L6n3LKfABNFtHQFwqwrcSK', 'jygl_zpxxck')">2027-06-30</a>
+						 	   </div>
+						 	  <div style='float:left;width:80px;text-align:center;'>
+						 	  	<a class="sy_a" href="javascript:void(0);" onclick="viewZpxx('L6n3LKfABNFtHQFwqwrcSK', 'jygl_zpxxck')">38</a>
+						  	  </div>
+						  </li>
+						
+                    </ul>
+                    
+                    <div id="fenye" class="news_pages mar0 mt20" style="width: 550px;">
+						<form action="/eweb/wfc/app/pager.so?type=goPager&requestPager=pager&amp;" name='pageForm' id='pageForm' method=post><input type=hidden name=pageMethod value=pager><a class='up_next' href="/eweb/wfc/app/pager.so?type=goPager&requestPager=pager&amp;pageMethod=next&amp;currentPage=1">下一页</a>&nbsp;&nbsp;<a class='home_page' href="/eweb/wfc/app/pager.so?type=goPager&requestPager=pager&amp;pageMethod=last&amp;currentPage=1">尾页</a><span>&nbsp;&nbsp;共&nbsp;&nbsp;1560&nbsp;&nbsp;行&nbsp;&nbsp;/&nbsp;78&nbsp;页&nbsp;&nbsp;</span>每页<input style='text-align:center;' width='3' size='3' name='resetPageSize' id='resetPageSize' type='text' value='20'/>行&nbsp;&nbsp;第<input style='text-align:center;' width='3' size='3' type='text' id='pageNum' name='pageNum' value='1'/>页&nbsp;&nbsp;<a onclick='checkFenyeSubmit("pageForm","resetPageSize","pageNum");' class='home_page' href='#'>跳转</a>&nbsp;</form>
+						<div class="clear"></div>
+					</div>
+                    
+                </div><!-- moreListR -->
+
+                <div class="clear"></div>
+                
+                
+            </div><!-- moreList -->    
+           
+            
+
+<div id="copyright">
+       <script src="/eweb/jygl/index/82a2c8d8661930c154d05ad24f32a4d3_stat.php.js" language="JavaScript"></script>&nbsp;
+       <p align="center">
+                        山东大学学生就业创业指导中心<a href="mailto:2017-2017@2015">@2017-2025</a>
+       </p>
+       <p align="center">Shandong University Student Career and Entrepreneurship Center,SDU.All Rights Reserved&nbsp;&nbsp;</p>
+       <p>
+                             技术支持 ：<a href="https://www.bysxx.com" target='_blank' title="">易就业</a>
+       </p>
+</div>
+<map name="AutoMap1">
+            <area href="http://www.job.sdu.edu.cn/info/1009/16407.htm" shape="rect" target="_blank" coords="0,0,80,319">
+        </map>
+        </div>
+
+        <script type="text/javascript" src="/eweb/jygl/index/newjyw/js/jquery-1.9.1.min.js"></script>
+
+        <script type="text/javascript">
+            //查看招聘信息详细信息
+            function viewZpxx(id, modcode){
+             	window.open('/eweb/jygl/index.so?modcode='+modcode+'&subsyscode=zpfw&rklx=jyw&lmxhV=0402&type=ssoZxzpView&id='+id);
+             }
+        </script>
+        
+		
+		<script type="text/javascript">
+		function searchBtn(){
+			
+		        if(confirm('你未登录？暂时开放查询权限，你是否登录？')){
+		        	window.location.href='/eweb/jygl/index/sddxLogin.jsp?u=1&xxlb=5100';
+	            }
+	        
+		}
+		
+		function loadDefault(){
+				
+				
+				var bmbhStr = "JYGL_DWXZ1,JYGL_SF,JYGL_XLDM";
+		    	var bmbhidStr = "xzyj,szss,xl";
+		    	var bmbhvalueStr = "null,,";
+				loadCodeItems('smart',bmbhStr,bmbhidStr,bmbhvalueStr,loadS);			
+			}
+		function loadS(){
+			loadSubCodeItem('smart','JYGL_S',document.getElementById('szss').value,'szs','null','');//前缀关系
+		}
+		addLoadEvent(loadDefault);
+		</script>
+    </body>
+</html>

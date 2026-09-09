@@ -8,6 +8,31 @@ c=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class CollectionTests(unittest.TestCase):
+    def test_sdu_list_has_one_title_per_announcement_and_real_dates(self):
+        html=(ROOT/'tests/fixtures/sdu-list.html').read_text(encoding='utf-8')
+        items,next_page=c.sdu_list(html,c.SOURCES[2]['url'])
+        self.assertEqual(len(items),20)
+        self.assertEqual(len({i['url'] for i in items}),20)
+        self.assertEqual(items[0]['published_at'],'2026-05-13')
+        self.assertIn('山东社会科学院',items[0]['title'])
+        self.assertIn('currentPage=1',next_page)
+
+    def test_sdu_detail_finance_and_actual_work_location(self):
+        html=(ROOT/'tests/fixtures/sdu-detail.html').read_text(encoding='utf-8')
+        job=c.parse_detail(html,{'url':'https://jobcareer.sdu.edu.cn/example','title':'fallback'},c.SOURCES[2])
+        self.assertEqual(job['published_at'],'2026-09-09')
+        self.assertIn('威海',job['cities'])
+        self.assertIn('财务 / 经济',job['directions'])
+        self.assertEqual(job['graduation_years'],['2027'])
+
+    def test_official_list_templates_keep_full_titles_and_external_links(self):
+        for name,source in [('hrss',c.SOURCES[3]),('gzw',c.SOURCES[4])]:
+            html=(ROOT/f'tests/fixtures/{name}-list.html').read_text(encoding='utf-8')
+            items,_=c.gov_list(html,source['url'])
+            self.assertGreater(len(items),0)
+            self.assertTrue(all(i['published_at'] and i['url'] for i in items))
+            self.assertNotIn('...',items[0]['title'])
+
     def test_real_campus_announcement(self):
         html=(ROOT/'tests/fixtures/nankai-detail.html').read_text(encoding='utf-8')
         job=c.parse_detail(html,{'url':'https://career.nankai.edu.cn/correcruit/content/id/117451.html','title':'fallback'},c.SOURCES[0])

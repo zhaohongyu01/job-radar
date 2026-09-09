@@ -37,6 +37,7 @@ export type Source = {
   url: string;
   status: string;
   pages: number;
+  discovered: number;
   parsed: number;
   coverage: string;
   last_success_at: string | null;
@@ -162,9 +163,8 @@ export function filterJobs(
     })
     .sort(
       (a, b) =>
-        Number(locationMatch(a, f.city) === 'possible') -
-          Number(locationMatch(b, f.city) === 'possible') ||
-        (b.published_at ?? '').localeCompare(a.published_at ?? ''),
+        (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
+        a.id.localeCompare(b.id),
     );
 }
 export function validatePersonal(input: unknown): Personal {

@@ -12,7 +12,6 @@ import {
   Download,
   Upload,
   Clock3,
-  CircleHelp,
   ExternalLink,
   X,
   ChevronRight,
@@ -259,7 +258,7 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = '泉城职讯-个人记录.json';
+    a.download = '职讯雷达-个人记录.json';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setNotice('个人记录已导出。');
@@ -331,7 +330,7 @@ export default function Home() {
         <div className="brand">
           <Radar className="brand-icon" size={42} />
           <span>
-            泉城职讯 <span className="edition">个人版</span>
+            职讯雷达 <span className="edition">个人版</span>
           </span>
         </div>
         <Button variant="ghost" onClick={() => setSourceOpen(true)}>
@@ -577,162 +576,158 @@ export default function Home() {
                 <Skeleton className="h-48 w-full" />
               </div>
             ) : (
-              <div className="cards">
-                {visible.map((job, i) => {
-                  const possible =
-                    locationMatch(job, filters.city) === 'possible';
-                  const saved = personal[job.id]?.saved;
-                  const applied = personal[job.id]?.applied;
-                  const expired = isExpired(job, now);
-                  return (
-                    <div key={job.id}>
-                      {possible &&
-                        (i === 0 ||
-                          locationMatch(visible[i - 1], filters.city) !==
-                            'possible') && (
-                          <div className="supplement-heading">
-                            <CircleHelp size={17} />
-                            <div>
-                              <strong>补充机会 · 地点待确认</strong>
-                              <p>
-                                正文提及该城市、山东，或未明确工作地点；请核对原公告。
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      <article
-                        className={'job-card' + (expired ? ' expired' : '')}
-                      >
-                        <div className="job-top">
-                          <div className="tags">
-                            <span
-                              className={
-                                'tag ' +
-                                (job.types.includes('校招') ? 'blue' : '')
-                              }
-                            >
-                              {job.types.join(' / ') || '招聘类型待确认'}
-                            </span>
-                            {job.graduation_years.length > 0 && (
-                              <span className="tag">
-                                {job.graduation_years.join(' / ')} 届
+              <>
+                <p className="text-sm text-muted-foreground">
+                  按公告发布时间从新到旧排列 · 日期不明确的排在最后
+                </p>
+                <div className="cards">
+                  {visible.map((job) => {
+                    const possible =
+                      locationMatch(job, filters.city) === 'possible';
+                    const saved = personal[job.id]?.saved;
+                    const applied = personal[job.id]?.applied;
+                    const expired = isExpired(job, now);
+                    return (
+                      <div key={job.id}>
+                        <article
+                          className={'job-card' + (expired ? ' expired' : '')}
+                        >
+                          <div className="job-top">
+                            <div className="tags">
+                              {possible && (
+                                <span className="tag">地点待确认</span>
+                              )}
+                              <span
+                                className={
+                                  'tag ' +
+                                  (job.types.includes('校招') ? 'blue' : '')
+                                }
+                              >
+                                {job.types.join(' / ') || '招聘类型待确认'}
                               </span>
-                            )}
-                            <span className="tag">{job.sectors[0]}</span>
-                            {since &&
-                              Date.parse(job.first_seen_at) >
-                                Date.parse(since) && (
-                                <span className="tag new">首次收录</span>
+                              {job.graduation_years.length > 0 && (
+                                <span className="tag">
+                                  {job.graduation_years.join(' / ')} 届
+                                </span>
                               )}
-                            {applied && <span className="tag new">已投递</span>}
-                          </div>
-                          <button
-                            className={
-                              'bookmark-button' + (saved ? ' saved' : '')
-                            }
-                            aria-label={
-                              (saved ? '取消收藏：' : '收藏：') + job.title
-                            }
-                            aria-pressed={!!saved}
-                            disabled={!ready}
-                            onClick={() => toggle(job, 'saved')}
-                          >
-                            <Bookmark
-                              size={20}
-                              fill={saved ? 'currentColor' : 'none'}
-                            />
-                          </button>
-                        </div>
-                        <h2>
-                          <button
-                            className="job-title"
-                            onClick={() => setSelected(job)}
-                          >
-                            {job.title}
-                          </button>
-                        </h2>
-                        {job.company && (
-                          <p className="company-name">{job.company}</p>
-                        )}
-                        <div className="job-meta">
-                          <span>
-                            <MapPin size={15} />
-                            {job.cities.length
-                              ? job.cities.slice(0, 5).join(' / ') +
-                                (job.cities.length > 5 ? ' 等' : '')
-                              : '工作地待确认'}
-                          </span>
-                          <span>{job.education}</span>
-                        </div>
-                        <p className="job-excerpt">{job.excerpt}</p>
-                        <div className="card-foot">
-                          <div>
-                            <p
+                              <span className="tag">{job.sectors[0]}</span>
+                              {since &&
+                                Date.parse(job.first_seen_at) >
+                                  Date.parse(since) && (
+                                  <span className="tag new">首次收录</span>
+                                )}
+                              {applied && (
+                                <span className="tag new">已投递</span>
+                              )}
+                            </div>
+                            <button
                               className={
-                                'deadline ' + (expired ? 'closed' : '')
+                                'bookmark-button' + (saved ? ' saved' : '')
                               }
+                              aria-label={
+                                (saved ? '取消收藏：' : '收藏：') + job.title
+                              }
+                              aria-pressed={!!saved}
+                              disabled={!ready}
+                              onClick={() => toggle(job, 'saved')}
                             >
-                              {job.deadline ? (
-                                <>
-                                  <Clock3 size={14} />
-                                  {expired ? '已截止' : '公告截止'}{' '}
-                                  {date(job.deadline, true)}
-                                  {job.deadline_precision === 'day'
-                                    ? '（原文仅日期）'
-                                    : ''}
-                                </>
-                              ) : (
-                                <>截止时间待核对</>
-                              )}
-                            </p>
-                            <p className="small muted">
-                              {job.source_name} · 发布{' '}
-                              {job.published_at || '日期未明确'}
-                            </p>
+                              <Bookmark
+                                size={20}
+                                fill={saved ? 'currentColor' : 'none'}
+                              />
+                            </button>
                           </div>
-                          <div className="card-actions">
-                            <Button
-                              variant="ghost"
+                          <h2>
+                            <button
+                              className="job-title"
                               onClick={() => setSelected(job)}
                             >
-                              详情
-                              <ChevronRight size={15} />
-                            </Button>
-                            <OutLink
-                              primary
-                              url={job.application_url || job.source_url}
-                            >
-                              {job.application_url
-                                ? '前往投递'
-                                : '查看报名说明'}
-                            </OutLink>
+                              {job.title}
+                            </button>
+                          </h2>
+                          {job.company && (
+                            <p className="company-name">{job.company}</p>
+                          )}
+                          <div className="job-meta">
+                            <span>
+                              <MapPin size={15} />
+                              {job.cities.length
+                                ? job.cities.slice(0, 5).join(' / ') +
+                                  (job.cities.length > 5 ? ' 等' : '')
+                                : '工作地待确认'}
+                            </span>
+                            <span>{job.education}</span>
                           </div>
-                        </div>
-                      </article>
-                    </div>
-                  );
-                })}
-                {!filtered.length && !loading && (
-                  <Empty className="empty-state">
-                    <Search size={30} />
-                    <EmptyTitle className="text-lg">
-                      没有符合当前条件的公告
-                    </EmptyTitle>
-                    <EmptyDescription>
-                      已接入来源不代表该城市全部招聘。试试放宽筛选，或保留地点与资格待确认的机会。
-                    </EmptyDescription>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setFilters(defaultFilters);
-                        setPage(1);
-                      }}
-                    >
-                      恢复默认筛选
-                    </Button>
-                  </Empty>
-                )}
-              </div>
+                          <p className="job-excerpt">{job.excerpt}</p>
+                          <div className="card-foot">
+                            <div>
+                              <p
+                                className={
+                                  'deadline ' + (expired ? 'closed' : '')
+                                }
+                              >
+                                {job.deadline ? (
+                                  <>
+                                    <Clock3 size={14} />
+                                    {expired ? '已截止' : '公告截止'}{' '}
+                                    {date(job.deadline, true)}
+                                    {job.deadline_precision === 'day'
+                                      ? '（原文仅日期）'
+                                      : ''}
+                                  </>
+                                ) : (
+                                  <>截止时间待核对</>
+                                )}
+                              </p>
+                              <p className="small muted">
+                                {job.source_name} · 发布{' '}
+                                {job.published_at || '日期未明确'}
+                              </p>
+                            </div>
+                            <div className="card-actions">
+                              <Button
+                                variant="ghost"
+                                onClick={() => setSelected(job)}
+                              >
+                                详情
+                                <ChevronRight size={15} />
+                              </Button>
+                              <OutLink
+                                primary
+                                url={job.application_url || job.source_url}
+                              >
+                                {job.application_url
+                                  ? '前往投递'
+                                  : '查看报名说明'}
+                              </OutLink>
+                            </div>
+                          </div>
+                        </article>
+                      </div>
+                    );
+                  })}
+                  {!filtered.length && !loading && (
+                    <Empty className="empty-state">
+                      <Search size={30} />
+                      <EmptyTitle className="text-lg">
+                        没有符合当前条件的公告
+                      </EmptyTitle>
+                      <EmptyDescription>
+                        已接入来源不代表该城市全部招聘。试试放宽筛选，或保留地点与资格待确认的机会。
+                      </EmptyDescription>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setFilters(defaultFilters);
+                          setPage(1);
+                        }}
+                      >
+                        恢复默认筛选
+                      </Button>
+                    </Empty>
+                  )}
+                </div>
+              </>
             )}
             {pages > 1 && (
               <Pagination className="pagination-row" aria-label="招聘结果分页">
@@ -945,7 +940,8 @@ export default function Home() {
                   </span>
                 </h3>
                 <p>
-                  读取 {s.pages} 页，解析 {s.parsed} 条 · {s.coverage}
+                  读取 {s.pages} 页，发现 {s.discovered} 条、详情解析 {s.parsed}{' '}
+                  条 · {s.coverage}
                 </p>
                 <p>最近完整成功：{date(s.last_success_at, true)}</p>
                 <p>最近尝试：{date(s.last_attempt_at, true)}</p>

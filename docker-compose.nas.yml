@@ -1,0 +1,15 @@
+services:
+  job-radar:
+    build: .
+    container_name: job-radar
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      TZ: Asia/Shanghai
+      COLLECT_INTERVAL_SECONDS: "86400"
+      COLLECT_PAGES: "20"
+      COLLECT_DAYS: "30"
+      COLLECT_ON_START: "1"
+    volumes:
+      - ./data:/app/data

@@ -66,6 +66,7 @@ export type Filters = {
   query: string;
   education: string;
   includeUncertain: boolean;
+  locationScope: 'exact' | 'possible' | 'unknown';
   showExpired: boolean;
   view: string;
   onlyNew: boolean;
@@ -79,6 +80,7 @@ export const defaultFilters: Filters = {
   query: '',
   education: '',
   includeUncertain: true,
+  locationScope: 'exact',
   showExpired: false,
   view: 'all',
   onlyNew: false,
@@ -89,15 +91,70 @@ export function isExpired(job: Job, now = Date.now()) {
 export function locationMatch(
   job: Job,
   city: string,
-): 'exact' | 'possible' | 'none' {
+): 'exact' | 'possible' | 'unknown' | 'none' {
   if (city === '全部城市' || job.cities.includes(city)) return 'exact';
-  if (
-    job.possible_cities.includes(city) ||
-    (city === '济南' && job.province_possible) ||
-    job.cities.length === 0
-  )
-    return 'possible';
-  return 'none';
+  // Only recruitment location evidence counts; headquarters and body mentions do not.
+  const evidence = (job.location_evidence ?? []).join('\n');
+  if (/全国|不限城市|各地可选/.test(evidence)) return 'possible';
+  const province = Object.entries(PROVINCE_CITIES).find(([, cities]) =>
+    cities.includes(city),
+  )?.[0];
+  const provinces = Object.keys(PROVINCE_CITIES).filter((p) =>
+    evidence.includes(p),
+  );
+  if (province && provinces.includes(province)) return 'possible';
+  if (job.cities.length || provinces.length) return 'none';
+  return 'unknown';
+}
+
+const PROVINCE_CITIES: Record<string, string[]> = {
+  山东: '济南 青岛 淄博 枣庄 东营 烟台 潍坊 济宁 泰安 威海 日照 临沂 德州 聊城 滨州 菏泽'.split(
+    ' ',
+  ),
+  广东: '广州 深圳 珠海 东莞 佛山'.split(' '),
+  江苏: ['南京', '苏州'],
+  浙江: ['杭州', '宁波'],
+  安徽: ['合肥'],
+  福建: ['福州', '厦门'],
+  湖北: ['武汉'],
+  湖南: ['长沙'],
+  河南: ['郑州'],
+  陕西: ['西安'],
+  四川: ['成都'],
+  云南: ['昆明'],
+  贵州: ['贵阳'],
+  江西: ['南昌'],
+  广西: ['南宁'],
+  海南: ['海口'],
+  山西: ['太原'],
+  河北: ['石家庄'],
+  辽宁: ['沈阳', '大连'],
+  吉林: ['长春'],
+  黑龙江: ['哈尔滨'],
+  甘肃: ['兰州'],
+  青海: ['西宁'],
+  宁夏: ['银川'],
+  新疆: ['乌鲁木齐'],
+  西藏: ['拉萨'],
+  内蒙古: ['呼和浩特'],
+  北京: ['北京'],
+  天津: ['天津'],
+  上海: ['上海'],
+  重庆: ['重庆'],
+  香港: ['香港'],
+  澳门: ['澳门'],
+  台湾: ['台北'],
+};
+
+export function locationSummary(job: Job) {
+  if (job.cities.length) return job.cities.join(' / ');
+  const evidence = (job.location_evidence ?? [])
+    .join('；')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return evidence
+    ? `原文工作地域：${evidence.slice(0, 140)}`
+    : '未提取到工作地点，请核对原公告';
 }
 export function filterJobs(
   jobs: Job[],
@@ -118,11 +175,7 @@ export function filterJobs(
       if (f.view === 'all' && p.hidden) return false;
       if (!f.showExpired && isExpired(j, now)) return false;
       const location = locationMatch(j, f.city);
-      if (
-        location === 'none' ||
-        (location === 'possible' && !f.includeUncertain)
-      )
-        return false;
+      if (f.city !== '全部城市' && location !== f.locationScope) return false;
       if (
         f.type !== '全部' &&
         !j.types.includes(f.type) &&

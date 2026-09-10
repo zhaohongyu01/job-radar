@@ -49,6 +49,7 @@ import {
   filterJobs,
   isExpired,
   locationMatch,
+  locationSummary,
   validatePersonal,
   externalUrl,
 } from '@/lib/jobs';
@@ -217,9 +218,24 @@ export default function Home() {
     () => filterJobs(data?.jobs ?? [], filters, personal, since, now),
     [data, filters, personal, since, now],
   );
-  const exactCount = filtered.filter(
-    (j) => locationMatch(j, filters.city) === 'exact',
-  ).length;
+  const locationOptions = (['exact', 'possible', 'unknown'] as const).map(
+    (scope) => ({
+      scope,
+      label:
+        scope === 'exact'
+          ? `明确在${filters.city}`
+          : scope === 'possible'
+            ? `可能包含${filters.city}`
+            : '地点未明确',
+      count: filterJobs(
+        data?.jobs ?? [],
+        { ...filters, locationScope: scope },
+        personal,
+        since,
+        now,
+      ).length,
+    }),
+  );
   const pages = Math.max(1, Math.ceil(filtered.length / 12));
   const currentPage = Math.min(page, pages);
   const visible = filtered.slice((currentPage - 1) * 12, currentPage * 12);
@@ -454,7 +470,7 @@ export default function Home() {
             </label>
             <div className="filter-checks">
               <Toggle
-                label="保留地点或资格待确认"
+                label="保留招聘类型、届别或学历未明确的公告"
                 checked={filters.includeUncertain}
                 onChange={(v) => change('includeUncertain', v)}
               />
@@ -537,21 +553,46 @@ export default function Home() {
               </Tabs>
             </div>
             <div className="result-summary">
-              <p>
-                <strong>{filtered.length}</strong> 条公告
-                {filters.city !== '全部城市' && (
-                  <span>
-                    {' '}
-                    · {exactCount} 条含明确{filters.city}工作地
-                  </span>
-                )}
+              <p aria-live="polite">
+                <strong>{filtered.length}</strong> 条符合当前筛选的招聘公告
+                <span> · 一份公告可能包含多个岗位</span>
               </p>
               <Toggle
-                label="只看本次新增 / 变更"
+                label="只看上次访问后收录 / 变更"
                 checked={filters.onlyNew}
                 onChange={(v) => change('onlyNew', v)}
               />
             </div>
+            {filters.city !== '全部城市' && (
+              <div className="location-scopes">
+                <fieldset
+                  className="scope-buttons"
+                  aria-label="工作地点匹配范围"
+                >
+                  {locationOptions.map((option) => (
+                    <Button
+                      key={option.scope}
+                      variant={
+                        filters.locationScope === option.scope
+                          ? 'default'
+                          : 'outline'
+                      }
+                      aria-pressed={filters.locationScope === option.scope}
+                      onClick={() => change('locationScope', option.scope)}
+                    >
+                      {option.label} · {option.count}
+                    </Button>
+                  ))}
+                </fieldset>
+                <p className="inline-note">
+                  {filters.locationScope === 'exact'
+                    ? `仅展示已提取到${filters.city}工作地点的公告；还需核对具体岗位。`
+                    : filters.locationScope === 'possible'
+                      ? `工作地域覆盖所在省份或全国，尚未确认是否有${filters.city}岗位。`
+                      : `这些公告未提取到明确工作地点，不代表在${filters.city}招聘。`}
+                </p>
+              </div>
+            )}
             {filters.onlyNew && !since && (
               <p className="inline-note">
                 这是你首次访问，尚无上次查看时间。关闭此筛选可查看全部收录。
@@ -582,8 +623,7 @@ export default function Home() {
                 </p>
                 <div className="cards">
                   {visible.map((job) => {
-                    const possible =
-                      locationMatch(job, filters.city) === 'possible';
+                    const location = locationMatch(job, filters.city);
                     const saved = personal[job.id]?.saved;
                     const applied = personal[job.id]?.applied;
                     const expired = isExpired(job, now);
@@ -594,8 +634,14 @@ export default function Home() {
                         >
                           <div className="job-top">
                             <div className="tags">
-                              {possible && (
-                                <span className="tag">地点待确认</span>
+                              {filters.city !== '全部城市' && (
+                                <span className="tag">
+                                  {location === 'exact'
+                                    ? `工作地含${filters.city}`
+                                    : location === 'possible'
+                                      ? `${filters.city}岗位待核对`
+                                      : '地点未明确'}
+                                </span>
                               )}
                               <span
                                 className={
@@ -651,13 +697,16 @@ export default function Home() {
                           <div className="job-meta">
                             <span>
                               <MapPin size={15} />
-                              {job.cities.length
-                                ? job.cities.slice(0, 5).join(' / ') +
-                                  (job.cities.length > 5 ? ' 等' : '')
-                                : '工作地待确认'}
+                              {locationSummary(job)}
                             </span>
                             <span>{job.education}</span>
                           </div>
+                          {job.directions.length > 0 && (
+                            <p className="inline-note">
+                              公告涉及：{job.directions.join('、')} ·
+                              以具体岗位要求为准
+                            </p>
+                          )}
                           <p className="job-excerpt">{job.excerpt}</p>
                           <div className="card-foot">
                             <div>
@@ -676,7 +725,7 @@ export default function Home() {
                                       : ''}
                                   </>
                                 ) : (
-                                  <>截止时间待核对</>
+                                  <>未明确截止日期，请先核对是否仍可报名</>
                                 )}
                               </p>
                               <p className="small muted">
@@ -698,7 +747,7 @@ export default function Home() {
                               >
                                 {job.application_url
                                   ? '前往投递'
-                                  : '查看报名说明'}
+                                  : '查看原公告'}
                               </OutLink>
                             </div>
                           </div>
@@ -713,16 +762,25 @@ export default function Home() {
                         没有符合当前条件的公告
                       </EmptyTitle>
                       <EmptyDescription>
-                        已接入来源不代表该城市全部招聘。试试放宽筛选，或保留地点与资格待确认的机会。
+                        当前来源尚未收录符合这些条件的公告，不代表没有招聘。可切换地点范围，或清除岗位方向、学历和关键词限制。
                       </EmptyDescription>
                       <Button
                         variant="outline"
                         onClick={() => {
-                          setFilters(defaultFilters);
+                          setFilters({
+                            ...filters,
+                            type: '全部',
+                            sector: '全部',
+                            direction: '全部',
+                            education: '',
+                            query: '',
+                            onlyNew: false,
+                            includeUncertain: true,
+                          });
                           setPage(1);
                         }}
                       >
-                        恢复默认筛选
+                        放宽条件，保留当前城市
                       </Button>
                     </Empty>
                   )}

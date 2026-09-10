@@ -6,6 +6,10 @@ export type Job = {
   source_name: string;
   source_url: string;
   published_at: string | null;
+  date_label?: string;
+  provenance?: string;
+  duplicate_sources?: { title: string; url: string }[];
+  duplicate_ids?: string[];
   kind: string;
   types: string[];
   graduation_years: string[];
@@ -39,6 +43,7 @@ export type Source = {
   pages: number;
   discovered: number;
   parsed: number;
+  cached?: number;
   coverage: string;
   last_success_at: string | null;
   last_attempt_at: string;
@@ -70,6 +75,8 @@ export type Filters = {
   showExpired: boolean;
   view: string;
   onlyNew: boolean;
+  provenance: string;
+  kind: string;
 };
 export const defaultFilters: Filters = {
   city: '济南',
@@ -84,9 +91,20 @@ export const defaultFilters: Filters = {
   showExpired: false,
   view: 'all',
   onlyNew: false,
+  provenance: '全部',
+  kind: '全部',
 };
 export function isExpired(job: Job, now = Date.now()) {
   return !!job.deadline && Date.parse(job.deadline) < now;
+}
+export function personalFor(job: Job, personal: Personal) {
+  if (personal[job.id]) return personal[job.id];
+  const records = (job.duplicate_ids ?? []).map((id) => personal[id]);
+  return {
+    saved: records.some((record) => record?.saved),
+    applied: records.some((record) => record?.applied),
+    hidden: records.some((record) => record?.hidden),
+  };
 }
 export function locationMatch(
   job: Job,
@@ -102,7 +120,12 @@ export function locationMatch(
   const provinces = Object.keys(PROVINCE_CITIES).filter((p) =>
     evidence.includes(p),
   );
-  if (province && provinces.includes(province)) return 'possible';
+  // A province inside a specific address is not province-wide recruitment.
+  const broadPattern = province && new RegExp(`${province}(?:省)?[ \\t]*(?=$|[/、，,；;\\n]|各地|全省|不限|多个城市|分行辖属)`);
+  const detailLocations = (job.location_evidence ?? []).filter((line) => /^(?:工作地点|工作城市|岗位地点)/.test(line));
+  const specificDetail = detailLocations.some((line) => job.cities.some((c) => line.includes(c)));
+  if (specificDetail && broadPattern && !detailLocations.some((line) => broadPattern.test(line))) return 'none';
+  if (broadPattern && broadPattern.test(evidence)) return 'possible';
   if (job.cities.length || provinces.length) return 'none';
   return 'unknown';
 }
@@ -165,7 +188,7 @@ export function filterJobs(
 ) {
   return jobs
     .filter((j) => {
-      const p = personal[j.id] ?? {};
+      const p = personalFor(j, personal);
       if (
         (f.view === 'saved' && !p.saved) ||
         (f.view === 'applied' && !p.applied) ||
@@ -174,6 +197,9 @@ export function filterJobs(
         return false;
       if (f.view === 'all' && p.hidden) return false;
       if (!f.showExpired && isExpired(j, now)) return false;
+      if (f.kind !== '全部' && j.kind !== f.kind) return false;
+      if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
+      if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
       const location = locationMatch(j, f.city);
       if (f.city !== '全部城市' && location !== f.locationScope) return false;
       if (

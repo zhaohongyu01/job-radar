@@ -7,6 +7,7 @@ import {
   validatePersonal,
   externalUrl,
   locationMatch,
+  personalFor,
 } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 const job = {
@@ -27,6 +28,18 @@ const job = {
   first_seen_at: '2026-09-02T00:00:00Z',
   updated_at: '2026-09-02T00:00:00Z',
 } as unknown as Job;
+void test('repost folding preserves personal records and supports clearing them', () => {
+  const folded={...job, duplicate_ids:['old-copy']};
+  const personal={'old-copy':{saved:true}};
+  assert.equal(filterJobs([folded],{...defaultFilters,view:'saved'},personal,null).length,1);
+  assert.equal(personalFor(folded,personal).saved,true);
+  assert.equal(personalFor(folded,{...personal,[folded.id]:{saved:false}}).saved,false);
+});
+void test('third-party metadata can be excluded without losing primary sources', () => {
+  const secondary={...job,provenance:'第三方线索'};
+  assert.equal(filterJobs([secondary],{...defaultFilters,provenance:'高校 / 政府'}, {}, null).length,0);
+  assert.equal(filterJobs([job],{...defaultFilters,provenance:'高校 / 政府'}, {}, null).length,1);
+});
 void test('newest publication comes first; unknown date last', () => {
   const newer = { ...job, id: 'newer', published_at: '2026-09-09' };
   const undated = { ...job, id: 'undated', published_at: null };
@@ -105,6 +118,13 @@ void test('real snapshot: Guangdong excluded from every Jinan scope; bank remain
 });
 void test('default shows opportunities without requesting personal qualifications', () =>
   assert.equal(filterJobs([job], defaultFilters, {}, null).length, 1));
+void test('province inside a specific address does not imply other cities', () => {
+  for (const address of ['山东威海', '山东省青岛市崂山区国际创新园', '山东 威海']) {
+    assert.equal(locationMatch({ ...job, cities: ['威海','青岛'], location_evidence: [`工作地点：${address}`] }, '济南'), 'none');
+  }
+  assert.equal(locationMatch({ ...job, cities: ['北京','南京'], location_evidence: ['北京市 / 山东省 / 江苏省', '工作地点\n北京、南京'] }, '济南'), 'none');
+  assert.equal(locationMatch({ ...job, cities: [], location_evidence: ['山东省 / 广东省'] }, '济南'), 'possible');
+});
 void test('campus cohort and social switch respect classification', () => {
   assert.equal(
     filterJobs(

@@ -52,6 +52,7 @@ import {
   locationSummary,
   validatePersonal,
   externalUrl,
+  personalFor,
 } from '@/lib/jobs';
 import type { Job, Snapshot, Personal, Filters } from '@/lib/jobs';
 const STORAGE = 'quancheng-personal-v1',
@@ -210,7 +211,7 @@ export default function Home() {
   const toggle = (job: Job, key: 'saved' | 'applied' | 'hidden') => {
     const next = {
       ...personal,
-      [job.id]: { ...personal[job.id], [key]: !personal[job.id]?.[key] },
+      [job.id]: { ...personalFor(job, personal), [key]: !personalFor(job, personal)[key] },
     };
     save(next);
   };
@@ -223,9 +224,9 @@ export default function Home() {
       scope,
       label:
         scope === 'exact'
-          ? `明确在${filters.city}`
+          ? `来源标注${filters.city}`
           : scope === 'possible'
-            ? `可能包含${filters.city}`
+            ? '全省 / 全国待核实'
             : '地点未明确',
       count: filterJobs(
         data?.jobs ?? [],
@@ -247,7 +248,7 @@ export default function Home() {
   ).length;
   const dueCount = (data?.jobs ?? []).filter(
     (j) =>
-      personal[j.id]?.saved &&
+      personalFor(j, personal).saved &&
       j.deadline &&
       !isExpired(j, now) &&
       Date.parse(j.deadline) - now < 7 * 86400000,
@@ -468,6 +469,18 @@ export default function Home() {
                 placeholder="不限，可输入本科"
               />
             </label>
+            <Choice
+              label="信息来源"
+              value={filters.provenance}
+              options={['全部', '高校 / 政府', '第三方线索']}
+              onChange={(v) => change('provenance', v)}
+            />
+            <Choice
+              label="信息类型"
+              value={filters.kind}
+              options={['全部', '具体岗位', '招聘公告']}
+              onChange={(v) => change('kind', v)}
+            />
             <div className="filter-checks">
               <Toggle
                 label="保留招聘类型、届别或学历未明确的公告"
@@ -554,8 +567,8 @@ export default function Home() {
             </div>
             <div className="result-summary">
               <p aria-live="polite">
-                <strong>{filtered.length}</strong> 条符合当前筛选的招聘公告
-                <span> · 一份公告可能包含多个岗位</span>
+                <strong>{filtered.length}</strong> 条符合当前筛选的招聘信息
+                <span> · {filtered.filter((j) => j.kind === '具体岗位').length} 条具体岗位、{filtered.filter((j) => j.kind !== '具体岗位').length} 条招聘公告</span>
               </p>
               <Toggle
                 label="只看上次访问后收录 / 变更"
@@ -619,13 +632,13 @@ export default function Home() {
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  按公告发布时间从新到旧排列 · 日期不明确的排在最后
+                  按来源发布 / 收录时间从新到旧排列 · 日期不明确的排在最后
                 </p>
                 <div className="cards">
                   {visible.map((job) => {
                     const location = locationMatch(job, filters.city);
-                    const saved = personal[job.id]?.saved;
-                    const applied = personal[job.id]?.applied;
+                    const saved = personalFor(job, personal).saved;
+                    const applied = personalFor(job, personal).applied;
                     const expired = isExpired(job, now);
                     return (
                       <div key={job.id}>
@@ -639,7 +652,7 @@ export default function Home() {
                                   {location === 'exact'
                                     ? `工作地含${filters.city}`
                                     : location === 'possible'
-                                      ? `${filters.city}岗位待核对`
+                                      ? '全省 / 全国待核实'
                                       : '地点未明确'}
                                 </span>
                               )}
@@ -729,8 +742,9 @@ export default function Home() {
                                 )}
                               </p>
                               <p className="small muted">
-                                {job.source_name} · 发布{' '}
+                                {job.kind} · {job.source_name} · {job.date_label || '发布'}{' '}
                                 {job.published_at || '日期未明确'}
+                                {job.provenance === '第三方线索' && ' · 未经企业原文复核'}
                               </p>
                             </div>
                             <div className="card-actions">
@@ -747,7 +761,7 @@ export default function Home() {
                               >
                                 {job.application_url
                                   ? '前往投递'
-                                  : '查看原公告'}
+                                  : job.provenance === '第三方线索' ? '查看线索来源' : '查看原公告'}
                               </OutLink>
                             </div>
                           </div>
@@ -841,13 +855,13 @@ export default function Home() {
             <>
               <SheetHeader className="detail-header">
                 <span className="eyebrow">
-                  招聘公告 · {selected.source_name}
+                  {selected.kind} · {selected.source_name}
                 </span>
                 <SheetTitle className="text-xl leading-relaxed pr-6">
                   {selected.title}
                 </SheetTitle>
                 <SheetDescription>
-                  发布 {selected.published_at || '日期未明确'} · 最近读取{' '}
+                  {selected.date_label || '发布'} {selected.published_at || '日期未明确'} · 最近读取{' '}
                   {date(selected.last_verified_at, true)}
                 </SheetDescription>
               </SheetHeader>
@@ -855,27 +869,27 @@ export default function Home() {
                 <div className="detail-actions">
                   <Button
                     variant={
-                      personal[selected.id]?.saved ? 'default' : 'outline'
+                      personalFor(selected, personal).saved ? 'default' : 'outline'
                     }
                     onClick={() => toggle(selected, 'saved')}
                   >
                     <Bookmark size={16} />
-                    {personal[selected.id]?.saved ? '已收藏' : '收藏'}
+                    {personalFor(selected, personal).saved ? '已收藏' : '收藏'}
                   </Button>
                   <Button
                     variant={
-                      personal[selected.id]?.applied ? 'default' : 'outline'
+                      personalFor(selected, personal).applied ? 'default' : 'outline'
                     }
                     onClick={() => toggle(selected, 'applied')}
                   >
                     <Check size={16} />
-                    {personal[selected.id]?.applied ? '已投递' : '标记已投递'}
+                    {personalFor(selected, personal).applied ? '已投递' : '标记已投递'}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => toggle(selected, 'hidden')}
                   >
-                    {personal[selected.id]?.hidden ? '恢复显示' : '不感兴趣'}
+                    {personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}
                   </Button>
                 </div>
                 <div className="apply-panel">
@@ -945,6 +959,12 @@ export default function Home() {
                 )}
                 <h3>公告文字</h3>
                 <div className="announcement-text">{selected.body}</div>
+                {!!selected.duplicate_sources?.length && (
+                  <>
+                    <h3>相同内容的其他来源</h3>
+                    {selected.duplicate_sources.map((s) => <div className="attachment" key={s.url}><OutLink url={s.url}>{s.title}</OutLink></div>)}
+                  </>
+                )}
                 {selected.links.length > 0 && (
                   <>
                     <h3>公告中的其他链接</h3>
@@ -999,7 +1019,7 @@ export default function Home() {
                 </h3>
                 <p>
                   读取 {s.pages} 页，发现 {s.discovered} 条、详情解析 {s.parsed}{' '}
-                  条 · {s.coverage}
+                  条{s.cached ? `、复用近期已核实 ${s.cached} 条` : ''} · {s.coverage}
                 </p>
                 <p>最近完整成功：{date(s.last_success_at, true)}</p>
                 <p>最近尝试：{date(s.last_attempt_at, true)}</p>

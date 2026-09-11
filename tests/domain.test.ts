@@ -227,3 +227,18 @@ void test('unsafe application URL never renders as executable link', () => {
     'https://example.com/apply',
   );
 });
+void test('multi-keyword space-separated query matches all terms', () => {
+  const sample = {
+    ...job,
+    title: '资深制程研发工程师',
+    company: '泉意光罩光电科技（济南）有限公司',
+    directions: ['技术 / 研发'],
+    body: '',
+    excerpt: '面向2027应届毕业生，专业要求光学、材料',
+    cities: ['济南'],
+  };
+  assert.equal(filterJobs([sample], { ...defaultFilters, query: '研发' }, {}, null).length, 1);
+  assert.equal(filterJobs([sample], { ...defaultFilters, query: '研发 泉意' }, {}, null).length, 1);
+  assert.equal(filterJobs([sample], { ...defaultFilters, query: '研发 2027 济南' }, {}, null).length, 1);
+  assert.equal(filterJobs([sample], { ...defaultFilters, query: '研发 审计' }, {}, null).length, 0);
+});

@@ -269,21 +269,24 @@ export function filterJobs(
         !(f.includeUncertain && j.education.includes('未明确'))
       )
         return false;
-      if (f.query) {
-        const searchable = [
-          j.title,
-          j.company,
-          j.excerpt,
-          j.education,
-          ...(j.directions ?? []),
-          ...(j.sectors ?? []),
-          ...(j.location_evidence ?? []),
-          j.search_text ?? '',
-          j.body ?? '',
-        ]
-          .join(' ')
-          .toLowerCase();
-        if (!searchable.includes(f.query.trim().toLowerCase())) return false;
+      if (f.query.trim()) {
+        const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (keywords.length) {
+          const searchable = [
+            j.title,
+            j.company,
+            j.excerpt,
+            j.education,
+            ...(j.directions ?? []),
+            ...(j.sectors ?? []),
+            ...(j.location_evidence ?? []),
+            j.search_text ?? '',
+            j.body ?? '',
+          ]
+            .join(' ')
+            .toLowerCase();
+          if (!keywords.every((kw) => searchable.includes(kw))) return false;
+        }
       }
       if (
         f.onlyNew &&

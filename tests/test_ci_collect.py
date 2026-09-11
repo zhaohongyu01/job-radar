@@ -98,7 +98,7 @@ class PipelineTests(unittest.TestCase):
             state = fixture()
             c.export_snapshot(state, public)
             ci.prepare(public, data, '')
-            args = SimpleNamespace(public_dir=public, data_dir=data, pages=5, days=14)
+            args = SimpleNamespace(public_dir=public, data_dir=data, pages=5, days=14, refresh_hours=72)
             def partial_run(command, check):
                 stamp = dt.datetime.now(c.TZ).replace(microsecond=0).isoformat()
                 state['last_run_at'] = stamp

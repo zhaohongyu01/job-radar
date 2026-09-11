@@ -2,25 +2,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radar,
-  ArrowUpRight,
   Search,
   Bookmark,
   Check,
-  MapPin,
   SlidersHorizontal,
-  RotateCcw,
-  Download,
-  Upload,
   Clock3,
   ExternalLink,
   X,
-  ChevronRight,
   RefreshCw,
   Bell,
   Database,
-  GraduationCap,
-  Building2,
-  Share2,
 } from 'lucide-react';
 import {
   Select,
@@ -51,13 +42,12 @@ import {
   defaultFilters,
   filterJobs,
   isExpired,
-  locationMatch,
-  locationSummary,
   validatePersonal,
   externalUrl,
   personalFor,
   isUnread,
   mergePersonal,
+  locationSummary,
 } from '@/lib/jobs';
 import type { Job, Snapshot, Personal, Filters } from '@/lib/jobs';
 import { restoreBrowsing } from '@/lib/browsing';
@@ -65,11 +55,16 @@ import type { ViewMode } from '@/lib/browsing';
 import { JobTable } from '@/components/job-table';
 import { groupJobs } from '@/lib/grouping';
 import type { JobGroup } from '@/lib/grouping';
+import { FilterSidebar } from '@/components/filter-sidebar';
+import { JobCard, formatDate as date, OutLink, extractSalary } from '@/components/job-card';
+import { DetailDrawer } from '@/components/detail-drawer';
+
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
 const STORAGE = 'quancheng-personal-v1',
   VISIT = 'quancheng-last-visit-v1';
 const PAGE_SIZE_STORAGE = 'job-radar-page-size-v1';
 const PAGE_SIZES = [20, 50, 100];
+
 function ResultsPagination({
   page, pageSize, total, position, onPageChange, onPageSizeChange, grouped = false,
 }: {
@@ -118,117 +113,7 @@ function ResultsPagination({
     </div>
   );
 }
-function date(value: string | null | undefined, time = false) {
-  if (!value) return '尚无成功记录';
-  return new Date(
-    value.length === 10 ? value + 'T00:00:00+08:00' : value,
-  ).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    ...(time ? { hour: '2-digit', minute: '2-digit' } : {}),
-  });
-}
-function Choice({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="filter-field">
-      <span>{label}</span>
-      <Select value={value} onValueChange={(v) => onChange(v ?? '全部')}>
-        <SelectTrigger className="field-control" aria-label={label}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((v) => (
-            <SelectItem key={v} value={v}>
-              {v}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-function PillChoice({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="filter-field">
-      <span className="field-label">{label}</span>
-      <fieldset className="pill-group" aria-label={label}>
-        {options.map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            aria-pressed={value === opt}
-            className={`pill-item ${value === opt ? 'active' : ''}`}
-            onClick={() => onChange(opt)}
-          >
-            {opt}
-          </button>
-        ))}
-      </fieldset>
-    </div>
-  );
-}
-function extractSalary(job: Job): { cleanTitle: string; salary: string | null } {
-  let cleanTitle = job.title;
-  let salary: string | null = null;
-  const titleSalaryRegex = /(?:[（(])?(\d+(?:\.\d+)?(?:k|K|万|元)?\s*[-~至–]\s*\d+(?:\.\d+)?(?:k|K|万|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天)?)(?:[)）])?$/;
-  const match = cleanTitle.match(titleSalaryRegex);
-  if (match) {
-    salary = match[1].trim();
-    cleanTitle = cleanTitle.replace(titleSalaryRegex, '').trim();
-  } else {
-    const excerptMatch = job.excerpt?.match(/薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]+)/);
-    if (excerptMatch) {
-      salary = excerptMatch[1].trim();
-    }
-  }
-  return { cleanTitle: cleanTitle || job.title, salary };
-}
-function cleanExcerpt(excerpt: string | null | undefined): string {
-  if (!excerpt) return '';
-  return excerpt.replace(/^[\s*•·-]+/, '').trim();
-}
-function HighlightText({ text, query }: { text: string | null | undefined; query: string }) {
-  if (!text) return null;
-  const trimmed = query.trim();
-  if (!trimmed) return <>{text}</>;
-  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === trimmed.toLowerCase() ? (
-          <mark key={i} className="search-highlight">
-            {part}
-          </mark>
-        ) : (
-          part
-        )
-      )}
-    </>
-  );
-}
+
 function Toggle({
   label,
   checked,
@@ -245,31 +130,7 @@ function Toggle({
     </label>
   );
 }
-function OutLink({
-  url,
-  children,
-  primary = false,
-  onOpen,
-}: {
-  url: string | null | undefined;
-  children: React.ReactNode;
-  primary?: boolean;
-  onOpen?: () => void;
-}) {
-  const href = externalUrl(url);
-  return href ? (
-    <a
-      href={href}
-      onClick={onOpen}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={primary ? 'primary-link' : 'quiet-link'}
-    >
-      {children}
-      <ArrowUpRight size={15} />
-    </a>
-  ) : null;
-}
+
 export default function Home() {
   const [data, setData] = useState<Snapshot | null>(null),
     [error, setError] = useState(''),
@@ -280,6 +141,7 @@ export default function Home() {
     [since, setSince] = useState<string | null>(null);
   const [selected, setSelected] = useState<Job | null>(null),
     [sourceOpen, setSourceOpen] = useState(false),
+    [mobileFilterOpen, setMobileFilterOpen] = useState(false),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(50),
     [viewMode, setViewMode] = useState<ViewMode>('cards'),
@@ -297,6 +159,7 @@ export default function Home() {
   const detailsPromise = useRef<Record<string, Promise<Record<string, Job>>>>({});
   const [searchIndex, setSearchIndex] = useState<Record<string, string> | null>(null);
   const [searchError, setSearchError] = useState('');
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -325,6 +188,7 @@ export default function Home() {
       setLoading(false);
     }
   }, []);
+
   const save = useCallback((next: Personal) => {
     try {
       localStorage.setItem(STORAGE, JSON.stringify(next));
@@ -336,13 +200,16 @@ export default function Home() {
       return false;
     }
   }, []);
+
   const setRead = useCallback((job: Job, read: boolean) => {
     const current = personalRef.current;
     save({ ...current, [job.id]: { ...personalFor(job, current), readAt: read ? new Date().toISOString() : null } });
   }, [save]);
+
   const markRead = useCallback((job: Job) => {
     if (isUnread(job, personalRef.current)) setRead(job, true);
   }, [setRead]);
+
   const openDetail = useCallback(
     async (job: Job) => {
       const request = ++detailRequest.current;
@@ -403,6 +270,7 @@ export default function Home() {
     },
     [data, markRead],
   );
+
   // Browser storage is read after hydration; SSR has no access to this device state.
   useEffect(() => {
     const initialRead = setTimeout(() => {
@@ -438,6 +306,7 @@ export default function Home() {
       clearInterval(timer);
     };
   }, [refresh]);
+
   useEffect(() => {
     if (!ready) return;
     try {
@@ -453,10 +322,17 @@ export default function Home() {
       }
     }
   }, [ready, filters, viewMode, groupCompanies]);
+
   const change = <K extends keyof Filters>(key: K, value: Filters[K]) => {
     setFilters((f) => ({ ...f, [key]: value }));
     setPage(1);
   };
+
+  const resetFilters = useCallback(() => {
+    setFilters(defaultFilters);
+    setPage(1);
+  }, []);
+
   const toggle = (job: Job, key: 'saved' | 'applied' | 'hidden') => {
     const next = {
       ...personalRef.current,
@@ -464,6 +340,7 @@ export default function Home() {
     };
     save(next);
   };
+
   const needsSearch = !!filters.query.trim() && !!data?.search_url;
   useEffect(() => {
     if (!needsSearch || !data?.search_url || searchIndex) return;
@@ -479,14 +356,35 @@ export default function Home() {
       }).catch((e) => { if (!controller.signal.aborted) setSearchError(e.message); });
     return () => controller.abort();
   }, [needsSearch, data, searchIndex]);
+
   const searchPending = needsSearch && !searchIndex;
   const searchableJobs = useMemo(() => searchPending ? [] :
     (data?.jobs ?? []).map((j) => needsSearch ? { ...j, search_text: searchIndex?.[j.id] ?? '' } : j),
     [data, needsSearch, searchIndex, searchPending]);
+
   const filtered = useMemo(
     () => filterJobs(searchableJobs, filters, personal, since, now),
     [searchableJobs, filters, personal, since, now],
   );
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.city !== defaultFilters.city) count++;
+    if (filters.type !== defaultFilters.type) count++;
+    if (filters.year !== defaultFilters.year) count++;
+    if (filters.sector !== defaultFilters.sector) count++;
+    if (filters.direction !== defaultFilters.direction) count++;
+    if (filters.education !== defaultFilters.education) count++;
+    if (filters.provenance !== defaultFilters.provenance) count++;
+    if (filters.kind !== defaultFilters.kind) count++;
+    if (filters.locationScope !== defaultFilters.locationScope) count++;
+    if (filters.onlyNew !== defaultFilters.onlyNew) count++;
+    if (filters.onlyUnread !== defaultFilters.onlyUnread) count++;
+    if (filters.includeUncertain !== defaultFilters.includeUncertain) count++;
+    if (filters.showExpired !== defaultFilters.showExpired) count++;
+    return count;
+  }, [filters]);
+
   const locationOptions = (['exact', 'possible', 'unknown'] as const).map(
     (scope) => ({
       scope,
@@ -505,10 +403,12 @@ export default function Home() {
       ).length,
     }),
   );
+
   const groups = useMemo(() => groupJobs(filtered, groupCompanies), [filtered, groupCompanies]);
   const pages = Math.max(1, Math.ceil(groups.length / pageSize));
   const currentPage = Math.min(page, pages);
   const visibleGroups = groups.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   // Consecutive single records share one table header; grouped campaigns expand independently.
   const displayBlocks = visibleGroups.reduce<(JobGroup & { grouped: boolean })[]>((blocks, group) => {
     const previous = blocks.at(-1);
@@ -517,17 +417,19 @@ export default function Home() {
     else blocks.push({ ...group, jobs: [...group.jobs], grouped: group.jobs.length > 1 });
     return blocks;
   }, []);
+
   const returnToResults = () => {
     resultsTopRef.current?.focus({ preventScroll: true });
     resultsTopRef.current?.scrollIntoView({ block: 'start' });
   };
+
   const changePage = (next: number) => {
     setPage(Math.max(1, Math.min(next, pages)));
     returnToResults();
   };
+
   const changePageSize = (next: number) => {
     if (!PAGE_SIZES.includes(next) || next === pageSize) return;
-    // Keep the first record of the current page within the new page.
     setPage(Math.floor(((currentPage - 1) * pageSize) / next) + 1);
     setPageSize(next);
     try {
@@ -537,12 +439,14 @@ export default function Home() {
     }
     returnToResults();
   };
+
   const newCount = (data?.jobs ?? []).filter(
     (j) =>
       since &&
       (Date.parse(j.first_seen_at) > Date.parse(since) ||
         Date.parse(j.updated_at) > Date.parse(since)),
   ).length;
+
   const dueCount = (data?.jobs ?? []).filter(
     (j) =>
       personalFor(j, personal).saved &&
@@ -550,6 +454,7 @@ export default function Home() {
       !isExpired(j, now) &&
       Date.parse(j.deadline) - now < 7 * 86400000,
   ).length;
+
   const years = [
     '全部',
     ...Array.from(
@@ -561,9 +466,11 @@ export default function Home() {
       .sort()
       .reverse(),
   ];
+
   const stale =
     !!data?.last_success_at &&
     now - Date.parse(data.last_success_at) > 36 * 3600000;
+
   const exportPersonal = () => {
     const blob = new Blob(
       [JSON.stringify({ version: 2, records: personal }, null, 2)],
@@ -577,6 +484,7 @@ export default function Home() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setNotice('个人记录已导出。');
   };
+
   const importPersonal = async (file?: File) => {
     if (!file) return;
     try {
@@ -591,6 +499,7 @@ export default function Home() {
     }
     if (fileRef.current) fileRef.current.value = '';
   };
+
   const copyJob = (job: Job) => {
     const { cleanTitle, salary } = extractSalary(job);
     const salaryText = salary ? ` (${salary})` : '';
@@ -607,6 +516,7 @@ export default function Home() {
       setNotice('复制失败，请手动选择复制。');
     });
   };
+
   useEffect(() => {
     const context = (
       document as unknown as {
@@ -654,6 +564,7 @@ export default function Home() {
     ).catch(() => {});
     return () => controller.abort();
   }, [filtered]);
+
   return (
     <>
       <header className="topbar">
@@ -668,6 +579,7 @@ export default function Home() {
           <span>信息来源</span>
         </Button>
       </header>
+
       <main className="workspace">
         <div className="intro">
           <div>
@@ -687,6 +599,7 @@ export default function Home() {
             </button>
           </div>
         </div>
+
         {notice && (
           <output className="notice">
             {notice}
@@ -695,6 +608,7 @@ export default function Home() {
             </button>
           </output>
         )}
+
         {error && (
           <div className="notice warning" role="alert">
             {error}
@@ -704,161 +618,61 @@ export default function Home() {
             </Button>
           </div>
         )}
+
         {data && stale && (
           <div className="pilot-notice">
             <Clock3 size={16} />
             <strong>信息已超过 36 小时未更新，请在原公告核对是否仍可报名。</strong>
           </div>
         )}
+
         <div className="layout">
-          <aside className="filter-panel">
-            <h2>
-              <SlidersHorizontal size={17} />
-              筛选机会
-              <button
-                aria-label="重置筛选"
-                title="重置筛选"
-                onClick={() => {
-                  setFilters(defaultFilters);
-                  setPage(1);
-                }}
-              >
-                <RotateCcw size={15} />
-              </button>
-            </h2>
-            <p className="saved-filter-note">筛选条件会记在本机，下次继续使用。右上角可重置。</p>
-            <Choice
-              label="工作城市"
-              value={filters.city}
-              options={Array.from(new Set(['全部城市', filters.city, ...(data?.cities ?? ['济南'])]))}
-              onChange={(v) => change('city', v)}
-            />
-            <PillChoice
-              label="招聘类型"
-              value={filters.type}
-              options={['全部', '校招', '社招']}
-              onChange={(v) => change('type', v)}
-            />
-            {filters.type === '校招' && (
-              <Choice
-                label="毕业届别"
-                value={filters.year}
-                options={years}
-                onChange={(v) => change('year', v)}
-              />
-            )}
-            <Choice
-              label="招聘单位"
-              value={filters.sector}
-              options={[
-                '全部',
-                '企业 / 其他',
-                '银行',
-                '国企',
-                '事业单位',
-                '公务员',
-              ]}
-              onChange={(v) => change('sector', v)}
-            />
-            <Choice
-              label="岗位方向"
-              value={filters.direction}
-              options={[
-                '全部',
-                '财务 / 经济',
-                '管理 / 职能',
-                '技术 / 研发',
-                '市场 / 销售',
-              ]}
-              onChange={(v) => change('direction', v)}
-            />
-            <label htmlFor="education" className="filter-field">
-              <span className="field-label">学历关键词</span>
-              <Input
-                id="education"
-                className="field-control"
-                value={filters.education}
-                onChange={(e) => change('education', e.target.value)}
-                placeholder="不限，可输入本科"
-              />
-            </label>
-            <PillChoice
-              label="信息来源"
-              value={filters.provenance}
-              options={['全部', '高校 / 政府', '第三方线索']}
-              onChange={(v) => change('provenance', v)}
-            />
-            <PillChoice
-              label="信息类型"
-              value={filters.kind}
-              options={['全部', '具体岗位', '招聘公告']}
-              onChange={(v) => change('kind', v)}
-            />
-            <div className="filter-checks">
-              <Toggle
-                label="保留招聘类型、届别或学历未明确的公告"
-                checked={filters.includeUncertain}
-                onChange={(v) => change('includeUncertain', v)}
-              />
-              <Toggle
-                label="显示已截止公告"
-                checked={filters.showExpired}
-                onChange={(v) => change('showExpired', v)}
-              />
-              <p>
-                默认只保留国内或地点未明确的机会；仅海外岗位自动排除。默认不限专业，可在搜索框输入专业名称；公告未写明的资格需查看原文。
-              </p>
-            </div>
-            <div className="local-records">
-              <h3>我的记录</h3>
-              <p>仅存当前浏览器，可导出后在其他设备导入。</p>
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportPersonal}
-                  disabled={!ready}
-                >
-                  <Download size={14} />
-                  导出
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={!ready}
-                >
-                  <Upload size={14} />
-                  导入
-                </Button>
-                <input
-                  type="file"
-                  accept="application/json,.json"
-                  ref={fileRef}
-                  hidden
-                  onChange={(e) => void importPersonal(e.target.files?.[0])}
-                />
-              </div>
-            </div>
-          </aside>
+          <FilterSidebar
+            className="desktop-sidebar"
+            filters={filters}
+            data={data}
+            years={years}
+            ready={ready}
+            onChange={change}
+            onReset={resetFilters}
+            onExport={exportPersonal}
+            onImport={(f) => void importPersonal(f)}
+            fileRef={fileRef}
+          />
+
           <section className="results" aria-label="招聘机会">
-            <div className="search-box">
-              <Search size={20} />
-              <Input
-                aria-label="搜索岗位、企业或专业"
-                placeholder="搜索岗位、企业或专业，例如：财务、管理、经济学"
-                value={filters.query}
-                onChange={(e) => change('query', e.target.value)}
-              />
-              {filters.query && (
-                <button
-                  aria-label="清空搜索"
-                  onClick={() => change('query', '')}
-                >
-                  <X size={16} />
-                </button>
-              )}
+            <div className="search-box-row">
+              <div className="search-box">
+                <Search size={20} />
+                <Input
+                  aria-label="搜索岗位、企业或专业"
+                  placeholder="搜索岗位、企业或专业，多词空格分隔，例如：财务 审计"
+                  value={filters.query}
+                  onChange={(e) => change('query', e.target.value)}
+                />
+                {filters.query && (
+                  <button
+                    aria-label="清空搜索"
+                    onClick={() => change('query', '')}
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                className="mobile-filter-btn"
+                onClick={() => setMobileFilterOpen(true)}
+                aria-label="打开筛选面板"
+              >
+                <SlidersHorizontal size={16} />
+                <span>筛选</span>
+                {activeFilterCount > 0 && (
+                  <span className="filter-badge">{activeFilterCount}</span>
+                )}
+              </Button>
             </div>
+
             <div className="results-navigation">
               <Tabs
                 value={filters.view}
@@ -878,6 +692,7 @@ export default function Home() {
                 </TabsList>
               </Tabs>
             </div>
+
             <div className="browsing-toolbar">
               <fieldset className="view-mode-buttons" aria-label="招聘信息显示方式">
                 <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'outline'} aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')}>卡片</Button>
@@ -886,6 +701,7 @@ export default function Home() {
               <Toggle label="只看未读" checked={filters.onlyUnread} onChange={(v) => change('onlyUnread', v)} />
               <Toggle label="合并同企业同届" checked={groupCompanies} onChange={(v) => { setGroupCompanies(v); setPage(1); }} />
             </div>
+
             <div className="result-summary">
               <p aria-live="polite">
                 {searchPending ? <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output> : <><strong>{filtered.length}</strong> 条符合当前筛选的招聘信息</>}
@@ -897,6 +713,7 @@ export default function Home() {
                 onChange={(v) => change('onlyNew', v)}
               />
             </div>
+
             {filters.city !== '全部城市' && (
               <div className="location-scopes">
                 <fieldset
@@ -927,17 +744,20 @@ export default function Home() {
                 </p>
               </div>
             )}
+
             {filters.onlyNew && !since && (
               <p className="inline-note">
                 这是你首次访问，尚无上次查看时间。关闭此筛选可查看全部收录。
               </p>
             )}
+
             {since && newCount > 0 && (
               <p className="inline-note">
                 全库有 {newCount}{' '}
                 条自上次访问以来首次收录或内容变更；首次收录不代表刚发布。
               </p>
             )}
+
             {dueCount > 0 && (
               <div className="deadline-banner">
                 <Bell size={17} />
@@ -945,6 +765,7 @@ export default function Home() {
                 天内截止。请在原公告核对报名要求。
               </div>
             )}
+
             {loading && !data ? (
               <div className="cards" aria-label="正在读取">
                 <Skeleton className="h-48 w-full" />
@@ -963,180 +784,55 @@ export default function Home() {
                 </div>
                 <div className="cards">
                   {displayBlocks.map((group) => {
-                    const content = viewMode === 'table' ? <JobTable jobs={group.jobs} personal={personal} ready={ready} now={now} onDetail={(job) => void openDetail(job)} onRead={markRead} onReadChange={setRead} onToggle={toggle} /> : group.jobs.map((job) => {
-                    const location = locationMatch(job, filters.city);
-                    const saved = personalFor(job, personal).saved;
-                    const applied = personalFor(job, personal).applied;
-                    const expired = isExpired(job, now);
-                    const { cleanTitle, salary } = extractSalary(job);
-                    const excerptText = cleanExcerpt(job.excerpt);
-                    return (
-                      <div key={job.id}>
-                        <article
-                          className={'job-card' + (expired ? ' expired' : '')}
-                        >
-                          <div className="job-top">
-                            <div className="tags">
-                              <button className={isUnread(job, personal) ? 'tag read-status unread' : 'tag read-status'} disabled={!ready} aria-label={`${isUnread(job, personal) ? '标为已读' : '标为未读'}：${job.title}`} onClick={() => setRead(job, isUnread(job, personal))}>{isUnread(job, personal) ? '未读' : '已读'}</button>
-                              {filters.city !== '全部城市' && (
-                                <span className="tag">
-                                  {location === 'exact'
-                                    ? `工作地含${filters.city}`
-                                    : location === 'possible'
-                                      ? '全省 / 全国待核实'
-                                      : '地点未明确'}
-                                </span>
-                              )}
-                              <span
-                                className={
-                                  'tag ' +
-                                  (job.types.includes('校招') ? 'blue' : '')
-                                }
-                              >
-                                {job.types.join(' / ') || '招聘类型待确认'}
-                              </span>
-                              {job.graduation_years.length > 0 && (
-                                <span className="tag">
-                                  {job.graduation_years.join(' / ')} 届
-                                </span>
-                              )}
-                              <span className="tag">{job.sectors[0]}</span>
-                              {job.classification_note?.startsWith('仅核实') && (
-                                <span className="tag">详情待核对</span>
-                              )}
-                              {since &&
-                                Date.parse(job.first_seen_at) >
-                                  Date.parse(since) && (
-                                  <span className="tag new">首次收录</span>
-                                )}
-                              {applied && (
-                                <span className="tag new">已投递</span>
-                              )}
-                            </div>
-                            <div className="card-top-actions">
-                              <button
-                                className="copy-button"
-                                aria-label={`复制岗位信息：${job.title}`}
-                                title="复制岗位信息"
-                                onClick={() => copyJob(job)}
-                              >
-                                <Share2 size={16} />
-                              </button>
-                              <button
-                                className={
-                                  'bookmark-button' + (saved ? ' saved' : '')
-                                }
-                                aria-label={
-                                  (saved ? '取消收藏：' : '收藏：') + job.title
-                                }
-                                aria-pressed={!!saved}
-                                disabled={!ready}
-                                onClick={() => toggle(job, 'saved')}
-                              >
-                                <Bookmark
-                                  size={18}
-                                  fill={saved ? 'currentColor' : 'none'}
-                                />
-                              </button>
-                            </div>
-                          </div>
-                          <div className="job-title-row">
-                            <h2 className="job-title-wrap">
-                              <button
-                                className="job-title"
-                                onClick={() => void openDetail(job)}
-                              >
-                                <HighlightText text={cleanTitle} query={filters.query} />
-                              </button>
-                            </h2>
-                            {salary && <span className="salary-badge">{salary}</span>}
-                          </div>
-                          {job.company && (
-                            <p className="company-name">
-                              <Building2 size={14} className="company-icon" />
-                              <span>
-                                <HighlightText text={job.company} query={filters.query} />
-                              </span>
-                            </p>
-                          )}
-                          {job.company_conflict && <p className="small muted">{job.company_note}</p>}
-                          <div className="job-meta">
-                            <span>
-                              <MapPin size={14} />
-                              {locationSummary(job)}
-                            </span>
-                            {job.education && (
-                              <span>
-                                <GraduationCap size={14} />
-                                {job.education}
-                              </span>
-                            )}
-                          </div>
-                          {job.directions.length > 0 && (
-                            <p className="inline-note">
-                              公告涉及：{job.directions.join('、')} ·
-                              以具体岗位要求为准
-                            </p>
-                          )}
-                          {excerptText && (
-                            <p className="job-excerpt">
-                              <HighlightText text={excerptText} query={filters.query} />
-                            </p>
-                          )}
-                          <div className="card-foot">
-                            <div>
-                              <p
-                                className={
-                                  'deadline ' + (expired ? 'closed' : '')
-                                }
-                              >
-                                {job.deadline ? (
-                                  <>
-                                    <Clock3 size={14} />
-                                    {expired ? '已截止' : '公告截止'}{' '}
-                                    {date(job.deadline, true)}
-                                    {job.deadline_precision === 'day'
-                                      ? '（原文仅日期）'
-                                      : ''}
-                                  </>
-                                ) : (
-                                  <>未明确截止日期，请先核对是否仍可报名</>
-                                )}
-                              </p>
-                              <p className="small muted">
-                                {job.kind} · {job.source_name} · {job.date_label || '发布'}{' '}
-                                {job.published_at || '日期未明确'}
-                                {job.provenance === '第三方线索' && ' · 未经企业原文复核'}
-                              </p>
-                            </div>
-                            <div className="card-actions">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => void openDetail(job)}
-                              >
-                                详情
-                                <ChevronRight size={14} />
-                              </Button>
-                              <OutLink
-                                primary
-                                url={job.application_url || job.source_url}
-                                onOpen={() => markRead(job)}
-                              >
-                                {job.application_url
-                                  ? '前往投递'
-                                  : job.provenance === '第三方线索' ? '查看线索来源' : '查看原公告'}
-                              </OutLink>
-                            </div>
-                          </div>
-                        </article>
-                      </div>
+                    const content = viewMode === 'table' ? (
+                      <JobTable
+                        jobs={group.jobs}
+                        personal={personal}
+                        ready={ready}
+                        now={now}
+                        onDetail={(job) => void openDetail(job)}
+                        onRead={markRead}
+                        onReadChange={setRead}
+                        onToggle={toggle}
+                      />
+                    ) : (
+                      group.jobs.map((job) => (
+                        <JobCard
+                          key={job.id}
+                          job={job}
+                          filters={filters}
+                          personal={personal}
+                          ready={ready}
+                          now={now}
+                          since={since}
+                          onDetail={(j) => void openDetail(j)}
+                          onRead={markRead}
+                          onReadChange={setRead}
+                          onToggle={toggle}
+                          onCopy={copyJob}
+                        />
+                      ))
                     );
-                    });
-                    return group.grouped ? <details className="company-group" key={group.id}>
-                      <summary><span><strong>{group.company}</strong><span className="group-caption">{group.label} · 最新 {group.jobs[0].published_at || '日期未明确'}</span></span><span className="group-count">{group.jobs.length} 条信息 · <span className="group-expand">展开</span><span className="group-collapse">收起</span></span></summary>
-                      <div className="group-members">{content}</div>
-                    </details> : <div key={group.id}>{content}</div>;
+                    return group.grouped ? (
+                      <details className="company-group" key={group.id}>
+                        <summary>
+                          <span>
+                            <strong>{group.company}</strong>
+                            <span className="group-caption">
+                              {group.label} · 最新 {group.jobs[0].published_at || '日期未明确'}
+                            </span>
+                          </span>
+                          <span className="group-count">
+                            {group.jobs.length} 条信息 ·{' '}
+                            <span className="group-expand">展开</span>
+                            <span className="group-collapse">收起</span>
+                          </span>
+                        </summary>
+                        <div className="group-members">{content}</div>
+                      </details>
+                    ) : (
+                      <div key={group.id}>{content}</div>
+                    );
                   })}
                   {!filtered.length && !loading && !searchPending && (
                     <Empty className="empty-state">
@@ -1171,9 +867,11 @@ export default function Home() {
                 </div>
               </>
             )}
+
             {visibleGroups.length > 0 && !searchPending && (
               <ResultsPagination page={currentPage} pageSize={pageSize} total={groups.length} grouped={groupCompanies} position="bottom" onPageChange={changePage} onPageSizeChange={changePageSize} />
             )}
+
             <p className="source-note">
               {data?.sources.length ?? 0} 个来源 ·
               当前按公告聚合，部分公告包含多个岗位。标签由文字提取，未知资格不会当作“不符合”。
@@ -1188,179 +886,50 @@ export default function Home() {
           </section>
         </div>
       </main>
-      <Sheet
-        open={!!selected}
-        onOpenChange={(open) => {
-          if (!open) { ++detailRequest.current; setSelected(null); setDetailLoading(false); }
-        }}
-      >
-        <SheetContent className="detail-sheet">
-          {selected && (
-            <>
-              <SheetHeader className="detail-header">
-                <span className="eyebrow">
-                  {selected.kind} · {selected.source_name}
-                </span>
-                <SheetTitle className="text-xl leading-relaxed pr-6">
-                  {selected.title}
-                </SheetTitle>
-                <SheetDescription>
-                  {selected.date_label || '发布'} {selected.published_at || '日期未明确'} · 最近读取{' '}
-                  {date(selected.last_verified_at, true)}
-                </SheetDescription>
-              </SheetHeader>
-              <div className="detail-body">
-                {detailLoading && (
-                  <output className="inline-note">
-                    正在读取完整公告，列表筛选仍可继续使用……
-                  </output>
-                )}
-                {detailError && (
-                  <div className="notice warning" role="alert">
-                    {detailError}
-                  </div>
-                )}
-                {selected.classification_note && (
-                  <p className="inline-note">{selected.classification_note}</p>
-                )}
-                {selected.company_note && <p className="inline-note">{selected.company_note}{selected.company_original ? ` 来源原单位字段：${selected.company_original}` : ''}</p>}
-                <div className="detail-actions">
-                  <Button variant="outline" disabled={!ready || detailLoading} onClick={() => setRead(selected, isUnread(selected, personal))}>{isUnread(selected, personal) ? '标为已读' : '标为未读'}</Button>
-                  <Button
-                    variant={
-                      personalFor(selected, personal).saved ? 'default' : 'outline'
-                    }
-                    onClick={() => toggle(selected, 'saved')}
-                  >
-                    <Bookmark size={16} />
-                    {personalFor(selected, personal).saved ? '已收藏' : '收藏'}
-                  </Button>
-                  <Button
-                    variant={
-                      personalFor(selected, personal).applied ? 'default' : 'outline'
-                    }
-                    onClick={() => toggle(selected, 'applied')}
-                  >
-                    <Check size={16} />
-                    {personalFor(selected, personal).applied ? '已投递' : '标记已投递'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => copyJob(selected)}
-                  >
-                    <Share2 size={16} />
-                    复制分享
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => toggle(selected, 'hidden')}
-                  >
-                    {personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}
-                  </Button>
-                </div>
-                <div className="apply-panel">
-                  <h3>报名入口</h3>
-                  <OutLink
-                    primary
-                    url={selected.application_url || selected.source_url}
-                    onOpen={() => markRead(selected)}
-                  >
-                    {selected.application_url
-                      ? '打开投递页面'
-                      : '打开原公告查看报名方式'}
-                  </OutLink>
-                  {(selected.emails ?? []).map((email) => (
-                    <div className="email-row" key={email}>
-                      <code>{email}</code>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          void navigator.clipboard
-                            .writeText(email)
-                            .then(() =>
-                              setNotice(
-                                '报名邮箱已复制，请自行核对材料并发送。',
-                              ),
-                            )
-                            .catch(() =>
-                              setNotice('复制失败，请手动选择邮箱地址复制。'),
-                            )
-                        }
-                      >
-                        复制邮箱
-                      </Button>
-                    </div>
-                  ))}
-                  <p>跳转不会提交简历，也不会自动标记已投递。</p>
-                  {selected.deadline_evidence && (
-                    <p className="deadline-evidence">
-                      {selected.deadline_evidence}
-                    </p>
-                  )}
-                </div>
-                <h3>地点与资格</h3>
-                <p>
-                  {selected.location_evidence.length
-                    ? selected.location_evidence.join('；')
-                    : '未提取到明确工作地点，请以岗位表为准。'}
-                </p>
-                <p className="inline-note">
-                  自动整理标签可能不完整；应届资格、专业和工作经验要求请核对原文。
-                </p>
-                {((selected.attachments ?? []).length > 0 ||
-                  selected.qr_attachment) && (
-                  <>
-                    <h3>附件</h3>
-                    {(selected.attachments ?? []).map((a, i) => (
-                      <div className="attachment" key={i}>
-                        <OutLink url={a.url}>{a.title}</OutLink>
-                      </div>
-                    ))}
-                    {selected.qr_attachment && (
-                      <p className="inline-note">
-                        公告含二维码或扫码说明，未自动解析其中内容，请打开原公告查看。
-                      </p>
-                    )}
-                  </>
-                )}
-                <h3>公告文字</h3>
-                <div className="announcement-text">
-                  {selected.body || '完整公告尚未读取，请打开原公告核对。'}
-                </div>
-                {!!selected.duplicate_sources?.length && (
-                  <>
-                    <h3>相同内容的其他来源</h3>
-                    {selected.duplicate_sources.map((s) => (
-                      <div className="attachment" key={s.url}>
-                        <OutLink url={s.application_url || s.url}>
-                          {s.title}{s.application_url ? ' · 投递入口' : ''}
-                        </OutLink>
-                      </div>
-                    ))}
-                  </>
-                )}
-                {(selected.links ?? []).length > 0 && (
-                  <>
-                    <h3>公告中的其他链接</h3>
-                    {(selected.links ?? []).map((a, i) => (
-                      <div className="attachment" key={i}>
-                        <OutLink url={a.url}>{a.title}</OutLink>
-                      </div>
-                    ))}
-                  </>
-                )}
-                <p className="source-note">
-                  首次收录 {date(selected.first_seen_at, true)} · 内容版本{' '}
-                  {selected.revision}
-                  <br />
-                  最近内容变化 {date(selected.updated_at, true)}
-                </p>
-              </div>
-            </>
-          )}
+
+      <Sheet open={mobileFilterOpen} onOpenChange={setMobileFilterOpen}>
+        <SheetContent side="left" className="mobile-filter-sheet">
+          <SheetHeader className="detail-header">
+            <SheetTitle>筛选条件</SheetTitle>
+            <SheetDescription>
+              调整筛选后立即生效，关闭即可浏览岗位
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mobile-filter-scroll">
+            <FilterSidebar
+              className="mobile-filter-panel"
+              filters={filters}
+              data={data}
+              years={years}
+              ready={ready}
+              onChange={change}
+              onReset={resetFilters}
+              onExport={exportPersonal}
+              onImport={(f) => void importPersonal(f)}
+              fileRef={fileRef}
+            />
+          </div>
         </SheetContent>
       </Sheet>
+
+      <DetailDrawer
+        selected={selected}
+        personal={personal}
+        ready={ready}
+        detailLoading={detailLoading}
+        detailError={detailError}
+        onClose={() => {
+          ++detailRequest.current;
+          setSelected(null);
+          setDetailLoading(false);
+        }}
+        onRead={markRead}
+        onReadChange={setRead}
+        onToggle={toggle}
+        onCopy={copyJob}
+        setNotice={setNotice}
+      />
+
       <Sheet open={sourceOpen} onOpenChange={setSourceOpen}>
         <SheetContent className="detail-sheet">
           <SheetHeader className="detail-header">

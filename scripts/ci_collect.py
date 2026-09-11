@@ -169,7 +169,7 @@ def collect(args):
     baseline = read_json(args.data_dir / 'ci-baseline.json')
     command = [sys.executable, '-u', str(ROOT / 'scripts/collect.py'), '--data-dir', str(args.data_dir),
                '--public-dir', str(args.public_dir), '--pages', str(args.pages), '--days', str(args.days),
-               '--offerjack-pages', '1']
+               '--offerjack-pages', '1', '--refresh-hours', str(args.refresh_hours)]
     code = subprocess.run(command, check=False).returncode
     state = read_json(args.data_dir / 'state.json')
     try:
@@ -197,6 +197,8 @@ if __name__ == '__main__':
     parser.add_argument('--site', default='')
     parser.add_argument('--pages', type=int, default=5)
     parser.add_argument('--days', type=int, default=14)
+    parser.add_argument('--refresh-hours', type=int, default=72,
+                        help='reuse recently verified detail pages for this many hours')
     args = parser.parse_args()
     try:
         if args.operation == 'prepare':

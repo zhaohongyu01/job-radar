@@ -15,9 +15,13 @@ concurrency:
   group: job-radar-pipeline
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   collect-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,22 +38,50 @@ jobs:
           cache: 'npm'
 
       # 缓存增量采集历史，避免每天重复全量抓取
-      - name: Cache Collector State
-        uses: actions/cache@v4
+      - name: Restore Collector State
+        uses: actions/cache/restore@v4
         with:
-          path: data
-          key: collector-state-${{ github.run_id }}
+          path: data/state.json
+          key: collector-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            collector-state-
+            collector-state-v2-
+
+      - name: Restore Published Baseline
+        id: baseline
+        run: python scripts/ci_collect.py prepare --site https://sites-project.job-radar.workers.dev
+
+      - name: Test Collector and Publication Guards
+        run: python -m unittest discover -s tests -p 'test_*.py'
 
       - name: Install Node Dependencies
         run: npm ci
 
       - name: Run Job Collector
+        id: collector
+        timeout-minutes: 40
         env:
           JOB_RADAR_SCHEDULE_ENABLED: 'true'
         run: |
-          python scripts/collect.py --pages 5 --days 14
+          python scripts/ci_collect.py collect --pages 5 --days 14
+
+      # Persist atomic state even when collection is partial or a later build/deploy fails.
+      # Never cache collect.lock: a cancelled runner must not lock the next run out.
+      - name: Save Collector State
+        if: ${{ always() && steps.baseline.outcome == 'success' && hashFiles('data/state.json') != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: data/state.json
+          key: collector-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload Collection Diagnostics
+        if: ${{ always() && hashFiles('data/ci-report.json') != '' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-report-${{ github.run_attempt }}
+          path: data/ci-report.json
+          retention-days: 7
 
       - name: Build Web Application
         run: npm run build
@@ -58,4 +90,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler deploy --config dist/server/wrangler.json
+        run: npx wrangler deploy --config dist/server/wrangler.json --keep-vars

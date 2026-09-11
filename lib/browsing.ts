@@ -3,7 +3,7 @@ import type { Filters } from './jobs.ts';
 
 export type ViewMode = 'cards' | 'table';
 export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: ViewMode; groupCompanies: boolean } {
-  const result = { filters: { ...defaultFilters }, viewMode: 'cards' as ViewMode, groupCompanies: true };
+  const result = { filters: { ...defaultFilters }, viewMode: 'cards' as ViewMode, groupCompanies: false };
   if (!input || typeof input !== 'object' || Array.isArray(input)) return result;
   const value = input as Record<string, unknown>;
   if (typeof value.groupCompanies === 'boolean') result.groupCompanies = value.groupCompanies;

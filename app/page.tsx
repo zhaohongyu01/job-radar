@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Bell,
   Database,
+  ChevronDown,
 } from 'lucide-react';
 import {
   Select,
@@ -145,7 +146,7 @@ export default function Home() {
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(50),
     [viewMode, setViewMode] = useState<ViewMode>('cards'),
-    [groupCompanies, setGroupCompanies] = useState(true),
+    [groupCompanies, setGroupCompanies] = useState(false),
     [notice, setNotice] = useState(''),
     [now, setNow] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false),
@@ -674,60 +675,40 @@ export default function Home() {
               </Button>
             </div>
 
-            <div className="results-navigation">
-              <Tabs
-                value={filters.view}
-                onValueChange={(v) => change('view', String(v))}
-              >
-                <TabsList variant="line" aria-label="个人招聘列表">
-                  <TabsTrigger value="all">全部机会</TabsTrigger>
-                  <TabsTrigger value="saved">
-                    <Bookmark size={15} />
-                    已收藏
-                  </TabsTrigger>
-                  <TabsTrigger value="applied">
-                    <Check size={15} />
-                    已投递
-                  </TabsTrigger>
-                  <TabsTrigger value="hidden">不感兴趣</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
+            <div className="results-toolbar-row">
+              <div className="results-navigation">
+                <Tabs
+                  value={filters.view}
+                  onValueChange={(v) => change('view', String(v))}
+                >
+                  <TabsList variant="line" aria-label="个人招聘列表">
+                    <TabsTrigger value="all">全部机会</TabsTrigger>
+                    <TabsTrigger value="saved">
+                      <Bookmark size={15} />
+                      已收藏
+                    </TabsTrigger>
+                    <TabsTrigger value="applied">
+                      <Check size={15} />
+                      已投递
+                    </TabsTrigger>
+                    <TabsTrigger value="hidden">不感兴趣</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
 
-            <div className="browsing-toolbar">
-              <fieldset className="view-mode-buttons" aria-label="招聘信息显示方式">
-                <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'outline'} aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')}>卡片</Button>
-                <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>紧凑表格</Button>
-              </fieldset>
-              <Toggle label="只看未读" checked={filters.onlyUnread} onChange={(v) => change('onlyUnread', v)} />
-              <Toggle label="合并同企业同届" checked={groupCompanies} onChange={(v) => { setGroupCompanies(v); setPage(1); }} />
-            </div>
-
-            <div className="result-summary">
-              <p aria-live="polite">
-                {searchPending ? <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output> : <><strong>{filtered.length}</strong> 条符合当前筛选的招聘信息</>}
-                <span> · {filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}</span>
-                {filters.type === '校招' && filters.year !== '全部' && (
-                  <span className="cohort-breakdown">
-                    {' · '}
-                    明确{filters.year}届 <strong>{filtered.filter((j) => j.graduation_years.includes(filters.year)).length}</strong> 条
-                    {filters.includeUncertain && (
-                      <span className="muted">
-                        {' '}（其余 {filtered.filter((j) => j.graduation_years.length === 0).length} 条因包含“未明确届别”展示）
-                      </span>
-                    )}
-                  </span>
-                )}
-              </p>
-              <Toggle
-                label="只看上次访问后收录 / 变更"
-                checked={filters.onlyNew}
-                onChange={(v) => change('onlyNew', v)}
-              />
+              <div className="toolbar-controls">
+                <fieldset className="view-mode-buttons" aria-label="招聘信息显示方式">
+                  <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'outline'} aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')}>卡片</Button>
+                  <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>表格</Button>
+                </fieldset>
+                <Toggle label="只看未读" checked={filters.onlyUnread} onChange={(v) => change('onlyUnread', v)} />
+                <Toggle label="新收录/变更" checked={filters.onlyNew} onChange={(v) => change('onlyNew', v)} />
+                <Toggle label="合并同企业" checked={groupCompanies} onChange={(v) => { setGroupCompanies(v); setPage(1); }} />
+              </div>
             </div>
 
             {filters.city !== '全部城市' && (
-              <div className="location-scopes">
+              <div className="location-scopes-compact">
                 <fieldset
                   className="scope-buttons"
                   aria-label="工作地点匹配范围"
@@ -747,13 +728,13 @@ export default function Home() {
                     </Button>
                   ))}
                 </fieldset>
-                <p className="location-hint">
+                <span className="location-hint-inline">
                   {filters.locationScope === 'exact'
-                    ? `仅展示已提取到${filters.city}工作地点的公告；还需核对具体岗位。`
+                    ? `仅展示已提取到${filters.city}地点的公告`
                     : filters.locationScope === 'possible'
-                      ? `工作地域覆盖所在省份或全国，尚未确认是否有${filters.city}岗位。`
-                      : `这些公告未提取到明确工作地点，不代表在${filters.city}招聘。`}
-                </p>
+                      ? `工作地域覆盖所在省份或全国，尚未确认是否有${filters.city}岗位`
+                      : `未提取到明确工作地点公告`}
+                </span>
               </div>
             )}
 
@@ -785,15 +766,39 @@ export default function Home() {
               </div>
             ) : (
               <>
+                <div className="results-top-bar">
+                  <div className="result-count-label" aria-live="polite">
+                    {searchPending ? (
+                      <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output>
+                    ) : (
+                      <>
+                        <span>共 <strong>{filtered.length}</strong> 条符合条件的招聘信息</span>
+                        <span className="muted">（{filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}）</span>
+                        {filters.type === '校招' && filters.year !== '全部' && (
+                          <span className="cohort-breakdown">
+                            明确{filters.year}届 <strong>{filtered.filter((j) => j.graduation_years.includes(filters.year)).length}</strong> 条
+                            {filters.includeUncertain && (
+                              <span className="muted">
+                                {' '}（其余 {filtered.filter((j) => j.graduation_years.length === 0).length} 条未明确届别）
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <div ref={resultsTopRef} tabIndex={-1} className="results-page-start">
+                    {data && !searchPending && (
+                      <ResultsPagination page={currentPage} pageSize={pageSize} total={groups.length} grouped={groupCompanies} position="top" onPageChange={changePage} onPageSizeChange={changePageSize} />
+                    )}
+                  </div>
+                </div>
+
                 <details className="usage-help"><summary>最新在前 · 筛选与阅读说明</summary>
                   <p>按来源发布 / 收录时间从新到旧排列，日期不明确的排在最后。查看详情或投递入口后标为已读，内容更新后重新提示未读。表格可左右滑动。</p>
                   <p>合并仅折叠同名企业、同届校招的信息，提前批、春招、秋招等明确批次分开展示；所有岗位和来源均保留。每组按最新一条排序，展开后逐条投递或收藏。未明确企业或届别的单独展示。</p>
                 </details>
-                <div ref={resultsTopRef} tabIndex={-1} className="results-page-start">
-                  {data && !searchPending && (
-                    <ResultsPagination page={currentPage} pageSize={pageSize} total={groups.length} grouped={groupCompanies} position="top" onPageChange={changePage} onPageSizeChange={changePageSize} />
-                  )}
-                </div>
+
                 <div className="cards">
                   {displayBlocks.map((group) => {
                     const content = viewMode === 'table' ? (
@@ -826,19 +831,18 @@ export default function Home() {
                       ))
                     );
                     return group.grouped ? (
-                      <details className="company-group" key={group.id}>
+                      <details className="company-group" key={group.id} open>
                         <summary>
-                          <span>
+                          <div className="company-group-title">
                             <strong>{group.company}</strong>
                             <span className="group-caption">
                               {group.label} · 最新 {group.jobs[0].published_at || '日期未明确'}
                             </span>
-                          </span>
-                          <span className="group-count">
-                            {group.jobs.length} 条信息 ·{' '}
-                            <span className="group-expand">展开</span>
-                            <span className="group-collapse">收起</span>
-                          </span>
+                          </div>
+                          <div className="group-count">
+                            <span>{group.jobs.length} 条信息</span>
+                            <ChevronDown size={15} className="group-chevron" />
+                          </div>
                         </summary>
                         <div className="group-members">{content}</div>
                       </details>

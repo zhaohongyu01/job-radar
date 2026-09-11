@@ -634,6 +634,70 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   white-space: nowrap;
 }
 
+/* Usage Help Accordion */
+.usage-help {
+  margin: 6px 0 10px;
+  font-size: 12px;
+}
+.usage-help summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  transition: all 0.15s ease;
+}
+.dark .usage-help summary {
+  background: #1e293b;
+  color: #94a3b8;
+  border-color: #334155;
+}
+.usage-help summary::-webkit-details-marker {
+  display: none;
+}
+.usage-help summary:hover {
+  color: #2563eb;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+.dark .usage-help summary:hover {
+  color: #60a5fa;
+  border-color: #3b82f6;
+  background: #1e293b;
+}
+.usage-help .help-chevron {
+  transition: transform 0.2s ease;
+  color: #94a3b8;
+}
+.usage-help[open] .help-chevron {
+  transform: rotate(180deg);
+}
+.usage-help-content {
+  margin-top: 6px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.dark .usage-help-content {
+  background: #0f172a;
+  color: #94a3b8;
+}
+.usage-help-content p + p {
+  margin-top: 6px;
+}
+
 /* Company Group Accordion */
 .company-group {
   background: #ffffff;

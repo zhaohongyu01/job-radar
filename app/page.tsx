@@ -13,6 +13,7 @@ import {
   Bell,
   Database,
   ChevronDown,
+  Info,
 } from 'lucide-react';
 import {
   Select,
@@ -772,14 +773,14 @@ export default function Home() {
                       <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output>
                     ) : (
                       <>
-                        <span>共 <strong>{filtered.length}</strong> 条符合条件的招聘信息</span>
+                        <span>共 <strong>{filtered.length}</strong> 条</span>
                         <span className="muted">（{filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}）</span>
                         {filters.type === '校招' && filters.year !== '全部' && (
                           <span className="cohort-breakdown">
                             明确{filters.year}届 <strong>{filtered.filter((j) => j.graduation_years.includes(filters.year)).length}</strong> 条
                             {filters.includeUncertain && (
                               <span className="muted">
-                                {' '}（其余 {filtered.filter((j) => j.graduation_years.length === 0).length} 条未明确届别）
+                                {' '}（{filtered.filter((j) => j.graduation_years.length === 0).length} 条未明确）
                               </span>
                             )}
                           </span>
@@ -794,9 +795,16 @@ export default function Home() {
                   </div>
                 </div>
 
-                <details className="usage-help"><summary>最新在前 · 筛选与阅读说明</summary>
-                  <p>按来源发布 / 收录时间从新到旧排列，日期不明确的排在最后。查看详情或投递入口后标为已读，内容更新后重新提示未读。表格可左右滑动。</p>
-                  <p>合并仅折叠同名企业、同届校招的信息，提前批、春招、秋招等明确批次分开展示；所有岗位和来源均保留。每组按最新一条排序，展开后逐条投递或收藏。未明确企业或届别的单独展示。</p>
+                <details className="usage-help">
+                  <summary>
+                    <Info size={13} />
+                    <span>最新在前 · 筛选与阅读说明</span>
+                    <ChevronDown size={12} className="help-chevron" />
+                  </summary>
+                  <div className="usage-help-content">
+                    <p>按来源发布 / 收录时间从新到旧排列，日期不明确的排在最后。查看详情或投递入口后标为已读，内容更新后重新提示未读。表格可左右滑动。</p>
+                    <p>合并仅折叠同名企业、同届校招的信息，提前批、春招、秋招等明确批次分开展示；所有岗位和来源均保留。每组按最新一条排序，展开后逐条投递或收藏。未明确企业或届别的单独展示。</p>
+                  </div>
                 </details>
 
                 <div className="cards">

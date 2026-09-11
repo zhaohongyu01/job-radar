@@ -2,6 +2,7 @@
 set -eu
 
 WEB_PID=""
+COLLECT_OFFERJACK_PAGES="${COLLECT_OFFERJACK_PAGES:-0}"
 
 stop_web() {
   if [ -n "$WEB_PID" ]; then
@@ -14,9 +15,9 @@ stop_web() {
 trap 'stop_web; exit 0' INT TERM
 
 collect_once() {
-  echo "[job-radar] collecting pages=${COLLECT_PAGES} days=${COLLECT_DAYS}"
+  echo "[job-radar] collecting pages=${COLLECT_PAGES} offerjack_pages=${COLLECT_OFFERJACK_PAGES} days=${COLLECT_DAYS}"
   # A partial source must not prevent the last good snapshot from serving.
-  if ! python3 scripts/collect.py --pages "$COLLECT_PAGES" --days "$COLLECT_DAYS"; then
+  if ! python3 scripts/collect.py --pages "$COLLECT_PAGES" --offerjack-pages "$COLLECT_OFFERJACK_PAGES" --days "$COLLECT_DAYS"; then
     echo "[job-radar] collector reported a partial/failed source; keeping retained records" >&2
   fi
 }
@@ -40,8 +41,8 @@ start_web
 
 while :; do
   sleep "$COLLECT_INTERVAL_SECONDS"
-  stop_web
   collect_once
+  stop_web
   build_once
   start_web
 done

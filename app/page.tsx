@@ -149,7 +149,14 @@ export default function Home() {
     [page, setPage] = useState(1),
     [notice, setNotice] = useState(''),
     [now, setNow] = useState(0);
+  const [detailLoading, setDetailLoading] = useState(false),
+    [detailError, setDetailError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const detailCache = useRef<Record<string, Job>>({});
+  const detailRequest = useRef(0);
+  const detailsPromise = useRef<Record<string, Promise<Record<string, Job>>>>({});
+  const [searchIndex, setSearchIndex] = useState<Record<string, string> | null>(null);
+  const [searchError, setSearchError] = useState('');
   const refresh = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -159,11 +166,18 @@ export default function Home() {
       const json = (await r.json()) as Snapshot;
       if (
         !json ||
-        json.schema_version !== 1 ||
+        ![1, 2].includes(json.schema_version) ||
         !Array.isArray(json.jobs) ||
         !Array.isArray(json.sources)
       )
         throw Error('招聘数据格式异常。');
+      detailCache.current = {};
+      detailsPromise.current = {};
+      ++detailRequest.current;
+      setSelected(null);
+      setDetailLoading(false);
+      setSearchIndex(null);
+      setSearchError('');
       setData(json);
     } catch (e) {
       setError(e instanceof Error ? e.message : '读取失败');
@@ -171,6 +185,65 @@ export default function Home() {
       setLoading(false);
     }
   }, []);
+  const openDetail = useCallback(
+    async (job: Job) => {
+      const request = ++detailRequest.current;
+      setDetailError('');
+      setDetailLoading(false);
+      const cached = detailCache.current[job.id];
+      setSelected(
+        cached ?? {
+          ...job,
+          body: job.body || '正在读取完整公告…',
+          emails: job.emails ?? [],
+          attachments: job.attachments ?? [],
+          links: job.links ?? [],
+        },
+      );
+      if (cached) return;
+      if (job.body) return;
+      const url = data?.detail_shards?.[job.id.slice(0, 2)] ?? data?.details_url;
+      if (!url) { setDetailError('这条公告的详情暂未生成，请打开原公告核对。'); return; }
+      const pending = detailsPromise.current;
+      setDetailLoading(true);
+      try {
+        if (!pending[url]) {
+          pending[url] = fetch(url, { cache: data?.detail_shards ? 'force-cache' : 'no-store' }).then(
+            async (response) => {
+              if (!response.ok) throw Error('完整公告暂时无法读取。');
+              const payload = (await response.json()) as {
+                schema_version?: number;
+                jobs?: Record<string, Job>;
+              };
+              if (
+                payload.schema_version !== 1 ||
+                !payload.jobs ||
+                typeof payload.jobs !== 'object'
+              )
+                throw Error('完整公告数据格式异常。');
+              return payload.jobs;
+            },
+          );
+        }
+        const records = await pending[url];
+        const full = records[job.id];
+        if (!full) throw Error('这条公告的详情暂未生成，请打开原公告核对。');
+        if (request === detailRequest.current) {
+          detailCache.current = { ...detailCache.current, ...records };
+          setSelected(full);
+        }
+      } catch (e) {
+        delete pending[url];
+        if (request === detailRequest.current) {
+          setSelected(job);
+          setDetailError(e instanceof Error ? e.message : '完整公告读取失败。');
+        }
+      } finally {
+        if (request === detailRequest.current) setDetailLoading(false);
+      }
+    },
+    [data],
+  );
   // Browser storage is read after hydration; SSR has no access to this device state.
   useEffect(() => {
     const initialRead = setTimeout(() => {
@@ -215,9 +288,28 @@ export default function Home() {
     };
     save(next);
   };
+  const needsSearch = !!filters.query.trim() && !!data?.search_url;
+  useEffect(() => {
+    if (!needsSearch || !data?.search_url || searchIndex) return;
+    const controller = new AbortController();
+    fetch(data.search_url, { cache: 'force-cache', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw Error('全文索引读取失败，请点击刷新重试。');
+        const payload = await response.json() as { jobs?: Record<string, string> };
+        if (!payload.jobs || Array.isArray(payload.jobs) || typeof payload.jobs !== 'object' ||
+            data.jobs.some((j) => typeof payload.jobs?.[j.id] !== 'string'))
+          throw Error('全文索引不完整，请点击刷新重试。');
+        if (!controller.signal.aborted) setSearchIndex(payload.jobs);
+      }).catch((e) => { if (!controller.signal.aborted) setSearchError(e.message); });
+    return () => controller.abort();
+  }, [needsSearch, data, searchIndex]);
+  const searchPending = needsSearch && !searchIndex;
+  const searchableJobs = useMemo(() => searchPending ? [] :
+    (data?.jobs ?? []).map((j) => needsSearch ? { ...j, search_text: searchIndex?.[j.id] ?? '' } : j),
+    [data, needsSearch, searchIndex, searchPending]);
   const filtered = useMemo(
-    () => filterJobs(data?.jobs ?? [], filters, personal, since, now),
-    [data, filters, personal, since, now],
+    () => filterJobs(searchableJobs, filters, personal, since, now),
+    [searchableJobs, filters, personal, since, now],
   );
   const locationOptions = (['exact', 'possible', 'unknown'] as const).map(
     (scope) => ({
@@ -229,7 +321,7 @@ export default function Home() {
             ? '全省 / 全国待核实'
             : '地点未明确',
       count: filterJobs(
-        data?.jobs ?? [],
+        searchableJobs,
         { ...filters, locationScope: scope },
         personal,
         since,
@@ -493,7 +585,7 @@ export default function Home() {
                 onChange={(v) => change('showExpired', v)}
               />
               <p>
-                默认不限专业。可在搜索框输入专业名称；公告未写明的资格需查看原文。
+                默认只保留国内或地点未明确的机会；仅海外岗位自动排除。默认不限专业，可在搜索框输入专业名称；公告未写明的资格需查看原文。
               </p>
             </div>
             <div className="local-records">
@@ -567,7 +659,7 @@ export default function Home() {
             </div>
             <div className="result-summary">
               <p aria-live="polite">
-                <strong>{filtered.length}</strong> 条符合当前筛选的招聘信息
+                {searchPending ? <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output> : <><strong>{filtered.length}</strong> 条符合当前筛选的招聘信息</>}
                 <span> · {filtered.filter((j) => j.kind === '具体岗位').length} 条具体岗位、{filtered.filter((j) => j.kind !== '具体岗位').length} 条招聘公告</span>
               </p>
               <Toggle
@@ -670,6 +762,9 @@ export default function Home() {
                                 </span>
                               )}
                               <span className="tag">{job.sectors[0]}</span>
+                              {job.classification_note?.startsWith('仅核实') && (
+                                <span className="tag">详情待核对</span>
+                              )}
                               {since &&
                                 Date.parse(job.first_seen_at) >
                                   Date.parse(since) && (
@@ -699,7 +794,7 @@ export default function Home() {
                           <h2>
                             <button
                               className="job-title"
-                              onClick={() => setSelected(job)}
+                              onClick={() => void openDetail(job)}
                             >
                               {job.title}
                             </button>
@@ -750,7 +845,7 @@ export default function Home() {
                             <div className="card-actions">
                               <Button
                                 variant="ghost"
-                                onClick={() => setSelected(job)}
+                                onClick={() => void openDetail(job)}
                               >
                                 详情
                                 <ChevronRight size={15} />
@@ -769,7 +864,7 @@ export default function Home() {
                       </div>
                     );
                   })}
-                  {!filtered.length && !loading && (
+                  {!filtered.length && !loading && !searchPending && (
                     <Empty className="empty-state">
                       <Search size={30} />
                       <EmptyTitle className="text-lg">
@@ -847,7 +942,7 @@ export default function Home() {
       <Sheet
         open={!!selected}
         onOpenChange={(open) => {
-          if (!open) setSelected(null);
+          if (!open) { ++detailRequest.current; setSelected(null); setDetailLoading(false); }
         }}
       >
         <SheetContent className="detail-sheet">
@@ -866,6 +961,19 @@ export default function Home() {
                 </SheetDescription>
               </SheetHeader>
               <div className="detail-body">
+                {detailLoading && (
+                  <output className="inline-note">
+                    正在读取完整公告，列表筛选仍可继续使用……
+                  </output>
+                )}
+                {detailError && (
+                  <div className="notice warning" role="alert">
+                    {detailError}
+                  </div>
+                )}
+                {selected.classification_note && (
+                  <p className="inline-note">{selected.classification_note}</p>
+                )}
                 <div className="detail-actions">
                   <Button
                     variant={
@@ -902,7 +1010,7 @@ export default function Home() {
                       ? '打开投递页面'
                       : '打开原公告查看报名方式'}
                   </OutLink>
-                  {selected.emails.map((email) => (
+                  {(selected.emails ?? []).map((email) => (
                     <div className="email-row" key={email}>
                       <code>{email}</code>
                       <Button
@@ -941,11 +1049,11 @@ export default function Home() {
                 <p className="inline-note">
                   自动整理标签可能不完整；应届资格、专业和工作经验要求请核对原文。
                 </p>
-                {(selected.attachments.length > 0 ||
+                {((selected.attachments ?? []).length > 0 ||
                   selected.qr_attachment) && (
                   <>
                     <h3>附件</h3>
-                    {selected.attachments.map((a, i) => (
+                    {(selected.attachments ?? []).map((a, i) => (
                       <div className="attachment" key={i}>
                         <OutLink url={a.url}>{a.title}</OutLink>
                       </div>
@@ -958,17 +1066,25 @@ export default function Home() {
                   </>
                 )}
                 <h3>公告文字</h3>
-                <div className="announcement-text">{selected.body}</div>
+                <div className="announcement-text">
+                  {selected.body || '完整公告尚未读取，请打开原公告核对。'}
+                </div>
                 {!!selected.duplicate_sources?.length && (
                   <>
                     <h3>相同内容的其他来源</h3>
-                    {selected.duplicate_sources.map((s) => <div className="attachment" key={s.url}><OutLink url={s.url}>{s.title}</OutLink></div>)}
+                    {selected.duplicate_sources.map((s) => (
+                      <div className="attachment" key={s.url}>
+                        <OutLink url={s.application_url || s.url}>
+                          {s.title}{s.application_url ? ' · 投递入口' : ''}
+                        </OutLink>
+                      </div>
+                    ))}
                   </>
                 )}
-                {selected.links.length > 0 && (
+                {(selected.links ?? []).length > 0 && (
                   <>
                     <h3>公告中的其他链接</h3>
-                    {selected.links.map((a, i) => (
+                    {(selected.links ?? []).map((a, i) => (
                       <div className="attachment" key={i}>
                         <OutLink url={a.url}>{a.title}</OutLink>
                       </div>

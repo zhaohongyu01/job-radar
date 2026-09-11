@@ -8,6 +8,7 @@ import {
   externalUrl,
   locationMatch,
   personalFor,
+  isDomestic,
 } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 const job = {
@@ -28,6 +29,15 @@ const job = {
   first_seen_at: '2026-09-02T00:00:00Z',
   updated_at: '2026-09-02T00:00:00Z',
 } as unknown as Job;
+void test('mixed city and province keeps the province scope without inventing exact locations', () => {
+  const mixed = { ...job, cities: ['北京'], location_evidence: ['工作地点：北京、山东省'] };
+  assert.equal(locationMatch(mixed, '济南'), 'possible');
+  assert.equal(locationMatch({ ...mixed, location_evidence: ['工作地点：北京、山东省青岛市'] }, '济南'), 'none');
+});
+void test('lazy full text index retains matches outside the listing excerpt', () => {
+  const indexed = { ...job, body: undefined, search_text: '岗位要求：税收学专业', excerpt: '招聘公告' };
+  assert.equal(filterJobs([indexed], { ...defaultFilters, query: '税收学' }, {}, null).length, 1);
+});
 void test('repost folding preserves personal records and supports clearing them', () => {
   const folded={...job, duplicate_ids:['old-copy']};
   const personal={'old-copy':{saved:true}};
@@ -124,6 +134,28 @@ void test('province inside a specific address does not imply other cities', () =
   }
   assert.equal(locationMatch({ ...job, cities: ['北京','南京'], location_evidence: ['北京市 / 山东省 / 江苏省', '工作地点\n北京、南京'] }, '济南'), 'none');
   assert.equal(locationMatch({ ...job, cities: [], location_evidence: ['山东省 / 广东省'] }, '济南'), 'possible');
+});
+void test('specific cities override a generic national label', () => {
+  const mixed = {
+    ...job,
+    cities: ['上海'],
+    location_evidence: ['工作地点：上海、全国、海外'],
+    domestic_status: 'mixed' as const,
+  };
+  assert.equal(locationMatch(mixed, '济南'), 'none');
+  assert.equal(locationMatch(mixed, '上海'), 'exact');
+});
+void test('overseas-only records are excluded from domestic results', () => {
+  const overseas = {
+    ...job,
+    cities: [],
+    domestic_status: 'overseas' as const,
+    location_evidence: ['工作地点：国外'],
+  };
+  const mixed = { ...overseas, id: 'mixed', domestic_status: 'mixed' as const, cities: ['上海'] };
+  assert.equal(filterJobs([overseas], defaultFilters, {}, null).length, 0);
+  assert.equal(filterJobs([mixed], { ...defaultFilters, city: '全部城市' }, {}, null).length, 1);
+  assert.equal(isDomestic({ ...overseas, domestic_status: undefined }), false);
 });
 void test('campus cohort and social switch respect classification', () => {
   assert.equal(

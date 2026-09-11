@@ -5,8 +5,10 @@ ENV NODE_ENV=production \
     PORT=8787 \
     COLLECT_INTERVAL_SECONDS=86400 \
     COLLECT_PAGES=20 \
+    COLLECT_OFFERJACK_PAGES=0 \
     COLLECT_DAYS=30 \
-    COLLECT_ON_START=1
+    COLLECT_ON_START=1 \
+    JOB_RADAR_SCHEDULE_ENABLED=1
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y python3 ca-certificates \
@@ -14,7 +16,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 COPY . .
 RUN chmod +x /app/docker-entrypoint.sh

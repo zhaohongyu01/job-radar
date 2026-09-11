@@ -8,28 +8,36 @@ export type Job = {
   published_at: string | null;
   date_label?: string;
   provenance?: string;
-  duplicate_sources?: { title: string; url: string }[];
+  duplicate_sources?: {
+    title: string;
+    url: string;
+    application_url?: string;
+  }[];
   duplicate_ids?: string[];
+  classification_note?: string;
+  domestic_status?: 'domestic' | 'mixed' | 'overseas' | 'unknown';
+  search_text?: string;
+  details_available?: boolean;
   kind: string;
   types: string[];
   graduation_years: string[];
   sectors: string[];
   directions: string[];
   cities: string[];
-  possible_cities: string[];
-  province_possible: boolean;
+  possible_cities?: string[];
+  province_possible?: boolean;
   location_evidence: string[];
   education: string;
   deadline: string | null;
-  deadline_evidence: string | null;
+  deadline_evidence?: string | null;
   deadline_precision: string | null;
   application_url: string | null;
-  emails: string[];
-  attachments: { title: string; url: string }[];
-  links: { title: string; url: string }[];
-  qr_attachment: boolean;
+  emails?: string[];
+  attachments?: { title: string; url: string }[];
+  links?: { title: string; url: string }[];
+  qr_attachment?: boolean;
   excerpt: string;
-  body: string;
+  body?: string;
   first_seen_at: string;
   updated_at: string;
   last_verified_at: string;
@@ -54,6 +62,9 @@ export type Snapshot = {
   generated_at: string;
   last_success_at: string | null;
   schedule_enabled: boolean;
+  details_url?: string;
+  detail_shards?: Record<string, string>;
+  search_url?: string;
   cities: string[];
   jobs: Job[];
   sources: Source[];
@@ -106,6 +117,16 @@ export function personalFor(job: Job, personal: Personal) {
     hidden: records.some((record) => record?.hidden),
   };
 }
+export function isDomestic(job: Job) {
+  if (job.domestic_status === 'overseas') return false;
+  if (job.domestic_status) return true;
+  const evidence = (job.location_evidence ?? []).join('\n');
+  return !(
+    /海外|国外|境外|境外地区|海外地区/.test(evidence) &&
+    !job.cities.length &&
+    !/国内|中国大陆|境内|全国|各地可选|不限城市|各地招聘|各省市/.test(evidence)
+  );
+}
 export function locationMatch(
   job: Job,
   city: string,
@@ -113,19 +134,24 @@ export function locationMatch(
   if (city === '全部城市' || job.cities.includes(city)) return 'exact';
   // Only recruitment location evidence counts; headquarters and body mentions do not.
   const evidence = (job.location_evidence ?? []).join('\n');
-  if (/全国|不限城市|各地可选/.test(evidence)) return 'possible';
   const province = Object.entries(PROVINCE_CITIES).find(([, cities]) =>
     cities.includes(city),
   )?.[0];
   const provinces = Object.keys(PROVINCE_CITIES).filter((p) =>
     evidence.includes(p),
   );
-  // A province inside a specific address is not province-wide recruitment.
+  // A specific city in a recruitment-location line takes precedence over a
+  // nearby province/national label. This prevents “上海、全国、海外” from
+  // being presented as a possible Jinan opportunity.
   const broadPattern = province && new RegExp(`${province}(?:省)?[ \\t]*(?=$|[/、，,；;\\n]|各地|全省|不限|多个城市|分行辖属)`);
-  const detailLocations = (job.location_evidence ?? []).filter((line) => /^(?:工作地点|工作城市|岗位地点)/.test(line));
-  const specificDetail = detailLocations.some((line) => job.cities.some((c) => line.includes(c)));
-  if (specificDetail && broadPattern && !detailLocations.some((line) => broadPattern.test(line))) return 'none';
-  if (broadPattern && broadPattern.test(evidence)) return 'possible';
+  const detailLocations = (job.location_evidence ?? []).filter((line) => /^(?:工作地点|工作城市|岗位地点|招聘地点)/.test(line));
+  const specificCities = Object.values(PROVINCE_CITIES)
+    .flat()
+    .filter((candidate) => detailLocations.some((line) => line.includes(candidate)));
+  if (specificCities.includes(city)) return 'exact';
+  if (broadPattern && broadPattern.test(detailLocations.length ? detailLocations.join('\n') : evidence)) return 'possible';
+  if (specificCities.length) return 'none';
+  if (/全国|不限城市|各地可选|各地招聘|各省市/.test(evidence)) return 'possible';
   if (job.cities.length || provinces.length) return 'none';
   return 'unknown';
 }
@@ -198,6 +224,7 @@ export function filterJobs(
       if (f.view === 'all' && p.hidden) return false;
       if (!f.showExpired && isExpired(j, now)) return false;
       if (f.kind !== '全部' && j.kind !== f.kind) return false;
+      if (!isDomestic(j)) return false;
       if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
       if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
       const location = locationMatch(j, f.city);
@@ -224,13 +251,22 @@ export function filterJobs(
         !(f.includeUncertain && j.education.includes('未明确'))
       )
         return false;
-      if (
-        f.query &&
-        !`${j.title} ${j.company} ${j.body}`
-          .toLowerCase()
-          .includes(f.query.trim().toLowerCase())
-      )
-        return false;
+      if (f.query) {
+        const searchable = [
+          j.title,
+          j.company,
+          j.excerpt,
+          j.education,
+          ...(j.directions ?? []),
+          ...(j.sectors ?? []),
+          ...(j.location_evidence ?? []),
+          j.search_text ?? '',
+          j.body ?? '',
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!searchable.includes(f.query.trim().toLowerCase())) return false;
+      }
       if (
         f.onlyNew &&
         (!since ||

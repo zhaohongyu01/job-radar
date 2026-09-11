@@ -122,14 +122,34 @@ class Tree(HTMLParser):
         self.stack[-1].children.append(data)
 
 
+class PublicPaginationLimit(RuntimeError):
+    """The public endpoint exposes only its first page without authentication."""
+
+
 def clean(value):
     return '\n'.join(re.sub(r'\s+', ' ', s).strip() for s in value.splitlines() if s.strip())
 
 
 def safe_url(value, base, keep_fragment=False):
-    url = urllib.parse.urljoin(base, value.strip())
-    p = urllib.parse.urlsplit(url)
-    return urllib.parse.urlunsplit((p.scheme,p.netloc,p.path,p.query,p.fragment if keep_fragment else '')) if p.scheme in {'http','https'} and p.netloc else None
+    """Return a safe absolute HTTP(S) URL, or None for malformed/untrusted input."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        url = urllib.parse.urljoin(base, value.strip())
+        p = urllib.parse.urlsplit(url)
+        scheme = p.scheme.lower()
+        if scheme not in {'http', 'https'} or not p.netloc:
+            return None
+        # urlsplit can raise ValueError for malformed authorities (for example
+        # a pasted mailto instruction containing full-width punctuation).  Do
+        # not let one bad link abort an otherwise usable source page.
+        if any(char.isspace() for char in p.netloc):
+            return None
+        return urllib.parse.urlunsplit(
+            (scheme, p.netloc, p.path, p.query, p.fragment if keep_fragment else '')
+        )
+    except (TypeError, ValueError, UnicodeError):
+        return None
 
 
 def fetch(url, form=None):
@@ -226,8 +246,13 @@ def sdei_list(source, page):
     items=[]
     for row in payload['rows']:
         if positions:
-            title=(row.get('companyName') or '招聘单位见原页面')+' · '+(row.get('jobsort2') or '招聘岗位')
-            url=base+'school/companyissueinfo/edit1/'+str(row['comid'])
+            company=(row.get('companyName') or row.get('companyname') or row.get('unitName') or
+                     row.get('orgName') or '招聘单位见原页面')
+            role=row.get('jobsort2') or row.get('jobName') or '招聘岗位'
+            title=str(company)+' · '+str(role)
+            comid=row.get('comid') or row.get('id')
+            if not comid: raise ValueError('position row missing company id')
+            url=base+'school/companyissueinfo/edit1/'+str(comid)
             values=[('工作地点',row.get('areaString')),('学历要求',row.get('degreereq')),('专业要求',row.get('specialty')),
                     ('薪资',row.get('basewage')),('招聘人数',row.get('requestnum')),('岗位职责',row.get('jobdescribe')),
                     ('任职要求',row.get('workexp')),('报名截止',row.get('endtime'))]
@@ -256,14 +281,24 @@ def wonder_list(html, base):
     return items,max(pages,default=1)
 
 
-def offerjack_list(page, city=''):
-    params={'pageNum':page,'pageSize':20}
+def offerjack_list(page, city='', page_size=20):
+    params={'pageNum':page,'pageSize':page_size}
     if city: params['workLocation']=city
     payload=json.loads(fetch('https://www.offerjack.cn/api/offer/page?'+urllib.parse.urlencode(params)))
-    if payload.get('code')!=0 or not isinstance(payload.get('data',{}).get('records'),list):
+    if payload.get('code')==401:
+        raise PublicPaginationLimit(payload.get('msg') or '公开接口未登录仅开放第一页')
+    data=payload.get('data') or {}
+    if payload.get('code')!=0 or not isinstance(data.get('records'),list):
         raise ValueError('public recruitment list unavailable; no authenticated fallback')
     items=[]
-    for row in payload['data']['records']:
+    for row in data['records']:
+        if not isinstance(row, dict):
+            continue
+        company = clean(str(row.get('enterpriseName') or '招聘单位待核实'))
+        batch = clean(str(row.get('recruitmentBatch') or ''))
+        identity_value = row.get('id') or hashlib.sha256(
+            json.dumps(row, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()[:20]
         values=[('企业',row.get('enterpriseName')),('工作地点',row.get('workLocation')),('招聘批次',row.get('recruitmentBatch')),
                 ('毕业届别与学历',row.get('graduationYear')),('招聘岗位',row.get('position')),('企业性质',row.get('enterpriseNature')),
                 ('所属行业',row.get('industry')),('报名截止',row.get('deadline'))]
@@ -271,11 +306,33 @@ def offerjack_list(page, city=''):
         body+='<p>第三方公开整理的招聘线索；岗位城市和投递入口尚未通过企业原公告交叉核验。</p>'
         original=safe_url(row.get('announcementLink') or '', 'https://www.offerjack.cn/',True)
         if original: body+='<p><a href="'+html_lib.escape(original,quote=True)+'">原招聘公告（来源提供）</a></p>'
-        items.append({'identity':'offerjack:'+str(row['id']), 'url':original or 'https://www.offerjack.cn/',
-            'title':row['enterpriseName']+' · '+(row.get('recruitmentBatch') or '')+'招聘',
+        items.append({'identity':'offerjack:'+str(identity_value), 'url':original or 'https://www.offerjack.cn/',
+            'title':company+' · '+batch+'招聘',
             'published_at':(row.get('updateTime') or row.get('createTime') or '')[:10] or None,
             'inline_html':'<div id="zoom">'+body+'</div>', 'structured':row})
-    return items,int(payload['data']['pages'])
+    return items,int(data.get('pages') or 1)
+
+
+OVERSEAS_LOCATION_PATTERN = re.compile(r'海外|国外|境外|境外地区|海外地区')
+DOMESTIC_LOCATION_PATTERN = re.compile(
+    r'国内|中国大陆|境内|全国|各地可选|不限城市|各地招聘|各省市|山东|广东|江苏|浙江|安徽|福建|湖北|湖南|河南|陕西|四川|云南|贵州|江西|广西|海南|山西|河北|辽宁|吉林|黑龙江|甘肃|青海|宁夏|新疆|西藏|内蒙古'
+)
+
+
+def domestic_status(location_evidence, cities):
+    """Classify only the recruitment location, keeping uncertain records visible."""
+    evidence = '\n'.join(location_evidence or [])
+    has_domestic = bool(cities) or bool(DOMESTIC_LOCATION_PATTERN.search(evidence))
+    if not has_domestic:
+        has_domestic = any(city in evidence for city in CITIES)
+    has_overseas = bool(OVERSEAS_LOCATION_PATTERN.search(evidence))
+    if has_overseas and not has_domestic:
+        return 'overseas'
+    if has_overseas and has_domestic:
+        return 'mixed'
+    if has_domestic:
+        return 'domestic'
+    return 'unknown'
 
 
 def deadline(text):
@@ -303,6 +360,7 @@ def deadline(text):
 def parse_detail(html, item, source):
     root=Tree(html).root
     metas={n.attrs.get('name','').lower():n.attrs.get('content','') for n in root.find('meta')}
+    structured=item.get('structured') or {}
     fields={}
     if source.get('adapter')=='wondercv':
         titles=root.find(cls='hero-title')
@@ -353,7 +411,7 @@ def parse_detail(html, item, source):
             raise ValueError('announcement body missing')
         body=contents[0]
         title=metas.get('articletitle') or item['title']
-        company=item.get('structured',{}).get('companyname') or item.get('structured',{}).get('companyName') or item.get('structured',{}).get('enterpriseName') or ''
+        company=structured.get('companyname') or structured.get('companyName') or structured.get('enterpriseName') or ''
         published=(metas.get('pubdate') or item.get('published_at') or '')[:10] or None
     text=clean(body.text())
     if len(text)<30:
@@ -365,11 +423,11 @@ def parse_detail(html, item, source):
     years=sorted(set(re.findall(r'(20\d{2})\s*[届屆]',combined)))
     years=sorted(set(years+['20'+year for year in re.findall(r'(?<!\d)(2\d)(?:届|秋招|春招)',combined)]))
     if source.get('adapter')=='offerjack':
-        batch=item['structured'].get('recruitmentBatch') or ''
+        batch=structured.get('recruitmentBatch') or ''
         if re.search('社招|社会',batch): types=['社招']
         elif re.search('秋招|春招|校招|提前批',batch): types=['校招']
         # A list such as 2026/2027届 explicitly names both eligible cohorts.
-        years=sorted(set(re.findall(r'20\d{2}',item['structured'].get('graduationYear') or '')))
+        years=sorted(set(re.findall(r'20\d{2}',structured.get('graduationYear') or '')))
     sectors=[label for label,pattern in [('银行',r'银行'),('国企',r'国有企业|国有独资|国有控股|央企|国企'),('事业单位',r'事业单位'),('公务员',r'公务员')] if re.search(pattern,combined)] or ['企业 / 其他']
     # City evidence comes from job-location fields/sections/tables, never a headquarters paragraph.
     location_evidence=[]
@@ -393,20 +451,22 @@ def parse_detail(html, item, source):
                     if i<len(cells): location_evidence.append(clean(cells[i].text()))
     cities=[city for city in CITIES if any(city in s for s in location_evidence)]
     # Province platform supplies a standard administrative code even for district-only labels.
-    code=str(item.get('structured',{}).get('workplace2') or '')
+    code=str(structured.get('workplace2') or '')
     shandong={'3701':'济南','3702':'青岛','3703':'淄博','3704':'枣庄','3705':'东营','3706':'烟台','3707':'潍坊','3708':'济宁','3709':'泰安','3710':'威海','3711':'日照','3713':'临沂','3714':'德州','3715':'聊城','3716':'滨州','3717':'菏泽'}
     if len(code)==6 and code[:4] in shandong:
         city=shandong[code[:4]]
         if city not in cities: cities.append(city)
         location_evidence.append(f"岗位工作地行政区划代码 {code}，归属{city}（来源结构化字段）")
     possible=[city for city in CITIES if city in combined and city not in cities]
+    location_status=domestic_status(location_evidence,cities)
     expires,expires_text,precision=deadline(text)
     application_url=None
     if fields.get('职位投递网址链接'):
         m=re.search(r'https?://[^\s<>，。；）]+',fields['职位投递网址链接'])
         if m: application_url=safe_url(m[0],item['url'],True)
-    if source.get('adapter')=='offerjack' and item['structured'].get('deliveryAddress'):
-        delivery=safe_url(item['structured']['deliveryAddress'],item['url'],True)
+    if source.get('adapter')=='offerjack' and structured.get('deliveryAddress'):
+        address=structured.get('deliveryAddress')
+        delivery=safe_url(address,item['url'],True) if isinstance(address,str) and re.match(r'^https?://',address.strip(),re.I) else None
         if delivery and delivery!=item['url']: application_url=delivery
     links=[]
     attachments=[]
@@ -439,7 +499,8 @@ def parse_detail(html, item, source):
             'kind':item.get('kind','招聘公告'),'types':types,'graduation_years':years,
             'sectors':sectors,'directions':directions,'cities':cities,'possible_cities':possible,
             'location_evidence':location_evidence[:12],'province_possible':'山东' in combined,
-            'education':fields.get('学历要求') or item.get('structured',{}).get('degreereq') or item.get('structured',{}).get('graduationYear') or '未明确 / 见原公告',
+            'domestic_status':location_status,
+            'education':fields.get('学历要求') or structured.get('degreereq') or structured.get('graduationYear') or '未明确 / 见原公告',
             'deadline':expires,'deadline_evidence':expires_text,'deadline_precision':precision,
             'application_url':application_url,'emails':emails,'attachments':attachments,'links':links[:20],
             'qr_attachment':bool(re.search(r'扫码|二维码',text)),
@@ -461,10 +522,11 @@ def merge(previous, incoming, now):
     return result,counts
 
 
-def atomic_json(path,value):
+def atomic_json(path,value,pretty=True):
     path.parent.mkdir(parents=True,exist_ok=True)
     temp=path.with_suffix('.tmp')
-    temp.write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding='utf-8')
+    temp.write_text(json.dumps(value,ensure_ascii=False,indent=2 if pretty else None,
+                               separators=None if pretty else (',',':')),encoding='utf-8')
     os.replace(temp,path)
 
 
@@ -474,23 +536,34 @@ def deduplicate(jobs):
     for job in sorted(jobs,key=lambda j:(j['first_seen_at'],j['id'])):
         # Identical titles alone are insufficient: different branches and roles must survive.
         text=re.sub(r'\s+','',job['body'])
-        key=(re.sub(r'\s+','',job['title']),job['kind'],tuple(sorted(job['cities'])),text)
-        if len(text)<60: key=key+(job['id'],)
+        company=re.sub(r'\s+','',job.get('company') or '')
+        key=(re.sub(r'\s+','',job['title']),company,job['kind'],tuple(sorted(job['cities'])),text)
+        if len(text)<60 or not company: key=key+(job['id'],)
         if key not in groups:
             groups[key]=dict(job,duplicate_sources=[],duplicate_ids=[])
         else:
-            groups[key]['duplicate_sources'].append({'title':job['source_name'],'url':job['source_url']})
+            groups[key]['duplicate_sources'].append({
+                'title':job['source_name'],
+                'url':job['source_url'],
+                **({'application_url':job['application_url']} if job.get('application_url') else {}),
+            })
             groups[key]['duplicate_ids'].append(job['id'])
+            # Keep a direct application path when one repost has it and the
+            # first source only points to an announcement.
+            if not groups[key].get('application_url') and job.get('application_url'):
+                groups[key]['application_url']=job['application_url']
     return list(groups.values())
 
 
 def public_record(job):
     """Recompute derived location labels from retained text, without advancing verification time."""
     row={k:v for k,v in job.items() if k!='fingerprint'}
+    row['provenance']='第三方线索' if row['source_id'] in {'wondercv','offerjack'} else '公开原始来源'
+    row.setdefault('kind','招聘公告')
     label=r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点)'
     # Preserve structured regions, table cells and district-code evidence; re-read text sections.
     evidence=[s for s in row.get('location_evidence',[]) if not re.match(label,s)]
-    lines=row['body'].splitlines()
+    lines=row.get('body','').splitlines()
     for index,line in enumerate(lines):
         m=re.search(label+r'[\]】 ：:\t]*(.*)',line)
         if m:
@@ -505,17 +578,66 @@ def public_record(job):
             if value: evidence.append('工作地点：'+value)
     row['location_evidence']=list(dict.fromkeys(evidence))
     row['cities']=[city for city in CITIES if any(city in s for s in evidence)]
+    row['domestic_status']=domestic_status(row['location_evidence'],row['cities'])
     if row['source_id']=='wondercv':
         row['types']=list(dict.fromkeys(row['types']+['校招']))
-        combined=row['title']+'\n'+row['body']
+        combined=row['title']+'\n'+row.get('body','')
         row['graduation_years']=sorted(set(row['graduation_years']+['20'+y for y in re.findall(r'(?<!\d)(2\d)(?:届|秋招|春招)',combined)]))
         if not row.get('deadline'):
-            row['deadline'],row['deadline_evidence'],row['deadline_precision']=deadline(row['body'])
+            row['deadline'],row['deadline_evidence'],row['deadline_precision']=deadline(row.get('body',''))
     return row
 
 
+def public_summary(job):
+    """Keep listing/filter fields in the index; full announcement text lives separately."""
+    heavy={
+        'body','attachments','links','emails','qr_attachment','deadline_evidence',
+        'possible_cities','province_possible','duplicate_sources','details_available',
+    }
+    row={k:v for k,v in job.items() if k not in heavy}
+    return row
+
+
+def schedule_enabled():
+    value=os.environ.get('JOB_RADAR_SCHEDULE_ENABLED','')
+    return value.strip().lower() in {'1','true','yes','on'}
+
+
+def export_snapshot(state, public_dir, days=180, changes=None):
+    """Publish the index last; immutable assets cannot mix across refreshes."""
+    jobs=state['jobs']
+    public_jobs=sorted(deduplicate([public_record(j) for j in jobs.values()]),
+                       key=lambda j:j['published_at'] or '',reverse=True)
+    assets=public_dir/'job-assets'
+    assets.mkdir(parents=True,exist_ok=True)
+    def asset(prefix, payload):
+        content=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
+        name=prefix+'-'+hashlib.sha256(content.encode()).hexdigest()[:20]+'.json'
+        target=assets/name
+        if not target.exists(): target.write_text(content,encoding='utf-8')
+        return '/job-assets/'+name
+    shards={}
+    for job in public_jobs:
+        shards.setdefault(job['id'][:2],{})[job['id']]=job
+    detail_shards={key:asset('detail-'+key,{'schema_version':1,'jobs':rows}) for key,rows in shards.items()}
+    search_url=asset('search',{'jobs':{j['id']:j.get('body','') for j in public_jobs}})
+    snapshot={'schema_version':2,'generated_at':state['last_run_at'],
+              'last_success_at':max((j['last_verified_at'] for j in jobs.values()),default=None),
+              'schedule_enabled':schedule_enabled(),'raw_records':len(jobs),
+              'duplicates_merged':len(jobs)-len(public_jobs),'coverage_days':days,'cities':CITIES,
+              'detail_shards':detail_shards,'search_url':search_url,
+              'jobs':[public_summary(j) for j in public_jobs],
+              'sources':list(state['sources'].values()),'changes':changes or {}}
+    atomic_json(public_dir/'jobs.json',snapshot,pretty=False)
+    return snapshot
+
+
 def run(args):
-    path=ROOT/'data/state.json'
+    data_dir=Path(getattr(args,'data_dir','') or (ROOT/'data')).expanduser()
+    data_dir.mkdir(parents=True,exist_ok=True)
+    public_dir=Path(getattr(args,'public_dir','') or (ROOT/'public')).expanduser()
+    public_dir.mkdir(parents=True,exist_ok=True)
+    path=data_dir/'state.json'
     previous=json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'jobs':{},'sources':{}}
     now=dt.datetime.now(TZ).isoformat(timespec='seconds')
     cutoff=(dt.datetime.now(TZ)-dt.timedelta(days=args.days)).date().isoformat()
@@ -532,34 +654,77 @@ def run(args):
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
             items=[]
-            for page in range(1,args.pages+1):
-                if source.get('adapter')=='offerjack':
-                    found,total=offerjack_list(page,args.target_city)
-                elif source.get('adapter')=='sdei':
-                    found,total=sdei_list(source,page)
-                elif source.get('adapter')=='wondercv':
-                    html=first if page==1 else fetch(f'https://www.wondercv.com/xiaozhao/page/pn{page}/')
-                    found,total=wonder_list(html,source['url'])
-                elif source['id']=='nankai':
-                    area=f'/sel_area/{args.nankai_area}' if args.nankai_area else ''
-                    html=first if page==1 else fetch(f'https://career.nankai.edu.cn/correcruit/index{area}/p/{page}.html')
-                    found,total=nankai_list(html,source['url'])
-                elif source['id']=='sdu':
-                    html=first if page==1 else fetch(next_page)
-                    found,next_page=sdu_list(html,source['url'])
-                    total=args.pages+1 if next_page else page
-                else:
-                    q=dict(query,paramJson=json.dumps({'pageNo':page,'pageSize':15}))
-                    html=json.loads(fetch(urllib.parse.urljoin(source['url'],endpoint)+'?'+urllib.parse.urlencode(q)))['data']['html']
-                    found,total=gov_list(html,source['url'])
-                status['pages']+=1
-                if page==1 and not found and total!=0: raise ValueError('no announcement links; parser or source may have changed')
-                repeated=bool(found) and all(i.get('identity',i['url']) in known for i in found)
-                if repeated: raise ValueError('pagination repeated; coverage incomplete')
+            is_offerjack=source.get('adapter')=='offerjack'
+            offerjack_cities=([args.target_city] if args.target_city else ['']+CITIES) if is_offerjack else []
+            offerjack_query_limit=(getattr(args,'offerjack_pages',0) or 1000) if is_offerjack else 0
+            page_budget=offerjack_query_limit*len(offerjack_cities) if is_offerjack else args.pages
+            offerjack_city_index=0
+            offerjack_page=1
+            offerjack_limited=False
+            for page in range(1,page_budget+1):
+                try:
+                    if is_offerjack:
+                        if offerjack_city_index>=len(offerjack_cities):
+                            status['coverage']='已查询全部配置城市的公开首屏'
+                            break
+                        offerjack_city=offerjack_cities[offerjack_city_index]
+                        try:
+                            found,total=offerjack_list(offerjack_page,offerjack_city)
+                        except PublicPaginationLimit as exc:
+                            if offerjack_page==1: raise
+                            offerjack_limited=True
+                            offerjack_query_limit=1
+                            if not status['errors']:
+                                status['errors'].append({'url':'https://www.offerjack.cn/','reason':str(exc)[:200]})
+                            offerjack_city_index+=1
+                            offerjack_page=1
+                            continue
+                        page_number=offerjack_page
+                    elif source.get('adapter')=='sdei':
+                        found,total=sdei_list(source,page)
+                    elif source.get('adapter')=='wondercv':
+                        html=first if page==1 else fetch(f'https://www.wondercv.com/xiaozhao/page/pn{page}/')
+                        found,total=wonder_list(html,source['url'])
+                    elif source['id']=='nankai':
+                        area=f'/sel_area/{args.nankai_area}' if args.nankai_area else ''
+                        html=first if page==1 else fetch(f'https://career.nankai.edu.cn/correcruit/index{area}/p/{page}.html')
+                        found,total=nankai_list(html,source['url'])
+                    elif source['id']=='sdu':
+                        html=first if page==1 else fetch(next_page)
+                        found,next_page=sdu_list(html,source['url'])
+                        total=args.pages+1 if next_page else page
+                    else:
+                        q=dict(query,paramJson=json.dumps({'pageNo':page,'pageSize':15}))
+                        html=json.loads(fetch(urllib.parse.urljoin(source['url'],endpoint)+'?'+urllib.parse.urlencode(q)))['data']['html']
+                        found,total=gov_list(html,source['url'])
+                    status['pages']+=1
+                    if (page_number if is_offerjack else page)==1 and not found and total!=0: raise ValueError('no announcement links; parser or source may have changed')
+                    repeated=bool(found) and all(i.get('identity',i['url']) in known for i in found)
+                    if repeated and not is_offerjack: raise ValueError('pagination repeated; coverage incomplete')
+                except Exception as exc:
+                    if not items: raise
+                    status['errors'].append({'url':source['url'],'reason':f'列表分页中断：{exc}'[:200]})
+                    status['coverage']=f'已读取 {status["pages"]} 页；分页中断，保留此前发现的记录'
+                    break
                 for item in found:
                     if item.get('identity',item['url']) not in known:
                         known.add(item.get('identity',item['url']))
                         if not item['published_at'] or item['published_at']>=cutoff: items.append(item)
+                if is_offerjack:
+                    if offerjack_page>=min(total,offerjack_query_limit):
+                        if total>offerjack_query_limit:
+                            offerjack_limited=True
+                        offerjack_city_index+=1
+                        offerjack_page=1
+                    elif found and all(i['published_at'] and i['published_at']<cutoff for i in found):
+                        offerjack_city_index+=1
+                        offerjack_page=1
+                    else:
+                        offerjack_page+=1
+                    if offerjack_city_index>=len(offerjack_cities):
+                        status['coverage']='已查询全部配置城市的公开首屏'
+                        break
+                    continue
                 if page>=total:
                     status['coverage']='已读至来源列表末页（保留所选时间范围）'
                     break
@@ -567,7 +732,11 @@ def run(args):
                     status['coverage']=f'已读至 {args.days} 天前；更早公告未读取'
                     break
             else:
-                status['coverage']=f'最近 {args.pages} 页；仍有更早公告未读取'
+                status['coverage']=f'最近 {page_budget} 页；仍有更早公告未读取'
+            if is_offerjack and offerjack_limited:
+                status['coverage']=f'已读取 {status["pages"]} 个公开列表页；部分查询仍有未读取的后续页（接口或分页预算限制）'
+                if not status['errors']:
+                    status['errors'].append({'url':'https://www.offerjack.cn/','reason':'查询达到分页预算；后续记录未读取'})
             # Verified discovery seed keeps a useful baseline even under the bounded first crawl.
             if source['id']=='nankai':
                 seed='https://career.nankai.edu.cn/correcruit/content/id/117451.html'
@@ -602,7 +771,7 @@ def run(args):
                             fallback.update(source_id=source['id'],classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
                             incoming.append(fallback)
                     if (status['parsed']+len(status['errors']))%25==0:
-                        atomic_json(ROOT/'data/checkpoint.json',{'run_at':now,'incoming':incoming,'source':status})
+                        atomic_json(data_dir/'checkpoint.json',{'run_at':now,'incoming':incoming,'source':status})
                     if (status['parsed']+len(status['errors']))%10==0:
                         print(source['id'],'progress',status['parsed'],'/',len(items),flush=True)
             if status['errors']:
@@ -626,16 +795,7 @@ def run(args):
     jobs,changes=merge(previous['jobs'],incoming,now)
     state={'jobs':jobs,'sources':sources,'last_run_at':now}
     atomic_json(path,state)
-    public_jobs=[]
-    for job in jobs.values():
-        row=public_record(job)
-        public_jobs.append(row)
-    public_jobs=deduplicate(public_jobs)
-    snapshot={'schema_version':1,'generated_at':now,'last_success_at':max((j['last_verified_at'] for j in jobs.values()),default=None),'schedule_enabled':False,
-              'raw_records':len(jobs),'duplicates_merged':len(jobs)-len(public_jobs),
-              'coverage_days':args.days,'cities':CITIES,'jobs':sorted(public_jobs,key=lambda j:j['published_at'] or '',reverse=True),
-              'sources':list(sources.values()),'changes':changes}
-    atomic_json(ROOT/'public/jobs.json',snapshot)
+    export_snapshot(state,public_dir,args.days,changes)
     print(json.dumps({'total':len(jobs),'changes':changes},ensure_ascii=False),flush=True)
     return 0 if all(s['status']=='ok' for s in sources.values() if not args.sources or s['id'] in args.sources.split(',')) else 2
 
@@ -648,12 +808,17 @@ if __name__=='__main__':
     parser.add_argument('--refresh-hours',type=int,default=24,help='reuse recently verified details; 0 forces refresh')
     parser.add_argument('--nankai-area',type=int,default=0,help='optional original-site region filter; 15 is Shandong')
     parser.add_argument('--target-city',default='',help='optional city filter on public structured supplemental source')
+    parser.add_argument('--offerjack-pages',type=int,default=0,help='OfferJack pages per city query; 0 keeps reading until the public endpoint stops or authentication is required')
+    parser.add_argument('--data-dir',default=os.environ.get('JOB_RADAR_DATA_DIR',''),help='state/checkpoint directory; defaults to ./data')
+    parser.add_argument('--public-dir',default=os.environ.get('JOB_RADAR_PUBLIC_DIR',''),help='generated snapshot directory; defaults to ./public')
     args=parser.parse_args()
     if not 1<=args.pages<=500 or not 1<=args.days<=365: parser.error('pages 1..500; days 1..365')
+    if not 0<=args.offerjack_pages<=1000: parser.error('offerjack-pages 0..1000')
     if set(filter(None,args.sources.split(',')))-{s['id'] for s in SOURCES}: parser.error('unknown source id')
-    ROOT.joinpath('data').mkdir(exist_ok=True)
+    data_dir=Path(args.data_dir or (ROOT/'data')).expanduser()
+    data_dir.mkdir(parents=True,exist_ok=True)
     # Atomic lock creation prevents simultaneous local/CI writers.
-    lock=ROOT/'data/collect.lock'
+    lock=data_dir/'collect.lock'
     try: fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY)
     except FileExistsError: raise SystemExit('collector already running; inspect stale lock before removing')
     try:

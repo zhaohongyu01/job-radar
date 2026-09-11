@@ -3,6 +3,8 @@ import unittest
 from unittest.mock import patch
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('collect',ROOT/'scripts/collect.py')
@@ -10,6 +12,28 @@ c=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class CollectionTests(unittest.TestCase):
+    def test_later_page_failure_retains_discoveries_and_export_is_consistent(self):
+        source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')
+        item={'url':'https://example.com/retained','title':'甲企业财务招聘',
+              'published_at':'2026-09-10','inline_html':'<div id="zoom">工作地点：济南<br>税收学专业</div>'}
+        with TemporaryDirectory() as temp:
+            args=SimpleNamespace(data_dir=temp,public_dir=temp,sources=source['id'],pages=2,days=180,
+                                 refresh_hours=0,nankai_area=0,target_city='',offerjack_pages=1)
+            with patch.object(c,'sdei_list',side_effect=[([item],2),RuntimeError('network failure')]):
+                self.assertEqual(c.run(args),2)
+            snapshot=json.loads((Path(temp)/'jobs.json').read_text(encoding='utf8'))
+            self.assertEqual(len(snapshot['jobs']),1)
+            self.assertEqual(snapshot['sources'][0]['status'],'partial')
+            row=snapshot['jobs'][0]
+            full=json.loads((Path(temp)/snapshot['detail_shards'][row['id'][:2]].lstrip('/')).read_text(encoding='utf8'))['jobs'][row['id']]
+            search=json.loads((Path(temp)/snapshot['search_url'].lstrip('/')).read_text(encoding='utf8'))['jobs']
+            self.assertEqual(full['body'],search[row['id']])
+            self.assertIn('税收学',search[row['id']])
+            state=json.loads((Path(temp)/'state.json').read_text(encoding='utf8'))
+            again=c.export_snapshot(state,Path(temp))
+            self.assertEqual(again['detail_shards'],snapshot['detail_shards'])
+            self.assertEqual(again['generated_at'],snapshot['generated_at'])
+
     def test_public_supplement_preserves_application_fragment_and_provenance(self):
         payload=(ROOT/'tests/fixtures/offerjack-sample.json').read_text(encoding='utf8')
         with patch.object(c,'fetch',return_value=payload):
@@ -23,6 +47,12 @@ class CollectionTests(unittest.TestCase):
         self.assertIn('#/?anchorName=',job['application_url'])
         self.assertIn('上海',job['cities'])
         self.assertNotIn('济南',job['cities'])
+
+    def test_public_supplement_exposes_authentication_limit_without_fallback(self):
+        payload=json.dumps({'code':401,'msg':'未登录用户只能查看第一页数据','data':None},ensure_ascii=False)
+        with patch.object(c,'fetch',return_value=payload):
+            with self.assertRaises(c.PublicPaginationLimit):
+                c.offerjack_list(2)
 
     def test_region_pagination_does_not_silently_stop_at_page_one(self):
         _,pages=c.nankai_list('<a href="/correcruit/index/sel_area/15/p/35.html">35</a>','https://career.nankai.edu.cn')
@@ -60,7 +90,7 @@ class CollectionTests(unittest.TestCase):
         self.assertTrue(job['attachments'][0]['url'].endswith('.jpg'))
 
     def test_dedup_keeps_different_locations_and_all_original_urls(self):
-        one={'id':'a','title':'财务招聘','kind':'具体岗位','cities':['济南'],'body':'岗位职责：审核凭证，进行成本分析。'*10,'first_seen_at':'2026-09-01','source_name':'高校甲','source_url':'https://a.example/job'}
+        one={'id':'a','title':'财务招聘','company':'同一企业','kind':'具体岗位','cities':['济南'],'body':'岗位职责：审核凭证，进行成本分析。'*10,'first_seen_at':'2026-09-01','source_name':'高校甲','source_url':'https://a.example/job'}
         two=dict(one,id='b',source_name='高校乙',source_url='https://b.example/job')
         other=dict(two,id='c',cities=['青岛'])
         result=c.deduplicate([one,two,other])
@@ -150,5 +180,65 @@ class CollectionTests(unittest.TestCase):
     def test_non_http_links_rejected(self):
         self.assertIsNone(c.safe_url('javascript:alert(1)','https://example.com'))
         self.assertIsNone(c.safe_url('data:text/html,hello','https://example.com'))
+        self.assertIsNone(c.safe_url('//mailto:邮箱投递：@基于公告附件内的各岗位邮箱完成投递', 'https://example.com'))
+
+    def test_location_country_classification_keeps_mixed_and_excludes_overseas_only(self):
+        self.assertEqual(c.domestic_status(['工作地点：山东省、海外'], []), 'mixed')
+        self.assertEqual(c.domestic_status(['工作地点：国外'], []), 'overseas')
+        self.assertEqual(c.domestic_status(['工作地点：上海、海外'], ['上海']), 'mixed')
+        self.assertEqual(c.domestic_status(['工作地点：全国'], []), 'domestic')
+
+    def test_dedup_keeps_company_boundaries_and_direct_application_link(self):
+        one={'id':'a','title':'招聘公告','company':'甲公司','kind':'招聘公告','cities':['济南'],'body':'统一正文内容'*20,'first_seen_at':'2026-09-01','source_name':'高校甲','source_url':'https://a.example/job','application_url':None}
+        two=dict(one,id='b',company='甲公司',source_name='高校乙',source_url='https://b.example/job',application_url='https://b.example/app')
+        other=dict(two,id='c',company='乙公司',source_name='高校丙',source_url='https://c.example/job')
+        result=c.deduplicate([one,two,other])
+        self.assertEqual(len(c.deduplicate([dict(one,company=''),dict(two,company='')])),2)
+        self.assertEqual(len(result),2)
+        self.assertEqual(result[0]['application_url'],'https://b.example/app')
+        self.assertEqual(result[0]['duplicate_sources'][0]['application_url'],'https://b.example/app')
+
+    def test_public_summary_is_lightweight_but_searchable(self):
+        row={'id':'a','title':'财务招聘','company':'甲公司','body':'完整公告正文'*500,
+             'attachments':[{'title':'附件','url':'https://a.example/file'}],
+             'links':[{'title':'链接','url':'https://a.example/link'}],
+             'excerpt':'完整公告正文','directions':['财务 / 经济'],'education':'本科',
+             'location_evidence':['工作地点：济南']}
+        summary=c.public_summary(row)
+        self.assertNotIn('body',summary)
+        self.assertNotIn('attachments',summary)
+        self.assertNotIn('links',summary)
+        self.assertIn('财务 / 经济',summary['directions'])
+        self.assertNotIn('search_text',summary)
+
+    def test_offerjack_run_rotates_public_city_queries_after_auth_limit(self):
+        calls=[]
+        def fake_list(page, city=''):
+            calls.append((page,city))
+            if page > 1:
+                raise c.PublicPaginationLimit('需要登录后查看更多')
+            row={'id':'row-'+(city or 'all'),'enterpriseName':'企业'+(city or '全国'),
+                 'workLocation':'济南','recruitmentBatch':'秋招','graduationYear':'2027届',
+                 'position':'财务管理','enterpriseNature':'民营企业','industry':'金融',
+                 'announcementLink':'https://source.example/'+(city or 'all'),
+                 'deliveryAddress':'https://apply.example/'+(city or 'all'),
+                 'deadline':'尽快投递','updateTime':'2026-09-10'}
+            values=''.join('<p>工作地点：'+row['workLocation']+'</p><p>招聘岗位：财务管理</p>')
+            return [{'identity':'offerjack:'+row['id'],'url':row['announcementLink'],
+                     'title':row['enterpriseName']+' · 秋招招聘','published_at':'2026-09-10',
+                     'inline_html':'<div id="zoom">'+values+'</div>','structured':row}],2
+        with TemporaryDirectory() as temp:
+            args=SimpleNamespace(data_dir=temp,public_dir=temp,sources='offerjack',pages=1,days=180,
+                                 refresh_hours=0,nankai_area=0,target_city='',offerjack_pages=2)
+            with patch.object(c,'offerjack_list',side_effect=fake_list):
+                code=c.run(args)
+            self.assertEqual(code,2)
+            self.assertEqual(calls[0],(1,''))
+            self.assertEqual(calls[1],(2,''))
+            self.assertTrue(all(page==1 for page,_ in calls[2:]))
+            self.assertEqual(len(calls),len(c.CITIES)+2)
+            snapshot=json.loads((Path(temp)/'jobs.json').read_text(encoding='utf8'))
+            self.assertEqual(snapshot['schema_version'],2)
+            self.assertEqual(snapshot['sources'][0]['status'],'partial')
 
 if __name__=='__main__': unittest.main()

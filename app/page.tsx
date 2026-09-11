@@ -20,6 +20,7 @@ import {
   Database,
   GraduationCap,
   Building2,
+  Share2,
 } from 'lucide-react';
 import {
   Select,
@@ -207,6 +208,26 @@ function extractSalary(job: Job): { cleanTitle: string; salary: string | null } 
 function cleanExcerpt(excerpt: string | null | undefined): string {
   if (!excerpt) return '';
   return excerpt.replace(/^[\s*•·-]+/, '').trim();
+}
+function HighlightText({ text, query }: { text: string | null | undefined; query: string }) {
+  if (!text) return null;
+  const trimmed = query.trim();
+  if (!trimmed) return <>{text}</>;
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === trimmed.toLowerCase() ? (
+          <mark key={i} className="search-highlight">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
 }
 function Toggle({
   label,
@@ -569,6 +590,22 @@ export default function Home() {
       setNotice(e instanceof Error ? e.message : '无法读取备份文件');
     }
     if (fileRef.current) fileRef.current.value = '';
+  };
+  const copyJob = (job: Job) => {
+    const { cleanTitle, salary } = extractSalary(job);
+    const salaryText = salary ? ` (${salary})` : '';
+    const companyText = job.company ? `\n【企业】${job.company}` : '';
+    const loc = locationSummary(job);
+    const locText = loc ? `\n【地点】${loc}` : '';
+    const deadlineText = job.deadline ? `\n【截止】${date(job.deadline, true)}` : '';
+    const url = externalUrl(job.application_url || job.source_url) || '';
+    const urlText = url ? `\n【链接】${url}` : '';
+    const content = `【岗位】${cleanTitle}${salaryText}${companyText}${locText}${deadlineText}${urlText}\n—— 来自职讯雷达`;
+    navigator.clipboard.writeText(content).then(() => {
+      setNotice(`已复制「${cleanTitle}」的招聘信息，可直接粘贴分享！`);
+    }).catch(() => {
+      setNotice('复制失败，请手动选择复制。');
+    });
   };
   useEffect(() => {
     const context = (
@@ -976,22 +1013,32 @@ export default function Home() {
                                 <span className="tag new">已投递</span>
                               )}
                             </div>
-                            <button
-                              className={
-                                'bookmark-button' + (saved ? ' saved' : '')
-                              }
-                              aria-label={
-                                (saved ? '取消收藏：' : '收藏：') + job.title
-                              }
-                              aria-pressed={!!saved}
-                              disabled={!ready}
-                              onClick={() => toggle(job, 'saved')}
-                            >
-                              <Bookmark
-                                size={18}
-                                fill={saved ? 'currentColor' : 'none'}
-                              />
-                            </button>
+                            <div className="card-top-actions">
+                              <button
+                                className="copy-button"
+                                aria-label={`复制岗位信息：${job.title}`}
+                                title="复制岗位信息"
+                                onClick={() => copyJob(job)}
+                              >
+                                <Share2 size={16} />
+                              </button>
+                              <button
+                                className={
+                                  'bookmark-button' + (saved ? ' saved' : '')
+                                }
+                                aria-label={
+                                  (saved ? '取消收藏：' : '收藏：') + job.title
+                                }
+                                aria-pressed={!!saved}
+                                disabled={!ready}
+                                onClick={() => toggle(job, 'saved')}
+                              >
+                                <Bookmark
+                                  size={18}
+                                  fill={saved ? 'currentColor' : 'none'}
+                                />
+                              </button>
+                            </div>
                           </div>
                           <div className="job-title-row">
                             <h2 className="job-title-wrap">
@@ -999,7 +1046,7 @@ export default function Home() {
                                 className="job-title"
                                 onClick={() => void openDetail(job)}
                               >
-                                {cleanTitle}
+                                <HighlightText text={cleanTitle} query={filters.query} />
                               </button>
                             </h2>
                             {salary && <span className="salary-badge">{salary}</span>}
@@ -1007,7 +1054,9 @@ export default function Home() {
                           {job.company && (
                             <p className="company-name">
                               <Building2 size={14} className="company-icon" />
-                              <span>{job.company}</span>
+                              <span>
+                                <HighlightText text={job.company} query={filters.query} />
+                              </span>
                             </p>
                           )}
                           {job.company_conflict && <p className="small muted">{job.company_note}</p>}
@@ -1029,7 +1078,11 @@ export default function Home() {
                               以具体岗位要求为准
                             </p>
                           )}
-                          {excerptText && <p className="job-excerpt">{excerptText}</p>}
+                          {excerptText && (
+                            <p className="job-excerpt">
+                              <HighlightText text={excerptText} query={filters.query} />
+                            </p>
+                          )}
                           <div className="card-foot">
                             <div>
                               <p
@@ -1190,6 +1243,13 @@ export default function Home() {
                   >
                     <Check size={16} />
                     {personalFor(selected, personal).applied ? '已投递' : '标记已投递'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => copyJob(selected)}
+                  >
+                    <Share2 size={16} />
+                    复制分享
                   </Button>
                   <Button
                     variant="ghost"

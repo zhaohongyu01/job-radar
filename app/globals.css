@@ -353,6 +353,22 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   flex-wrap: wrap;
   gap: 5px;
 }
+@media (max-width: 640px) {
+  .pill-group {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 3px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .pill-group::-webkit-scrollbar {
+    display: none;
+  }
+  .pill-item {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+}
 .pill-item {
   padding: 5px 11px;
   font-size: 12px;
@@ -376,6 +392,34 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   border-color: #2563eb;
   font-weight: 600;
   box-shadow: 0 1px 4px rgba(37, 99, 235, 0.28);
+}
+
+/* Search Highlight */
+.search-highlight {
+  background-color: #fef08a;
+  color: #854d0e;
+  padding: 1px 3px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.dark .search-highlight {
+  background-color: #854d0e;
+  color: #fef08a;
+}
+
+/* Copy Action */
+.copy-button {
+  color: #94a3b8;
+  padding: 6px;
+  border-radius: 8px;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.copy-button:hover {
+  color: #2563eb;
+  background: #eff6ff;
 }
 
 .check-label {
@@ -609,6 +653,11 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   border-color: #2563eb;
 }
 
+.card-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
 .bookmark-button {
   color: #94a3b8;
   padding: 6px;

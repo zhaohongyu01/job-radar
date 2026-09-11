@@ -31,7 +31,8 @@ SOURCES = [
     {'id': 'hrss', 'name': '济南市人社局 · 事业单位招聘', 'url': 'https://jnhrss.jinan.gov.cn/col/col18625/index.html'},
     {'id': 'gzw', 'name': '济南市国资委 · 国企招聘', 'url': 'https://jngzw.jinan.gov.cn/col/col23870/index.html'},
 ]
-for school,name in [('jobsdufe','山东财经大学'),('ujn','济南大学'),('sdut','山东理工大学'),('qlu','齐鲁工业大学')]:
+for school,name in [('jobsdufe','山东财经大学'),('ujn','济南大学'),('sdut','山东理工大学'),('qlu','齐鲁工业大学'),
+                    ('sdnu','山东师范大学'),('sdsmu','山东中医药大学'),('qust','青岛科技大学'),('qdu','青岛大学')]:
     for channel,label in [('announcements','招聘公告'),('positions','具体岗位')]:
         SOURCES.append({'id':f'{school}-{channel}','name':f'{name} · {label}',
                         'url':f'https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo?type='+('zwxx' if channel=='positions' else 'zpgg'),

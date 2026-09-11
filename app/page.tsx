@@ -463,6 +463,7 @@ export default function Home() {
         ...(data?.jobs ?? []).flatMap((j) => j.graduation_years),
       ]),
     )
+      .filter((y) => y >= '2024' && y <= '2030')
       .sort()
       .reverse(),
   ];
@@ -706,6 +707,17 @@ export default function Home() {
               <p aria-live="polite">
                 {searchPending ? <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output> : <><strong>{filtered.length}</strong> 条符合当前筛选的招聘信息</>}
                 <span> · {filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}</span>
+                {filters.type === '校招' && filters.year !== '全部' && (
+                  <span className="cohort-breakdown">
+                    {' · '}
+                    明确{filters.year}届 <strong>{filtered.filter((j) => j.graduation_years.includes(filters.year)).length}</strong> 条
+                    {filters.includeUncertain && (
+                      <span className="muted">
+                        {' '}（其余 {filtered.filter((j) => j.graduation_years.length === 0).length} 条因包含“未明确届别”展示）
+                      </span>
+                    )}
+                  </span>
+                )}
               </p>
               <Toggle
                 label="只看上次访问后收录 / 变更"

@@ -369,6 +369,25 @@ def deadline_candidates(text):
     return candidates
 
 
+VALID_GRADUATION_YEAR_MIN = 2024
+VALID_GRADUATION_YEAR_MAX = 2030
+
+
+def extract_graduation_years(text):
+    if not text:
+        return []
+    years = set()
+    for m in re.finditer(r'(?<!\d)(20\d{2})\s*(?:[届屆]|应届|年度(?:校园招聘)?|年应届|年(?:高校)?毕业)', text):
+        years.add(m.group(1))
+    for m in re.finditer(r'(?<!\d)(20\d{2})\s*[-/、及与至和或]\s*(20\d{2})\s*[届屆]', text):
+        years.add(m.group(1))
+        years.add(m.group(2))
+    for m in re.finditer(r'(?<!\d)(2\d)(?:[届屆]|秋招|春招)', text):
+        years.add('20' + m.group(1))
+    valid = [y for y in years if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
+    return sorted(valid)
+
+
 def deadline(text):
     unique={v[0]:v for v in deadline_candidates(text)}
     return next(iter(unique.values())) if len(unique)==1 else (None,None,None)
@@ -484,14 +503,14 @@ def parse_detail(html, item, source):
     types=[]
     if source.get('adapter')=='wondercv' or re.search(r'校园招聘|校招|应届.*招聘|20\d{2}[届屆].*招聘',combined): types.append('校招')
     if re.search(r'社会招聘|社招|社会公开招聘',combined): types.append('社招')
-    years=sorted(set(re.findall(r'(20\d{2})\s*[届屆]',combined)))
-    years=sorted(set(years+['20'+year for year in re.findall(r'(?<!\d)(2\d)(?:届|秋招|春招)',combined)]))
+    years=extract_graduation_years(combined)
     if source.get('adapter')=='offerjack':
         batch=structured.get('recruitmentBatch') or ''
         if re.search('社招|社会',batch): types=['社招']
         elif re.search('秋招|春招|校招|提前批',batch): types=['校招']
         # A list such as 2026/2027届 explicitly names both eligible cohorts.
-        years=sorted(set(re.findall(r'20\d{2}',structured.get('graduationYear') or '')))
+        structured_years=[y for y in re.findall(r'20\d{2}',structured.get('graduationYear') or '') if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
+        years=sorted(set(years+structured_years))
     sectors=[label for label,pattern in [('银行',r'银行'),('国企',r'国有企业|国有独资|国有控股|央企|国企'),('事业单位',r'事业单位'),('公务员',r'公务员')] if re.search(pattern,combined)] or ['企业 / 其他']
     # City evidence comes from job-location fields/sections/tables, never a headquarters paragraph.
     location_evidence=[]
@@ -624,6 +643,9 @@ def public_record(job):
     row=refine_facts({k:v for k,v in job.items() if k!='fingerprint'})
     row['provenance']='第三方线索' if row['source_id'] in {'wondercv','offerjack'} else '公开原始来源'
     row.setdefault('kind','招聘公告')
+    combined_text=row.get('title','')+'\n'+(row.get('body') or row.get('excerpt') or '')
+    extra_years=extract_graduation_years(combined_text)
+    row['graduation_years']=sorted(set(row.get('graduation_years',[])+extra_years))
     label=r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点)'
     # Preserve structured regions, table cells and district-code evidence; re-read text sections.
     evidence=[s for s in row.get('location_evidence',[]) if not re.match(label,s)]
@@ -643,10 +665,13 @@ def public_record(job):
     row['location_evidence']=list(dict.fromkeys(evidence))
     row['cities']=[city for city in CITIES if any(city in s for s in evidence)]
     row['domestic_status']=domestic_status(row['location_evidence'],row['cities'])
+    if 'graduation_years' in row:
+        row['graduation_years']=[y for y in row['graduation_years'] if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
     if row['source_id']=='wondercv':
         row['types']=list(dict.fromkeys(row['types']+['校招']))
         combined=row['title']+'\n'+row.get('body','')
-        row['graduation_years']=sorted(set(row['graduation_years']+['20'+y for y in re.findall(r'(?<!\d)(2\d)(?:届|秋招|春招)',combined)]))
+        extra_years=extract_graduation_years(combined)
+        row['graduation_years']=sorted(set(row['graduation_years']+extra_years))
         if not row.get('deadline'):
             row['deadline'],row['deadline_evidence'],row['deadline_precision']=deadline(row.get('body',''))
     return row

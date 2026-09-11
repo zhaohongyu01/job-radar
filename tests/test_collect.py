@@ -276,4 +276,15 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(snapshot['schema_version'],2)
             self.assertEqual(snapshot['sources'][0]['status'],'partial')
 
+    def test_extract_graduation_years_matches_various_formats_and_filters_historical(self):
+        self.assertEqual(c.extract_graduation_years('2027应届毕业生招聘简章'), ['2027'])
+        self.assertEqual(c.extract_graduation_years('浦发银行青岛分行2027年度校园招聘启事'), ['2027'])
+        self.assertEqual(c.extract_graduation_years('面向2027年毕业的海内外学生'), ['2027'])
+        self.assertEqual(c.extract_graduation_years('2026/2027届毕业生招聘'), ['2026', '2027'])
+        self.assertEqual(c.extract_graduation_years('面向2027或2028届同学'), ['2027', '2028'])
+        self.assertEqual(c.extract_graduation_years('27秋招全面启动'), ['2027'])
+        # Historical company background mentions should be safely filtered out
+        self.assertEqual(c.extract_graduation_years('自2006届启动校园招聘以来累计招聘万人'), [])
+        self.assertEqual(c.extract_graduation_years('2018届管培生成长纪实'), [])
+
 if __name__=='__main__': unittest.main()

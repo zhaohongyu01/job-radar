@@ -18,6 +18,8 @@ import {
   RefreshCw,
   Bell,
   Database,
+  GraduationCap,
+  Building2,
 } from 'lucide-react';
 import {
   Select,
@@ -155,6 +157,56 @@ function Choice({
       </Select>
     </div>
   );
+}
+function PillChoice({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="filter-field">
+      <span className="field-label">{label}</span>
+      <fieldset className="pill-group" aria-label={label}>
+        {options.map((opt) => (
+          <button
+            key={opt}
+            type="button"
+            aria-pressed={value === opt}
+            className={`pill-item ${value === opt ? 'active' : ''}`}
+            onClick={() => onChange(opt)}
+          >
+            {opt}
+          </button>
+        ))}
+      </fieldset>
+    </div>
+  );
+}
+function extractSalary(job: Job): { cleanTitle: string; salary: string | null } {
+  let cleanTitle = job.title;
+  let salary: string | null = null;
+  const titleSalaryRegex = /(?:[（(])?(\d+(?:\.\d+)?(?:k|K|万|元)?\s*[-~至–]\s*\d+(?:\.\d+)?(?:k|K|万|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天)?)(?:[)）])?$/;
+  const match = cleanTitle.match(titleSalaryRegex);
+  if (match) {
+    salary = match[1].trim();
+    cleanTitle = cleanTitle.replace(titleSalaryRegex, '').trim();
+  } else {
+    const excerptMatch = job.excerpt?.match(/薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]+)/);
+    if (excerptMatch) {
+      salary = excerptMatch[1].trim();
+    }
+  }
+  return { cleanTitle: cleanTitle || job.title, salary };
+}
+function cleanExcerpt(excerpt: string | null | undefined): string {
+  if (!excerpt) return '';
+  return excerpt.replace(/^[\s*•·-]+/, '').trim();
 }
 function Toggle({
   label,
@@ -583,10 +635,11 @@ export default function Home() {
         <div className="intro">
           <div>
             <h1>找到下一份机会</h1>
+            <p className="subtitle">聚合高校就业网、政务直聘与权威招聘线索</p>
           </div>
           <div className="update-block">
             <span className="update-dot" />
-            最近采集 {date(data?.last_success_at, true)}
+            <span>最近采集 {date(data?.last_success_at, true)}</span>
             {data && !data.schedule_enabled && <span className="update-status">自动更新未启用</span>}
             <button
               onClick={() => void refresh()}
@@ -643,7 +696,7 @@ export default function Home() {
               options={Array.from(new Set(['全部城市', filters.city, ...(data?.cities ?? ['济南'])]))}
               onChange={(v) => change('city', v)}
             />
-            <Choice
+            <PillChoice
               label="招聘类型"
               value={filters.type}
               options={['全部', '校招', '社招']}
@@ -683,7 +736,7 @@ export default function Home() {
               onChange={(v) => change('direction', v)}
             />
             <label htmlFor="education" className="filter-field">
-              学历关键词
+              <span className="field-label">学历关键词</span>
               <Input
                 id="education"
                 className="field-control"
@@ -692,13 +745,13 @@ export default function Home() {
                 placeholder="不限，可输入本科"
               />
             </label>
-            <Choice
+            <PillChoice
               label="信息来源"
               value={filters.provenance}
               options={['全部', '高校 / 政府', '第三方线索']}
               onChange={(v) => change('provenance', v)}
             />
-            <Choice
+            <PillChoice
               label="信息类型"
               value={filters.kind}
               options={['全部', '具体岗位', '招聘公告']}
@@ -878,6 +931,8 @@ export default function Home() {
                     const saved = personalFor(job, personal).saved;
                     const applied = personalFor(job, personal).applied;
                     const expired = isExpired(job, now);
+                    const { cleanTitle, salary } = extractSalary(job);
+                    const excerptText = cleanExcerpt(job.excerpt);
                     return (
                       <div key={job.id}>
                         <article
@@ -933,29 +988,40 @@ export default function Home() {
                               onClick={() => toggle(job, 'saved')}
                             >
                               <Bookmark
-                                size={20}
+                                size={18}
                                 fill={saved ? 'currentColor' : 'none'}
                               />
                             </button>
                           </div>
-                          <h2>
-                            <button
-                              className="job-title"
-                              onClick={() => void openDetail(job)}
-                            >
-                              {job.title}
-                            </button>
-                          </h2>
+                          <div className="job-title-row">
+                            <h2 className="job-title-wrap">
+                              <button
+                                className="job-title"
+                                onClick={() => void openDetail(job)}
+                              >
+                                {cleanTitle}
+                              </button>
+                            </h2>
+                            {salary && <span className="salary-badge">{salary}</span>}
+                          </div>
                           {job.company && (
-                            <p className="company-name">{job.company}</p>
+                            <p className="company-name">
+                              <Building2 size={14} className="company-icon" />
+                              <span>{job.company}</span>
+                            </p>
                           )}
                           {job.company_conflict && <p className="small muted">{job.company_note}</p>}
                           <div className="job-meta">
                             <span>
-                              <MapPin size={15} />
+                              <MapPin size={14} />
                               {locationSummary(job)}
                             </span>
-                            <span>{job.education}</span>
+                            {job.education && (
+                              <span>
+                                <GraduationCap size={14} />
+                                {job.education}
+                              </span>
+                            )}
                           </div>
                           {job.directions.length > 0 && (
                             <p className="inline-note">
@@ -963,7 +1029,7 @@ export default function Home() {
                               以具体岗位要求为准
                             </p>
                           )}
-                          <p className="job-excerpt">{job.excerpt}</p>
+                          {excerptText && <p className="job-excerpt">{excerptText}</p>}
                           <div className="card-foot">
                             <div>
                               <p
@@ -993,10 +1059,11 @@ export default function Home() {
                             <div className="card-actions">
                               <Button
                                 variant="ghost"
+                                size="sm"
                                 onClick={() => void openDetail(job)}
                               >
                                 详情
-                                <ChevronRight size={15} />
+                                <ChevronRight size={14} />
                               </Button>
                               <OutLink
                                 primary

@@ -148,3 +148,11 @@ button,a,input { -webkit-tap-highlight-color:transparent; } button { cursor:poin
 .scope-buttons{display:flex;flex-wrap:wrap;gap:8px;}
 .scope-buttons button{height:auto;min-height:40px;white-space:normal;text-align:left;}
 .job-meta span{overflow-wrap:anywhere;}
+.results-page-start{scroll-margin-top:18px;}
+.results-pager{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px 20px;margin:18px 0;font-size:14px;color:#65758b;}
+.page-size-control{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.page-size-control [data-slot=select-trigger]{min-width:90px;min-height:40px;background:white;}
+.page-range{font-variant-numeric:tabular-nums;}
+.result-page-navigation{width:auto!important;margin:0!important;}
+.result-page-navigation .page-number{padding:0 12px;white-space:nowrap;}
+@media(max-width:760px){.results-pager{align-items:flex-start;}.page-size-control{width:100%;}.result-page-navigation{margin-left:auto!important;}.page-range{font-size:13px;}}

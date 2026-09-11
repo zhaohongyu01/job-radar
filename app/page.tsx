@@ -57,6 +57,54 @@ import {
 import type { Job, Snapshot, Personal, Filters } from '@/lib/jobs';
 const STORAGE = 'quancheng-personal-v1',
   VISIT = 'quancheng-last-visit-v1';
+const PAGE_SIZE_STORAGE = 'job-radar-page-size-v1';
+const PAGE_SIZES = [20, 50, 100];
+function ResultsPagination({
+  page, pageSize, total, position, onPageChange, onPageSizeChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  position: 'top' | 'bottom';
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className="results-pager">
+      <div className="page-size-control">
+        <span id={`page-size-label-${position}`}>每页显示</span>
+        <Select value={String(pageSize)} onValueChange={(value) => {
+          const size = Number(value);
+          if (PAGE_SIZES.includes(size)) onPageSizeChange(size);
+        }}>
+          <SelectTrigger aria-labelledby={`page-size-label-${position}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size} 条</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <span className="page-range" aria-live="polite">
+          {total ? `第 ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} 条 / 共 ${total} 条` : '共 0 条'}
+        </span>
+      </div>
+      {pages > 1 && (
+        <Pagination className="result-page-navigation" aria-label={position === 'top' ? '招聘结果顶部分页' : '招聘结果底部分页'}>
+          <PaginationContent>
+            <PaginationItem>
+              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => onPageChange(page - 1)}>上一页</Button>
+            </PaginationItem>
+            <PaginationItem><span className="page-number">{page} / {pages}</span></PaginationItem>
+            <PaginationItem>
+              <Button variant="outline" size="sm" disabled={page === pages} onClick={() => onPageChange(page + 1)}>下一页</Button>
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
+    </div>
+  );
+}
 function date(value: string | null | undefined, time = false) {
   if (!value) return '尚无成功记录';
   return new Date(
@@ -147,11 +195,13 @@ export default function Home() {
   const [selected, setSelected] = useState<Job | null>(null),
     [sourceOpen, setSourceOpen] = useState(false),
     [page, setPage] = useState(1),
+    [pageSize, setPageSize] = useState(20),
     [notice, setNotice] = useState(''),
     [now, setNow] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false),
     [detailError, setDetailError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const resultsTopRef = useRef<HTMLDivElement>(null);
   const detailCache = useRef<Record<string, Job>>({});
   const detailRequest = useRef(0);
   const detailsPromise = useRef<Record<string, Promise<Record<string, Job>>>>({});
@@ -250,6 +300,12 @@ export default function Home() {
       void refresh();
       setNow(Date.now());
       try {
+        const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE));
+        if (PAGE_SIZES.includes(storedSize)) setPageSize(storedSize);
+      } catch {
+        // A blocked preference store must not prevent browsing or personal-record loading.
+      }
+      try {
         setPersonal(
           validatePersonal(JSON.parse(localStorage.getItem(STORAGE) || '{}')),
         );
@@ -329,9 +385,29 @@ export default function Home() {
       ).length,
     }),
   );
-  const pages = Math.max(1, Math.ceil(filtered.length / 12));
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pages);
-  const visible = filtered.slice((currentPage - 1) * 12, currentPage * 12);
+  const visible = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const returnToResults = () => {
+    resultsTopRef.current?.focus({ preventScroll: true });
+    resultsTopRef.current?.scrollIntoView({ block: 'start' });
+  };
+  const changePage = (next: number) => {
+    setPage(Math.max(1, Math.min(next, pages)));
+    returnToResults();
+  };
+  const changePageSize = (next: number) => {
+    if (!PAGE_SIZES.includes(next) || next === pageSize) return;
+    // Keep the first record of the current page within the new page.
+    setPage(Math.floor(((currentPage - 1) * pageSize) / next) + 1);
+    setPageSize(next);
+    try {
+      localStorage.setItem(PAGE_SIZE_STORAGE, String(next));
+    } catch {
+      setNotice('每页条数已切换；浏览器未允许保存设置，下次打开会恢复默认值。');
+    }
+    returnToResults();
+  };
   const newCount = (data?.jobs ?? []).filter(
     (j) =>
       since &&
@@ -726,6 +802,11 @@ export default function Home() {
                 <p className="text-sm text-muted-foreground">
                   按来源发布 / 收录时间从新到旧排列 · 日期不明确的排在最后
                 </p>
+                <div ref={resultsTopRef} tabIndex={-1} className="results-page-start">
+                  {data && !searchPending && (
+                    <ResultsPagination page={currentPage} pageSize={pageSize} total={filtered.length} position="top" onPageChange={changePage} onPageSizeChange={changePageSize} />
+                  )}
+                </div>
                 <div className="cards">
                   {visible.map((job) => {
                     const location = locationMatch(job, filters.city);
@@ -896,34 +977,8 @@ export default function Home() {
                 </div>
               </>
             )}
-            {pages > 1 && (
-              <Pagination className="pagination-row" aria-label="招聘结果分页">
-                <PaginationContent>
-                  <PaginationItem>
-                    <Button
-                      variant="outline"
-                      disabled={currentPage === 1}
-                      onClick={() => setPage(currentPage - 1)}
-                    >
-                      上一页
-                    </Button>
-                  </PaginationItem>
-                  <PaginationItem>
-                    <span className="page-number">
-                      {currentPage} / {pages}
-                    </span>
-                  </PaginationItem>
-                  <PaginationItem>
-                    <Button
-                      variant="outline"
-                      disabled={currentPage === pages}
-                      onClick={() => setPage(currentPage + 1)}
-                    >
-                      下一页
-                    </Button>
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
+            {visible.length > 0 && !searchPending && (
+              <ResultsPagination page={currentPage} pageSize={pageSize} total={filtered.length} position="bottom" onPageChange={changePage} onPageSizeChange={changePageSize} />
             )}
             <p className="source-note">
               {data?.sources.length ?? 0} 个来源 ·

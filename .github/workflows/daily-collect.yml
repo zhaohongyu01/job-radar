@@ -45,7 +45,7 @@ jobs:
         env:
           JOB_RADAR_SCHEDULE_ENABLED: 'true'
         run: |
-          python scripts/collect.py --pages 50 --days 120
+          python scripts/collect.py --pages 5 --days 14
 
       - name: Build Web Application
         run: npm run build

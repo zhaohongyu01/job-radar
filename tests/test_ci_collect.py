@@ -90,6 +90,7 @@ class PipelineTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'No source'):
                 ci.validate_result(2, state, snapshot, state['jobs'], started)
 
+    @patch.dict(c.os.environ, {'GITHUB_STEP_SUMMARY': ''})
     def test_wrapper_converts_partial_to_success_and_writes_diagnostics(self):
         with TemporaryDirectory() as tmp:
             public, data = Path(tmp) / 'public', Path(tmp) / 'data'

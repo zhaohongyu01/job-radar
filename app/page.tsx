@@ -60,22 +60,26 @@ import type { Job, Snapshot, Personal, Filters } from '@/lib/jobs';
 import { restoreBrowsing } from '@/lib/browsing';
 import type { ViewMode } from '@/lib/browsing';
 import { JobTable } from '@/components/job-table';
+import { groupJobs } from '@/lib/grouping';
+import type { JobGroup } from '@/lib/grouping';
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
 const STORAGE = 'quancheng-personal-v1',
   VISIT = 'quancheng-last-visit-v1';
 const PAGE_SIZE_STORAGE = 'job-radar-page-size-v1';
 const PAGE_SIZES = [20, 50, 100];
 function ResultsPagination({
-  page, pageSize, total, position, onPageChange, onPageSizeChange,
+  page, pageSize, total, position, onPageChange, onPageSizeChange, grouped = false,
 }: {
   page: number;
   pageSize: number;
   total: number;
+  grouped?: boolean;
   position: 'top' | 'bottom';
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const unit = grouped ? '组' : '条';
   return (
     <div className="results-pager">
       <div className="page-size-control">
@@ -88,11 +92,11 @@ function ResultsPagination({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size} 条</SelectItem>)}
+            {PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size} {unit}</SelectItem>)}
           </SelectContent>
         </Select>
         <span className="page-range" aria-live="polite">
-          {total ? `第 ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} 条 / 共 ${total} 条` : '共 0 条'}
+          {total ? `第 ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} ${unit} / 共 ${total} ${unit}` : `共 0 ${unit}`}
         </span>
       </div>
       {pages > 1 && (
@@ -206,6 +210,7 @@ export default function Home() {
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(50),
     [viewMode, setViewMode] = useState<ViewMode>('cards'),
+    [groupCompanies, setGroupCompanies] = useState(true),
     [notice, setNotice] = useState(''),
     [now, setNow] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false),
@@ -340,6 +345,7 @@ export default function Home() {
         const restored = restoreBrowsing(JSON.parse(localStorage.getItem(BROWSING_STORAGE) || 'null'));
         setFilters(restored.filters);
         setViewMode(restored.viewMode);
+        setGroupCompanies(restored.groupCompanies);
       } catch { /* Invalid preferences fall back without affecting saved records. */ }
       try {
         const records = validatePersonal(JSON.parse(localStorage.getItem(STORAGE) || '{}'));
@@ -362,7 +368,7 @@ export default function Home() {
   useEffect(() => {
     if (!ready) return;
     try {
-      localStorage.setItem(BROWSING_STORAGE, JSON.stringify({ filters, viewMode }));
+      localStorage.setItem(BROWSING_STORAGE, JSON.stringify({ filters, viewMode, groupCompanies }));
       preferencesWarning.current = false;
     } catch {
       if (!preferencesWarning.current) {
@@ -373,7 +379,7 @@ export default function Home() {
         return () => clearTimeout(timer);
       }
     }
-  }, [ready, filters, viewMode]);
+  }, [ready, filters, viewMode, groupCompanies]);
   const change = <K extends keyof Filters>(key: K, value: Filters[K]) => {
     setFilters((f) => ({ ...f, [key]: value }));
     setPage(1);
@@ -426,9 +432,18 @@ export default function Home() {
       ).length,
     }),
   );
-  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const groups = useMemo(() => groupJobs(filtered, groupCompanies), [filtered, groupCompanies]);
+  const pages = Math.max(1, Math.ceil(groups.length / pageSize));
   const currentPage = Math.min(page, pages);
-  const visible = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleGroups = groups.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // Consecutive single records share one table header; grouped campaigns expand independently.
+  const displayBlocks = visibleGroups.reduce<(JobGroup & { grouped: boolean })[]>((blocks, group) => {
+    const previous = blocks.at(-1);
+    if (viewMode === 'table' && group.jobs.length === 1 && previous && !previous.grouped)
+      previous.jobs.push(...group.jobs);
+    else blocks.push({ ...group, jobs: [...group.jobs], grouped: group.jobs.length > 1 });
+    return blocks;
+  }, []);
   const returnToResults = () => {
     resultsTopRef.current?.focus({ preventScroll: true });
     resultsTopRef.current?.scrollIntoView({ block: 'start' });
@@ -567,13 +582,12 @@ export default function Home() {
       <main className="workspace">
         <div className="intro">
           <div>
-            <div className="eyebrow">你的求职信息台</div>
             <h1>找到下一份机会</h1>
-            <p className="muted">按自己的条件筛选，把值得投的机会留下来。</p>
           </div>
           <div className="update-block">
             <span className="update-dot" />
             最近采集 {date(data?.last_success_at, true)}
+            {data && !data.schedule_enabled && <span className="update-status">自动更新未启用</span>}
             <button
               onClick={() => void refresh()}
               disabled={loading}
@@ -600,11 +614,10 @@ export default function Home() {
             </Button>
           </div>
         )}
-        {data && !data.schedule_enabled && (
+        {data && stale && (
           <div className="pilot-notice">
             <Clock3 size={16} />
-            <span>试用版 · 当前为最近一次采集结果，每日自动更新尚未启用。</span>
-            {stale && <strong>信息已超过 36 小时未更新</strong>}
+            <strong>信息已超过 36 小时未更新，请在原公告核对是否仍可报名。</strong>
           </div>
         )}
         <div className="layout">
@@ -781,12 +794,12 @@ export default function Home() {
                 <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>紧凑表格</Button>
               </fieldset>
               <Toggle label="只看未读" checked={filters.onlyUnread} onChange={(v) => change('onlyUnread', v)} />
+              <Toggle label="合并同企业同届" checked={groupCompanies} onChange={(v) => { setGroupCompanies(v); setPage(1); }} />
             </div>
-            <p className="reading-note">查看详情或投递入口后标为已读，也可手动切换。内容更新后重新提示未读。{viewMode === 'table' && ' 表格可左右滑动。'}</p>
             <div className="result-summary">
               <p aria-live="polite">
                 {searchPending ? <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output> : <><strong>{filtered.length}</strong> 条符合当前筛选的招聘信息</>}
-                <span> · {filtered.filter((j) => j.kind === '具体岗位').length} 条具体岗位、{filtered.filter((j) => j.kind !== '具体岗位').length} 条招聘公告</span>
+                <span> · {filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}</span>
               </p>
               <Toggle
                 label="只看上次访问后收录 / 变更"
@@ -815,7 +828,7 @@ export default function Home() {
                     </Button>
                   ))}
                 </fieldset>
-                <p className="inline-note">
+                <p className="location-hint">
                   {filters.locationScope === 'exact'
                     ? `仅展示已提取到${filters.city}工作地点的公告；还需核对具体岗位。`
                     : filters.locationScope === 'possible'
@@ -849,19 +862,18 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <p className="text-sm text-muted-foreground">
-                  按来源发布 / 收录时间从新到旧排列 · 日期不明确的排在最后
-                </p>
+                <details className="usage-help"><summary>最新在前 · 筛选与阅读说明</summary>
+                  <p>按来源发布 / 收录时间从新到旧排列，日期不明确的排在最后。查看详情或投递入口后标为已读，内容更新后重新提示未读。表格可左右滑动。</p>
+                  <p>合并仅折叠同名企业、同届校招的信息，提前批、春招、秋招等明确批次分开展示；所有岗位和来源均保留。每组按最新一条排序，展开后逐条投递或收藏。未明确企业或届别的单独展示。</p>
+                </details>
                 <div ref={resultsTopRef} tabIndex={-1} className="results-page-start">
                   {data && !searchPending && (
-                    <ResultsPagination page={currentPage} pageSize={pageSize} total={filtered.length} position="top" onPageChange={changePage} onPageSizeChange={changePageSize} />
+                    <ResultsPagination page={currentPage} pageSize={pageSize} total={groups.length} grouped={groupCompanies} position="top" onPageChange={changePage} onPageSizeChange={changePageSize} />
                   )}
                 </div>
-                {viewMode === 'table' && visible.length > 0 && (
-                  <JobTable jobs={visible} personal={personal} ready={ready} now={now} onDetail={(job) => void openDetail(job)} onRead={markRead} onReadChange={setRead} onToggle={toggle} />
-                )}
                 <div className="cards">
-                  {viewMode === 'cards' && visible.map((job) => {
+                  {displayBlocks.map((group) => {
+                    const content = viewMode === 'table' ? <JobTable jobs={group.jobs} personal={personal} ready={ready} now={now} onDetail={(job) => void openDetail(job)} onRead={markRead} onReadChange={setRead} onToggle={toggle} /> : group.jobs.map((job) => {
                     const location = locationMatch(job, filters.city);
                     const saved = personalFor(job, personal).saved;
                     const applied = personalFor(job, personal).applied;
@@ -937,6 +949,7 @@ export default function Home() {
                           {job.company && (
                             <p className="company-name">{job.company}</p>
                           )}
+                          {job.company_conflict && <p className="small muted">{job.company_note}</p>}
                           <div className="job-meta">
                             <span>
                               <MapPin size={15} />
@@ -999,6 +1012,11 @@ export default function Home() {
                         </article>
                       </div>
                     );
+                    });
+                    return group.grouped ? <details className="company-group" key={group.id}>
+                      <summary><span><strong>{group.company}</strong><span className="group-caption">{group.label} · 最新 {group.jobs[0].published_at || '日期未明确'}</span></span><span className="group-count">{group.jobs.length} 条信息 · <span className="group-expand">展开</span><span className="group-collapse">收起</span></span></summary>
+                      <div className="group-members">{content}</div>
+                    </details> : <div key={group.id}>{content}</div>;
                   })}
                   {!filtered.length && !loading && !searchPending && (
                     <Empty className="empty-state">
@@ -1033,8 +1051,8 @@ export default function Home() {
                 </div>
               </>
             )}
-            {visible.length > 0 && !searchPending && (
-              <ResultsPagination page={currentPage} pageSize={pageSize} total={filtered.length} position="bottom" onPageChange={changePage} onPageSizeChange={changePageSize} />
+            {visibleGroups.length > 0 && !searchPending && (
+              <ResultsPagination page={currentPage} pageSize={pageSize} total={groups.length} grouped={groupCompanies} position="bottom" onPageChange={changePage} onPageSizeChange={changePageSize} />
             )}
             <p className="source-note">
               {data?.sources.length ?? 0} 个来源 ·
@@ -1085,6 +1103,7 @@ export default function Home() {
                 {selected.classification_note && (
                   <p className="inline-note">{selected.classification_note}</p>
                 )}
+                {selected.company_note && <p className="inline-note">{selected.company_note}{selected.company_original ? ` 来源原单位字段：${selected.company_original}` : ''}</p>}
                 <div className="detail-actions">
                   <Button variant="outline" disabled={!ready || detailLoading} onClick={() => setRead(selected, isUnread(selected, personal))}>{isUnread(selected, personal) ? '标为已读' : '标为未读'}</Button>
                   <Button

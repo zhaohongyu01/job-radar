@@ -12,6 +12,41 @@ c=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class CollectionTests(unittest.TestCase):
+    def test_split_deadline_and_application_fields_are_recovered(self):
+        row=c.refine_facts({'title':'中信证券（山东）有限责任公司招聘','company':'', 'source_id':'sdu',
+            'body':'招聘截止日期\n2027-04-30\n应聘网址\nhttp:// careers.citics.com\n简历投递邮箱\nzxzqsd@citics.com',
+            'last_verified_at':'2026-09-10','source_url':'https://example.com/notice'})
+        self.assertEqual(row['deadline'],'2027-04-30T23:59:59+08:00')
+        self.assertEqual(row['application_url'],'http://careers.citics.com')
+        self.assertEqual(row['emails'],['zxzqsd@citics.com'])
+        self.assertEqual(row['last_verified_at'],'2026-09-10')
+        self.assertIsNone(c.deadline('招聘截止日期\n发布日期\n2026-09-10')[0])
+        self.assertIsNone(c.deadline('招聘截止日期\n2026-09-10\n报名截止：2026-10-01')[0])
+        conflicted=c.refine_facts({'body':'招聘截止日期\n2026-09-10\n报名截止：2026-10-01','deadline':'2026-10-01T23:59:59+08:00'})
+        self.assertIsNone(conflicted['deadline'])
+        self.assertIsNone(c.deadline('报名时间：2026-09-10 开始')[0])
+
+    def test_company_conflict_uses_declared_alias_without_losing_original(self):
+        original={'title':'平安点创租赁2027届校园招聘','company':'中国建设银行股份有限公司四川省分行',
+                  'source_id':'jobsdufe-announcements','body':'平安点创国际融资租赁有限公司(以下简称“平安点创租赁”) 于2026年成立。'}
+        row=c.refine_facts(original)
+        self.assertEqual(row['company'],'平安点创国际融资租赁有限公司')
+        self.assertEqual(row['company_original'],original['company'])
+        self.assertEqual(original['company'],'中国建设银行股份有限公司四川省分行')
+        uncertain=c.refine_facts(dict(original,body='另一家企业的校园招聘公告。'))
+        self.assertEqual(uncertain['company'],'')
+        # Missing structured employer text in a specific position is not a conflict.
+        position=c.refine_facts(dict(original,source_id='jobsdufe-positions',body='岗位职责：核对财务凭证'))
+        self.assertEqual(position['company'],original['company'])
+        verified=c.refine_facts({'title':'某银行天津分行2027校园招聘','company':'某银行股份有限公司天津分行', 'source_id':'nankai', 'body':'某银行股份有限公司天津分行招聘公告'})
+        self.assertEqual(verified['company'],'某银行股份有限公司天津分行')
+
+    def test_application_requires_unambiguous_explicit_http_link(self):
+        row={'title':'招聘','body':'投递：https://jobs.example.com/apply#campus','source_url':'https://example.com'}
+        self.assertEqual(c.refine_facts(row)['application_url'],'https://jobs.example.com/apply#campus')
+        self.assertFalse(c.refine_facts(dict(row,body='投递：javascript:alert(1)')).get('application_url'))
+        self.assertFalse(c.refine_facts(dict(row,body='投递：https://a.example.com\n投递：https://b.example.com')).get('application_url'))
+
     def test_later_page_failure_retains_discoveries_and_export_is_consistent(self):
         source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')
         item={'url':'https://example.com/retained','title':'甲企业财务招聘',

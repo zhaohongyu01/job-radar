@@ -32,6 +32,21 @@ npm run dev
 - 卡片与紧凑表格可切换，使用相同筛选、排序与分页；筛选条件和视图模式自动保存在当前浏览器。
 - 详情读取成功或打开原文/投递入口后标为已读，支持手动标为未读和只看未读；内容更新时间晚于已读时间时重新提示。已读状态纳入版本 2 个人备份，仍可导入旧版备份。
 - 已截止筛选、收藏公告七日内截止提示；邮箱仅复制，不自动发送。
+- 企业字段与公告冲突时，依据明确标题/简称对应关系修正，无法确认则显示待核对，详情保留来源原字段。支持下一行的截止日期、网申网址与邮箱；多个截止日期冲突时保留未知。
+- 默认折叠同名企业、同届校招信息，明确的春招/秋招/提前批分开；不猜企业别名，不删除岗位。可关闭“合并同企业同届”恢复逐条浏览，开启时每页数量按组计算，默认 50 组。
+
+## Cloudflare 发布
+
+当前公开地址：https://sites-project.job-radar.workers.dev/
+
+```powershell
+npm run build
+npx wrangler deploy --config dist/server/wrangler.json
+```
+
+本机 Wrangler 已有 Cloudflare 授权；其他电脑需要先运行 `npx wrangler login`。只重新整理已采集内容时，先运行 `python scripts/export_snapshot.py`，该操作不会伪造新的采集时间。数据和程序一起发布，刷新网页只重新读取快照。
+
+当前 Worker 未配置定时采集。现有采集器是 Python 程序，需要持续可用的外部执行环境定时运行采集、保存 `data/state.json` 并部署快照；部署网页本身不会启动每日更新。
 
 ## 更新与部署边界
 
@@ -45,7 +60,7 @@ Docker/NAS 入口已按 24 小时循环执行采集、构建并重启网站，�
 
 ```powershell
 python -m unittest discover -s tests -p 'test_*.py'
-node --experimental-strip-types --test tests/domain.test.ts tests/browsing.test.ts
+node --experimental-strip-types --test tests/domain.test.ts tests/browsing.test.ts tests/grouping.test.ts
 npx tsc --noEmit
 npm run lint
 npm run build
@@ -62,4 +77,4 @@ WebMCP 提供只读 `list_visible_opportunities`；当前环境未验证实际�
 - 有些地点、学历和截止时间只写在图片、附件或复杂句式里，暂标未明确。仅总部提及城市不参与城市匹配，山东省青岛市这样的地址不会误算济南；省级、全国范围单列待核实。只有海外/国外地点的记录会从国内岗位列表中排除，国内与海外并列的记录仍保留供核对。
 - 分页预算外的历史公告尚未读取；列表变化/详情抓取失败不会删除已有条目。
 - 首次导入和修改不是原站新发布，源站撤回/延期仍需原页面核实。
-- 未做实际手机/桌面浏览器交互测试；已实现响应式布局和语义控件。
+- 已验证桌面浏览器的企业分组展开、表格切换、搜索与详情投递入口；手机实际设备体验仍待验证。

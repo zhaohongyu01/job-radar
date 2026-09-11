@@ -2,10 +2,11 @@ import { defaultFilters } from './jobs.ts';
 import type { Filters } from './jobs.ts';
 
 export type ViewMode = 'cards' | 'table';
-export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: ViewMode } {
-  const result = { filters: { ...defaultFilters }, viewMode: 'cards' as ViewMode };
+export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: ViewMode; groupCompanies: boolean } {
+  const result = { filters: { ...defaultFilters }, viewMode: 'cards' as ViewMode, groupCompanies: true };
   if (!input || typeof input !== 'object' || Array.isArray(input)) return result;
   const value = input as Record<string, unknown>;
+  if (typeof value.groupCompanies === 'boolean') result.groupCompanies = value.groupCompanies;
   if (value.viewMode === 'table') result.viewMode = 'table';
   if (!value.filters || typeof value.filters !== 'object' || Array.isArray(value.filters)) return result;
   const fields = { ...(value.filters as Record<string, unknown>) };

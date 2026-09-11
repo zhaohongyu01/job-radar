@@ -335,9 +335,21 @@ def domestic_status(location_evidence, cities):
     return 'unknown'
 
 
-def deadline(text):
+def labelled_lines(text):
+    """Join a label with the next value, never cross another named field."""
+    lines=[line.strip() for line in text.splitlines() if line.strip()]
+    for index,line in enumerate(lines):
+        # University announcement tables frequently put labels and values on separate lines.
+        if re.fullmatch(r'(?:报名时间|报名截止(?:时间|日期)?|投递截止(?:时间)?|网申截止(?:时间)?|报名日期|招聘截止日期|截止时间|应聘网址|报名网址|投递网址|网申地址|招聘官网|简历投递邮箱|投递邮箱|应聘邮箱)[：: ]*',line):
+            following=lines[index+1] if index+1<len(lines) else ''
+            if re.match(r'(?:20\d{2}[年./-]|https?://|[A-Za-z0-9._%+-]+@)',following):
+                line+='：'+following
+        yield line
+
+
+def deadline_candidates(text):
     candidates = []
-    for line in text.splitlines():
+    for line in labelled_lines(text):
         if not re.search(r'报名时间|报名截止|投递截止|网申截止|报名日期|招聘截止日期|截止时间',line):
             continue
         dates = list(re.finditer(r'(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})日?(?:\s*(\d{1,2})[:：时](\d{1,2})?分?)?',line[:240]))
@@ -353,8 +365,59 @@ def deadline(text):
             candidates.append((value,line[:240], 'minute' if h else 'day'))
         except ValueError:
             continue
-    unique={v[0]:v for v in candidates}
+    return candidates
+
+
+def deadline(text):
+    unique={v[0]:v for v in deadline_candidates(text)}
     return next(iter(unique.values())) if len(unique)==1 else (None,None,None)
+
+
+def refine_facts(job):
+    """Repair facts using explicit announcement evidence; retain source and collection history."""
+    row=dict(job)
+    text=row.get('body','')
+    title=row.get('title','')
+    compact=lambda value: re.sub(r'\s+','',value).translate(str.maketrans('（）','()'))
+    company=row.get('company','')
+    # Prefer a full employer name whose explicitly declared abbreviation occurs in the title.
+    aliases=re.findall(r'([\u4e00-\u9fffA-Za-z0-9（）()·]{3,60}(?:有限责任公司|有限公司))\s*[（(]以下简称[：: ]*[“「\"]([^”」\"]{2,30})[”」\"]',text)
+    candidates={name for name,alias in aliases if compact(alias) in compact(title) and alias not in {'公司','集团','本公司','企业'}}
+    # A legal employer name at the beginning of the recruitment title is also explicit evidence.
+    match=re.match(r'^([\u4e00-\u9fffA-Za-z0-9（）()·]{2,60}?(?:有限责任公司|有限公司|银行[\u4e00-\u9fff]{0,12}分行))(?=\s|招聘|20\d{2}|校园|社会|$)',title)
+    if match: candidates.add(match[1])
+    replacement=next(iter(candidates)) if len(candidates)==1 else ''
+    conflict=bool(company and row.get('source_id','').endswith('-announcements')
+                  and compact(company) not in compact(text+'\n'+title)
+                  and not compact(title).startswith(compact(re.sub(r'(?:股份)?(?:有限责任公司|有限公司)$','',company))))
+    if replacement and (not company or conflict) and compact(replacement)!=compact(company):
+        row['company']=replacement
+        row['company_note']='企业名称按公告标题或正文中明确的简称对应关系整理。'
+        if company: row.update(company_original=company,company_conflict=True)
+    elif conflict:
+        row['company']=''
+        row['company_original']=company
+        row['company_conflict']=True
+        row['company_note']='来源单位字段与公告未能对应，企业名称待核对。'
+    expires,evidence,precision=deadline(text)
+    if expires or deadline_candidates(text):
+        row.update(deadline=expires,deadline_evidence=evidence,deadline_precision=precision)
+    application=[]
+    emails=list(row.get('emails') or [])
+    for line in labelled_lines(text):
+        # Only repair whitespace immediately after a URL scheme, not arbitrary URL contents.
+        line=re.sub(r'(https?://)[ \t]+',r'\1',line,flags=re.I)
+        m=re.search(r'(?:应聘网址|报名网址|投递网址|网申地址|招聘官网|投递)[：:\s（(]*(https?://[^\s<>，。；）)\"“”]+)',line,re.I)
+        if m:
+            url=safe_url(m[1],row.get('source_url',''),True)
+            if url: application.append(url)
+        if re.search('报名|投递|简历|应聘',line):
+            emails.extend(re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}',line))
+    # Several distinct application paths require the original announcement to disambiguate.
+    if not row.get('application_url') and len(set(application))==1:
+        row['application_url']=application[0]
+    row['emails']=list(dict.fromkeys(emails))
+    return row
 
 
 def parse_detail(html, item, source):
@@ -492,7 +555,7 @@ def parse_detail(html, item, source):
     emails=list(dict.fromkeys(emails))
     directions=[label for label,pattern in [('财务 / 经济',r'财务|会计|审计|经济|金融|财会'),('管理 / 职能',r'管理|行政|人力|人事|运营|采购|职能|管培'),('技术 / 研发',r'研发|工程师|技术|算法|软件'),('市场 / 销售',r'市场|销售|营销|客户经理')] if re.search(pattern,combined)]
     secondary=source.get('adapter') in {'wondercv','offerjack'}
-    return {'id':hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20], 'title':title,'company':company,
+    return refine_facts({'id':hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20], 'title':title,'company':company,
             'source_id':source['id'],'source_name':source['name'],'source_url':item['url'],
             'published_at':published,'date_label':'更新' if source.get('adapter')=='offerjack' else '收录' if secondary else '发布',
             'provenance':'第三方线索' if secondary else '公开原始来源',
@@ -504,7 +567,7 @@ def parse_detail(html, item, source):
             'deadline':expires,'deadline_evidence':expires_text,'deadline_precision':precision,
             'application_url':application_url,'emails':emails,'attachments':attachments,'links':links[:20],
             'qr_attachment':bool(re.search(r'扫码|二维码',text)),
-            'excerpt':text[:300],'body':text[:18000], 'classification_note':'标签根据公告文字整理；具体岗位资格请核对原文。'}
+            'excerpt':text[:300],'body':text[:18000], 'classification_note':'标签根据公告文字整理；具体岗位资格请核对原文。'})
 
 
 def merge(previous, incoming, now):
@@ -557,7 +620,7 @@ def deduplicate(jobs):
 
 def public_record(job):
     """Recompute derived location labels from retained text, without advancing verification time."""
-    row={k:v for k,v in job.items() if k!='fingerprint'}
+    row=refine_facts({k:v for k,v in job.items() if k!='fingerprint'})
     row['provenance']='第三方线索' if row['source_id'] in {'wondercv','offerjack'} else '公开原始来源'
     row.setdefault('kind','招聘公告')
     label=r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点)'
@@ -592,7 +655,7 @@ def public_summary(job):
     """Keep listing/filter fields in the index; full announcement text lives separately."""
     heavy={
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
-        'possible_cities','province_possible','duplicate_sources','details_available',
+        'possible_cities','province_possible','duplicate_sources','details_available','company_original',
     }
     row={k:v for k,v in job.items() if k not in heavy}
     return row

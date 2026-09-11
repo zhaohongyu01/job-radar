@@ -36,7 +36,8 @@ void test('legacy records and folded sources retain expected reading state', () 
 });
 void test('browsing preferences restore all filters without letting malformed fields through', () => {
   const filters = { ...defaultFilters, city: '青岛', type: '社招', query: '审计', onlyUnread: true };
-  assert.deepEqual(restoreBrowsing({ filters, viewMode: 'table' }), { filters, viewMode: 'table' });
+  assert.deepEqual(restoreBrowsing({ filters, viewMode: 'table' }), { filters, viewMode: 'table', groupCompanies: true });
+  assert.equal(restoreBrowsing({ groupCompanies: false }).groupCompanies, false);
   assert.deepEqual(restoreBrowsing(null).filters, defaultFilters);
   const restored = restoreBrowsing({ filters: { type: 'bad', onlyUnread: 'true', city: [], year: 'bad', query: 'x'.repeat(500), __proto__: { view: 'hidden' } }, viewMode: 'invalid' });
   assert.equal(restored.filters.type, '全部');

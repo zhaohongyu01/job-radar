@@ -34,6 +34,7 @@ export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadC
             <th scope="row">
               <button className="job-title table-title" onClick={() => onDetail(job)}>{job.title}</button>
               {job.company && <p className="small muted">{job.company}</p>}
+              {job.company_conflict && <p className="small muted">{job.company_note}</p>}
               <p className="small muted">{job.kind} · {job.types.join(' / ') || '类型待确认'}{job.graduation_years.length ? ` · ${job.graduation_years.join(' / ')} 届` : ''}</p>
               {job.classification_note?.startsWith('仅核实') && <span className="tag">详情待核对</span>}
             </th>

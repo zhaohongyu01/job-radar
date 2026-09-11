@@ -2,6 +2,9 @@ export type Job = {
   id: string;
   title: string;
   company: string;
+  company_note?: string;
+  company_original?: string;
+  company_conflict?: boolean;
   source_id: string;
   source_name: string;
   source_url: string;

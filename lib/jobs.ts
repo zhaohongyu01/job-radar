@@ -71,7 +71,7 @@ export type Snapshot = {
 };
 export type Personal = Record<
   string,
-  { saved?: boolean; applied?: boolean; hidden?: boolean }
+  { saved?: boolean; applied?: boolean; hidden?: boolean; readAt?: string | null }
 >;
 export type Filters = {
   city: string;
@@ -86,6 +86,7 @@ export type Filters = {
   showExpired: boolean;
   view: string;
   onlyNew: boolean;
+  onlyUnread: boolean;
   provenance: string;
   kind: string;
 };
@@ -102,6 +103,7 @@ export const defaultFilters: Filters = {
   showExpired: false,
   view: 'all',
   onlyNew: false,
+  onlyUnread: false,
   provenance: '全部',
   kind: '全部',
 };
@@ -111,11 +113,23 @@ export function isExpired(job: Job, now = Date.now()) {
 export function personalFor(job: Job, personal: Personal) {
   if (personal[job.id]) return personal[job.id];
   const records = (job.duplicate_ids ?? []).map((id) => personal[id]);
+  const readAt = records.flatMap((record) => record?.readAt ? [record.readAt] : []).sort().at(-1);
   return {
     saved: records.some((record) => record?.saved),
     applied: records.some((record) => record?.applied),
     hidden: records.some((record) => record?.hidden),
+    ...(readAt ? { readAt } : {}),
   };
+}
+export function isUnread(job: Job, personal: Personal) {
+  const readAt = personalFor(job, personal).readAt;
+  if (!readAt) return true;
+  return Date.parse(job.updated_at) > Date.parse(readAt);
+}
+export function mergePersonal(current: Personal, imported: Personal): Personal {
+  const result = { ...current };
+  for (const [id, record] of Object.entries(imported)) result[id] = { ...current[id], ...record };
+  return result;
 }
 export function isDomestic(job: Job) {
   if (job.domestic_status === 'overseas') return false;
@@ -215,6 +229,7 @@ export function filterJobs(
   return jobs
     .filter((j) => {
       const p = personalFor(j, personal);
+      if (f.onlyUnread && !isUnread(j, personal)) return false;
       if (
         (f.view === 'saved' && !p.saved) ||
         (f.view === 'applied' && !p.applied) ||
@@ -297,16 +312,24 @@ export function validatePersonal(input: unknown): Personal {
     )
       throw Error('备份条目不正确');
     const row = value as Record<string, unknown>;
-    for (const key of Object.keys(row))
+    for (const key of Object.keys(row)) {
+      if (key === 'readAt') {
+        if (row[key] !== null && (typeof row[key] !== 'string' ||
+            !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(row[key]) ||
+            !Number.isFinite(Date.parse(row[key])))) throw Error('备份已读时间不正确');
+        continue;
+      }
       if (
         !['saved', 'applied', 'hidden'].includes(key) ||
         typeof row[key] !== 'boolean'
       )
         throw Error('备份状态不正确');
+    }
     result[id] = {
       saved: row.saved === true,
       applied: row.applied === true,
       hidden: row.hidden === true,
+      ...(Object.hasOwn(row, 'readAt') ? { readAt: row.readAt as string | null } : {}),
     };
   }
   return result;

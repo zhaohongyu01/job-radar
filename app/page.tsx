@@ -53,8 +53,14 @@ import {
   validatePersonal,
   externalUrl,
   personalFor,
+  isUnread,
+  mergePersonal,
 } from '@/lib/jobs';
 import type { Job, Snapshot, Personal, Filters } from '@/lib/jobs';
+import { restoreBrowsing } from '@/lib/browsing';
+import type { ViewMode } from '@/lib/browsing';
+import { JobTable } from '@/components/job-table';
+const BROWSING_STORAGE = 'job-radar-browsing-v1';
 const STORAGE = 'quancheng-personal-v1',
   VISIT = 'quancheng-last-visit-v1';
 const PAGE_SIZE_STORAGE = 'job-radar-page-size-v1';
@@ -166,15 +172,18 @@ function OutLink({
   url,
   children,
   primary = false,
+  onOpen,
 }: {
   url: string | null | undefined;
   children: React.ReactNode;
   primary?: boolean;
+  onOpen?: () => void;
 }) {
   const href = externalUrl(url);
   return href ? (
     <a
       href={href}
+      onClick={onOpen}
       target="_blank"
       rel="noopener noreferrer"
       className={primary ? 'primary-link' : 'quiet-link'}
@@ -195,13 +204,16 @@ export default function Home() {
   const [selected, setSelected] = useState<Job | null>(null),
     [sourceOpen, setSourceOpen] = useState(false),
     [page, setPage] = useState(1),
-    [pageSize, setPageSize] = useState(20),
+    [pageSize, setPageSize] = useState(50),
+    [viewMode, setViewMode] = useState<ViewMode>('cards'),
     [notice, setNotice] = useState(''),
     [now, setNow] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false),
     [detailError, setDetailError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const resultsTopRef = useRef<HTMLDivElement>(null);
+  const personalRef = useRef<Personal>({});
+  const preferencesWarning = useRef(false);
   const detailCache = useRef<Record<string, Job>>({});
   const detailRequest = useRef(0);
   const detailsPromise = useRef<Record<string, Promise<Record<string, Job>>>>({});
@@ -235,6 +247,24 @@ export default function Home() {
       setLoading(false);
     }
   }, []);
+  const save = useCallback((next: Personal) => {
+    try {
+      localStorage.setItem(STORAGE, JSON.stringify(next));
+      personalRef.current = next;
+      setPersonal(next);
+      return true;
+    } catch {
+      setNotice('保存失败，浏览器存储不可用或已满。请先导出记录。');
+      return false;
+    }
+  }, []);
+  const setRead = useCallback((job: Job, read: boolean) => {
+    const current = personalRef.current;
+    save({ ...current, [job.id]: { ...personalFor(job, current), readAt: read ? new Date().toISOString() : null } });
+  }, [save]);
+  const markRead = useCallback((job: Job) => {
+    if (isUnread(job, personalRef.current)) setRead(job, true);
+  }, [setRead]);
   const openDetail = useCallback(
     async (job: Job) => {
       const request = ++detailRequest.current;
@@ -250,8 +280,8 @@ export default function Home() {
           links: job.links ?? [],
         },
       );
-      if (cached) return;
-      if (job.body) return;
+      if (cached) { markRead(cached); return; }
+      if (job.body) { markRead(job); return; }
       const url = data?.detail_shards?.[job.id.slice(0, 2)] ?? data?.details_url;
       if (!url) { setDetailError('这条公告的详情暂未生成，请打开原公告核对。'); return; }
       const pending = detailsPromise.current;
@@ -281,6 +311,7 @@ export default function Home() {
         if (request === detailRequest.current) {
           detailCache.current = { ...detailCache.current, ...records };
           setSelected(full);
+          markRead(full);
         }
       } catch (e) {
         delete pending[url];
@@ -292,7 +323,7 @@ export default function Home() {
         if (request === detailRequest.current) setDetailLoading(false);
       }
     },
-    [data],
+    [data, markRead],
   );
   // Browser storage is read after hydration; SSR has no access to this device state.
   useEffect(() => {
@@ -306,9 +337,14 @@ export default function Home() {
         // A blocked preference store must not prevent browsing or personal-record loading.
       }
       try {
-        setPersonal(
-          validatePersonal(JSON.parse(localStorage.getItem(STORAGE) || '{}')),
-        );
+        const restored = restoreBrowsing(JSON.parse(localStorage.getItem(BROWSING_STORAGE) || 'null'));
+        setFilters(restored.filters);
+        setViewMode(restored.viewMode);
+      } catch { /* Invalid preferences fall back without affecting saved records. */ }
+      try {
+        const records = validatePersonal(JSON.parse(localStorage.getItem(STORAGE) || '{}'));
+        personalRef.current = records;
+        setPersonal(records);
         const old = localStorage.getItem(VISIT);
         setSince(old && !Number.isNaN(Date.parse(old)) ? old : null);
         localStorage.setItem(VISIT, new Date().toISOString());
@@ -323,24 +359,29 @@ export default function Home() {
       clearInterval(timer);
     };
   }, [refresh]);
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      localStorage.setItem(BROWSING_STORAGE, JSON.stringify({ filters, viewMode }));
+      preferencesWarning.current = false;
+    } catch {
+      if (!preferencesWarning.current) {
+        const timer = setTimeout(() => {
+          preferencesWarning.current = true;
+          setNotice('筛选已生效，但浏览器不允许保存设置，下次打开将恢复默认条件。');
+        }, 0);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [ready, filters, viewMode]);
   const change = <K extends keyof Filters>(key: K, value: Filters[K]) => {
     setFilters((f) => ({ ...f, [key]: value }));
     setPage(1);
   };
-  const save = (next: Personal) => {
-    try {
-      localStorage.setItem(STORAGE, JSON.stringify(next));
-      setPersonal(next);
-      return true;
-    } catch {
-      setNotice('保存失败，浏览器存储不可用或已满。请先导出记录。');
-      return false;
-    }
-  };
   const toggle = (job: Job, key: 'saved' | 'applied' | 'hidden') => {
     const next = {
-      ...personal,
-      [job.id]: { ...personalFor(job, personal), [key]: !personalFor(job, personal)[key] },
+      ...personalRef.current,
+      [job.id]: { ...personalFor(job, personalRef.current), [key]: !personalFor(job, personalRef.current)[key] },
     };
     save(next);
   };
@@ -437,7 +478,7 @@ export default function Home() {
     now - Date.parse(data.last_success_at) > 36 * 3600000;
   const exportPersonal = () => {
     const blob = new Blob(
-      [JSON.stringify({ version: 1, records: personal }, null, 2)],
+      [JSON.stringify({ version: 2, records: personal }, null, 2)],
       { type: 'application/json' },
     );
     const url = URL.createObjectURL(blob);
@@ -451,11 +492,11 @@ export default function Home() {
   const importPersonal = async (file?: File) => {
     if (!file) return;
     try {
-      if (file.size > 2000000) throw Error('备份文件不能超过 2 MB');
+      if (file.size > 5000000) throw Error('备份文件不能超过 5 MB');
       const backup = JSON.parse(await file.text());
-      if (backup.version !== 1) throw Error('不支持此备份版本');
+      if (![1, 2].includes(backup.version)) throw Error('不支持此备份版本');
       const imported = validatePersonal(backup.records);
-      if (save({ ...personal, ...imported }))
+      if (save(mergePersonal(personalRef.current, imported)))
         setNotice('已合并备份中的个人记录。');
     } catch (e) {
       setNotice(e instanceof Error ? e.message : '无法读取备份文件');
@@ -582,10 +623,11 @@ export default function Home() {
                 <RotateCcw size={15} />
               </button>
             </h2>
+            <p className="saved-filter-note">筛选条件会记在本机，下次继续使用。右上角可重置。</p>
             <Choice
               label="工作城市"
               value={filters.city}
-              options={['全部城市', ...(data?.cities ?? ['济南'])]}
+              options={Array.from(new Set(['全部城市', filters.city, ...(data?.cities ?? ['济南'])]))}
               onChange={(v) => change('city', v)}
             />
             <Choice
@@ -733,6 +775,14 @@ export default function Home() {
                 </TabsList>
               </Tabs>
             </div>
+            <div className="browsing-toolbar">
+              <fieldset className="view-mode-buttons" aria-label="招聘信息显示方式">
+                <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'outline'} aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')}>卡片</Button>
+                <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>紧凑表格</Button>
+              </fieldset>
+              <Toggle label="只看未读" checked={filters.onlyUnread} onChange={(v) => change('onlyUnread', v)} />
+            </div>
+            <p className="reading-note">查看详情或投递入口后标为已读，也可手动切换。内容更新后重新提示未读。{viewMode === 'table' && ' 表格可左右滑动。'}</p>
             <div className="result-summary">
               <p aria-live="polite">
                 {searchPending ? <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output> : <><strong>{filtered.length}</strong> 条符合当前筛选的招聘信息</>}
@@ -807,8 +857,11 @@ export default function Home() {
                     <ResultsPagination page={currentPage} pageSize={pageSize} total={filtered.length} position="top" onPageChange={changePage} onPageSizeChange={changePageSize} />
                   )}
                 </div>
+                {viewMode === 'table' && visible.length > 0 && (
+                  <JobTable jobs={visible} personal={personal} ready={ready} now={now} onDetail={(job) => void openDetail(job)} onRead={markRead} onReadChange={setRead} onToggle={toggle} />
+                )}
                 <div className="cards">
-                  {visible.map((job) => {
+                  {viewMode === 'cards' && visible.map((job) => {
                     const location = locationMatch(job, filters.city);
                     const saved = personalFor(job, personal).saved;
                     const applied = personalFor(job, personal).applied;
@@ -820,6 +873,7 @@ export default function Home() {
                         >
                           <div className="job-top">
                             <div className="tags">
+                              <button className={isUnread(job, personal) ? 'tag read-status unread' : 'tag read-status'} disabled={!ready} aria-label={`${isUnread(job, personal) ? '标为已读' : '标为未读'}：${job.title}`} onClick={() => setRead(job, isUnread(job, personal))}>{isUnread(job, personal) ? '未读' : '已读'}</button>
                               {filters.city !== '全部城市' && (
                                 <span className="tag">
                                   {location === 'exact'
@@ -934,6 +988,7 @@ export default function Home() {
                               <OutLink
                                 primary
                                 url={job.application_url || job.source_url}
+                                onOpen={() => markRead(job)}
                               >
                                 {job.application_url
                                   ? '前往投递'
@@ -965,6 +1020,7 @@ export default function Home() {
                             education: '',
                             query: '',
                             onlyNew: false,
+                            onlyUnread: false,
                             includeUncertain: true,
                           });
                           setPage(1);
@@ -1030,6 +1086,7 @@ export default function Home() {
                   <p className="inline-note">{selected.classification_note}</p>
                 )}
                 <div className="detail-actions">
+                  <Button variant="outline" disabled={!ready || detailLoading} onClick={() => setRead(selected, isUnread(selected, personal))}>{isUnread(selected, personal) ? '标为已读' : '标为未读'}</Button>
                   <Button
                     variant={
                       personalFor(selected, personal).saved ? 'default' : 'outline'
@@ -1060,6 +1117,7 @@ export default function Home() {
                   <OutLink
                     primary
                     url={selected.application_url || selected.source_url}
+                    onOpen={() => markRead(selected)}
                   >
                     {selected.application_url
                       ? '打开投递页面'

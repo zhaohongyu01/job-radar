@@ -28,7 +28,9 @@ npm run dev
 - 首次收录、原站发布、内容变化、最后成功读取分别记录。
 - 失败保留旧数据；无法提取详情计入来源错误，保留已核实列表的标题、日期、原文入口并注明详情待核对，不冒充详情解析成功。
 - 收藏、手动已投递、不感兴趣、恢复显示；浏览器内保存，JSON 导入导出。
-- 每页可显示 20、50、100 条，默认 20 条并记住本机设置；顶部与底部均可翻页，切换条数保留当前首条记录所在页。
+- 每页可显示 20、50、100 条，默认 50 条并记住本机设置；顶部与底部均可翻页，切换条数保留当前首条记录所在页。
+- 卡片与紧凑表格可切换，使用相同筛选、排序与分页；筛选条件和视图模式自动保存在当前浏览器。
+- 详情读取成功或打开原文/投递入口后标为已读，支持手动标为未读和只看未读；内容更新时间晚于已读时间时重新提示。已读状态纳入版本 2 个人备份，仍可导入旧版备份。
 - 已截止筛选、收藏公告七日内截止提示；邮箱仅复制，不自动发送。
 
 ## 更新与部署边界
@@ -43,7 +45,7 @@ Docker/NAS 入口已按 24 小时循环执行采集、构建并重启网站，�
 
 ```powershell
 python -m unittest discover -s tests -p 'test_*.py'
-node --experimental-strip-types --test tests/domain.test.ts
+node --experimental-strip-types --test tests/domain.test.ts tests/browsing.test.ts
 npx tsc --noEmit
 npm run lint
 npm run build

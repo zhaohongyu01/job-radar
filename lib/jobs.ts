@@ -187,7 +187,17 @@ export const defaultFilters: Filters = {
   radarFocus: 'none',
 };
 export function isExpired(job: Job, now = Date.now()) {
-  return !!job.deadline && Date.parse(job.deadline) < now;
+  if (job.deadline) {
+    const t = Date.parse(job.deadline);
+    return !Number.isNaN(t) && t < now;
+  }
+  if (job.published_at) {
+    const pub = Date.parse(job.published_at);
+    if (!Number.isNaN(pub) && (now - pub) > 60 * 24 * 60 * 60 * 1000) {
+      return true;
+    }
+  }
+  return false;
 }
 export function normalizeCompanyName(name?: string | null): string {
   if (!name) return '';
@@ -238,10 +248,13 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
       else if (/社招|社会/.test(job.title)) phase = '社招';
       else if (/实习/.test(job.title)) phase = '实习';
 
+      const batchMatch = (job.title ?? '').match(/(第[一二两三四五1-5]批|第[一二两三四五1-5]期)/);
+      const batchTag = batchMatch ? batchMatch[1] : '';
+
       if (!company && !normTitle) {
         key = `ann_id_${job.id}`;
       } else if (normComp && cohorts && job.types?.includes('校招')) {
-        key = `campus_${normComp}_${cohorts}_${phase}`;
+        key = `campus_${normComp}_${cohorts}_${phase}_${batchTag}`;
       } else if (normComp && normTitle) {
         key = `ann_norm_${normComp}_${normTitle}`;
       } else if (normTitle) {
@@ -332,11 +345,11 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
       }
       if (job.positions?.length) {
         existing.positions = existing.positions ?? [];
-        const existingKeys = new Set(
-          existing.positions.map((p) => `${p.name}-${p.city ?? ''}-${p.education ?? ''}`),
-        );
+        const posKey = (p: PositionRequirement) =>
+          `${p.name}-${p.city ?? ''}-${p.education ?? ''}-${(p.majors ?? []).slice().sort().join(',')}`;
+        const existingKeys = new Set(existing.positions.map(posKey));
         for (const p of job.positions) {
-          const key = `${p.name}-${p.city ?? ''}-${p.education ?? ''}`;
+          const key = posKey(p);
           if (!existingKeys.has(key)) {
             existing.positions.push(p);
             existingKeys.add(key);
@@ -484,7 +497,7 @@ export function locationMatch(
   // nearby province/national label. This prevents “上海、全国、海外” from
   // being presented as a possible Jinan opportunity.
   const broadPattern = province && new RegExp(`${province}(?:省)?[ \\t]*(?=$|[/、，,；;\\n]|各地|全省|不限|多个城市|分行辖属|各分支机构)`);
-  const detailLocations = (job.location_evidence ?? []).filter((line) => /^(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|用人单位所在地|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)/.test(line));
+  const detailLocations = (job.location_evidence ?? []).filter((line) => /^(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)/.test(line));
   const specificCities = Object.values(PROVINCE_CITIES)
     .flat()
     .filter((candidate) => detailLocations.some((line) => line.includes(candidate)));
@@ -712,14 +725,14 @@ export function getLifecycleStage(
   }
 
   const title = job.title || '';
-  const body = job.body || job.excerpt || '';
-  const combined = `${title}\n${body.slice(0, 1000)}`;
+  const bodySlice = (job.body || job.excerpt || '').slice(0, 1000);
+  const isSelectionNotice =
+    job.recent_change?.type === 'selection_stage' ||
+    /(?:笔试|面试|初试|复试).*(?:安排|通知|名单|公示|复审)|(?:拟录用|录取公示|录用名单)/.test(title) ||
+    (/(?:笔试|面试|初试|复试).*(?:安排|通知|名单|公示|复审)|(?:拟录用|录取公示|录用名单)/.test(bodySlice) &&
+      !/(?:具体安排|时间地点|相关安排|时间)?另行通知|流程[：:\s]/.test(bodySlice));
 
-  if (
-    /(?:笔试|面试|初试|复试).*(?:安排|通知|名单|公示|复审)|(?:拟录用|录取公示|录用名单)/.test(
-      combined,
-    )
-  ) {
+  if (isSelectionNotice) {
     return {
       stage: 'selection',
       label: '考核选拔中',
@@ -909,19 +922,29 @@ export function filterJobs(
         if (!sal || sal.max < threshold) return false;
       }
       if (f.changeType && f.changeType !== '全部') {
+        const isRecentDate = (d?: string | null) => {
+          if (!d) return false;
+          const t = Date.parse(d);
+          if (Number.isNaN(t)) return false;
+          const diffDays = (now - t) / 86400000;
+          return diffDays >= -1 && diffDays <= 30;
+        };
+        const hasRecentChangeObj = Boolean(j.recent_change && isRecentDate(j.recent_change.date));
+        const hasRecentTimeline = Boolean(
+          j.timeline && j.timeline.some((e) => e.type !== 'published' && e.type !== 'source_repost' && isRecentDate(e.date))
+        );
         const stage = getLifecycleStage(j, now).stage;
+        const isRecentJob = isRecentDate(j.updated_at || j.published_at || j.first_seen_at);
         const hasChange =
-          Boolean(j.recent_change) ||
-          stage === 'extended' ||
-          stage === 'supplemental' ||
-          stage === 'selection' ||
-          Boolean(j.timeline && j.timeline.some((e) => e.type !== 'published' && e.type !== 'source_repost'));
+          hasRecentChangeObj ||
+          hasRecentTimeline ||
+          ((stage === 'extended' || stage === 'supplemental' || stage === 'selection') && isRecentJob);
 
         if (f.changeType === '有变更' && !hasChange) return false;
-        if (f.changeType === '截止延期' && stage !== 'extended' && j.recent_change?.type !== 'deadline_extended') return false;
-        if (f.changeType === '补录招募' && stage !== 'supplemental' && j.recent_change?.type !== 'supplemental') return false;
-        if (f.changeType === '岗位调整' && (j.position_count ?? 0) === 0 && j.recent_change?.type !== 'positions_updated') return false;
-        if (f.changeType === '考核阶段' && stage !== 'selection' && j.recent_change?.type !== 'selection_stage') return false;
+        if (f.changeType === '截止延期' && (stage !== 'extended' || !isRecentJob) && !(j.recent_change?.type === 'deadline_extended' && hasRecentChangeObj)) return false;
+        if (f.changeType === '补录招募' && (stage !== 'supplemental' || !isRecentJob) && !(j.recent_change?.type === 'supplemental' && hasRecentChangeObj)) return false;
+        if (f.changeType === '岗位调整' && !(j.recent_change?.type === 'positions_updated' && hasRecentChangeObj) && !(j.timeline?.some((e) => e.type === 'positions_updated' && isRecentDate(e.date)))) return false;
+        if (f.changeType === '考核阶段' && (stage !== 'selection' || !isRecentJob) && !(j.recent_change?.type === 'selection_stage' && hasRecentChangeObj)) return false;
       }
       if (f.radarFocus && f.radarFocus !== 'none') {
         if (f.radarFocus === 'today') {
@@ -1051,12 +1074,12 @@ export function validatePersonal(input: unknown): Personal {
       )
         throw Error('备份状态不正确');
     }
-    result[id] = {
-      saved: row.saved === true,
-      applied: row.applied === true,
-      hidden: row.hidden === true,
-      ...(Object.hasOwn(row, 'readAt') ? { readAt: row.readAt as string | null } : {}),
-    };
+    const item: { saved?: boolean; applied?: boolean; hidden?: boolean; readAt?: string | null } = {};
+    if (typeof row.saved === 'boolean') item.saved = row.saved;
+    if (typeof row.applied === 'boolean') item.applied = row.applied;
+    if (typeof row.hidden === 'boolean') item.hidden = row.hidden;
+    if (Object.hasOwn(row, 'readAt')) item.readAt = row.readAt as string | null;
+    result[id] = item;
   }
   return result;
 }

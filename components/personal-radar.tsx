@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Radar, Plus, Zap, Clock, BookmarkCheck, ChevronUp, ChevronDown, Check, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { Filters, Job } from '@/lib/jobs';
+import type { Filters, Job, RadarFocus } from '@/lib/jobs';
 import {
   type RadarPreset,
   loadRadarPresets,
@@ -12,8 +12,6 @@ import {
   computeRadarMetrics,
   RADAR_ACTIVE_PRESET_STORAGE,
 } from '@/lib/radar';
-
-import type { Filters, Job, RadarFocus } from '@/lib/jobs';
 
 export type PersonalRadarProps = {
   currentFilters: Filters;

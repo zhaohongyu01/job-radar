@@ -224,6 +224,43 @@ def _parse_html_tables_regex(html_str: str) -> List[Dict[str, Any]]:
     return deduplicate_positions(results)
 
 
+def _table_to_grid(table: Any) -> List[List[str]]:
+    """Extract a 2D cell string grid from an HTML table element, expanding rowspan and colspan."""
+    rows = table.find_all('tr') if hasattr(table, 'find_all') else []
+    grid_cells: Dict[tuple, str] = {}
+    for r_idx, r in enumerate(rows):
+        col_idx = 0
+        cells = r.find_all(['td', 'th']) if hasattr(r, 'find_all') else []
+        for cell in cells:
+            while (r_idx, col_idx) in grid_cells:
+                col_idx += 1
+            rowspan = 1
+            colspan = 1
+            attrs = getattr(cell, 'attrs', {}) or {}
+            raw_rs = attrs.get('rowspan') if hasattr(attrs, 'get') else (cell.get('rowspan') if hasattr(cell, 'get') else 1)
+            raw_cs = attrs.get('colspan') if hasattr(attrs, 'get') else (cell.get('colspan') if hasattr(cell, 'get') else 1)
+            try:
+                if raw_rs:
+                    rowspan = max(1, min(int(raw_rs), 50))
+            except (ValueError, TypeError):
+                rowspan = 1
+            try:
+                if raw_cs:
+                    colspan = max(1, min(int(raw_cs), 20))
+            except (ValueError, TypeError):
+                colspan = 1
+            text = clean_cell(cell.get_text() if hasattr(cell, 'get_text') else cell.text if hasattr(cell, 'text') else str(cell))
+            for dr in range(rowspan):
+                for dc in range(colspan):
+                    grid_cells[(r_idx + dr, col_idx + dc)] = text
+            col_idx += colspan
+    if not grid_cells:
+        return []
+    max_r = max(r for r, c in grid_cells.keys())
+    max_c = max(c for r, c in grid_cells.keys())
+    return [[grid_cells.get((r, c), '') for c in range(max_c + 1)] for r in range(max_r + 1)]
+
+
 def parse_html_tables(html_or_soup: Any) -> List[Dict[str, Any]]:
     """Parse HTML <table> elements into structured positions."""
     if not html_or_soup:
@@ -235,14 +272,10 @@ def parse_html_tables(html_or_soup: Any) -> List[Dict[str, Any]]:
                 tables = soup.find_all('table')
                 results: List[Dict[str, Any]] = []
                 for table in tables:
-                    rows = table.find_all('tr')
-                    grid: List[List[str]] = []
-                    for r in rows:
-                        cells = [clean_cell(c.get_text()) for c in r.find_all(['td', 'th'])]
-                        if cells:
-                            grid.append(cells)
-                    parsed = parse_table_grid(grid, source_type='html_table')
-                    results.extend(parsed)
+                    grid = _table_to_grid(table)
+                    if grid:
+                        parsed = parse_table_grid(grid, source_type='html_table')
+                        results.extend(parsed)
                 return deduplicate_positions(results)
             except Exception:
                 return _parse_html_tables_regex(html_or_soup)
@@ -253,31 +286,10 @@ def parse_html_tables(html_or_soup: Any) -> List[Dict[str, Any]]:
             tables = html_or_soup.find_all('table')
             results = []
             for table in tables:
-                rows = table.find_all('tr')
-                grid = []
-                for r in rows:
-                    cells = [clean_cell(c.get_text()) for c in r.find_all(['td', 'th'])]
-                    if cells:
-                        grid.append(cells)
-                parsed = parse_table_grid(grid, source_type='html_table')
-                results.extend(parsed)
-            return deduplicate_positions(results)
-        except Exception:
-            return []
-
-    if hasattr(html_or_soup, 'find'):
-        try:
-            tables = html_or_soup.find('table')
-            results = []
-            for table in tables:
-                rows = table.find('tr')
-                grid = []
-                for r in rows:
-                    cells = [clean_cell(c.text()) for c in (r.find('th') or r.find('td'))]
-                    if cells:
-                        grid.append(cells)
-                parsed = parse_table_grid(grid, source_type='html_table')
-                results.extend(parsed)
+                grid = _table_to_grid(table)
+                if grid:
+                    parsed = parse_table_grid(grid, source_type='html_table')
+                    results.extend(parsed)
             return deduplicate_positions(results)
         except Exception:
             return []
@@ -400,18 +412,19 @@ def extract_positions_from_text(text: str, max_rows: int = 50) -> List[Dict[str,
 
 
 def deduplicate_positions(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Deduplicate positions by name, city, and education."""
+    """Deduplicate positions by name, city, education, and majors."""
     seen = set()
     unique = []
     for p in positions:
         name = p.get('name', '').strip()
         if not name or len(name) > 100:
             continue
-        key = (name, p.get('city', '').strip(), p.get('education', '').strip())
+        majors_key = ','.join(sorted(p.get('majors') or []))
+        key = (name, p.get('city', '').strip(), p.get('education', '').strip(), majors_key)
         if key not in seen:
             seen.add(key)
             unique.append(p)
-    return unique[:60]
+    return unique[:200]
 
 
 def extract_all_positions(

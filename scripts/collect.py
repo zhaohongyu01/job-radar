@@ -24,17 +24,18 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 TZ = dt.timezone(dt.timedelta(hours=8))
 CITIES = '济南 青岛 淄博 枣庄 东营 烟台 潍坊 济宁 泰安 威海 日照 临沂 德州 聊城 滨州 菏泽 北京 天津 上海 重庆 南京 苏州 杭州 宁波 合肥 福州 厦门 广州 深圳 珠海 东莞 佛山 武汉 长沙 郑州 西安 成都 昆明 贵阳 南昌 南宁 海口 太原 石家庄 沈阳 大连 长春 哈尔滨 兰州 西宁 银川 乌鲁木齐 拉萨'.split()
-LOCATION_LABEL = r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|用人单位所在地|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)'
+LOCATION_LABEL = r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)'
 PROVINCES_LIST = '北京 天津 上海 重庆 河北 山西 辽宁 吉林 黑龙江 江苏 浙江 安徽 福建 江西 山东 河南 湖北 湖南 广东 广西 海南 四川 贵州 云南 陕西 甘肃 青海 宁夏 新疆 内蒙古 西藏 香港 澳门 台湾'.split()
 
 try:
-    from parse_positions import extract_all_positions, enrich_job_with_positions
+    from parse_positions import extract_all_positions, enrich_job_with_positions, deduplicate_positions
 except ImportError:
     try:
-        from scripts.parse_positions import extract_all_positions, enrich_job_with_positions
+        from scripts.parse_positions import extract_all_positions, enrich_job_with_positions, deduplicate_positions
     except ImportError:
         def extract_all_positions(html, **kw): return []
         def enrich_job_with_positions(job, positions): return job
+        def deduplicate_positions(positions): return positions
 
 
 def extract_locations_from_text(evidence, text, title='', company=''):
@@ -658,7 +659,7 @@ def parse_detail(html, item, source):
     location_evidence=[]
     if fields.get('工作地域'): location_evidence.append(fields['工作地域'])
     if fields.get('工作地点'): location_evidence.append('工作地点：'+fields['工作地点'])
-    if fields.get('用人单位所在地'): location_evidence.append('工作地点：'+fields['用人单位所在地'])
+    if fields.get('用人单位所在地'): location_evidence.append('用人单位所在地：'+fields['用人单位所在地'])
     location_evidence = extract_locations_from_text(location_evidence, text, title, company)
     for table in body.find('table'):
         rows=table.find('tr')
@@ -669,7 +670,7 @@ def parse_detail(html, item, source):
                 cells=row.find('td')
                 for i in indexes:
                     if i<len(cells): location_evidence.append(clean(cells[i].text()))
-    cities=[city for city in CITIES if any(city in s for s in location_evidence)]
+    cities=[city for city in CITIES if any(city in s for s in location_evidence if not s.startswith('用人单位所在地：'))]
     # Province platform supplies a standard administrative code even for district-only labels.
     code=str(structured.get('workplace2') or '')
     shandong={'3701':'济南','3702':'青岛','3703':'淄博','3704':'枣庄','3705':'东营','3706':'烟台','3707':'潍坊','3708':'济宁','3709':'泰安','3710':'威海','3711':'日照','3713':'临沂','3714':'德州','3715':'聊城','3716':'滨州','3717':'菏泽'}
@@ -722,7 +723,9 @@ def parse_detail(html, item, source):
         attachments=attachments,
         fetch_attachment_fn=fetch_bytes,
     )
-    raw_job=refine_facts({'id':hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20], 'title':title,'company':company,
+    raw_job=refine_facts({'id': item.get('target_id') or hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20],
+            'identity': item.get('identity', item['url']),
+            'title':title,'company':company,
             'source_id':source['id'],'source_name':source['name'],'source_url':item['url'],
             'published_at':published,'date_label':'更新' if source.get('adapter')=='offerjack' else '收录' if secondary else '发布',
             'provenance':'第三方线索' if secondary else '公开原始来源',
@@ -994,10 +997,13 @@ def deduplicate(jobs):
             elif re.search(r'社招|社会', job.get('title', '')): phase = '社招'
             elif re.search(r'实习', job.get('title', '')): phase = '实习'
 
+            batch_m = re.search(r'(第[一二两三四五1-5]批|第[一二两三四五1-5]期)', job.get('title', ''))
+            batch_tag = batch_m.group(1) if batch_m else ''
+
             if not company and not norm_title:
                 key = ('announcement_id', job['id'])
             elif norm_comp and cohorts and '校招' in job.get('types', ['校招']):
-                key = ('campus_announcement', norm_comp, cohorts, phase)
+                key = ('campus_announcement', norm_comp, cohorts, phase, batch_tag)
             elif norm_comp and norm_title:
                 key = ('announcement_norm', norm_comp, norm_title)
             elif norm_title:
@@ -1025,6 +1031,9 @@ def deduplicate(jobs):
                 'position_count': job.get('position_count'),
                 'sample_positions': job.get('sample_positions'),
                 'majors': job.get('majors'),
+                'application_url': job.get('application_url'),
+                'body': job.get('body'),
+                'excerpt': job.get('excerpt'),
             }
             parent['duplicate_sources'].append({
                 'id': job['id'],
@@ -1077,6 +1086,12 @@ def deduplicate(jobs):
             elif len(job.get('body', '')) > len(parent.get('body', '')) + 200:
                 parent['body'] = job['body']
                 parent['excerpt'] = job.get('excerpt', parent.get('excerpt', ''))
+
+            # Merge positions across duplicate sources
+            if job.get('positions'):
+                current_positions = parent.get('positions') or []
+                combined_positions = deduplicate_positions(current_positions + job['positions'])
+                enrich_job_with_positions(parent, combined_positions)
 
             # Merge timeline events across duplicate sources
             if job.get('timeline'):
@@ -1133,7 +1148,7 @@ def public_record(job):
             if value: evidence.append('工作地点：'+value)
     evidence = extract_locations_from_text(evidence, row.get('body', ''), row.get('title', ''), row.get('company', ''))
     row['location_evidence']=list(dict.fromkeys(evidence))
-    row['cities']=[city for city in CITIES if any(city in s for s in evidence)]
+    row['cities']=[city for city in CITIES if any(city in s for s in evidence if not s.startswith('用人单位所在地：'))]
     row['domestic_status']=domestic_status(row['location_evidence'],row['cities'])
     if 'graduation_years' in row:
         row['graduation_years']=[y for y in row['graduation_years'] if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
@@ -1164,7 +1179,29 @@ def public_summary(job):
     row={k:v for k,v in job.items() if k not in heavy}
     if 'timeline' in row and isinstance(row['timeline'], list) and len(row['timeline']) > 5:
         row['timeline'] = row['timeline'][-5:]
+    if 'duplicate_sources' in row and isinstance(row['duplicate_sources'], list):
+        cleaned_sources = []
+        for s in row['duplicate_sources']:
+            s_clean = dict(s)
+            if 'facts' in s_clean and isinstance(s_clean['facts'], dict):
+                s_clean['facts'] = {fk: fv for fk, fv in s_clean['facts'].items() if fk not in {'positions', 'body'}}
+            cleaned_sources.append(s_clean)
+        row['duplicate_sources'] = cleaned_sources
     return row
+
+
+def build_search_text(job):
+    body = job.get('body', '')
+    if not job.get('positions'):
+        return body
+    parts = [body] if body else []
+    for p in job['positions']:
+        if p.get('name'): parts.append(p['name'])
+        if p.get('majors'): parts.extend(p['majors'])
+        if p.get('education'): parts.append(p['education'])
+        if p.get('city'): parts.append(p['city'])
+        if p.get('notes'): parts.append(p['notes'])
+    return '\n'.join(parts)
 
 
 def schedule_enabled():
@@ -1189,7 +1226,7 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     for job in public_jobs:
         shards.setdefault(job['id'][:2],{})[job['id']]=job
     detail_shards={key:asset('detail-'+key,{'schema_version':1,'jobs':rows}) for key,rows in shards.items()}
-    search_url=asset('search',{'jobs':{j['id']:j.get('body','') for j in public_jobs}})
+    search_url=asset('search',{'jobs':{j['id']:build_search_text(j) for j in public_jobs}})
     snapshot={'schema_version':2,'generated_at':state['last_run_at'],
               'last_success_at':max((j['last_verified_at'] for j in jobs.values()),default=None),
               'schedule_enabled':schedule_enabled(),'raw_records':len(jobs),
@@ -1343,6 +1380,8 @@ def run(args):
                 if not is_active: continue
                 last_ver=old_job.get('last_verified_at','')
                 if probe_refresh_cutoff and last_ver and last_ver>=probe_refresh_cutoff: continue
+                probe_att=old_job.get('probe_attempt_at','')
+                if probe_refresh_cutoff and probe_att and probe_att>=probe_refresh_cutoff: continue
                 probe_candidates.append(old_job)
 
             probe_candidates.sort(key=lambda j:j.get('last_verified_at') or '')
@@ -1355,12 +1394,18 @@ def run(args):
                     'url':p_job['source_url'],
                     'title':p_job.get('title',''),
                     'published_at':p_job.get('published_at'),
-                    'identity':p_job.get('source_url'),
+                    'identity':p_job.get('identity') or p_job.get('source_url'),
+                    'target_id':p_job['id'],
                     'is_probe':True,
                 })
 
             def read_detail(item):
-                return parse_detail(item['inline_html'] if 'inline_html' in item else fetch(item['url']),item,source)
+                res = parse_detail(item['inline_html'] if 'inline_html' in item else fetch(item['url']),item,source)
+                if item.get('target_id'):
+                    res['id'] = item['target_id']
+                if item.get('identity'):
+                    res['identity'] = item['identity']
+                return res
             # Bounded to two concurrent requests per source; retain progress on disk.
             with ThreadPoolExecutor(max_workers=2) as pool:
                 pending={pool.submit(read_detail,item):item for item in remaining}
@@ -1372,6 +1417,8 @@ def run(args):
                     except Exception as e:
                         if item.get('is_probe'):
                             status.setdefault('probe_errors',[]).append({'url':item['url'],'reason':str(e)[:200]})
+                            if item.get('target_id') and item['target_id'] in previous['jobs']:
+                                previous['jobs'][item['target_id']]['probe_attempt_at'] = now
                         else:
                             status['errors'].append({'url':item['url'],'reason':str(e)[:200]})
                             # Keep verified list discoveries when external detail templates are unsupported.

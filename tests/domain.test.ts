@@ -223,8 +223,6 @@ void test('import rejects malicious or invalid properties', () => {
   assert.throws(() => validatePersonal({ [job.id]: { saved: 'yes' } }));
   assert.deepEqual(validatePersonal({ [job.id]: { saved: true } })[job.id], {
     saved: true,
-    applied: false,
-    hidden: false,
   });
 });
 void test('unsafe application URL never renders as executable link', () => {
@@ -453,10 +451,17 @@ void test('locationMatch handles province branch and expanded detailLocation lab
   const locJob: Job = {
     ...job,
     cities: [],
-    location_evidence: ['用人单位所在地：青岛市'],
+    location_evidence: ['意向工作地：青岛市'],
   };
   assert.equal(locationMatch(locJob, '青岛'), 'exact');
   assert.equal(locationMatch(locJob, '济南'), 'none');
+
+  const empLocJob: Job = {
+    ...job,
+    cities: [],
+    location_evidence: ['用人单位所在地：青岛市'],
+  };
+  assert.equal(locationMatch(empLocJob, '青岛'), 'unknown');
 });
 
 void test('personalFor preserves duplicate saved status when master has readAt', () => {

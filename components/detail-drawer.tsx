@@ -297,12 +297,19 @@ export function DetailDrawer({
                   {(selected.attachments ?? []).map((a, i) => (
                     <div className="attachment" key={i}>
                       <OutLink url={a.url}>{a.title}</OutLink>
-                      {/\.(xlsx?|pdf)(?:\?|$)/i.test(a.url) && (selected.positions ?? []).length > 0 && (
-                        <span className="attachment-parsed-badge">
-                          <FileSpreadsheet size={11} />
-                          已解析岗位表
-                        </span>
-                      )}
+                      {/\.(xlsx?|pdf)(?:\?|$)/i.test(a.url) &&
+                        (selected.positions ?? []).some(
+                          (p) =>
+                            p.source_file &&
+                            (a.title.includes(p.source_file) ||
+                              p.source_file.includes(a.title) ||
+                              (a.url && a.url.includes(p.source_file))),
+                        ) && (
+                          <span className="attachment-parsed-badge">
+                            <FileSpreadsheet size={11} />
+                            已解析岗位表
+                          </span>
+                        )}
                     </div>
                   ))}
                   {selected.qr_attachment && (

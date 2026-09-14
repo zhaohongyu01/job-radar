@@ -68,12 +68,12 @@ def snapshot_state(snapshot, load_asset):
                             source_url=source.get('url') or full['source_url'],
                             source_name=source_name,
                             source_id=source_ids.get(source_name, full.get('source_id', '')),
-                            application_url=source.get('application_url') or full.get('application_url'))
+                            application_url=source_facts.get('application_url', source.get('application_url')))
             for field in ('published_at', 'cities', 'location_evidence', 'education',
                           'deadline', 'deadline_evidence', 'deadline_precision',
                           'types', 'graduation_years', 'positions', 'position_count',
-                          'sample_positions', 'majors'):
-                if field in source_facts and source_facts[field] is not None:
+                          'sample_positions', 'majors', 'application_url', 'body', 'excerpt'):
+                if field in source_facts:
                     restored[field] = source_facts[field]
             if 'published_at' in source and 'published_at' not in source_facts:
                 restored['published_at'] = source['published_at']
@@ -99,11 +99,11 @@ def combine_states(*states):
             if job.get('id') != identifier or not job.get('fingerprint'):
                 raise ValueError('Invalid retained job identity')
             old = result['jobs'].get(identifier)
-            if not old or job['last_verified_at'] > old['last_verified_at']:
+            if not old or job['last_verified_at'] >= old['last_verified_at']:
                 result['jobs'][identifier] = job
         for identifier, source in state['sources'].items():
             old = result['sources'].get(identifier)
-            if not old or source.get('last_attempt_at', '') > old.get('last_attempt_at', ''):
+            if not old or source.get('last_attempt_at', '') >= old.get('last_attempt_at', ''):
                 result['sources'][identifier] = source
         result['last_run_at'] = max(result['last_run_at'], state['last_run_at'])
     return result

@@ -508,7 +508,7 @@ def extract_graduation_years(text):
     if not text:
         return []
     years = set()
-    for m in re.finditer(r'(?<!\d)(20\d{2})\s*(?:[届屆]|应届|年度(?:校园招聘)?|年应届|年(?:高校)?毕业)', text):
+    for m in re.finditer(r'(?<!\d)(20\d{2})\s*(?:[届屆]|应届|年?度?(?:校园招聘|校招)|年度|年应届|年(?:高校)?毕业)', text):
         years.add(m.group(1))
     for m in re.finditer(r'(?<!\d)(20\d{2})\s*[-/、及与至和或]\s*(20\d{2})\s*[届屆]', text):
         years.add(m.group(1))
@@ -956,7 +956,7 @@ def normalize_company(name):
         return ''
     c = re.sub(r'\s+', '', name).translate(str.maketrans('（）', '()'))
     c = re.sub(r'\((?:中国|集团|有限|股份|分公司|有限责任).*?\)', '', c)
-    c = re.sub(r'(?:有限责任公司|股份有限公司|有限公司|集团有限公司|集团)$', '', c)
+    c = re.sub(r'(?:有限责任公司|股份有限公司|有限公司|集团有限公司|集团)(?=(?:[\u4e00-\u9fa5]{2,10}?(?:分行|支行|分公司|中心|办事处))?$)', '', c)
     return c.strip()
 
 
@@ -966,6 +966,7 @@ def normalize_title_core(title):
     t = re.sub(r'\s+', '', title).translate(str.maketrans('（）', '()'))
     t = re.sub(r'^[【\[\(（][^】\]\)）]{1,20}[】\]\)）]', '', t)
     t = re.sub(r'(?:校园招聘(?:简章|公告|启事)?|招聘(?:简章|公告|启事|信息)?|简章|公告|启事|专场)$', '', t)
+    t = re.sub(r'(20\d{2})年$', r'\1', t)
     return t.strip()
 
 
@@ -988,7 +989,7 @@ def deduplicate(jobs):
             else:
                 key = ('position', norm_comp, re.sub(r'\s+', '', job['title']), cities)
         else:
-            title_cohorts = re.findall(r'(20\d{2})\s*届', job.get('title', ''))
+            title_cohorts = re.findall(r'(20\d{2})\s*(?:届|年度?|年(?=校园|校招)|(?=校园|校招|应届|毕业生|实习|春招|秋招))', job.get('title', ''))
             cohorts = tuple(sorted(set(title_cohorts or job.get('graduation_years', []))))
             phase = '校招'
             if re.search(r'春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]', job.get('title', '')): phase = '春招补录'

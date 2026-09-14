@@ -202,7 +202,7 @@ export function normalizeCompanyName(name?: string | null): string {
     .replace(/（/g, '(')
     .replace(/）/g, ')')
     .replace(/\((?:中国|集团|有限|股份|分公司|有限责任).*?\)/g, '')
-    .replace(/(?:有限责任公司|股份有限公司|有限公司|集团有限公司|集团)$/g, '');
+    .replace(/(?:有限责任公司|股份有限公司|有限公司|集团有限公司|集团)(?=(?:[\u4e00-\u9fa5]{2,10}?(?:分行|支行|分公司|中心|办事处))?$)/g, '');
 }
 export function normalizeTitleCore(title: string): string {
   if (!title) return '';
@@ -212,7 +212,8 @@ export function normalizeTitleCore(title: string): string {
     .replace(/（/g, '(')
     .replace(/）/g, ')')
     .replace(/^[【[(][^】\])]{1,20}[】\])]/g, '')
-    .replace(/(?:校园招聘(?:简章|公告|启事)?|招聘(?:简章|公告|启事|信息)?|简章|公告|启事|专场)$/g, '');
+    .replace(/(?:校园招聘(?:简章|公告|启事)?|招聘(?:简章|公告|启事|信息)?|简章|公告|启事|专场)$/g, '')
+    .replace(/(20\d{2})年$/, '$1');
 }
 export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
   const groups = new Map<string, Job>();
@@ -231,7 +232,7 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         key = `pos_${normComp}_${job.title.replace(/\s+/g, '')}_${cities}`;
       }
     } else {
-      const titleCohorts = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*届/g)].map((m) => m[1]))];
+      const titleCohorts = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*(?:届|年度?|年(?=校园|校招)|(?=校园|校招|应届|毕业生|实习|春招|秋招))/g)].map((m) => m[1]))];
       const cohorts = (titleCohorts.length ? titleCohorts : job.graduation_years ?? []).slice().sort().join(',');
       let phase = '校招';
       if (/春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]/.test(job.title)) phase = '春招补录';

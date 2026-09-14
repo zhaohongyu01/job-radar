@@ -868,3 +868,39 @@ void test('radar change filter and filterJobs 有变更 both respect 30-day wind
   assert.equal(byRadarChange[0].id, 'fresh-change');
 });
 
+void test('mergeDuplicateOpportunities merges branch company names with intermediate legal suffixes and year variations', () => {
+  const jobYtu: Job = {
+    ...job,
+    id: 'ytu-psbc',
+    source_name: '烟台大学',
+    source_url: 'https://job.ytu.edu.cn/detail/1',
+    company: '中国邮政储蓄银行山东省分行',
+    title: '中国邮政储蓄银行山东省分行2027校园招聘',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2027'],
+    published_at: '2026-09-14',
+    deadline: '2026-10-07T23:59:59+08:00',
+    cities: ['济南', '烟台', '青岛'],
+  };
+
+  const jobUpc: Job = {
+    ...job,
+    id: 'upc-psbc',
+    source_name: '中国石油大学（华东）就业网',
+    source_url: 'https://career.upc.edu.cn/detail/2',
+    company: '中国邮政储蓄银行股份有限公司山东省分行',
+    title: '中国邮政储蓄银行山东省分行2027年校园招聘',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: [],
+    published_at: '2026-09-13',
+    deadline: '2026-10-07T23:59:59+08:00',
+    cities: ['济南'],
+  };
+
+  const merged = mergeDuplicateOpportunities([jobYtu, jobUpc]);
+  assert.equal(merged.length, 1, '应成功合并跨渠道的中国邮政储蓄银行山东省分行校招公告');
+  assert.equal(merged[0].duplicate_sources?.length, 1);
+});
+

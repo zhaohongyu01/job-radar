@@ -793,6 +793,31 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(parsed['company'], '示例制造集团')
         self.assertEqual(parsed['application_url'], 'https://job.example.com/apply')
 
+    def test_deduplicate_merges_branch_legal_names_and_year_variations(self):
+        job1 = {
+            'id': 'ytu-psbc',
+            'company': '中国邮政储蓄银行山东省分行',
+            'title': '中国邮政储蓄银行山东省分行2027校园招聘',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'source_name': '烟台大学',
+            'source_url': 'https://job.ytu.edu.cn/1',
+            'published_at': '2026-09-14',
+        }
+        job2 = {
+            'id': 'upc-psbc',
+            'company': '中国邮政储蓄银行股份有限公司山东省分行',
+            'title': '中国邮政储蓄银行山东省分行2027年校园招聘',
+            'types': ['校招'],
+            'graduation_years': [],
+            'source_name': '中国石油大学（华东）就业网',
+            'source_url': 'https://job.upc.edu.cn/2',
+            'published_at': '2026-09-13',
+        }
+        deduped = c.deduplicate([job1, job2])
+        self.assertEqual(len(deduped), 1)
+        self.assertEqual(len(deduped[0].get('duplicate_sources', [])), 1)
+
 
 if __name__=='__main__': unittest.main()
 

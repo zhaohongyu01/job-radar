@@ -663,5 +663,59 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(len(selected), 1)
         self.assertEqual(selected[0]['id'], 'stale1')
 
+    def test_deduplicate_preserves_earliest_published_at_and_single_first_publish(self):
+        job1 = {
+            'id': 'sdu-1',
+            'company': '歌尔股份有限公司',
+            'title': '歌尔2027全球校园招聘',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'source_name': '山东大学就业信息网',
+            'source_url': 'https://job.sdu.edu.cn/detail/1',
+            'published_at': '2026-09-07',
+            'first_seen_at': '2026-09-07T08:00:00+08:00',
+            'timeline': [{
+                'date': '2026-09-07',
+                'type': 'published',
+                'title': '首次发布',
+                'detail': '来源于 山东大学就业信息网',
+                'source': '山东大学就业信息网',
+            }],
+        }
+        job2 = {
+            'id': 'upc-1',
+            'company': '歌尔股份有限公司',
+            'title': '歌尔2027全球校园招聘',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'source_name': '中国石油大学（华东）就业网',
+            'source_url': 'https://job.upc.edu.cn/detail/2',
+            'published_at': '2026-09-14',
+            'first_seen_at': '2026-09-14T08:00:00+08:00',
+            'timeline': [{
+                'date': '2026-09-14',
+                'type': 'published',
+                'title': '首次发布',
+                'detail': '来源于 中国石油大学（华东）就业网',
+                'source': '中国石油大学（华东）就业网',
+            }],
+        }
+        deduped = c.deduplicate([job1, job2])
+        self.assertEqual(len(deduped), 1)
+        parent = deduped[0]
+        # published_at must remain the earliest publication date across channels
+        self.assertEqual(parent['published_at'], '2026-09-07')
+
+        # timeline must only have one '首次发布', subsequent reposts become '跨渠道发布'
+        first_pub_events = [e for e in parent.get('timeline', []) if e.get('title') == '首次发布']
+        self.assertEqual(len(first_pub_events), 1)
+        self.assertEqual(first_pub_events[0]['date'], '2026-09-07')
+        self.assertEqual(first_pub_events[0]['source'], '山东大学就业信息网')
+
+        repost_events = [e for e in parent.get('timeline', []) if e.get('title') == '跨渠道发布']
+        self.assertEqual(len(repost_events), 1)
+        self.assertEqual(repost_events[0]['date'], '2026-09-14')
+
 
 if __name__=='__main__': unittest.main()
+

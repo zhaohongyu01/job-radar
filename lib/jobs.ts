@@ -304,7 +304,7 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
       }
 
       if (job.published_at) {
-        if (!existing.published_at || job.published_at > existing.published_at) {
+        if (!existing.published_at || job.published_at < existing.published_at) {
           existing.published_at = job.published_at;
         }
       }
@@ -386,11 +386,28 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         for (const e of job.timeline) {
           const key = `${e.date}-${e.type}-${e.title}`;
           if (!existingKeys.has(key)) {
-            existing.timeline.push(e);
+            existing.timeline.push({ ...e });
             existingKeys.add(key);
           }
         }
         existing.timeline.sort((a, b) => a.date.localeCompare(b.date));
+
+        let hasFirstPublished = false;
+        for (const evt of existing.timeline) {
+          if (evt.type === 'published' || evt.title === '首次发布') {
+            if (!hasFirstPublished) {
+              hasFirstPublished = true;
+              evt.type = 'published';
+              evt.title = '首次发布';
+            } else {
+              evt.type = 'source_repost';
+              evt.title = '跨渠道发布';
+              if (evt.source && !evt.detail.includes('同步发布')) {
+                evt.detail = `在「${evt.source}」同步发布`;
+              }
+            }
+          }
+        }
       }
 
       if (job.recent_change) {
@@ -787,47 +804,57 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
   const seenKeys = new Set<string>();
 
   const addEvt = (evt: TimelineEvent) => {
-    const key = `${evt.date}-${evt.type}-${evt.title}`;
+    const key = `${evt.date}-${evt.type}-${evt.title}-${evt.source || ''}`;
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
       events.push(evt);
     }
   };
 
-  // 1. Initial publication
-  const pubDate = (job.published_at || job.first_seen_at || '').slice(0, 10) || '近期';
-  addEvt({
-    date: pubDate,
-    type: 'published',
-    title: '首次发布',
-    detail: `由 ${job.source_name || '招聘渠道'} 发布公告`,
-    source: job.source_name,
-  });
+  // 1. Any backend recorded timeline events first
+  if (job.timeline?.length) {
+    for (const e of job.timeline) {
+      addEvt({ ...e });
+    }
+  }
 
-  // 2. Cross-channel publications
+  // 2. Cross-channel publications from duplicate_sources
   if (job.duplicate_sources?.length) {
     for (const ds of job.duplicate_sources) {
       if (ds.published_at && ds.source_name && ds.source_name !== job.source_name) {
-        addEvt({
-          date: ds.published_at.slice(0, 10),
-          type: 'source_repost',
-          title: '跨渠道发布',
-          detail: `在「${ds.source_name}」同步发布`,
-          source: ds.source_name,
-        });
+        const dsDate = ds.published_at.slice(0, 10);
+        const alreadyPresent = events.some(
+          (e) => (e.source === ds.source_name || e.detail.includes(ds.source_name!)) && e.date === dsDate,
+        );
+        if (!alreadyPresent) {
+          addEvt({
+            date: dsDate,
+            type: 'source_repost',
+            title: '跨渠道发布',
+            detail: `在「${ds.source_name}」同步发布`,
+            source: ds.source_name,
+          });
+        }
       }
     }
   }
 
-  // 3. Any backend recorded timeline events
-  if (job.timeline?.length) {
-    for (const e of job.timeline) {
-      addEvt(e);
-    }
+  // 3. Fallback initial publication only if no 'published' event exists yet
+  const hasPublished = events.some((e) => e.type === 'published');
+  if (!hasPublished) {
+    const pubDate = (job.published_at || job.first_seen_at || '').slice(0, 10) || '近期';
+    addEvt({
+      date: pubDate,
+      type: 'published',
+      title: '首次发布',
+      detail: `由 ${job.source_name || '招聘渠道'} 发布公告`,
+      source: job.source_name,
+    });
   }
 
   // 4. Any inferred changes from recent_change
-  if (job.recent_change) {
+  if (job.recent_change && !events.some((e) => e.type === job.recent_change!.type)) {
+    const pubDate = (job.published_at || job.first_seen_at || '').slice(0, 10) || '近期';
     addEvt({
       date: job.recent_change.date || pubDate,
       type: job.recent_change.type,
@@ -838,6 +865,7 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
 
   // 5. If position count exists and no positions_updated event
   if (job.position_count && !events.some((e) => e.type === 'positions_updated')) {
+    const pubDate = (job.published_at || job.first_seen_at || '').slice(0, 10) || '近期';
     addEvt({
       date: pubDate,
       type: 'positions_updated',
@@ -847,6 +875,25 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
   }
 
   events.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Enforce invariant: strictly ONE "首次发布"
+  // The earliest publication event remains "首次发布"; any subsequent publication events are converted to "跨渠道发布"
+  let foundFirstPublish = false;
+  for (const evt of events) {
+    if (evt.type === 'published' || evt.title === '首次发布') {
+      if (!foundFirstPublish) {
+        foundFirstPublish = true;
+        evt.type = 'published';
+        evt.title = '首次发布';
+      } else {
+        evt.type = 'source_repost';
+        evt.title = '跨渠道发布';
+        if (evt.source && !evt.detail.includes('同步发布')) {
+          evt.detail = `在「${evt.source}」同步发布`;
+        }
+      }
+    }
+  }
 
   // 6. Current stage status node
   const currentStage = getLifecycleStage(job, now);

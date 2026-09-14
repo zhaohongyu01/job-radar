@@ -1049,7 +1049,7 @@ def deduplicate(jobs):
             parent['duplicate_ids'].append(job['id'])
 
             if job.get('published_at'):
-                if not parent.get('published_at') or job['published_at'] > parent['published_at']:
+                if not parent.get('published_at') or job['published_at'] < parent['published_at']:
                     parent['published_at'] = job['published_at']
             if not parent.get('application_url') and job.get('application_url'):
                 parent['application_url'] = job['application_url']
@@ -1100,9 +1100,22 @@ def deduplicate(jobs):
                 for e in job['timeline']:
                     k = (e.get('date'), e.get('type'), e.get('title'))
                     if k not in p_keys:
-                        p_timeline.append(e)
+                        p_timeline.append(dict(e))
                         p_keys.add(k)
                 p_timeline.sort(key=lambda e: e.get('date') or '')
+                has_first_published = False
+                for evt in p_timeline:
+                    if evt.get('type') == 'published' or evt.get('title') == '首次发布':
+                        if not has_first_published:
+                            has_first_published = True
+                            evt['type'] = 'published'
+                            evt['title'] = '首次发布'
+                        else:
+                            evt['type'] = 'source_repost'
+                            evt['title'] = '跨渠道发布'
+                            src = evt.get('source') or job.get('source_name', '')
+                            if src and '同步发布' not in evt.get('detail', ''):
+                                evt['detail'] = f'在「{src}」同步发布'
                 parent['timeline'] = p_timeline
 
             # Merge recent_change with priority

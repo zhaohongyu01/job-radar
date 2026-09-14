@@ -732,3 +732,59 @@ void test('filterJobs filters opportunities by changeType', () => {
   assert.equal(suppOnly[0].id, 'supp-1');
 });
 
+void test('mergeDuplicateOpportunities and generateJobTimeline strictly produce only one 首次发布', () => {
+  const jobSdu: Job = {
+    ...job,
+    id: 'sdu-goertek',
+    company: '歌尔股份有限公司',
+    title: '歌尔股份2027全球校园招聘启事',
+    source_name: '山东大学就业信息网',
+    source_url: 'https://job.sdu.edu.cn/detail/1',
+    published_at: '2026-09-07',
+    timeline: [
+      {
+        date: '2026-09-07',
+        type: 'published',
+        title: '首次发布',
+        detail: '来源于 山东大学就业信息网',
+        source: '山东大学就业信息网',
+      },
+    ],
+  };
+
+  const jobUpc: Job = {
+    ...job,
+    id: 'upc-goertek',
+    company: '歌尔股份有限公司',
+    title: '歌尔股份2027全球校园招聘启事',
+    source_name: '中国石油大学（华东）就业网',
+    source_url: 'https://job.upc.edu.cn/detail/2',
+    published_at: '2026-09-14',
+    timeline: [
+      {
+        date: '2026-09-14',
+        type: 'published',
+        title: '首次发布',
+        detail: '来源于 中国石油大学（华东）就业网',
+        source: '中国石油大学（华东）就业网',
+      },
+    ],
+  };
+
+  const merged = mergeDuplicateOpportunities([jobSdu, jobUpc]);
+  assert.equal(merged.length, 1);
+  // Published_at must remain the earliest publication date across channels
+  assert.equal(merged[0].published_at, '2026-09-07');
+
+  const timeline = generateJobTimeline(merged[0], Date.parse('2026-09-14T10:00:00+08:00'));
+  const firstPubEvents = timeline.filter((e) => e.title === '首次发布');
+  assert.equal(firstPubEvents.length, 1, '时间线中必须有且仅有一次首次发布');
+  assert.equal(firstPubEvents[0].date, '2026-09-07');
+  assert.equal(firstPubEvents[0].source, '山东大学就业信息网');
+
+  const repostEvents = timeline.filter((e) => e.title === '跨渠道发布');
+  assert.ok(repostEvents.length >= 1, '跨校重复发布必须显示为跨渠道发布');
+  assert.equal(repostEvents[0].date, '2026-09-14');
+  assert.ok(repostEvents[0].detail.includes('中国石油大学'));
+});
+

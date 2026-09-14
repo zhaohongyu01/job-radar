@@ -232,8 +232,12 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         key = `pos_${normComp}_${job.title.replace(/\s+/g, '')}_${cities}`;
       }
     } else {
-      const titleCohorts = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*(?:届|年度?|年(?=校园|校招)|(?=校园|校招|应届|毕业生|实习|春招|秋招))/g)].map((m) => m[1]))];
-      const cohorts = (titleCohorts.length ? titleCohorts : job.graduation_years ?? []).slice().sort().join(',');
+      // Keep campaign years separate from graduation cohorts.  A title such
+      // as "2026年校园招聘" may recruit the 2027届 cohort; prefer explicit
+      // cohort evidence and use a campaign year only when no cohort is known.
+      const titleCohorts = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*(?:届|应届|年应届|年(?:高校)?毕业|(?=校园招聘|校招))/g)].map((m) => m[1]))];
+      const campaignYears = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*(?:年(?:度)?\s*)?(?=校园招聘|校招)/g)].map((m) => m[1]))];
+      const cohorts = (titleCohorts.length ? titleCohorts : (job.graduation_years?.length ? job.graduation_years : campaignYears)).slice().sort().join(',');
       let phase = '校招';
       if (/春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]/.test(job.title)) phase = '春招补录';
       else if (/秋(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?秋[季招]/.test(job.title)) phase = '秋招补录';
@@ -805,8 +809,8 @@ export function getLifecycleStage(
 
   return {
     stage: 'accepting',
-    label: '进行中（截止未明）',
-    badge: '常态进行',
+    label: '状态待核实',
+    badge: '截止未明',
     badgeClass: 'badge-stage-accepting',
   };
 }
@@ -917,10 +921,16 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
       const days = Math.ceil((Date.parse(job.deadline) - now) / (1000 * 60 * 60 * 24));
       statusDetail = `报名中，预计 ${job.deadline.slice(0, 10)} 截止（还剩 ${Math.max(0, days)} 天）`;
     }
+  } else if (currentStage.stage === 'selection') {
+    statusDetail = '当前处于考核选拔阶段，原公告未明确报名截止时间';
+  } else if (currentStage.stage === 'extended') {
+    statusDetail = '公告标注为截止延期，具体截止时间待核实';
+  } else if (currentStage.stage === 'supplemental') {
+    statusDetail = '当前为补录/追加招聘阶段，原公告未明确报名截止时间';
   } else {
     statusDetail = /长期|常态|常年|招满为止/.test((job.title || '') + (job.body || job.excerpt || ''))
       ? '长期招聘，招满为止，持续接收简历'
-      : '持续招聘中，原公告未明确具体截止时间';
+      : '原公告未明确具体截止时间，开放状态待核实';
   }
   events.push({
     date: '当前状态',

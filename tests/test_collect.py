@@ -341,6 +341,9 @@ class CollectionTests(unittest.TestCase):
     def test_extract_graduation_years_matches_various_formats_and_filters_historical(self):
         self.assertEqual(c.extract_graduation_years('2027应届毕业生招聘简章'), ['2027'])
         self.assertEqual(c.extract_graduation_years('浦发银行青岛分行2027年度校园招聘启事'), ['2027'])
+        # The campaign year in ``2026年校园招聘`` must not become a
+        # graduation cohort; the explicit 2027届 requirement is retained.
+        self.assertEqual(c.extract_graduation_years('某集团2026年校园招聘，仅面向2027届毕业生'), ['2027'])
         self.assertEqual(c.extract_graduation_years('面向2027年毕业的海内外学生'), ['2027'])
         self.assertEqual(c.extract_graduation_years('2026/2027届毕业生招聘'), ['2026', '2027'])
         self.assertEqual(c.extract_graduation_years('面向2027或2028届同学'), ['2027', '2028'])
@@ -439,6 +442,14 @@ class CollectionTests(unittest.TestCase):
             'structured': {'dwwz': 'http://campus.example.com/apply'}
         }, upc_source)
         self.assertEqual(parsed_career['application_url'], 'http://campus.example.com/apply')
+
+        parsed_updated = c.parse_detail('<div><p>报名网址：https://new.example.com/campus/apply</p></div>', {
+            'url': 'https://career.upc.edu.cn/detail',
+            'title': '某企业招聘',
+            'application_url': 'https://old.example.com/apply',
+            'structured': {'dwwz': 'https://old.example.com/career'},
+        }, upc_source)
+        self.assertEqual(parsed_updated['application_url'], 'https://new.example.com/campus/apply')
 
         # 4. parse_detail extracts embedded positions and enriches job
         pos_html = '''
@@ -723,7 +734,7 @@ class CollectionTests(unittest.TestCase):
             'source_url': 'https://career.upc.edu.cn/detail/1',
             'title': '某装备制造集团招聘简章',
             'company': '某装备制造集团',
-            'body': '诚招研发工程师、机械工程师若干，待遇优厚。',
+            'body': '用人单位所在地：济南市\n诚招研发工程师、机械工程师若干，待遇优厚。',
             'location_evidence': ['工作地点：济南市'],
             'positions': [{'name': '研发工程师', 'city': ''}],
             'types': ['校招'],
@@ -820,4 +831,3 @@ class CollectionTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
-

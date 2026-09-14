@@ -508,7 +508,11 @@ def extract_graduation_years(text):
     if not text:
         return []
     years = set()
-    for m in re.finditer(r'(?<!\d)(20\d{2})\s*(?:[届屆]|应届|年?度?(?:校园招聘|校招)|年度|年应届|年(?:高校)?毕业)', text):
+    # A year in ``2026年校园招聘`` is the recruitment year, not the
+    # graduation cohort.  Only retain explicit cohort/graduate wording here;
+    # otherwise an announcement for the 2026 autumn campaign incorrectly
+    # matches the 2026 graduation filter.
+    for m in re.finditer(r'(?<!\d)(20\d{2})\s*(?:[届屆]|应届|年应届|年(?:高校)?毕业|年度(?:校园招聘|校招)|(?=校园招聘|校招))', text):
         years.add(m.group(1))
     for m in re.finditer(r'(?<!\d)(20\d{2})\s*[-/、及与至和或]\s*(20\d{2})\s*[届屆]', text):
         years.add(m.group(1))
@@ -565,7 +569,7 @@ def refine_facts(job):
         if re.search('报名|投递|简历|应聘',line):
             emails.extend(re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}',line))
     # Several distinct application paths require the original announcement to disambiguate.
-    if not row.get('application_url') and len(set(application))==1:
+    if len(set(application))==1:
         row['application_url']=application[0]
     row['emails']=list(dict.fromkeys(emails))
     return row
@@ -709,10 +713,14 @@ def parse_detail(html, item, source):
         if re.search(r'\.(pdf|xlsx?|docx?|zip|rar|png|jpg)(?:\?|$)',url,re.I) or re.search('附件|岗位表|报名表',name):
             attachments.append({'title':name[:100],'url':url})
         else: links.append({'title':name[:100],'url':url})
-    # Explicit recruitment URL text only; other links remain reference links.
-    if not application_url:
-        m=re.search(r'(?:报名网址|投递网址|网申地址|招聘官网)[：:\s（(]*?(https?://[^\s<>，。；）)]+)',text)
-        if m: application_url=safe_url(m[1],item['url'],True)
+    # Explicit recruitment URL text is the current source of truth.  Probe
+    # records can carry an older structured URL, so let a newly published
+    # labelled URL replace it even when a fallback URL was already found.
+    m=re.search(r'(?:报名网址|投递网址|网申地址|招聘官网|应聘网址)[：:\s（(]*?(https?://[^\s<>，。；）)]+)',text)
+    if m:
+        explicit_url=safe_url(m[1],item['url'],True)
+        if explicit_url:
+            application_url=explicit_url
     emails=[]
     for line in text.splitlines():
         if re.search('报名|投递|简历|应聘',line):
@@ -989,8 +997,13 @@ def deduplicate(jobs):
             else:
                 key = ('position', norm_comp, re.sub(r'\s+', '', job['title']), cities)
         else:
-            title_cohorts = re.findall(r'(20\d{2})\s*(?:届|年度?|年(?=校园|校招)|(?=校园|校招|应届|毕业生|实习|春招|秋招))', job.get('title', ''))
-            cohorts = tuple(sorted(set(title_cohorts or job.get('graduation_years', []))))
+            # Keep campaign years separate from graduation cohorts.  A title
+            # such as ``2026年校园招聘`` may recruit the 2027届 cohort; use
+            # the explicit body-derived cohort first and only fall back to a
+            # campaign year when no cohort evidence exists for deduplication.
+            title_cohorts = re.findall(r'(20\d{2})\s*(?:届|应届|年应届|年(?:高校)?毕业|(?=校园招聘|校招))', job.get('title', ''))
+            campaign_years = re.findall(r'(20\d{2})\s*(?:年(?:度)?\s*)?(?=校园招聘|校招)', job.get('title', ''))
+            cohorts = tuple(sorted(set(title_cohorts or job.get('graduation_years', []) or campaign_years)))
             phase = '校招'
             if re.search(r'春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]', job.get('title', '')): phase = '春招补录'
             elif re.search(r'秋(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?秋[季招]', job.get('title', '')): phase = '秋招补录'
@@ -1040,6 +1053,14 @@ def deduplicate(jobs):
                 'source_name': job.get('source_name', ''),
                 'body': job.get('body'),
                 'excerpt': job.get('excerpt'),
+                'first_seen_at': job.get('first_seen_at'),
+                'updated_at': job.get('updated_at'),
+                'last_verified_at': job.get('last_verified_at'),
+                'revision': job.get('revision'),
+                'timeline': job.get('timeline'),
+                'recent_change': job.get('recent_change'),
+                'lifecycle_stage': job.get('lifecycle_stage'),
+                'structured': job.get('structured'),
             }
             groups[key] = dict(job, duplicate_sources=[], duplicate_ids=[], primary_facts=primary_facts)
         else:
@@ -1069,6 +1090,14 @@ def deduplicate(jobs):
                 'source_name': job.get('source_name', ''),
                 'body': job.get('body'),
                 'excerpt': job.get('excerpt'),
+                'first_seen_at': job.get('first_seen_at'),
+                'updated_at': job.get('updated_at'),
+                'last_verified_at': job.get('last_verified_at'),
+                'revision': job.get('revision'),
+                'timeline': job.get('timeline'),
+                'recent_change': job.get('recent_change'),
+                'lifecycle_stage': job.get('lifecycle_stage'),
+                'structured': job.get('structured'),
             }
             parent['duplicate_sources'].append({
                 'id': job['id'],
@@ -1199,14 +1228,32 @@ def public_record(job):
     if row.get('source_id') == 'upc':
         body_and_title = (row.get('body', '') + '\n' + row.get('title', ''))
         pos_text = ' '.join((p.get('city', '') or '') + ' ' + (p.get('name', '') or '') for p in (row.get('positions') or []))
-        content_haystack = body_and_title + ' ' + pos_text
+        # ``用人单位所在地`` is a registration address, not a work location.
+        # Do not use a city mentioned only in that field to validate an old
+        # generic ``工作地点`` evidence value carried by a historical record.
+        work_text = re.sub(r'用人单位所在地[：:\s]*[^\n。；;]{0,160}', '', body_and_title)
+        work_label = re.compile(
+            r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|工作区域|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)[：:\s，、]*(.*)'
+        )
+        work_lines = work_text.splitlines()
+        work_values = []
+        for idx, line in enumerate(work_lines):
+            match = work_label.search(line)
+            if not match:
+                continue
+            value = match.group(1).strip()
+            if not value and idx + 1 < len(work_lines):
+                value = work_lines[idx + 1].strip()
+            if value:
+                work_values.append(value[:160])
+        work_location_text = ' '.join(work_values) + ' ' + pos_text
         sanitized_evidence = []
         for ev in evidence:
             m = re.match(r'^工作地点[：:\s]*(.*)', ev)
             if m:
                 ev_val = m[1].strip()
                 matched_cities = [c for c in CITIES if c in ev_val]
-                if matched_cities and all(c not in content_haystack for c in matched_cities):
+                if matched_cities and all(c not in work_location_text for c in matched_cities):
                     continue
             sanitized_evidence.append(ev)
         evidence = sanitized_evidence
@@ -1237,7 +1284,7 @@ def public_summary(job):
     heavy={
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
         'possible_cities','province_possible','details_available','company_original',
-        'positions','primary_facts',
+        'positions','primary_facts','structured',
     }
     row={k:v for k,v in job.items() if k not in heavy}
     if 'timeline' in row and isinstance(row['timeline'], list) and len(row['timeline']) > 5:
@@ -1247,7 +1294,7 @@ def public_summary(job):
         for s in row['duplicate_sources']:
             s_clean = dict(s)
             if 'facts' in s_clean and isinstance(s_clean['facts'], dict):
-                s_clean['facts'] = {fk: fv for fk, fv in s_clean['facts'].items() if fk not in {'positions', 'body'}}
+                s_clean['facts'] = {fk: fv for fk, fv in s_clean['facts'].items() if fk not in {'positions', 'body', 'structured'}}
             cleaned_sources.append(s_clean)
         row['duplicate_sources'] = cleaned_sources
     return row

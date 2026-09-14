@@ -138,6 +138,15 @@ class TestParsePositions(unittest.TestCase):
         self.assertEqual(positions[0]['education'], '硕士研究生')
         self.assertEqual(positions[0]['city'], '威海')
 
+    def test_data_rows_are_not_treated_as_extra_header_rows(self):
+        positions = parse_table_grid([
+            ['岗位名称', '学历要求'],
+            ['财务岗位', '本科'],
+            ['审计岗位', '本科'],
+            ['采购专员', '本科'],
+        ])
+        self.assertEqual([p['name'] for p in positions], ['财务岗位', '审计岗位', '采购专员'])
+
     @unittest.skipUnless(openpyxl is not None, 'openpyxl is not installed')
     def test_parse_excel_bytes(self):
         wb = openpyxl.Workbook()

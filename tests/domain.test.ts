@@ -643,6 +643,15 @@ void test('getLifecycleStage computes accurate stage labels and badges', () => {
   };
   assert.equal(getLifecycleStage(normalJob, now).stage, 'accepting');
   assert.equal(getLifecycleStage(normalJob, now).badge, '✨ 网申中');
+
+  const unknownDeadlineJob: Job = {
+    ...job,
+    title: '某科技公司招聘公告',
+    deadline: null,
+  };
+  assert.equal(getLifecycleStage(unknownDeadlineJob, now).label, '状态待核实');
+  const unknownStatus = generateJobTimeline(unknownDeadlineJob, now).find((event) => event.date === '当前状态');
+  assert.ok(unknownStatus?.detail.includes('开放状态待核实'));
 });
 
 void test('generateJobTimeline synthesizes chronological events and current status', () => {
@@ -903,4 +912,3 @@ void test('mergeDuplicateOpportunities merges branch company names with intermed
   assert.equal(merged.length, 1, '应成功合并跨渠道的中国邮政储蓄银行山东省分行校招公告');
   assert.equal(merged[0].duplicate_sources?.length, 1);
 });
-

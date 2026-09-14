@@ -298,14 +298,19 @@ export function DetailDrawer({
                     <div className="attachment" key={i}>
                       <OutLink url={a.url}>{a.title}</OutLink>
                       {(() => {
-                        const isParsed = (selected.positions ?? []).some(
-                          (p) =>
-                            (p.source_url && a.url && p.source_url === a.url) ||
-                            (p.source_file &&
-                              (a.title.includes(p.source_file) ||
-                                p.source_file.includes(a.title) ||
-                                (a.url && a.url.includes(p.source_file)))),
-                        );
+                        const positions = selected.positions ?? [];
+                        const hasBoundPositionSources = positions.some((p) => Boolean(p.source_url));
+                        const isParsed = hasBoundPositionSources
+                          ? positions.some((p) => Boolean(p.source_url && a.url && p.source_url === a.url))
+                          : positions.some(
+                              (p) =>
+                                Boolean(
+                                  p.source_file &&
+                                    (a.title.includes(p.source_file) ||
+                                      p.source_file.includes(a.title) ||
+                                      (a.url && a.url.includes(p.source_file))),
+                                ),
+                            );
                         if (isParsed) {
                           return (
                             <span className="attachment-parsed-badge">

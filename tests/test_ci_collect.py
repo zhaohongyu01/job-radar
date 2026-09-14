@@ -204,11 +204,11 @@ class PipelineTests(unittest.TestCase):
                 'source_url': 'https://offerjack.example.com/1',
                 'published_at': '2026-09-01', 'cities': ['北京'],
                 'location_evidence': ['北京'], 'education': '硕士',
-                'deadline': '2026-10-01', 'deadline_evidence': '10月1日截止', 'deadline_precision': 'day',
+                'deadline': None, 'deadline_evidence': None, 'deadline_precision': None,
                 'types': ['校招'], 'graduation_years': ['2026'],
                 'positions': [{'name': '算法研发', 'city': '北京'}], 'position_count': 1,
                 'sample_positions': ['算法研发'], 'majors': ['计算机'],
-                'application_url': 'https://apply1.example.com',
+                'application_url': None,
                 'body': '科技公司校招，工作地点北京。', 'excerpt': '科技公司校招',
                 'last_verified_at': '2026-09-14T10:00:00+08:00',
                 'fingerprint': 'fp_primary',
@@ -249,6 +249,8 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(restored_p1['cities'], ['北京'])
             self.assertEqual(len(restored_p1['positions']), 1)
             self.assertEqual(restored_p1['positions'][0]['name'], '算法研发')
+            self.assertIsNone(restored_p1['deadline'])
+            self.assertIsNone(restored_p1['application_url'])
             
             restored_p2 = restored['jobs'][id2]
             self.assertEqual(restored_p2['identity'], 'upc:202')

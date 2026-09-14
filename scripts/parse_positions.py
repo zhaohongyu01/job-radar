@@ -88,13 +88,19 @@ def parse_table_grid(grid: List[List[str]], source_type: str = 'table') -> List[
 
     def is_likely_header_row(cells: List[str]) -> bool:
         non_empty = [c for c in cells if c]
-        if not non_empty:
+        if len(non_empty) < 2:
             return False
-        header_keywords = re.compile(
-            r'岗位|职位|专业|学历|人数|地点|城市|工作地|要求|条件|备注|序号|类别|部门|单位|生源|届别|代码|职责|说明|资格|层次|范围|学科|名称',
+        # Do not treat a data value such as ``财务岗位`` or ``审计专业`` as a
+        # header merely because it contains a header keyword.  A header row is
+        # made up of the short, conventional field labels below.  Requiring
+        # almost every non-empty cell to be an exact label also keeps the
+        # multi-row header detector from swallowing the first data rows.
+        header_label = re.compile(
+            r'^(?:序号|编号|代码|岗位|职位|工种|岗位名称|职位名称|招聘岗位|招聘职位|需求岗位|岗位代号|职位代码|岗位代码|岗位类别|职位类别|类别|方向|岗位方向|专业类别|部门|用人单位|招聘单位|单位|单位名称|企业|企业名称|公司名称|用人单位名称|专业|需求|需求专业|招聘专业|专业要求|所学专业|学历|学历要求|最低学历|学位|学历学位|学历学位要求|人数|招聘人数|需求人数|地点|城市|工作地点|工作城市|工作地|工作区域|招聘地点|招聘城市|届别|毕业届别|毕业生|应届要求|资格要求|招聘条件|任职条件|其他条件|要求|条件|备注|说明|职责|工作内容|职责备注|生源|层次|范围|学科|岗位性质|招聘类型|报名条件)(?:[（(【\[][^】\)】\]]{0,30}[）)】\]]|[/:：、及&+].*)?$',
             re.I,
         )
-        return any(header_keywords.search(c) for c in non_empty) and all(len(c) <= 50 for c in non_empty)
+        exact_count = sum(1 for cell in non_empty if header_label.fullmatch(cell.strip()))
+        return exact_count >= 2 and exact_count >= len(non_empty) - 1 and all(len(c) <= 50 for c in non_empty)
 
     best_candidate = None
     for start_r in range(min(5, len(grid))):
@@ -157,7 +163,7 @@ def parse_table_grid(grid: List[List[str]], source_type: str = 'table') -> List[
 
     positions: List[Dict[str, Any]] = []
     if header_idx >= 0 and col_mapping:
-        for r_idx in range(header_idx + 1, min(len(grid), header_idx + 1000)):
+        for r_idx in range(header_idx + 1, len(grid)):
             row = grid[r_idx]
             cleaned_row = [clean_cell(c) for c in row]
             if not cleaned_row or all(not c for c in cleaned_row):
@@ -324,6 +330,7 @@ def parse_excel_bytes(file_bytes: bytes, filename: str = '') -> List[Dict[str, A
     """Parse XLSX bytes into structured positions."""
     if not openpyxl or not file_bytes:
         return []
+    wb = None
     try:
         buf = io.BytesIO(file_bytes)
         wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
@@ -332,15 +339,17 @@ def parse_excel_bytes(file_bytes: bytes, filename: str = '') -> List[Dict[str, A
         # Look across sheets
         sheet_names = wb.sheetnames
         # Prioritize sheets with recruitment keywords in title
-        target_sheets = [s for s in sheet_names if re.search(r'岗位|职位|专业|需求|招聘|一览|汇总', s)] or sheet_names[:2]
+        # A workbook can keep different departments or cities on separate
+        # sheets without putting a recruitment keyword in every sheet name.
+        # Inspect every sheet; the header detector filters ordinary notes
+        # sheets while avoiding silent loss from a name-based subset.
+        target_sheets = sheet_names
 
         for name in target_sheets:
             sheet = wb[name]
             grid: List[List[str]] = []
             for row in sheet.iter_rows(values_only=True):
                 grid.append([clean_cell(c) for c in row])
-                if len(grid) >= 150:
-                    break
             parsed = parse_table_grid(grid, source_type='xlsx')
             for p in parsed:
                 p['source_file'] = filename or name
@@ -349,9 +358,14 @@ def parse_excel_bytes(file_bytes: bytes, filename: str = '') -> List[Dict[str, A
         return deduplicate_positions(results)
     except Exception:
         return []
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
 
 
-def parse_pdf_bytes(file_bytes: bytes, filename: str = '', max_pages: int = 8) -> List[Dict[str, Any]]:
+def parse_pdf_bytes(file_bytes: bytes, filename: str = '', max_pages: Optional[int] = None) -> List[Dict[str, Any]]:
     """Parse PDF bytes (using PyMuPDF find_tables) into structured positions."""
     if not fitz or not file_bytes:
         return []
@@ -359,7 +373,8 @@ def parse_pdf_bytes(file_bytes: bytes, filename: str = '', max_pages: int = 8) -
         doc = fitz.open(stream=file_bytes, filetype='pdf')
         results: List[Dict[str, Any]] = []
 
-        for page_idx in range(min(len(doc), max_pages)):
+        page_limit = len(doc) if max_pages is None else min(len(doc), max_pages)
+        for page_idx in range(page_limit):
             page = doc[page_idx]
             # Try PyMuPDF find_tables
             try:
@@ -376,7 +391,7 @@ def parse_pdf_bytes(file_bytes: bytes, filename: str = '', max_pages: int = 8) -
 
         # If no vector tables found, fallback to word coordinate layout reconstruction
         if not results:
-            for page_idx in range(min(len(doc), max_pages)):
+            for page_idx in range(page_limit):
                 page = doc[page_idx]
                 words = page.get_text('words')
                 if len(words) >= 4:
@@ -395,7 +410,7 @@ def parse_pdf_bytes(file_bytes: bytes, filename: str = '', max_pages: int = 8) -
 
         # Fallback 2: line-by-line tabular parsing
         if not results:
-            text = '\n'.join(doc[i].get_text() for i in range(min(len(doc), max_pages)))
+            text = '\n'.join(doc[i].get_text() for i in range(page_limit))
             text_parsed = extract_positions_from_text(text)
             for p in text_parsed:
                 p['source_file'] = filename or 'PDF文本'
@@ -406,7 +421,7 @@ def parse_pdf_bytes(file_bytes: bytes, filename: str = '', max_pages: int = 8) -
         return []
 
 
-def extract_positions_from_text(text: str, max_rows: int = 50) -> List[Dict[str, Any]]:
+def extract_positions_from_text(text: str, max_rows: Optional[int] = None) -> List[Dict[str, Any]]:
     """Extract tabular positions from text lines (tab/pipe/multi-space separated lines)."""
     if not text:
         return []
@@ -429,7 +444,7 @@ def extract_positions_from_text(text: str, max_rows: int = 50) -> List[Dict[str,
     if len(grid) >= 2:
         parsed = parse_table_grid(grid, source_type='text_table')
         if parsed:
-            return parsed[:max_rows]
+            return parsed if max_rows is None else parsed[:max_rows]
 
     return []
 
@@ -445,11 +460,21 @@ def deduplicate_positions(positions: List[Dict[str, Any]]) -> List[Dict[str, Any
         majors_key = ','.join(sorted(p.get('majors') or []))
         cohort = (p.get('cohort') or '').strip()
         notes = (p.get('notes') or '').strip()
-        key = (name, p.get('city', '').strip(), p.get('education', '').strip(), majors_key, cohort, notes)
+        key = (
+            name,
+            p.get('category', '').strip(),
+            p.get('city', '').strip(),
+            p.get('education', '').strip(),
+            p.get('count', '').strip(),
+            majors_key,
+            cohort,
+            notes,
+            p.get('source_url', '').strip(),
+        )
         if key not in seen:
             seen.add(key)
             unique.append(p)
-    return unique[:500]
+    return unique
 
 
 def extract_all_positions(
@@ -498,9 +523,6 @@ def extract_all_positions(
                     all_positions.extend(att_positions)
             except Exception:
                 continue
-
-            if len(all_positions) >= 500:
-                break
 
     return deduplicate_positions(all_positions)
 

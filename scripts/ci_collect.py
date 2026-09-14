@@ -58,9 +58,12 @@ def snapshot_state(snapshot, load_asset):
             raise ValueError('Repost identities do not match their sources')
         primary_record = dict(full)
         if 'primary_facts' in full and isinstance(full['primary_facts'], dict):
-            for k, v in full['primary_facts'].items():
-                if v is not None:
-                    primary_record[k] = v
+            # primary_facts is the source-specific snapshot.  Apply explicit
+            # nulls as well as values: otherwise an old aggregate deadline,
+            # URL, or position table leaks into a source whose current facts
+            # explicitly say that field is absent.
+            primary_record.update(full['primary_facts'])
+            primary_record['id'] = identifier
         rows = [primary_record]
         copies_by_id = {s['id']: s for s in copies if isinstance(s, dict) and s.get('id')}
         for idx, copy_id in enumerate(copy_ids):
@@ -69,20 +72,22 @@ def snapshot_state(snapshot, load_asset):
             source_facts = source.get('facts') or {}
             source_title = source_facts.get('title') or source.get('announcement_title') or (source.get('title') if source.get('title') != source_name else '') or full['title']
             source_identity = source.get('identity') or source_facts.get('identity')
-            restored = dict(full, id=copy_id,
-                            title=source_title,
-                            source_url=source.get('url') or full['source_url'],
-                            source_name=source_name,
-                            source_id=source_ids.get(source_name, full.get('source_id', '')),
-                            application_url=source_facts.get('application_url', source.get('application_url')))
+            restored = dict(full)
+            # Restore the duplicate's complete source snapshot, including
+            # null values and verification/history fields.  Reconstructing a
+            # copy from the parent aggregate loses per-source deadlines,
+            # URLs, and probe timestamps.
+            if isinstance(source_facts, dict):
+                restored.update(source_facts)
+            restored.update(
+                id=copy_id,
+                title=source_title,
+                source_url=source.get('url') or source_facts.get('source_url') or full['source_url'],
+                source_name=source_name,
+                source_id=source_facts.get('source_id') or source_ids.get(source_name, full.get('source_id', '')),
+            )
             if source_identity:
                 restored['identity'] = source_identity
-            for field in ('published_at', 'cities', 'location_evidence', 'education',
-                          'deadline', 'deadline_evidence', 'deadline_precision',
-                          'types', 'graduation_years', 'positions', 'position_count',
-                          'sample_positions', 'majors', 'application_url', 'body', 'excerpt', 'company'):
-                if field in source_facts:
-                    restored[field] = source_facts[field]
             if 'published_at' in source and 'published_at' not in source_facts:
                 restored['published_at'] = source['published_at']
             rows.append(restored)

@@ -49,11 +49,13 @@ npx wrangler deploy --config dist/server/wrangler.json
 
 本机 Wrangler 已有 Cloudflare 授权；其他电脑需要先运行 `npx wrangler login`。只重新整理已采集内容时，先运行 `python scripts/export_snapshot.py`，该操作不会伪造新的采集时间。数据和程序一起发布，刷新网页只重新读取快照。
 
-GitHub Actions 的 `.github/workflows/daily-collect.yml` 每天北京时间 06:30、推送 main 或手动触发时运行 Python 采集器并部署 Cloudflare。需要在仓库 Actions Secrets 中配置 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`。Worker 本身只提供网页和数据快照，采集由 GitHub 执行。
+GitHub Actions 的 `.github/workflows/daily-collect.yml` 每天北京时间 06:30、18:30，或推送 main、手动触发时运行 Python 采集器并部署 Cloudflare。采集阶段按区域官方、高校、银行金融、公开线索拆成 5 个分片，最多 4 个分片并行；全部完成后再合并岗位状态、生成快照并部署。需要在仓库 Actions Secrets 中配置 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`。Worker 本身只提供网页和数据快照，采集由 GitHub 执行。
+
+新增来源时需要把它加入 `scripts/collect.py` 的 `SOURCE_PACKS`；测试会检查每个来源都属于且只属于一个分片，避免扩容后静默漏采。
 
 CI 先从仓库公开快照、上次缓存及当前线上快照合并恢复岗位库，缓存丢失也不会从零开始覆盖线上数据。`scripts/ci_collect.py` 只在采集器退出 0 或 2、快照完成、至少有一个来源完成有效读取、全部历史 ID 和详情/全文资产通过校验时继续发布；退出码 2 表示部分来源覆盖不完整，显示警告并保留来源错误。程序崩溃、全部来源失败、快照缺失或历史记录减少仍阻止发布。
 
-状态缓存只保存 `data/state.json`，不保存锁文件；在构建和部署前显式保存，即使后续失败也能保留进度。每次执行的 Summary 显示来源状态及部分错误原因，并提供保留 7 天的 `collection-report` 诊断文件。日常查询采用 5 页、14 天发现窗口，历史库持续保留；OfferJack 查询所有配置城市的公开首屏。超过窗口和来源访问受限的机会仍可能漏采，流程成功不代表所有来源完整。
+状态缓存只保存 `data/state.json`，不保存锁文件；分片从同一份基线启动，合并任务只在历史岗位完整、所有分片产物齐全且资产校验通过后发布。每次执行的 Summary 显示来源状态及部分错误原因，并提供保留 7 天的 `collection-report` 诊断文件。日常分片采用 5 页、30 天发现窗口，历史库持续保留；OfferJack 查询所有配置城市的公开首屏。超过窗口和来源访问受限的机会仍可能漏采，流程成功不代表所有来源完整。
 
 ## 更新与部署边界
 

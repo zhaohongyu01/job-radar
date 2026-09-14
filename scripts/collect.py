@@ -118,6 +118,39 @@ for _source in SOURCES:
     _source.setdefault('sectors', ['综合'])
     _source.setdefault('trust', '第三方线索' if _adapter in {'wondercv', 'offerjack'} else '官方原始来源')
     _source.setdefault('source_family', _source['name'].split(' · ', 1)[0])
+
+# Keep the CI fan-out definition next to the source registry.  A pack is a
+# bounded group of sources that can be collected independently from the same
+# historical baseline.  The two university packs are intentionally split so
+# that one slow campus feed cannot hold the whole university group hostage.
+_sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
+_university_ids = ['nankai', 'sdu', 'upc'] + _sdei_source_ids
+_university_midpoint = (len(_university_ids) + 1) // 2
+SOURCE_PACKS = {
+    'regional-official': ['jinan', 'hrss', 'gzw', 'qdhrss', 'sdei-news'],
+    'universities-a': _university_ids[:_university_midpoint],
+    'universities-b': _university_ids[_university_midpoint:],
+    'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank'],
+    'public-leads': ['wondercv', 'offerjack'],
+}
+_source_ids = {s['id'] for s in SOURCES}
+_packed_source_ids = {source_id for pack in SOURCE_PACKS.values() for source_id in pack}
+if _packed_source_ids != _source_ids:
+    _missing = ', '.join(sorted(_source_ids - _packed_source_ids))
+    _unknown = ', '.join(sorted(_packed_source_ids - _source_ids))
+    raise RuntimeError(f'Source pack coverage mismatch; missing={_missing}; unknown={_unknown}')
+
+
+def source_pack_ids(pack):
+    """Return a copy of a named CI source pack and reject empty/unknown packs."""
+    if pack not in SOURCE_PACKS:
+        raise ValueError(f'unknown source pack: {pack}')
+    source_ids = list(SOURCE_PACKS[pack])
+    if not source_ids:
+        raise ValueError(f'empty source pack: {pack}')
+    return source_ids
+
+
 VOID = {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}
 
 
@@ -1640,8 +1673,15 @@ def run(args):
     cutoff=(dt.datetime.now(TZ)-dt.timedelta(days=args.days)).date().isoformat()
     incoming=[]
     sources=dict(previous['sources'])
+    source_filter = set(filter(None, (getattr(args, 'sources', '') or '').split(',')))
+    source_pack = getattr(args, 'source_pack', '') or ''
+    if source_pack:
+        pack_source_ids = set(source_pack_ids(source_pack))
+        if source_filter and source_filter != pack_source_ids:
+            raise ValueError('--sources and --source-pack select different source sets')
+        source_filter = pack_source_ids
     for source in SOURCES:
-        if args.sources and source['id'] not in args.sources.split(','): continue
+        if source_filter and source['id'] not in source_filter: continue
         source=dict(source)
         if source['id']=='nankai' and args.nankai_area:
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
@@ -1988,7 +2028,7 @@ def run(args):
     atomic_json(path,state)
     export_snapshot(state,public_dir,args.days,changes)
     print(json.dumps({'total':len(jobs),'changes':changes},ensure_ascii=False),flush=True)
-    return 0 if all(s['status']=='ok' for s in sources.values() if not args.sources or s['id'] in args.sources.split(',')) else 2
+    return 0 if all(s['status']=='ok' for s in sources.values() if not source_filter or s['id'] in source_filter) else 2
 
 
 if __name__=='__main__':
@@ -1996,6 +2036,7 @@ if __name__=='__main__':
     parser.add_argument('--pages',type=int,default=100)
     parser.add_argument('--days',type=int,default=120)
     parser.add_argument('--sources',default='',help='comma-separated source ids; omitted sources retain previous state')
+    parser.add_argument('--source-pack',choices=sorted(SOURCE_PACKS),default='',help='collect one predefined CI source pack')
     parser.add_argument('--refresh-hours',type=int,default=24,help='reuse recently verified details; 0 forces refresh')
     parser.add_argument('--nankai-area',type=int,default=0,help='optional original-site region filter; 15 is Shandong')
     parser.add_argument('--target-city',default='',help='optional city filter on public structured supplemental source')

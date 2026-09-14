@@ -12,6 +12,14 @@ c=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class CollectionTests(unittest.TestCase):
+    def test_ci_source_packs_cover_every_registered_source(self):
+        packed = {source_id for pack in c.SOURCE_PACKS.values() for source_id in pack}
+        self.assertEqual(packed, {source['id'] for source in c.SOURCES})
+        self.assertIn('boc-recruitment', c.source_pack_ids('finance'))
+        self.assertGreaterEqual(len(c.source_pack_ids('finance')), 1)
+        with self.assertRaisesRegex(ValueError, 'unknown source pack'):
+            c.source_pack_ids('missing-pack')
+
     def test_split_deadline_and_application_fields_are_recovered(self):
         row=c.refine_facts({'title':'中信证券（山东）有限责任公司招聘','company':'', 'source_id':'sdu',
             'body':'招聘截止日期\n2027-04-30\n应聘网址\nhttp:// careers.citics.com\n简历投递邮箱\nzxzqsd@citics.com',

@@ -6,7 +6,6 @@ on:
     - cron: '30 22 * * *'
     # 每天北京时间晚上 18:30 (UTC 10:30) 自动触发
     - cron: '30 10 * * *'
-  # 支持在 GitHub 网页上随时手动点击运行测试
   workflow_dispatch:
   # 每次你向 main 分支推送代码时自动构建部署
   push:
@@ -21,9 +20,10 @@ permissions:
   contents: read
 
 jobs:
-  collect-and-deploy:
+  # Restore one consistent historical baseline before the collection fan-out.
+  prepare-baseline:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,17 +32,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
 
-      - name: Install Python Dependencies
+      - name: Install Python dependencies
         run: pip install beautifulsoup4 openpyxl pymupdf
 
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      # 缓存增量采集历史，避免每天重复全量抓取
       - name: Restore Collector State
         uses: actions/cache/restore@v4
         with:
@@ -52,13 +46,43 @@ jobs:
             collector-state-v2-
 
       - name: Restore Published Baseline
-        id: baseline
         run: python scripts/ci_collect.py prepare --site https://sites-project.job-radar.workers.dev
+
+      - name: Upload Collector Baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-baseline
+          path: |
+            data/state.json
+            data/ci-baseline.json
+          retention-days: 2
+
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install beautifulsoup4 openpyxl pymupdf
 
       - name: Test Collector and Publication Guards
         run: python -m unittest discover -s tests -p 'test_*.py'
 
-      - name: Install Node Dependencies
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
         run: npm ci
 
       - name: Typecheck and Lint Frontend
@@ -66,19 +90,112 @@ jobs:
           npm run lint
           npx tsc --noEmit
 
-      - name: Run Job Collector
+  # Each shard starts from the same baseline and only updates its own sources.
+  # Four concurrent runners keep wall-clock time bounded without hammering sites.
+  collect-shards:
+    needs: [prepare-baseline, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - pack: regional-official
+          - pack: universities-a
+          - pack: universities-b
+          - pack: finance
+          - pack: public-leads
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install beautifulsoup4 openpyxl pymupdf
+
+      - name: Download Collector Baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-baseline
+          path: data
+
+      - name: Run Collector Shard
         id: collector
-        timeout-minutes: 40
         env:
           JOB_RADAR_SCHEDULE_ENABLED: 'true'
         run: |
-          # 列表每天刷新；三天内已核实的详情直接复用，避免重复请求导致云端运行超时。
-          python scripts/ci_collect.py collect --pages 5 --days 30 --refresh-hours 72 --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6
+          # The wrapper accepts partial source failures and still preserves the shard state.
+          python scripts/ci_collect.py collect \
+            --data-dir data \
+            --public-dir public \
+            --source-pack "${{ matrix.pack }}" \
+            --pages 5 \
+            --days 30 \
+            --refresh-hours 72 \
+            --detail-timeout 8 \
+            --detail-retries 1 \
+            --detail-failure-limit 6
 
-      # Persist atomic state even when collection is partial or a later build/deploy fails.
-      # Never cache collect.lock: a cancelled runner must not lock the next run out.
+      - name: Upload Shard State
+        if: ${{ always() && hashFiles('data/state.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-shard-${{ matrix.pack }}
+          path: |
+            data/state.json
+            data/ci-report.json
+          retention-days: 2
+
+  merge-and-deploy:
+    needs: [prepare-baseline, quality, collect-shards]
+    if: ${{ always() && needs.prepare-baseline.result == 'success' && needs.quality.result == 'success' && needs.collect-shards.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install beautifulsoup4 openpyxl pymupdf
+
+      - name: Download Collector Baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-baseline
+          path: data
+
+      - name: Download Collector Shards
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: collector-shard-*
+          path: data/shards
+          merge-multiple: false
+
+      - name: Merge Collector Shards
+        id: merge
+        run: |
+          python scripts/ci_collect.py merge \
+            --data-dir data \
+            --public-dir public \
+            --shards-dir data/shards \
+            --days 30 \
+            --expected-shards "regional-official,universities-a,universities-b,finance,public-leads"
+
       - name: Save Collector State
-        if: ${{ always() && steps.baseline.outcome == 'success' && hashFiles('data/state.json') != '' }}
+        if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
@@ -93,6 +210,15 @@ jobs:
           name: collection-report-${{ github.run_attempt }}
           path: data/ci-report.json
           retention-days: 7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
 
       - name: Build Web Application
         run: npm run build

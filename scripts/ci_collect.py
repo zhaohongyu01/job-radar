@@ -13,7 +13,7 @@ import subprocess
 import sys
 import urllib.request
 
-from collect import ROOT, TZ, atomic_json
+from collect import ROOT, TZ, SOURCE_PACKS, atomic_json, export_snapshot, source_pack_ids
 
 ASSET = re.compile(r'^/job-assets/detail-[0-9a-f]{2}-([0-9a-f]{20})\.json$')
 HISTORY_FIELDS = {'fingerprint', 'first_seen_at', 'updated_at', 'last_verified_at', 'revision',
@@ -215,6 +215,114 @@ def write_report(data_dir, code, state, error=''):
         print('::warning::部分来源覆盖不完整；已保留历史记录，通过完整性检查后继续发布。', flush=True)
 
 
+def _snapshot_checks(snapshot, public_dir):
+    """Validate every generated asset before the merge job is allowed to publish."""
+    snapshot_state(snapshot, lambda path: read_json(public_dir / path.lstrip('/')))
+    search_path = snapshot.get('search_url', '')
+    if not re.fullmatch(r'/job-assets/search-[0-9a-f]{20}\.json', search_path):
+        raise ValueError('Invalid full-text search asset')
+    search = read_json(public_dir / search_path.lstrip('/')).get('jobs', {})
+    if set(search) != {job['id'] for job in snapshot['jobs']} or any(not isinstance(body, str) for body in search.values()):
+        raise ValueError('Full-text search index is incomplete')
+
+
+def _state_change_summary(before, after):
+    """Return the small top-level change summary used by the public snapshot."""
+    before_jobs = before.get('jobs', {})
+    after_jobs = after.get('jobs', {})
+    before_run = before.get('last_run_at', '')
+    new_ids = set(after_jobs) - set(before_jobs)
+    changed_ids = {
+        identifier for identifier, job in after_jobs.items()
+        if identifier in before_jobs and (
+            job.get('updated_at', '') > before_jobs[identifier].get('updated_at', '') or
+            job.get('last_verified_at', '') > before_run and job.get('content_fingerprint') != before_jobs[identifier].get('content_fingerprint')
+        )
+    }
+    return {
+        'new': len(new_ids),
+        'changed': len(changed_ids),
+        'unchanged': max(0, len(after_jobs) - len(new_ids) - len(changed_ids)),
+    }
+
+
+def _shard_state_paths(shards_dir):
+    shards_dir = Path(shards_dir)
+    if not shards_dir.exists():
+        return {}
+    paths = {}
+    for path in sorted(shards_dir.rglob('state.json')):
+        pack_name = path.parent.name
+        if pack_name.startswith('collector-shard-'):
+            pack_name = pack_name[len('collector-shard-'):]
+        paths[pack_name] = path
+    return paths
+
+
+def merge_shards(public_dir, data_dir, shards_dir, days=30, expected_shards=None):
+    """Merge independent collector states and produce one guarded publication."""
+    baseline_path = Path(data_dir) / 'state.json'
+    if not baseline_path.exists():
+        raise ValueError('Collector baseline state is missing')
+    baseline = read_json(baseline_path)
+    shard_paths = _shard_state_paths(shards_dir)
+    expected_shards = list(expected_shards or SOURCE_PACKS)
+    missing_shards = [pack for pack in expected_shards if pack not in shard_paths]
+    if missing_shards:
+        raise ValueError('Missing collector shard artifacts: ' + ', '.join(missing_shards))
+
+    states = [dict(baseline, priority=1)]
+    for pack in expected_shards:
+        state = read_json(shard_paths[pack])
+        if not isinstance(state.get('jobs'), dict) or not isinstance(state.get('sources'), dict):
+            raise ValueError(f'Invalid state artifact for source pack: {pack}')
+        state['priority'] = 2
+        states.append(state)
+    merged = combine_states(*states)
+    merged.pop('priority', None)
+    if not set(baseline.get('jobs', {})).issubset(merged.get('jobs', {})):
+        raise ValueError('Historical records are missing after shard merge')
+
+    baseline_sources = baseline.get('sources', {})
+    fresh_source_ids = {
+        identifier for identifier, source in merged.get('sources', {}).items()
+        if source.get('last_attempt_at', '') > baseline_sources.get(identifier, {}).get('last_attempt_at', '')
+    }
+    expected_source_ids = {
+        source_id for pack in expected_shards for source_id in source_pack_ids(pack)
+    }
+    missing_sources = sorted(expected_source_ids - fresh_source_ids)
+    if missing_sources:
+        raise ValueError('Collector shards did not refresh sources: ' + ', '.join(missing_sources))
+
+    atomic_json(baseline_path, merged)
+    snapshot = export_snapshot(
+        merged,
+        Path(public_dir),
+        days,
+        _state_change_summary(baseline, merged),
+    )
+    _snapshot_checks(snapshot, Path(public_dir))
+    fresh_attempts = [
+        source.get('last_attempt_at') for identifier, source in merged.get('sources', {}).items()
+        if identifier in fresh_source_ids and source.get('last_attempt_at')
+    ]
+    started = min(dt.datetime.fromisoformat(value) for value in fresh_attempts)
+    code = 2 if any(
+        merged['sources'].get(identifier, {}).get('status') != 'ok'
+        for identifier in expected_source_ids
+    ) else 0
+    validate_result(code, merged, snapshot, list(baseline.get('jobs', {})), started)
+    write_report(Path(data_dir), code, merged)
+    print(json.dumps({
+        'shards': expected_shards,
+        'sources': len(expected_source_ids),
+        'records': len(merged.get('jobs', {})),
+        'changes': snapshot.get('changes', {}),
+    }, ensure_ascii=False), flush=True)
+    return 0
+
+
 def collect(args):
     started = dt.datetime.now(TZ).replace(microsecond=0)
     baseline = read_json(args.data_dir / 'ci-baseline.json')
@@ -225,19 +333,19 @@ def collect(args):
                '--detail-timeout', str(getattr(args, 'detail_timeout', 8)),
                '--detail-retries', str(getattr(args, 'detail_retries', 1)),
                '--detail-failure-limit', str(getattr(args, 'detail_failure_limit', 6))]
+    source_pack = getattr(args, 'source_pack', '') or ''
+    sources = getattr(args, 'sources', '') or ''
+    if source_pack:
+        command.extend(['--source-pack', source_pack])
+    elif sources:
+        command.extend(['--sources', sources])
     code = subprocess.run(command, check=False).returncode
     state = read_json(args.data_dir / 'state.json')
     try:
         snapshot = read_json(args.public_dir / 'jobs.json')
         validate_result(code, state, snapshot, baseline['ids'], started)
         # Validate every referenced detail and repost before uploading a deployment.
-        snapshot_state(snapshot, lambda path: read_json(args.public_dir / path.lstrip('/')))
-        search_path = snapshot.get('search_url', '')
-        if not re.fullmatch(r'/job-assets/search-[0-9a-f]{20}\.json', search_path):
-            raise ValueError('Invalid full-text search asset')
-        search = read_json(args.public_dir / search_path.lstrip('/'))['jobs']
-        if set(search) != {job['id'] for job in snapshot['jobs']} or any(not isinstance(body, str) for body in search.values()):
-            raise ValueError('Full-text search index is incomplete')
+        _snapshot_checks(snapshot, args.public_dir)
     except (ValueError, KeyError, OSError) as error:
         write_report(args.data_dir, code, state, str(error))
         raise
@@ -246,12 +354,16 @@ def collect(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['prepare', 'collect'])
+    parser.add_argument('operation', choices=['prepare', 'collect', 'merge'])
     parser.add_argument('--public-dir', type=Path, default=ROOT / 'public')
     parser.add_argument('--data-dir', type=Path, default=ROOT / 'data')
     parser.add_argument('--site', default='')
     parser.add_argument('--pages', type=int, default=5)
     parser.add_argument('--days', type=int, default=30)
+    parser.add_argument('--sources', default='', help='comma-separated source ids for one collection shard')
+    parser.add_argument('--source-pack', choices=sorted(SOURCE_PACKS), default='', help='predefined source pack for one collection shard')
+    parser.add_argument('--shards-dir', type=Path, default=ROOT / 'data' / 'shards', help='downloaded collector shard artifact directory')
+    parser.add_argument('--expected-shards', default='', help='comma-separated source pack names expected during merge')
     parser.add_argument('--refresh-hours', type=int, default=72,
                         help='reuse recently verified detail pages for this many hours')
     parser.add_argument('--probe-budget', type=int, default=10,
@@ -266,8 +378,11 @@ if __name__ == '__main__':
     try:
         if args.operation == 'prepare':
             prepare(args.public_dir, args.data_dir, args.site)
-        else:
+        elif args.operation == 'collect':
             collect(args)
+        else:
+            expected = [value for value in args.expected_shards.split(',') if value]
+            merge_shards(args.public_dir, args.data_dir, args.shards_dir, args.days, expected or None)
     except (ValueError, KeyError, OSError) as error:
         message = str(error).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
         print(f'::error::{message}', file=sys.stderr)

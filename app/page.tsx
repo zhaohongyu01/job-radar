@@ -373,6 +373,14 @@ export default function Home() {
     [searchableJobs, filters, personal, since, now],
   );
 
+  const radarScopeJobs = useMemo(
+    () =>
+      filters.radarFocus === 'none'
+        ? filtered
+        : filterJobs(searchableJobs, { ...filters, radarFocus: 'none' }, personal, since, now),
+    [searchableJobs, filters, personal, since, now, filtered],
+  );
+
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.city !== defaultFilters.city) count++;
@@ -391,6 +399,7 @@ export default function Home() {
     if (filters.salary !== defaultFilters.salary) count++;
     if (filters.sort !== defaultFilters.sort) count++;
     if (filters.changeType !== defaultFilters.changeType) count++;
+    if (filters.radarFocus !== defaultFilters.radarFocus) count++;
     return count;
   }, [filters]);
 
@@ -653,24 +662,25 @@ export default function Home() {
           <section className="results" aria-label="招聘机会">
             <PersonalRadar
               currentFilters={filters}
-              filteredJobs={filtered}
+              filteredJobs={radarScopeJobs}
+              activeFocus={filters.radarFocus}
               onApplyPreset={(presetFilters) => {
-                setFilters((prev) => ({ ...prev, ...presetFilters }));
+                setFilters((prev) => ({ ...prev, ...presetFilters, radarFocus: 'none' }));
                 setPage(1);
               }}
               onQuickFocus={(focus) => {
-                if (focus === 'today') {
-                  setFilters((prev) => ({ ...prev, onlyUnread: true }));
-                  setNotice('已为您聚焦最新变动与未读机会');
-                } else if (focus === 'supplement') {
-                  setFilters((prev) => ({ ...prev, query: '补录' }));
-                  setNotice('已为您筛选包含“补录”关键词的机会');
-                } else if (focus === 'urgent') {
-                  setFilters((prev) => ({ ...prev, sort: 'deadline_asc' }));
-                  setNotice('已按截止日期由近及远排序');
-                } else if (focus === 'change') {
-                  setFilters((prev) => ({ ...prev, changeType: '有变更' }));
-                  setNotice('已为您聚焦近期有延期、补录或内容变动的机会');
+                if (filters.radarFocus === focus) {
+                  setFilters((prev) => ({ ...prev, radarFocus: 'none' }));
+                  setNotice('已取消聚焦，恢复全部机会列表');
+                } else {
+                  setFilters((prev) => ({ ...prev, radarFocus: focus }));
+                  const focusLabels: Record<string, string> = {
+                    today: '今日新发',
+                    supplement: '新开补录',
+                    urgent: '3天内截止',
+                    change: '近期变更',
+                  };
+                  setNotice(`已聚焦「${focusLabels[focus]}」机会，再次点击标签可恢复全部`);
                 }
                 setPage(1);
               }}
@@ -832,6 +842,25 @@ export default function Home() {
                         {filters.salary !== '全部' && (
                           <span className="salary-filter-badge">
                             薪资{filters.salary}
+                          </span>
+                        )}
+                        {filters.radarFocus !== 'none' && (
+                          <span className={`active-radar-focus-chip ${filters.radarFocus}`}>
+                            <span>
+                              {filters.radarFocus === 'today' && '⚡ 今日新发'}
+                              {filters.radarFocus === 'supplement' && '🔥 新开补录'}
+                              {filters.radarFocus === 'urgent' && '⏳ 3天内截止'}
+                              {filters.radarFocus === 'change' && '🔔 近期变更'}
+                            </span>
+                            <button
+                              type="button"
+                              className="clear-radar-focus-btn"
+                              onClick={() => change('radarFocus', 'none')}
+                              title="点击取消聚焦，查看全部"
+                              aria-label="取消聚焦"
+                            >
+                              ×
+                            </button>
                           </span>
                         )}
                         {filters.sort === 'deadline_asc' && (

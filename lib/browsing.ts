@@ -20,6 +20,8 @@ export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: V
     kind: ['全部', '具体岗位', '招聘公告'],
     salary: ['全部', '6K以上', '8K以上', '10K以上', '15K以上', '20K以上'],
     sort: ['newest', 'deadline_asc', 'salary_desc'],
+    changeType: ['全部', '有变更', '截止延期', '补录招募', '岗位调整', '考核阶段'],
+    radarFocus: ['none', 'today', 'supplement', 'urgent', 'change'],
   } as const;
   for (const key of Object.keys(enums) as (keyof typeof enums)[]) {
     const field = fields[key];

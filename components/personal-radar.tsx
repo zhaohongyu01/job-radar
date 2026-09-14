@@ -13,9 +13,12 @@ import {
   RADAR_ACTIVE_PRESET_STORAGE,
 } from '@/lib/radar';
 
+import type { Filters, Job, RadarFocus } from '@/lib/jobs';
+
 export type PersonalRadarProps = {
   currentFilters: Filters;
   filteredJobs: Job[];
+  activeFocus?: RadarFocus;
   onApplyPreset: (presetFilters: Partial<Filters>) => void;
   onQuickFocus: (focus: 'today' | 'supplement' | 'urgent' | 'change') => void;
 };
@@ -23,6 +26,7 @@ export type PersonalRadarProps = {
 export function PersonalRadar({
   currentFilters,
   filteredJobs,
+  activeFocus = 'none',
   onApplyPreset,
   onQuickFocus,
 }: PersonalRadarProps) {
@@ -194,49 +198,93 @@ export function PersonalRadar({
           </div>
 
           <div className="radar-metrics-row">
-            <button
-              type="button"
-              className="radar-stat-pill today"
-              onClick={() => onQuickFocus('today')}
-              title="点击查看今日最新发布机会"
-            >
-              <Zap size={14} className="stat-icon" />
-              <span className="stat-label">今日新发</span>
-              <span className="stat-count">{metrics.todayCount}</span>
-            </button>
+            {(() => {
+              const isTodayActive = activeFocus === 'today';
+              return (
+                <button
+                  type="button"
+                  className={`radar-stat-pill today ${isTodayActive ? 'active' : ''}`}
+                  onClick={() => onQuickFocus('today')}
+                  aria-pressed={isTodayActive}
+                  title={
+                    isTodayActive
+                      ? `已聚焦今日新发（共 ${metrics.todayCount} 条），再次点击可取消`
+                      : `点击查看今日最新发布机会（共 ${metrics.todayCount} 条）`
+                  }
+                >
+                  <Zap size={14} className="stat-icon" />
+                  <span className="stat-label">今日新发</span>
+                  <span className="stat-count">{metrics.todayCount}</span>
+                  {isTodayActive && <span className="stat-active-badge">✓ 已聚焦</span>}
+                </button>
+              );
+            })()}
 
-            <button
-              type="button"
-              className="radar-stat-pill supplement"
-              onClick={() => onQuickFocus('supplement')}
-              title="点击快速筛选最新补录与补招机会"
-            >
-              <BookmarkCheck size={14} className="stat-icon" />
-              <span className="stat-label">新开补录</span>
-              <span className="stat-count">{metrics.supplementCount}</span>
-            </button>
+            {(() => {
+              const isSuppActive = activeFocus === 'supplement';
+              return (
+                <button
+                  type="button"
+                  className={`radar-stat-pill supplement ${isSuppActive ? 'active' : ''}`}
+                  onClick={() => onQuickFocus('supplement')}
+                  aria-pressed={isSuppActive}
+                  title={
+                    isSuppActive
+                      ? `已聚焦新开补录（共 ${metrics.supplementCount} 条），再次点击可取消`
+                      : `点击快速筛选最新补录与补招机会（共 ${metrics.supplementCount} 条）`
+                  }
+                >
+                  <BookmarkCheck size={14} className="stat-icon" />
+                  <span className="stat-label">新开补录</span>
+                  <span className="stat-count">{metrics.supplementCount}</span>
+                  {isSuppActive && <span className="stat-active-badge">✓ 已聚焦</span>}
+                </button>
+              );
+            })()}
 
-            <button
-              type="button"
-              className="radar-stat-pill urgent"
-              onClick={() => onQuickFocus('urgent')}
-              title="点击将即将截止的机会排在最前面"
-            >
-              <Clock size={14} className="stat-icon" />
-              <span className="stat-label">3天内截止</span>
-              <span className="stat-count">{metrics.urgentCount}</span>
-            </button>
+            {(() => {
+              const isUrgentActive = activeFocus === 'urgent';
+              return (
+                <button
+                  type="button"
+                  className={`radar-stat-pill urgent ${isUrgentActive ? 'active' : ''}`}
+                  onClick={() => onQuickFocus('urgent')}
+                  aria-pressed={isUrgentActive}
+                  title={
+                    isUrgentActive
+                      ? `已聚焦3天内截止机会（共 ${metrics.urgentCount} 条），再次点击可取消`
+                      : `点击筛选即将截止的机会（共 ${metrics.urgentCount} 条）`
+                  }
+                >
+                  <Clock size={14} className="stat-icon" />
+                  <span className="stat-label">3天内截止</span>
+                  <span className="stat-count">{metrics.urgentCount}</span>
+                  {isUrgentActive && <span className="stat-active-badge">✓ 已聚焦</span>}
+                </button>
+              );
+            })()}
 
-            <button
-              type="button"
-              className="radar-stat-pill change"
-              onClick={() => onQuickFocus('change')}
-              title="点击快速筛选延期、补录及重要变更机会"
-            >
-              <Bell size={14} className="stat-icon" />
-              <span className="stat-label">近期变更</span>
-              <span className="stat-count">{metrics.changeCount}</span>
-            </button>
+            {(() => {
+              const isChangeActive = activeFocus === 'change';
+              return (
+                <button
+                  type="button"
+                  className={`radar-stat-pill change ${isChangeActive ? 'active' : ''}`}
+                  onClick={() => onQuickFocus('change')}
+                  aria-pressed={isChangeActive}
+                  title={
+                    isChangeActive
+                      ? `已聚焦近期变更机会（共 ${metrics.changeCount} 条），再次点击可取消`
+                      : `点击筛选延期、补录及重要变更机会（共 ${metrics.changeCount} 条）`
+                  }
+                >
+                  <Bell size={14} className="stat-icon" />
+                  <span className="stat-label">近期变更</span>
+                  <span className="stat-count">{metrics.changeCount}</span>
+                  {isChangeActive && <span className="stat-active-badge">✓ 已聚焦</span>}
+                </button>
+              );
+            })()}
           </div>
         </>
       )}

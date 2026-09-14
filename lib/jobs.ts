@@ -143,6 +143,7 @@ export type Personal = Record<
   { saved?: boolean; applied?: boolean; hidden?: boolean; readAt?: string | null }
 >;
 export type SortOrder = 'newest' | 'deadline_asc' | 'salary_desc';
+export type RadarFocus = 'none' | 'today' | 'supplement' | 'urgent' | 'change';
 export type Filters = {
   city: string;
   type: string;
@@ -162,6 +163,7 @@ export type Filters = {
   salary: string;
   sort: SortOrder;
   changeType: ChangeTypeFilter;
+  radarFocus: RadarFocus;
 };
 export const defaultFilters: Filters = {
   city: '济南',
@@ -182,6 +184,7 @@ export const defaultFilters: Filters = {
   salary: '全部',
   sort: 'newest',
   changeType: '全部',
+  radarFocus: 'none',
 };
 export function isExpired(job: Job, now = Date.now()) {
   return !!job.deadline && Date.parse(job.deadline) < now;
@@ -919,6 +922,32 @@ export function filterJobs(
         if (f.changeType === '补录招募' && stage !== 'supplemental' && j.recent_change?.type !== 'supplemental') return false;
         if (f.changeType === '岗位调整' && (j.position_count ?? 0) === 0 && j.recent_change?.type !== 'positions_updated') return false;
         if (f.changeType === '考核阶段' && stage !== 'selection' && j.recent_change?.type !== 'selection_stage') return false;
+      }
+      if (f.radarFocus && f.radarFocus !== 'none') {
+        if (f.radarFocus === 'today') {
+          const todayStr = new Date(now).toLocaleString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+          const isToday = j.published_at === todayStr || j.first_seen_at?.slice(0, 10) === todayStr;
+          if (!isToday) return false;
+        } else if (f.radarFocus === 'supplement') {
+          const isSupp =
+            /补录|补招|追加|第[二两三]批|春招补录|秋招补录|续聘/.test(j.title) ||
+            j.recent_change?.type === 'supplemental' ||
+            j.lifecycle_stage === 'supplemental';
+          if (!isSupp) return false;
+        } else if (f.radarFocus === 'urgent') {
+          const countdown = getDeadlineCountdown(j.deadline, now);
+          if (!countdown || countdown.urgency !== 'urgent') return false;
+        } else if (f.radarFocus === 'change') {
+          const stage = getLifecycleStage(j, now).stage;
+          const hasChange =
+            Boolean(j.recent_change) ||
+            stage === 'extended' ||
+            stage === 'supplemental' ||
+            stage === 'selection' ||
+            Boolean(j.timeline && j.timeline.some((e) => e.type !== 'published' && e.type !== 'source_repost')) ||
+            /延长|延期|补录|追加|笔试|面试/.test(j.title);
+          if (!hasChange) return false;
+        }
       }
       if (f.query.trim()) {
         const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);

@@ -1723,6 +1723,139 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   color: #818cf8;
 }
 
+/* Active Highlight States for Radar Metrics */
+.radar-stat-pill.active {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+.radar-stat-pill .stat-active-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  margin-left: 6px;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+.dark .radar-stat-pill .stat-active-badge {
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.radar-stat-pill.today.active {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-color: #047857;
+  color: #ffffff;
+}
+.radar-stat-pill.today.active .stat-count {
+  color: #ffffff;
+}
+.radar-stat-pill.today.active .stat-active-badge {
+  color: #065f46;
+}
+
+.radar-stat-pill.supplement.active {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border-color: #b45309;
+  color: #ffffff;
+}
+.radar-stat-pill.supplement.active .stat-count {
+  color: #ffffff;
+}
+.radar-stat-pill.supplement.active .stat-active-badge {
+  color: #92400e;
+}
+
+.radar-stat-pill.urgent.active {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+.radar-stat-pill.urgent.active .stat-count {
+  color: #ffffff;
+}
+.radar-stat-pill.urgent.active .stat-active-badge {
+  color: #991b1b;
+}
+
+.radar-stat-pill.change.active {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  border-color: #4338ca;
+  color: #ffffff;
+}
+.radar-stat-pill.change.active .stat-count {
+  color: #ffffff;
+}
+.radar-stat-pill.change.active .stat-active-badge {
+  color: #3730a3;
+}
+
+/* Active Radar Focus Chip in Results Bar */
+.active-radar-focus-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 650;
+  border: 1px solid transparent;
+  animation: fadeIn 0.2s ease;
+}
+.active-radar-focus-chip.today {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.dark .active-radar-focus-chip.today {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+.active-radar-focus-chip.supplement {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.dark .active-radar-focus-chip.supplement {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+.active-radar-focus-chip.urgent {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.dark .active-radar-focus-chip.urgent {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+.active-radar-focus-chip.change {
+  background: rgba(99, 102, 241, 0.12);
+  color: #4338ca;
+  border-color: rgba(99, 102, 241, 0.35);
+}
+.dark .active-radar-focus-chip.change {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+}
+.clear-radar-focus-btn {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.7;
+  border-radius: 50%;
+  transition: opacity 0.15s;
+}
+.clear-radar-focus-btn:hover {
+  opacity: 1;
+}
+
 @media(max-width: 640px) {
   .radar-sub-desc {
     display: none;

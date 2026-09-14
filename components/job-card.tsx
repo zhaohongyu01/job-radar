@@ -165,6 +165,18 @@ export function JobCard({
               {job.duplicate_sources.length + 1} 渠道同步
             </span>
           )}
+          {!!job.position_count && job.position_count > 0 && (
+            <span
+              className="tag position-count-pill"
+              title={
+                job.sample_positions?.length
+                  ? `包含岗位：${job.sample_positions.join('、')}`
+                  : `已解析 ${job.position_count} 个具体岗位`
+              }
+            >
+              📋 {job.position_count} 岗位
+            </span>
+          )}
           {applied && <span className="tag new">已投递</span>}
         </div>
         <div className="card-top-actions">
@@ -202,6 +214,22 @@ export function JobCard({
             <HighlightText text={job.company} query={filters.query} />
           </span>
         </p>
+      )}
+      {job.sample_positions && job.sample_positions.length > 0 && (
+        <div className="card-sample-positions">
+          <span className="sample-pos-label">需求职位：</span>
+          <span className="sample-pos-list">
+            <HighlightText
+              text={
+                job.sample_positions.slice(0, 3).join(' · ') +
+                (job.position_count && job.position_count > 3
+                  ? ` 等 ${job.position_count} 个职位`
+                  : '')
+              }
+              query={filters.query}
+            />
+          </span>
+        </div>
       )}
       {job.company_conflict && <p className="small muted">{job.company_note}</p>}
       <div className="job-meta">

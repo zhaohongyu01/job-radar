@@ -27,6 +27,11 @@ CITIES = '济南 青岛 淄博 枣庄 东营 烟台 潍坊 济宁 泰安 威海 
 LOCATION_LABEL = r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|用人单位所在地|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)'
 PROVINCES_LIST = '北京 天津 上海 重庆 河北 山西 辽宁 吉林 黑龙江 江苏 浙江 安徽 福建 江西 山东 河南 湖北 湖南 广东 广西 海南 四川 贵州 云南 陕西 甘肃 青海 宁夏 新疆 内蒙古 西藏 香港 澳门 台湾'.split()
 
+try:
+    from parse_positions import extract_all_positions, enrich_job_with_positions
+except ImportError:
+    from scripts.parse_positions import extract_all_positions, enrich_job_with_positions
+
 
 def extract_locations_from_text(evidence, text, title='', company=''):
     evidence = list(evidence)
@@ -206,6 +211,19 @@ def fetch(url, form=None):
             if attempt:
                 raise
             time.sleep(1)
+
+
+def fetch_bytes(url, max_size=3_500_000, timeout=6):
+    """Safely fetch raw binary content for Excel/PDF attachments with strict timeout and size limits."""
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'JobOpportunityReader/0.1'})
+        with OPENER.open(req, timeout=timeout) as r:
+            raw = r.read(max_size + 1)
+        if len(raw) > max_size:
+            return None
+        return raw
+    except Exception:
+        return None
 
 
 def nankai_list(html, base):
@@ -694,7 +712,13 @@ def parse_detail(html, item, source):
     emails=list(dict.fromkeys(emails))
     directions=[label for label,pattern in [('财务 / 经济',r'财务|会计|审计|经济|金融|财会'),('管理 / 职能',r'管理|行政|人力|人事|运营|采购|职能|管培'),('技术 / 研发',r'研发|工程师|技术|算法|软件'),('市场 / 销售',r'市场|销售|营销|客户经理')] if re.search(pattern,combined)]
     secondary=source.get('adapter') in {'wondercv','offerjack'}
-    return refine_facts({'id':hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20], 'title':title,'company':company,
+    positions=extract_all_positions(
+        body_html_or_soup=html,
+        text=text,
+        attachments=attachments,
+        fetch_attachment_fn=fetch_bytes,
+    )
+    raw_job=refine_facts({'id':hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20], 'title':title,'company':company,
             'source_id':source['id'],'source_name':source['name'],'source_url':item['url'],
             'published_at':published,'date_label':'更新' if source.get('adapter')=='offerjack' else '收录' if secondary else '发布',
             'provenance':'第三方线索' if secondary else '公开原始来源',
@@ -707,6 +731,7 @@ def parse_detail(html, item, source):
             'application_url':application_url,'emails':emails,'attachments':attachments,'links':links[:20],
             'qr_attachment':bool(re.search(r'扫码|二维码',text)),
             'excerpt':text[:300],'body':text[:18000], 'classification_note':'标签根据公告文字整理；具体岗位资格请核对原文。'})
+    return enrich_job_with_positions(raw_job, positions)
 
 
 def merge(previous, incoming, now):
@@ -891,6 +916,7 @@ def public_summary(job):
     heavy={
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
         'possible_cities','province_possible','details_available','company_original',
+        'positions',
     }
     row={k:v for k,v in job.items() if k not in heavy}
     return row

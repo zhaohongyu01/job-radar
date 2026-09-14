@@ -1,6 +1,7 @@
 'use client';
 
-import { Bookmark, Check, Share2 } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -38,6 +39,21 @@ export function DetailDrawer({
   onCopy: (job: Job) => void;
   setNotice: (msg: string) => void;
 }) {
+  const [positionFilter, setPositionFilter] = useState('');
+
+  const displayedPositions = useMemo(() => {
+    const list = selected?.positions ?? [];
+    if (!positionFilter.trim()) return list;
+    const kw = positionFilter.trim().toLowerCase();
+    return list.filter(
+      (p) =>
+        p.name.toLowerCase().includes(kw) ||
+        (p.category ?? '').toLowerCase().includes(kw) ||
+        (p.city ?? '').toLowerCase().includes(kw) ||
+        (p.education ?? '').toLowerCase().includes(kw) ||
+        (p.majors ?? []).some((m) => m.toLowerCase().includes(kw)),
+    );
+  }, [selected?.positions, positionFilter]);
   return (
     <Sheet
       open={!!selected}
@@ -225,10 +241,16 @@ export function DetailDrawer({
               {((selected.attachments ?? []).length > 0 ||
                 selected.qr_attachment) && (
                 <>
-                  <h3>附件</h3>
+                  <h3>附件与文档</h3>
                   {(selected.attachments ?? []).map((a, i) => (
                     <div className="attachment" key={i}>
                       <OutLink url={a.url}>{a.title}</OutLink>
+                      {/\.(xlsx?|pdf)(?:\?|$)/i.test(a.url) && (selected.positions ?? []).length > 0 && (
+                        <span className="attachment-parsed-badge">
+                          <FileSpreadsheet size={11} />
+                          已解析岗位表
+                        </span>
+                      )}
                     </div>
                   ))}
                   {selected.qr_attachment && (
@@ -238,6 +260,100 @@ export function DetailDrawer({
                   )}
                 </>
               )}
+
+              {/* Parsed Positions Panel */}
+              {(selected.positions ?? []).length > 0 && (
+                <div className="positions-panel" aria-label="岗位需求明细">
+                  <div className="positions-header">
+                    <div className="positions-title-box">
+                      <Briefcase size={16} className="positions-icon" />
+                      <span className="positions-title">岗位需求与资格要求明细</span>
+                      <span className="positions-count-badge">
+                        共 {selected.positions?.length} 个岗位
+                      </span>
+                    </div>
+                    {(selected.positions ?? []).length > 3 && (
+                      <div className="positions-filter-box">
+                        <Search size={13} className="positions-filter-icon" />
+                        <input
+                          type="text"
+                          className="positions-filter-input"
+                          placeholder="搜索职位或专业..."
+                          value={positionFilter}
+                          onChange={(e) => setPositionFilter(e.target.value)}
+                          aria-label="筛选当前公告具体岗位"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="positions-table-wrap">
+                    <table className="positions-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>岗位名称</th>
+                          <th>需求专业</th>
+                          <th>学历</th>
+                          <th>地点</th>
+                          <th>人数</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedPositions.map((pos, idx) => (
+                          <tr key={idx}>
+                            <td className="pos-col-idx">{idx + 1}</td>
+                            <td className="pos-col-name">
+                              <span className="pos-name">{pos.name}</span>
+                              {pos.category && (
+                                <span className="pos-cat-tag">{pos.category}</span>
+                              )}
+                              {pos.source_file && (
+                                <span className="pos-source-tag">{pos.source_file}</span>
+                              )}
+                            </td>
+                            <td className="pos-col-majors">
+                              {pos.majors && pos.majors.length > 0 ? (
+                                <div className="major-tags-row">
+                                  {pos.majors.map((m, mIdx) => (
+                                    <span key={mIdx} className="major-tag">
+                                      {m}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted">不限 / 见原表</span>
+                              )}
+                            </td>
+                            <td className="pos-col-edu">
+                              {pos.education ? (
+                                <span className="edu-tag">{pos.education}</span>
+                              ) : (
+                                <span className="text-muted">-</span>
+                              )}
+                            </td>
+                            <td className="pos-col-city">
+                              {pos.city ? (
+                                <span className="city-tag">{pos.city}</span>
+                              ) : (
+                                <span className="text-muted">-</span>
+                              )}
+                            </td>
+                            <td className="pos-col-count">
+                              {pos.count ? (
+                                <span className="count-text">{pos.count}</span>
+                              ) : (
+                                <span className="text-muted">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <h3>公告文字</h3>
               <div className="announcement-text">
                 {selected.body || '完整公告尚未读取，请打开原公告核对。'}

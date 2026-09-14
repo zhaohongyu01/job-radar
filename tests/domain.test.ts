@@ -509,6 +509,80 @@ void test('mergeDuplicateOpportunities keeps supplemental recruitment separate f
   assert.equal(merged.length, 2, '秋招补录公告不应与原秋招公告合并');
 });
 
+void test('filterJobs matches queries against specific position names and majors from position tables', () => {
+  const noticeJob: Job = {
+    ...job,
+    id: 'pos-job-1',
+    title: '某大型国有企业2027校园招聘公告',
+    company: '大型国企集团',
+    positions: [
+      {
+        name: '集成电路EDA算法开发工程师',
+        majors: ['微电子科学与工程', '集成电路设计'],
+        education: '硕士研究生',
+        city: '济南',
+        count: '5人',
+      },
+      {
+        name: '审计风控专员',
+        majors: ['审计学', '财务管理'],
+        education: '本科及以上',
+        city: '青岛',
+        count: '2人',
+      },
+    ],
+    position_count: 2,
+    sample_positions: ['集成电路EDA算法开发工程师', '审计风控专员'],
+    majors: ['微电子科学与工程', '集成电路设计', '审计学', '财务管理'],
+  };
 
+  // Search by specific major inside position table
+  const resultsByMajor = filterJobs([noticeJob], { ...defaultFilters, city: '全部城市', query: '微电子' }, {}, null);
+  assert.equal(resultsByMajor.length, 1, '应根据岗位表中的需求专业命中公告');
 
+  // Search by specific position title inside position table
+  const resultsByPos = filterJobs([noticeJob], { ...defaultFilters, city: '全部城市', query: 'EDA算法' }, {}, null);
+  assert.equal(resultsByPos.length, 1, '应根据岗位表中的具体职位名称命中公告');
 
+  // Unrelated keyword should not match
+  const resultsUnrelated = filterJobs([noticeJob], { ...defaultFilters, city: '全部城市', query: '临床医学' }, {}, null);
+  assert.equal(resultsUnrelated.length, 0, '不包含的专业不应命中');
+});
+
+void test('mergeDuplicateOpportunities merges positions and majors across channels', () => {
+  const jobChan1: Job = {
+    ...job,
+    id: 'chan-1',
+    title: '海尔智家2027届校园招聘',
+    company: '海尔智家股份有限公司',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2027'],
+    positions: [
+      { name: '嵌入式软件工程师', majors: ['电子信息', '计算机'], city: '青岛' },
+    ],
+    position_count: 1,
+    majors: ['电子信息', '计算机'],
+  };
+  const jobChan2: Job = {
+    ...job,
+    id: 'chan-2',
+    title: '海尔智家2027届校园招聘简章',
+    company: '海尔智家股份有限公司',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2027'],
+    positions: [
+      { name: '海外电商运营', majors: ['国际经济与贸易', '英语'], city: '青岛' },
+    ],
+    position_count: 1,
+    majors: ['国际经济与贸易', '英语'],
+  };
+
+  const merged = mergeDuplicateOpportunities([jobChan1, jobChan2]);
+  assert.equal(merged.length, 1, '同企业同批次应合并');
+  assert.equal(merged[0].position_count, 2, '两渠道不同的岗位明细应合并保留');
+  assert.equal(merged[0].positions?.length, 2);
+  assert.ok(merged[0].majors?.includes('电子信息'));
+  assert.ok(merged[0].majors?.includes('国际经济与贸易'));
+});

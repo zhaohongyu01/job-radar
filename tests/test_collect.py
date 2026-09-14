@@ -440,4 +440,29 @@ class CollectionTests(unittest.TestCase):
         }, upc_source)
         self.assertEqual(parsed_career['application_url'], 'http://campus.example.com/apply')
 
+        # 4. parse_detail extracts embedded positions and enriches job
+        pos_html = '''
+        <div>
+          <p>某半导体企业2027校园招聘启动！</p>
+          <table>
+            <tr><th>岗位名称</th><th>需求专业</th><th>学历要求</th><th>工作地点</th><th>人数</th></tr>
+            <tr><td>芯片验证工程师</td><td>微电子科学、集成电路</td><td>硕士及以上</td><td>济南</td><td>5人</td></tr>
+          </table>
+        </div>
+        '''
+        parsed_job = c.parse_detail(pos_html, {
+            'url': 'https://career.upc.edu.cn/detail/chip',
+            'title': '某芯片企业2027校招',
+            'structured': {},
+        }, upc_source)
+        self.assertEqual(parsed_job.get('position_count'), 1)
+        self.assertEqual(parsed_job['positions'][0]['name'], '芯片验证工程师')
+        self.assertIn('微电子科学', parsed_job['majors'])
+        self.assertIn('济南', parsed_job['cities'])
+
+        summary = c.public_summary(parsed_job)
+        self.assertNotIn('positions', summary)
+        self.assertEqual(summary.get('position_count'), 1)
+        self.assertEqual(summary.get('sample_positions'), ['芯片验证工程师'])
+
 if __name__=='__main__': unittest.main()

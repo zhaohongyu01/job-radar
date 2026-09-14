@@ -1,3 +1,16 @@
+export type PositionRequirement = {
+  name: string;
+  category?: string;
+  majors?: string[];
+  education?: string;
+  count?: string;
+  city?: string;
+  cohort?: string;
+  notes?: string;
+  source_type?: string;
+  source_file?: string;
+};
+
 export type Job = {
   id: string;
   title: string;
@@ -49,6 +62,10 @@ export type Job = {
   updated_at: string;
   last_verified_at: string;
   revision: number;
+  positions?: PositionRequirement[];
+  position_count?: number;
+  sample_positions?: string[];
+  majors?: string[];
 };
 export type Source = {
   id: string;
@@ -262,6 +279,26 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
             attUrls.add(a.url);
           }
         }
+      }
+      if (job.positions?.length) {
+        existing.positions = existing.positions ?? [];
+        const existingKeys = new Set(
+          existing.positions.map((p) => `${p.name}-${p.city ?? ''}-${p.education ?? ''}`),
+        );
+        for (const p of job.positions) {
+          const key = `${p.name}-${p.city ?? ''}-${p.education ?? ''}`;
+          if (!existingKeys.has(key)) {
+            existing.positions.push(p);
+            existingKeys.add(key);
+          }
+        }
+        existing.position_count = existing.positions.length;
+      }
+      if (job.majors?.length) {
+        existing.majors = [...new Set([...(existing.majors ?? []), ...job.majors])].slice(0, 15);
+      }
+      if (job.sample_positions?.length && !(existing.sample_positions?.length)) {
+        existing.sample_positions = job.sample_positions;
       }
       if (existing.provenance === '第三方线索' && job.provenance === '公开原始来源') {
         existing.source_name = job.source_name;
@@ -631,6 +668,9 @@ export function filterJobs(
             ...(j.directions ?? []),
             ...(j.sectors ?? []),
             ...(j.location_evidence ?? []),
+            ...(j.sample_positions ?? []),
+            ...(j.majors ?? []),
+            ...(j.positions?.map((p) => `${p.name} ${(p.majors ?? []).join(' ')} ${p.city ?? ''}`) ?? []),
             j.search_text ?? '',
             j.body ?? '',
           ]

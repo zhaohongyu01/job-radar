@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   externalUrl,
+  getDeadlineCountdown,
   isExpired,
   isUnread,
   locationMatch,
@@ -113,6 +114,7 @@ export function JobCard({
   const applied = personalFor(job, personal).applied;
   const expired = isExpired(job, now);
   const unread = isUnread(job, personal);
+  const countdown = getDeadlineCountdown(job.deadline, now);
   const { cleanTitle, salary } = extractSalary(job);
   const excerptText = cleanExcerpt(job.excerpt);
 
@@ -128,6 +130,11 @@ export function JobCard({
           >
             {unread ? '未读' : '已读'}
           </button>
+          {countdown && countdown.urgency !== 'expired' && countdown.urgency !== 'normal' && (
+            <span className={`tag deadline-${countdown.urgency}`}>
+              ⏳ {countdown.text}
+            </span>
+          )}
           {filters.city !== '全部城市' && (
             <span className="tag">
               {location === 'exact'
@@ -217,7 +224,16 @@ export function JobCard({
             {job.deadline ? (
               <>
                 <Clock3 size={14} />
-                {expired ? '已截止' : '公告截止'} {formatDate(job.deadline, true)}
+                {expired ? (
+                  '已截止 '
+                ) : countdown ? (
+                  <span className={`deadline-highlight ${countdown.urgency}`}>
+                    {countdown.text} · 截止{' '}
+                  </span>
+                ) : (
+                  '公告截止 '
+                )}
+                {formatDate(job.deadline, true)}
                 {job.deadline_precision === 'day' ? '（原文仅日期）' : ''}
               </>
             ) : (

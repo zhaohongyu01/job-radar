@@ -384,6 +384,8 @@ export default function Home() {
     if (filters.onlyUnread !== defaultFilters.onlyUnread) count++;
     if (filters.includeUncertain !== defaultFilters.includeUncertain) count++;
     if (filters.showExpired !== defaultFilters.showExpired) count++;
+    if (filters.salary !== defaultFilters.salary) count++;
+    if (filters.sort !== defaultFilters.sort) count++;
     return count;
   }, [filters]);
 
@@ -702,6 +704,18 @@ export default function Home() {
                   <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'outline'} aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')}>卡片</Button>
                   <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>表格</Button>
                 </fieldset>
+                <div className="sort-control">
+                  <Select value={filters.sort} onValueChange={(v) => change('sort', v as Filters['sort'])}>
+                    <SelectTrigger className="sort-select-trigger" aria-label="排序方式">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">最新发布</SelectItem>
+                      <SelectItem value="deadline_asc">即将截止优先</SelectItem>
+                      <SelectItem value="salary_desc">薪资从高到低</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Toggle label="只看未读" checked={filters.onlyUnread} onChange={(v) => change('onlyUnread', v)} />
                 <Toggle label="新收录/变更" checked={filters.onlyNew} onChange={(v) => change('onlyNew', v)} />
                 <Toggle label="合并同企业" checked={groupCompanies} onChange={(v) => { setGroupCompanies(v); setPage(1); }} />
@@ -783,6 +797,21 @@ export default function Home() {
                                 {' '}（{filtered.filter((j) => j.graduation_years.length === 0).length} 条未明确）
                               </span>
                             )}
+                          </span>
+                        )}
+                        {filters.salary !== '全部' && (
+                          <span className="salary-filter-badge">
+                            薪资{filters.salary}
+                          </span>
+                        )}
+                        {filters.sort === 'deadline_asc' && (
+                          <span className="sort-active-badge">
+                            ⏳ 即将截止优先
+                          </span>
+                        )}
+                        {filters.sort === 'salary_desc' && (
+                          <span className="sort-active-badge">
+                            💰 薪资从高到低
                           </span>
                         )}
                       </>
@@ -880,6 +909,8 @@ export default function Home() {
                             onlyNew: false,
                             onlyUnread: false,
                             includeUncertain: true,
+                            salary: '全部',
+                            sort: 'newest',
                           });
                           setPage(1);
                         }}

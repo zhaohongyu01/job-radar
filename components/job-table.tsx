@@ -1,7 +1,7 @@
 'use client';
 import { Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { externalUrl, isExpired, isUnread, locationSummary, personalFor } from '@/lib/jobs';
+import { externalUrl, getDeadlineCountdown, isExpired, isUnread, locationSummary, personalFor } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 
 export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadChange, onToggle }: {
@@ -29,6 +29,7 @@ export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadC
           const record = personalFor(job, personal);
           const unread = isUnread(job, personal);
           const expired = isExpired(job, now);
+          const countdown = getDeadlineCountdown(job.deadline, now);
           const href = externalUrl(job.application_url || job.source_url);
           return <tr key={job.id} className={expired ? 'expired' : undefined}>
             <th scope="row">
@@ -40,7 +41,7 @@ export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadC
             </th>
             <td><div className="table-location" title={locationSummary(job)}>{locationSummary(job)}</div></td>
             <td>{job.published_at || '日期未明确'}<p className="small muted">{job.date_label || '发布'} · {job.source_name}</p>{job.provenance === '第三方线索' && <p className="small muted">第三方线索 · 待原文复核</p>}</td>
-            <td>{job.deadline ? <><span>{expired ? '已截止' : '公告截止'}</span><p>{new Date(job.deadline).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p></> : '未明确，需核对'}</td>
+            <td>{job.deadline ? <><span>{expired ? '已截止' : countdown && countdown.urgency !== 'normal' ? `⏳ ${countdown.text}` : '公告截止'}</span><p>{new Date(job.deadline).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p></> : '未明确，需核对'}</td>
             <td>
               <Button size="sm" variant="ghost" className={unread ? 'read-status unread' : 'read-status'} disabled={!ready} onClick={() => onReadChange(job, unread)} aria-label={`${unread ? '标为已读' : '标为未读'}：${job.title}`}>{unread ? '未读' : '已读'}</Button>
               <Button size="sm" variant="ghost" disabled={!ready} aria-pressed={!!record.applied} onClick={() => onToggle(job, 'applied')}>{record.applied ? '已投递' : '标记投递'}</Button>

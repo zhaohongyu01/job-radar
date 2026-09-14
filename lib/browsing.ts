@@ -18,6 +18,8 @@ export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: V
     view: ['all', 'saved', 'applied', 'hidden'],
     provenance: ['全部', '高校 / 政府', '第三方线索'],
     kind: ['全部', '具体岗位', '招聘公告'],
+    salary: ['全部', '6K以上', '8K以上', '10K以上', '15K以上', '20K以上'],
+    sort: ['newest', 'deadline_asc', 'salary_desc'],
   } as const;
   for (const key of Object.keys(enums) as (keyof typeof enums)[]) {
     const field = fields[key];

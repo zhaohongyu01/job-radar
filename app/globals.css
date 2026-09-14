@@ -534,6 +534,21 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   padding: 0 10px;
   font-size: 12px;
 }
+.sort-control {
+  display: inline-flex;
+  align-items: center;
+}
+.sort-select-trigger {
+  height: 28px !important;
+  font-size: 12px !important;
+  padding: 0 10px !important;
+  border-radius: 6px !important;
+  min-width: 108px !important;
+  background: #ffffff;
+}
+.dark .sort-select-trigger {
+  background: #1e293b;
+}
 
 /* Location Scope & Hints */
 .location-scopes-compact {
@@ -583,6 +598,36 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .cohort-breakdown {
   font-size: 12px;
   color: #2563eb;
+}
+.salary-filter-badge,
+.sort-active-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-weight: 600;
+}
+.salary-filter-badge {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.dark .salary-filter-badge {
+  background: #064e3b;
+  color: #34d399;
+  border-color: #059669;
+}
+.sort-active-badge {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+.dark .sort-active-badge {
+  background: #1e3a8a;
+  color: #93c5fd;
+  border-color: #2563eb;
 }
 
 /* Pagination Control (Single Line Layout) */
@@ -852,6 +897,48 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 }
 .tag.read-status:hover {
   border-color: #2563eb;
+}
+.tag.deadline-urgent {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+  font-weight: 650;
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
+.dark .tag.deadline-urgent {
+  background: #450a0a;
+  color: #f87171;
+  border-color: #7f1d1d;
+}
+.tag.deadline-warning {
+  background: #fffbeb;
+  color: #d97706;
+  border-color: #fde68a;
+  font-weight: 600;
+}
+.dark .tag.deadline-warning {
+  background: #451a03;
+  color: #fbbf24;
+  border-color: #78350f;
+}
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+.deadline-highlight.urgent {
+  color: #dc2626;
+  font-weight: 700;
+}
+.dark .deadline-highlight.urgent {
+  color: #f87171;
+}
+.deadline-highlight.warning {
+  color: #d97706;
+  font-weight: 650;
+}
+.dark .deadline-highlight.warning {
+  color: #fbbf24;
 }
 
 .card-top-actions {

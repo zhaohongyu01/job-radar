@@ -35,14 +35,16 @@ void test('legacy records and folded sources retain expected reading state', () 
   assert.equal(isUnread(job, mergePersonal(existing, validatePersonal({ [job.id]: { readAt: null } }))), true);
 });
 void test('browsing preferences restore all filters without letting malformed fields through', () => {
-  const filters = { ...defaultFilters, city: '青岛', type: '社招', query: '审计', onlyUnread: true };
+  const filters = { ...defaultFilters, city: '青岛', type: '社招', query: '审计', onlyUnread: true, salary: '10K以上', sort: 'deadline_asc' as const };
   assert.deepEqual(restoreBrowsing({ filters, viewMode: 'table' }), { filters, viewMode: 'table', groupCompanies: false });
   assert.equal(restoreBrowsing({ groupCompanies: true }).groupCompanies, true);
   assert.deepEqual(restoreBrowsing(null).filters, defaultFilters);
-  const restored = restoreBrowsing({ filters: { type: 'bad', onlyUnread: 'true', city: [], year: 'bad', query: 'x'.repeat(500), __proto__: { view: 'hidden' } }, viewMode: 'invalid' });
+  const restored = restoreBrowsing({ filters: { type: 'bad', onlyUnread: 'true', city: [], year: 'bad', salary: 'invalid', sort: 'invalid', query: 'x'.repeat(500), __proto__: { view: 'hidden' } }, viewMode: 'invalid' });
   assert.equal(restored.filters.type, '全部');
   assert.equal(restored.filters.onlyUnread, false);
   assert.equal(restored.filters.city, '济南');
+  assert.equal(restored.filters.salary, '全部');
+  assert.equal(restored.filters.sort, 'newest');
   assert.equal(restored.filters.query.length, 200);
   assert.equal(restored.viewMode, 'cards');
   assert.equal(restored.filters.view, 'all');

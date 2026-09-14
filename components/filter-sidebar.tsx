@@ -178,6 +178,12 @@ export function FilterSidebar({
         ]}
         onChange={(v) => onChange('direction', v)}
       />
+      <PillChoice
+        label="薪资期望"
+        value={filters.salary}
+        options={['全部', '6K以上', '8K以上', '10K以上', '15K以上', '20K以上']}
+        onChange={(v) => onChange('salary', v)}
+      />
       <label htmlFor="education" className="filter-field">
         <span className="field-label">学历关键词</span>
         <Input
@@ -188,6 +194,15 @@ export function FilterSidebar({
           placeholder="不限，可输入本科"
         />
       </label>
+      <Choice
+        label="排序方式"
+        value={filters.sort === 'deadline_asc' ? '即将截止优先' : filters.sort === 'salary_desc' ? '薪资从高到低' : '最新发布'}
+        options={['最新发布', '即将截止优先', '薪资从高到低']}
+        onChange={(v) => {
+          const mapped = v === '即将截止优先' ? 'deadline_asc' : v === '薪资从高到低' ? 'salary_desc' : 'newest';
+          onChange('sort', mapped);
+        }}
+      />
       <PillChoice
         label="信息来源"
         value={filters.provenance}

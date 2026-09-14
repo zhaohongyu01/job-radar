@@ -9,6 +9,8 @@ import {
   locationMatch,
   personalFor,
   isDomestic,
+  parseSalaryRange,
+  getDeadlineCountdown,
 } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 const job = {
@@ -242,3 +244,89 @@ void test('multi-keyword space-separated query matches all terms', () => {
   assert.equal(filterJobs([sample], { ...defaultFilters, query: '研发 2027 济南' }, {}, null).length, 1);
   assert.equal(filterJobs([sample], { ...defaultFilters, query: '研发 审计' }, {}, null).length, 0);
 });
+
+void test('parseSalaryRange extracts accurate monthly ranges and rejects invalid strings', () => {
+  const job1 = { ...job, title: '软件工程师\n6000-8000元' };
+  assert.deepEqual(parseSalaryRange(job1), { min: 6000, max: 8000, raw: '6000-8000元' });
+
+  const job2 = { ...job, title: '算法科学家\n20000元以上' };
+  assert.deepEqual(parseSalaryRange(job2), { min: 20000, max: Number.POSITIVE_INFINITY, raw: '20000元以上' });
+
+  const job3 = { ...job, title: '前端开发（8k-15k）' };
+  assert.deepEqual(parseSalaryRange(job3), { min: 8000, max: 15000, raw: '（8k-15k）' });
+
+  const job4 = { ...job, title: '架构师 15~18W/年' };
+  assert.deepEqual(parseSalaryRange(job4), { min: 12500, max: 15000, raw: '15~18W/年' });
+
+  const jobExcerpt = { ...job, title: '管培生', excerpt: '薪资待遇：8000-12000元/月，五险一金' };
+  assert.deepEqual(parseSalaryRange(jobExcerpt), { min: 8000, max: 12000, raw: '8000-12000元' });
+
+  const jobNegotiable = { ...job, title: '行长助理', excerpt: '薪资待遇：面议' };
+  assert.equal(parseSalaryRange(jobNegotiable), null);
+
+  const jobDate = { ...job, title: '校园招聘2026-09' };
+  assert.equal(parseSalaryRange(jobDate), null);
+});
+
+void test('getDeadlineCountdown computes correct urgency and days left', () => {
+  const base = Date.parse('2026-09-14T12:00:00+08:00');
+  
+  // Past deadline
+  const expired = getDeadlineCountdown('2026-09-13T12:00:00+08:00', base);
+  assert.equal(expired?.urgency, 'expired');
+  assert.equal(expired?.text, '已截止');
+
+  // Same day
+  const today = getDeadlineCountdown('2026-09-14T23:59:59+08:00', base);
+  assert.equal(today?.urgency, 'urgent');
+  assert.equal(today?.text, '今日截止');
+
+  // 1 day left
+  const oneDay = getDeadlineCountdown('2026-09-15T18:00:00+08:00', base);
+  assert.equal(oneDay?.urgency, 'urgent');
+  assert.equal(oneDay?.text, '剩 1 天截止');
+
+  // 5 days left
+  const warning = getDeadlineCountdown('2026-09-19T12:00:00+08:00', base);
+  assert.equal(warning?.urgency, 'warning');
+  assert.equal(warning?.text, '剩 5 天截止');
+
+  // 20 days left
+  const normal = getDeadlineCountdown('2026-10-04T12:00:00+08:00', base);
+  assert.equal(normal?.urgency, 'normal');
+  assert.equal(normal?.text, '剩 20 天');
+});
+
+void test('filterJobs filters by salary expectation accurately', () => {
+  const lowPay = { ...job, id: 'low', title: '文员 4000-5000元' };
+  const midPay = { ...job, id: 'mid', title: '会计 7000-9000元' };
+  const highPay = { ...job, id: 'high', title: '算法 18000-25000元' };
+  const unstated = { ...job, id: 'unknown', title: '行政专员' };
+
+  const all = [lowPay, midPay, highPay, unstated];
+
+  const atLeast8k = filterJobs(all, { ...defaultFilters, salary: '8K以上' }, {}, null);
+  assert.deepEqual(atLeast8k.map((j) => j.id), ['high', 'mid']);
+
+  const atLeast15k = filterJobs(all, { ...defaultFilters, salary: '15K以上' }, {}, null);
+  assert.deepEqual(atLeast15k.map((j) => j.id), ['high']);
+
+  const allSalaries = filterJobs(all, { ...defaultFilters, salary: '全部' }, {}, null);
+  assert.equal(allSalaries.length, 4);
+});
+
+void test('filterJobs multi-mode sorting operates correctly', () => {
+  const baseTime = Date.parse('2026-09-14T12:00:00+08:00');
+  const jobSoon = { ...job, id: 'soon', title: '急招\n6000-8000元', deadline: '2026-09-16T00:00:00+08:00', published_at: '2026-09-01' };
+  const jobLater = { ...job, id: 'later', title: '常招\n20000元以上', deadline: '2026-09-30T00:00:00+08:00', published_at: '2026-09-10' };
+  const jobNoDeadline = { ...job, id: 'nodeadline', title: '国企\n10000-15000元', deadline: null, published_at: '2026-09-12' };
+
+  // Sort by deadline_asc: upcoming deadline first
+  const deadlineSorted = filterJobs([jobLater, jobNoDeadline, jobSoon], { ...defaultFilters, sort: 'deadline_asc' }, {}, null, baseTime);
+  assert.deepEqual(deadlineSorted.map((j) => j.id), ['soon', 'later', 'nodeadline']);
+
+  // Sort by salary_desc: highest salary first
+  const salarySorted = filterJobs([jobSoon, jobLater, jobNoDeadline], { ...defaultFilters, sort: 'salary_desc' }, {}, null, baseTime);
+  assert.deepEqual(salarySorted.map((j) => j.id), ['later', 'nodeadline', 'soon']);
+});
+

@@ -76,6 +76,7 @@ export type Personal = Record<
   string,
   { saved?: boolean; applied?: boolean; hidden?: boolean; readAt?: string | null }
 >;
+export type SortOrder = 'newest' | 'deadline_asc' | 'salary_desc';
 export type Filters = {
   city: string;
   type: string;
@@ -92,6 +93,8 @@ export type Filters = {
   onlyUnread: boolean;
   provenance: string;
   kind: string;
+  salary: string;
+  sort: SortOrder;
 };
 export const defaultFilters: Filters = {
   city: '济南',
@@ -109,6 +112,8 @@ export const defaultFilters: Filters = {
   onlyUnread: false,
   provenance: '全部',
   kind: '全部',
+  salary: '全部',
+  sort: 'newest',
 };
 export function isExpired(job: Job, now = Date.now()) {
   return !!job.deadline && Date.parse(job.deadline) < now;
@@ -222,6 +227,141 @@ export function locationSummary(job: Job) {
     ? `原文工作地域：${evidence.slice(0, 140)}`
     : '未提取到工作地点，请核对原公告';
 }
+export type DeadlineCountdown = {
+  daysLeft: number;
+  text: string;
+  urgency: 'urgent' | 'warning' | 'normal' | 'expired';
+};
+
+export function getDeadlineCountdown(
+  deadline: string | null | undefined,
+  now = Date.now(),
+): DeadlineCountdown | null {
+  if (!deadline) return null;
+  const target = Date.parse(deadline);
+  if (Number.isNaN(target)) return null;
+  const diffMs = target - now;
+  if (diffMs <= 0) {
+    return { daysLeft: 0, text: '已截止', urgency: 'expired' };
+  }
+  const targetMidnight = new Date(
+    new Date(target).toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }),
+  ).setHours(0, 0, 0, 0);
+  const nowMidnight = new Date(
+    new Date(now).toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }),
+  ).setHours(0, 0, 0, 0);
+  const daysLeft = Math.max(0, Math.round((targetMidnight - nowMidnight) / 86400000));
+
+  if (daysLeft === 0) {
+    return { daysLeft: 0, text: '今日截止', urgency: 'urgent' };
+  }
+  if (daysLeft === 1) {
+    return { daysLeft: 1, text: '剩 1 天截止', urgency: 'urgent' };
+  }
+  if (daysLeft <= 3) {
+    return { daysLeft, text: `剩 ${daysLeft} 天截止`, urgency: 'urgent' };
+  }
+  if (daysLeft <= 7) {
+    return { daysLeft, text: `剩 ${daysLeft} 天截止`, urgency: 'warning' };
+  }
+  return { daysLeft, text: `剩 ${daysLeft} 天`, urgency: 'normal' };
+}
+
+export type SalaryRange = {
+  min: number;
+  max: number;
+  raw: string;
+};
+
+export function parseSalaryRange(job: Job): SalaryRange | null {
+  const title = job.title;
+  const excerpt = job.excerpt || '';
+
+  // 1. Check title end: (\n6000-8000元, (8k-15k), 20000元以上, 15~18W/年)
+  let m = title.match(
+    /(?:[（(\n\s])(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*[-~至–]\s*(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天|人民币)?(?:[)）\s]*)$/,
+  );
+  let isAbove = false;
+  if (!m) {
+    m = title.match(
+      /(?:[（(\n\s])(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*(?:以上|及以上)(?:[)）\s]*)$/,
+    );
+    if (m) isAbove = true;
+  }
+  if (!m) {
+    const exMatch = excerpt.match(/薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]+)/);
+    if (exMatch) {
+      const rawText = exMatch[1].trim();
+      m = rawText.match(
+        /(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*[-~至–]\s*(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?/,
+      );
+      if (!m) {
+        m = rawText.match(
+          /(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*(?:以上|及以上)/,
+        );
+        if (m) isAbove = true;
+      }
+    }
+  }
+
+  if (!m) return null;
+
+  let val1 = Number.parseFloat(m[1]);
+  const unit1 = m[2] || '';
+
+  if (isAbove) {
+    if (['万', 'w', 'W'].includes(unit1)) val1 *= 10000;
+    else if (['k', 'K'].includes(unit1)) val1 *= 1000;
+    if (val1 < 1000) return null;
+    return { min: Math.round(val1), max: Number.POSITIVE_INFINITY, raw: m[0].trim() };
+  }
+
+  let val2 = Number.parseFloat(m[3]);
+  const unit2 = m[4] || '';
+  const unit = unit2 || unit1 || '';
+  const isAnnual = title.includes('/年') || excerpt.includes('年薪');
+
+  if (['万', 'w', 'W'].includes(unit)) {
+    val1 *= 10000;
+    val2 *= 10000;
+  } else if (['k', 'K'].includes(unit)) {
+    val1 *= 1000;
+    val2 *= 1000;
+  }
+
+  if (isAnnual || (['万', 'w', 'W'].includes(unit) && val1 >= 50000)) {
+    val1 /= 12;
+    val2 /= 12;
+  }
+
+  if (val2 < 1000) return null;
+  // Guard against calendar years e.g. 2024-2025 or 2026-0
+  if (val1 >= 2010 && val1 <= 2030 && val2 < 100) return null;
+
+  return {
+    min: Math.round(val1),
+    max: Math.round(val2),
+    raw: m[0].trim(),
+  };
+}
+
+export function salaryThreshold(salaryFilter: string): number {
+  switch (salaryFilter) {
+    case '6K以上':
+      return 6000;
+    case '8K以上':
+      return 8000;
+    case '10K以上':
+      return 10000;
+    case '15K以上':
+      return 15000;
+    case '20K以上':
+      return 20000;
+    default:
+      return 0;
+  }
+}
+
 export function filterJobs(
   jobs: Job[],
   f: Filters,
@@ -269,6 +409,11 @@ export function filterJobs(
         !(f.includeUncertain && j.education.includes('未明确'))
       )
         return false;
+      if (f.salary && f.salary !== '全部') {
+        const threshold = salaryThreshold(f.salary);
+        const sal = parseSalaryRange(j);
+        if (!sal || sal.max < threshold) return false;
+      }
       if (f.query.trim()) {
         const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
         if (keywords.length) {
@@ -297,11 +442,46 @@ export function filterJobs(
         return false;
       return true;
     })
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      if (f.sort === 'deadline_asc') {
+        const aExp = isExpired(a, now);
+        const bExp = isExpired(b, now);
+        if (aExp !== bExp) return aExp ? 1 : -1;
+
+        const aTime = a.deadline ? Date.parse(a.deadline) : Number.POSITIVE_INFINITY;
+        const bTime = b.deadline ? Date.parse(b.deadline) : Number.POSITIVE_INFINITY;
+
+        if (Number.isFinite(aTime) && Number.isFinite(bTime)) {
+          return (
+            aTime - bTime ||
+            (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
+            a.id.localeCompare(b.id)
+          );
+        }
+        if (Number.isFinite(aTime) !== Number.isFinite(bTime)) {
+          return Number.isFinite(aTime) ? -1 : 1;
+        }
+        return (
+          (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
+          a.id.localeCompare(b.id)
+        );
+      }
+
+      if (f.sort === 'salary_desc') {
+        const aSal = parseSalaryRange(a)?.max ?? -1;
+        const bSal = parseSalaryRange(b)?.max ?? -1;
+        if (aSal !== bSal) return bSal - aSal;
+        return (
+          (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
+          a.id.localeCompare(b.id)
+        );
+      }
+
+      return (
         (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
-        a.id.localeCompare(b.id),
-    );
+        a.id.localeCompare(b.id)
+      );
+    });
 }
 export function validatePersonal(input: unknown): Personal {
   if (!input || typeof input !== 'object' || Array.isArray(input))

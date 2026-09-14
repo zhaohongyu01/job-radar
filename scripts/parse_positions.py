@@ -15,7 +15,10 @@ try:
 except ImportError:
     fitz = None
 
-from bs4 import BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 
 HEADER_SPECIFIC_NAME = re.compile(
     r'(?:职位名称|岗位名称|招聘职位|需求岗位|具体岗位|拟聘岗位|招考职位|拟招聘岗位|选聘岗位|招聘工种)',

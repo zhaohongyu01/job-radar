@@ -30,7 +30,11 @@ PROVINCES_LIST = '北京 天津 上海 重庆 河北 山西 辽宁 吉林 黑龙
 try:
     from parse_positions import extract_all_positions, enrich_job_with_positions
 except ImportError:
-    from scripts.parse_positions import extract_all_positions, enrich_job_with_positions
+    try:
+        from scripts.parse_positions import extract_all_positions, enrich_job_with_positions
+    except ImportError:
+        def extract_all_positions(html, **kw): return []
+        def enrich_job_with_positions(job, positions): return job
 
 
 def extract_locations_from_text(evidence, text, title='', company=''):

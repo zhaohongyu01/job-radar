@@ -73,7 +73,7 @@ jobs:
           JOB_RADAR_SCHEDULE_ENABLED: 'true'
         run: |
           # 列表每天刷新；三天内已核实的详情直接复用，避免重复请求导致云端运行超时。
-          python scripts/ci_collect.py collect --pages 5 --days 30 --refresh-hours 72
+          python scripts/ci_collect.py collect --pages 5 --days 30 --refresh-hours 72 --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6
 
       # Persist atomic state even when collection is partial or a later build/deploy fails.
       # Never cache collect.lock: a cancelled runner must not lock the next run out.

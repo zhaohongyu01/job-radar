@@ -69,6 +69,28 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(again['detail_shards'],snapshot['detail_shards'])
             self.assertEqual(again['generated_at'],snapshot['generated_at'])
 
+    def test_detail_circuit_breaker_skips_blocked_source_without_losing_list_items(self):
+        source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')
+        items=[{
+            'url':f'https://example.com/detail/{idx}',
+            'title':f'示例企业{idx} 财务招聘',
+            'published_at':'2026-09-10',
+        } for idx in range(8)]
+        with TemporaryDirectory() as temp:
+            args=SimpleNamespace(data_dir=temp,public_dir=temp,sources=source['id'],pages=1,days=180,
+                                 refresh_hours=0,nankai_area=0,target_city='',offerjack_pages=1,
+                                 detail_timeout=1,detail_retries=0,detail_failure_limit=3)
+            with patch.object(c,'sdei_list',return_value=(items,1)), \
+                 patch.object(c,'fetch',side_effect=TimeoutError('runner cannot reach detail host')):
+                self.assertEqual(c.run(args),2)
+            snapshot=json.loads((Path(temp)/'jobs.json').read_text(encoding='utf8'))
+            self.assertEqual(len(snapshot['jobs']),8)
+            status=snapshot['sources'][0]
+            self.assertEqual(status['status'],'partial')
+            self.assertGreaterEqual(status['detail_failed'],3)
+            self.assertGreater(status['detail_skipped'],0)
+            self.assertTrue(any('单源熔断' in error['reason'] for error in status['errors']))
+
     def test_public_supplement_preserves_application_fragment_and_provenance(self):
         payload=(ROOT/'tests/fixtures/offerjack-sample.json').read_text(encoding='utf8')
         with patch.object(c,'fetch',return_value=payload):

@@ -5,7 +5,7 @@ Source failures preserve old records and their last successful verification.
 """
 from __future__ import annotations
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import datetime as dt
 import hashlib
 import html as html_lib
@@ -198,15 +198,19 @@ def safe_url(value, base, keep_fragment=False):
         return None
 
 
-def fetch(url, form=None):
-    # Per-process, sequential traffic; two tries, no TLS weakening or login bypass.
-    for attempt in range(2):
+def fetch(url, form=None, timeout=18, retries=1):
+    # Keep list/API requests tolerant of slow public sites, while allowing
+    # detail callers to opt into a shorter budget.  No TLS weakening or login
+    # bypass is used here.
+    timeout = max(1, float(timeout))
+    retries = max(0, int(retries))
+    for attempt in range(retries + 1):
         try:
             time.sleep(0.3)
             req = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode() if form is not None else None,
                 headers={'User-Agent':'JobOpportunityReader/0.1', 'Accept':'text/html,application/json',
                          **({'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'} if form is not None else {})})
-            with OPENER.open(req, timeout=18) as r:
+            with OPENER.open(req, timeout=timeout) as r:
                 raw = r.read(3_000_001)
                 charset = r.headers.get_content_charset() or 'utf-8'
             if len(raw) > 3_000_000:
@@ -1364,7 +1368,7 @@ def run(args):
         source=dict(source)
         if source['id']=='nankai' and args.nankai_area:
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
-        status=dict(source,last_attempt_at=now,last_success_at=previous['sources'].get(source['id'],{}).get('last_success_at'),pages=0,discovered=0,parsed=0,errors=[],status='ok',coverage='近期分页，非全量历史')
+        status=dict(source,last_attempt_at=now,last_success_at=previous['sources'].get(source['id'],{}).get('last_success_at'),pages=0,discovered=0,parsed=0,cached=0,probed=0,detail_attempted=0,detail_failed=0,detail_skipped=0,errors=[],status='ok',coverage='近期分页，非全量历史')
         try:
             first=fetch(source['url']) if source.get('adapter') not in {'sdei','offerjack','upc'} else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
@@ -1519,8 +1523,15 @@ def run(args):
                     'is_probe': True,
                 })
 
+            detail_timeout = max(1, float(getattr(args, 'detail_timeout', 8) or 8))
+            detail_retries = max(0, int(getattr(args, 'detail_retries', 1) or 0))
+            detail_failure_limit = max(1, int(getattr(args, 'detail_failure_limit', 6) or 6))
+
             def read_detail(item):
-                res = parse_detail(item['inline_html'] if 'inline_html' in item else fetch(item['url']), item, source)
+                html = item['inline_html'] if 'inline_html' in item else fetch(
+                    item['url'], timeout=detail_timeout, retries=detail_retries
+                )
+                res = parse_detail(html, item, source)
                 if item.get('target_id'):
                     res['id'] = item['target_id']
                 if item.get('identity'):
@@ -1548,32 +1559,125 @@ def run(args):
                     if not res.get('graduation_years') and prev.get('graduation_years'):
                         res['graduation_years'] = list(prev['graduation_years'])
                 return res
-            # Bounded to two concurrent requests per source; retain progress on disk.
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                pending={pool.submit(read_detail,item):item for item in remaining}
-                for future in as_completed(pending):
-                    item=pending[future]
-                    try:
-                        incoming.append(future.result())
-                        status['parsed']+=1
-                    except Exception as e:
+            def add_list_fallback(item):
+                """Keep a new list discovery visible when its detail is unavailable."""
+                identifier=hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20]
+                if identifier in previous['jobs']:
+                    return
+                fallback=parse_detail(
+                    '<div id="zoom">详情尚未读取，请打开原公告核对岗位、工作地点与报名要求。</div>',
+                    item,
+                    {'id':'fallback','name':source['name']},
+                )
+                fallback.update(source_id=source['id'],classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
+                incoming.append(fallback)
+
+            def record_detail_failure(item, error):
+                status['detail_failed'] = status.get('detail_failed', 0) + 1
+                reason = str(error)[:200]
+                if item.get('is_probe'):
+                    status.setdefault('probe_errors',[]).append({'url':item['url'],'reason':reason})
+                    if item.get('target_id') and item['target_id'] in previous['jobs']:
+                        previous['jobs'][item['target_id']]['probe_attempt_at'] = now
+                else:
+                    status['errors'].append({'url':item['url'],'reason':reason})
+                    add_list_fallback(item)
+
+            def record_detail_success(future, item):
+                status['detail_attempted'] = status.get('detail_attempted', 0) + 1
+                try:
+                    incoming.append(future.result())
+                    status['parsed']+=1
+                    return True
+                except Exception as error:
+                    record_detail_failure(item, error)
+                    return False
+
+            def checkpoint_progress():
+                completed = status.get('detail_attempted', 0) + status.get('detail_skipped', 0)
+                if completed and completed % 25 == 0:
+                    atomic_json(data_dir/'checkpoint.json',{'run_at':now,'incoming':incoming,'source':status})
+                if completed and completed % 10 == 0:
+                    print(source['id'],'progress',status['parsed'],'/',len(items),
+                          'skipped',status.get('detail_skipped', 0),flush=True)
+
+            # Keep at most two futures in flight.  Submitting all 99 detail
+            # tasks at once would make a later circuit breaker ineffective:
+            # queued futures would still wait for their network timeouts.
+            pool=ThreadPoolExecutor(max_workers=2)
+            pending={}
+            next_index=0
+            consecutive_failures=0
+            circuit_reason=''
+
+            def fill_pending():
+                nonlocal next_index
+                while len(pending) < 2 and next_index < len(remaining):
+                    item=remaining[next_index]
+                    next_index += 1
+                    pending[pool.submit(read_detail,item)] = item
+
+            fill_pending()
+            try:
+                while pending:
+                    done,_=wait(tuple(pending),return_when=FIRST_COMPLETED)
+                    for future in done:
+                        item=pending.pop(future)
+                        if record_detail_success(future,item):
+                            consecutive_failures=0
+                        else:
+                            consecutive_failures += 1
+                        checkpoint_progress()
+                        if consecutive_failures >= detail_failure_limit:
+                            circuit_reason=f'详情连续失败 {detail_failure_limit} 次，已打开单源熔断'
+                            break
+                        fill_pending()
+                    if circuit_reason:
+                        break
+            finally:
+                skipped_items=[]
+                running_items=[]
+                if circuit_reason:
+                    for future,item in list(pending.items()):
+                        if future.cancel():
+                            skipped_items.append(item)
+                        else:
+                            running_items.append((future,item))
+                    skipped_items.extend(remaining[next_index:])
+                pool.shutdown(wait=True,cancel_futures=True)
+
+                # A future already running when the breaker opened is allowed
+                # to finish; only queued work is skipped.
+                for future,item in running_items:
+                    if future.cancelled():
+                        skipped_items.append(item)
+                        continue
+                    if record_detail_success(future,item):
+                        consecutive_failures=0
+                    else:
+                        consecutive_failures += 1
+                    checkpoint_progress()
+
+                if circuit_reason:
+                    status['detail_skipped'] = status.get('detail_skipped', 0) + len(skipped_items)
+                    skipped_probes=sum(1 for item in skipped_items if item.get('is_probe'))
+                    for item in skipped_items:
                         if item.get('is_probe'):
-                            status.setdefault('probe_errors',[]).append({'url':item['url'],'reason':str(e)[:200]})
                             if item.get('target_id') and item['target_id'] in previous['jobs']:
                                 previous['jobs'][item['target_id']]['probe_attempt_at'] = now
                         else:
-                            status['errors'].append({'url':item['url'],'reason':str(e)[:200]})
-                            # Keep verified list discoveries when external detail templates are unsupported.
-                            # Never replace a previously parsed record with a weaker fallback.
-                            identifier=hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20]
-                            if identifier not in previous['jobs']:
-                                fallback=parse_detail('<div id="zoom">详情尚未读取，请打开原公告核对岗位、工作地点与报名要求。</div>',item,{'id':'fallback','name':source['name']})
-                                fallback.update(source_id=source['id'],classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
-                                incoming.append(fallback)
-                    if (status['parsed']+len(status['errors']))%25==0:
-                        atomic_json(data_dir/'checkpoint.json',{'run_at':now,'incoming':incoming,'source':status})
-                    if (status['parsed']+len(status['errors']))%10==0:
-                        print(source['id'],'progress',status['parsed'],'/',len(items),flush=True)
+                            add_list_fallback(item)
+                    status['errors'].append({
+                        'url': source['url'],
+                        'reason': f'{circuit_reason}；跳过 {len(skipped_items)} 条详情请求',
+                    })
+                    if skipped_probes:
+                        status.setdefault('probe_errors',[]).append({
+                            'url': source['url'],
+                            'reason': f'{circuit_reason}；跳过 {skipped_probes} 条历史复检',
+                        })
+                    status['coverage'] = f'{status.get("coverage", "")}；{circuit_reason}，保留列表兜底和历史记录'
+                    print(source['id'],'circuit-open',circuit_reason,'skipped',len(skipped_items),flush=True)
             if status['errors']:
                 status['status']='partial'
             elif not status['parsed'] and not cached and total!=0:

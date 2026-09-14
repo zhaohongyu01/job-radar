@@ -198,10 +198,10 @@ def write_report(data_dir, code, state, error=''):
     atomic_json(data_dir / 'ci-report.json', report)
     lines = ['## 招聘数据采集', f"保留记录：{report['records']}；采集器退出码：{code}。",
              '允许构建发布；部分来源问题见下表。' if not error else '阻止发布：' + error,
-             '', '| 来源 | 状态 | 列表页 | 解析 | 缓存复用 | 老公告复检 | 问题数 |', '|---|---|---:|---:|---:|---:|---:|']
+             '', '| 来源 | 状态 | 列表页 | 解析 | 缓存复用 | 老公告复检 | 详情失败 | 详情跳过 | 问题数 |', '|---|---|---:|---:|---:|---:|---:|---:|---:|']
     for source in sources:
         name = source['name'].replace('|', ' ')
-        lines.append(f"| {name} | {source['status']} | {source.get('pages', 0)} | {source.get('parsed', 0)} | {source.get('cached', 0)} | {source.get('probed', 0)} | {len(source.get('errors', []))} |")
+        lines.append(f"| {name} | {source['status']} | {source.get('pages', 0)} | {source.get('parsed', 0)} | {source.get('cached', 0)} | {source.get('probed', 0)} | {source.get('detail_failed', 0)} | {source.get('detail_skipped', 0)} | {len(source.get('errors', []))} |")
     for source in sources:
         if source.get('errors'):
             lines.extend(['', f"### {source['name']}", source.get('coverage', '')])
@@ -221,7 +221,10 @@ def collect(args):
     command = [sys.executable, '-u', str(ROOT / 'scripts/collect.py'), '--data-dir', str(args.data_dir),
                '--public-dir', str(args.public_dir), '--pages', str(args.pages), '--days', str(args.days),
                '--offerjack-pages', '1', '--refresh-hours', str(args.refresh_hours),
-               '--probe-budget', str(getattr(args, 'probe_budget', 10))]
+               '--probe-budget', str(getattr(args, 'probe_budget', 10)),
+               '--detail-timeout', str(getattr(args, 'detail_timeout', 8)),
+               '--detail-retries', str(getattr(args, 'detail_retries', 1)),
+               '--detail-failure-limit', str(getattr(args, 'detail_failure_limit', 6))]
     code = subprocess.run(command, check=False).returncode
     state = read_json(args.data_dir / 'state.json')
     try:
@@ -253,6 +256,12 @@ if __name__ == '__main__':
                         help='reuse recently verified detail pages for this many hours')
     parser.add_argument('--probe-budget', type=int, default=10,
                         help='maximum number of active historical announcements to probe/re-check per source')
+    parser.add_argument('--detail-timeout', type=float, default=8,
+                        help='network timeout in seconds for individual detail pages')
+    parser.add_argument('--detail-retries', type=int, default=1,
+                        help='number of retries for an individual detail page')
+    parser.add_argument('--detail-failure-limit', type=int, default=6,
+                        help='open a source circuit after this many consecutive detail failures')
     args = parser.parse_args()
     try:
         if args.operation == 'prepare':

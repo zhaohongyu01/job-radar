@@ -49,9 +49,16 @@ export function DetailDrawer({
         {selected && (
           <>
             <SheetHeader className="detail-header">
-              <span className="eyebrow">
-                {selected.kind} · {selected.source_name}
-              </span>
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className="eyebrow">
+                  {selected.kind} · {selected.source_name}
+                </span>
+                {!!selected.duplicate_sources?.length && (
+                  <span className="channel-badge primary">
+                    多渠道同步 · 共 {selected.duplicate_sources.length + 1} 个发布源
+                  </span>
+                )}
+              </div>
               <SheetTitle className="text-xl leading-relaxed pr-6">
                 {selected.title}
               </SheetTitle>
@@ -151,6 +158,61 @@ export function DetailDrawer({
                   </p>
                 )}
               </div>
+              {!!selected.duplicate_sources?.length && (
+                <div className="channels-panel">
+                  <div className="channels-panel-header">
+                    <h3>整合全网发布渠道 ({selected.duplicate_sources.length + 1})</h3>
+                    <span className="channels-panel-badge">智能合并去重</span>
+                  </div>
+                  <p className="channels-panel-desc">
+                    系统已自动合并该单位在多所高校/官方平台发布的同一招聘信息，方便多源核对与投递：
+                  </p>
+                  <div className="channels-list">
+                    <div className="channel-card primary">
+                      <div className="channel-card-top">
+                        <span className="channel-tag primary">主来源</span>
+                        <span className="channel-name">{selected.source_name || selected.source || selected.source_id}</span>
+                        {selected.published_at && (
+                          <span className="channel-date">{selected.published_at}</span>
+                        )}
+                      </div>
+                      <div className="channel-card-title">{selected.title}</div>
+                      <div className="channel-card-actions">
+                        <OutLink url={selected.source_url} onOpen={() => onRead(selected)}>
+                          查看该渠道原公告
+                        </OutLink>
+                        {selected.application_url && selected.application_url !== selected.source_url && (
+                          <OutLink primary url={selected.application_url} onOpen={() => onRead(selected)}>
+                            直达投递入口
+                          </OutLink>
+                        )}
+                      </div>
+                    </div>
+                    {selected.duplicate_sources.map((dup, idx) => (
+                      <div className="channel-card" key={`${dup.url}-${idx}`}>
+                        <div className="channel-card-top">
+                          <span className="channel-tag">同步渠道</span>
+                          <span className="channel-name">{dup.source_name || dup.source}</span>
+                          {dup.published_at && (
+                            <span className="channel-date">{dup.published_at}</span>
+                          )}
+                        </div>
+                        <div className="channel-card-title">{dup.title}</div>
+                        <div className="channel-card-actions">
+                          <OutLink url={dup.url} onOpen={() => onRead(selected)}>
+                            查看该渠道原公告
+                          </OutLink>
+                          {dup.application_url && dup.application_url !== dup.url && (
+                            <OutLink primary url={dup.application_url} onOpen={() => onRead(selected)}>
+                              直达投递入口
+                            </OutLink>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <h3>地点与资格</h3>
               <p>
                 {selected.location_evidence.length
@@ -180,19 +242,7 @@ export function DetailDrawer({
               <div className="announcement-text">
                 {selected.body || '完整公告尚未读取，请打开原公告核对。'}
               </div>
-              {!!selected.duplicate_sources?.length && (
-                <>
-                  <h3>相同内容的其他来源</h3>
-                  {selected.duplicate_sources.map((s) => (
-                    <div className="attachment" key={s.url}>
-                      <OutLink url={s.application_url || s.url}>
-                        {s.title}
-                        {s.application_url ? ' · 投递入口' : ''}
-                      </OutLink>
-                    </div>
-                  ))}
-                </>
-              )}
+
               {(selected.links ?? []).length > 0 && (
                 <>
                   <h3>公告中的其他链接</h3>

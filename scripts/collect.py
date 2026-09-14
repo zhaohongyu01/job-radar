@@ -31,14 +31,22 @@ SOURCES = [
     {'id': 'hrss', 'name': '济南市人社局 · 事业单位招聘', 'url': 'https://jnhrss.jinan.gov.cn/col/col18625/index.html'},
     {'id': 'gzw', 'name': '济南市国资委 · 国企招聘', 'url': 'https://jngzw.jinan.gov.cn/col/col23870/index.html'},
 ]
-for school,name in [('jobsdufe','山东财经大学'),('ujn','济南大学'),('sdut','山东理工大学'),('qlu','齐鲁工业大学'),
-                    ('sdnu','山东师范大学'),('sdsmu','山东中医药大学'),('qust','青岛科技大学'),('qdu','青岛大学')]:
-    for channel,label in [('announcements','招聘公告'),('positions','具体岗位')]:
-        SOURCES.append({'id':f'{school}-{channel}','name':f'{name} · {label}',
-                        'url':f'https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo?type='+('zwxx' if channel=='positions' else 'zpgg'),
-                        'adapter':'sdei','school':school,'channel':channel})
-SOURCES.append({'id':'wondercv','name':'超级简历 · 公开校招线索','url':'https://www.wondercv.com/xiaozhao/','adapter':'wondercv'})
-SOURCES.append({'id':'offerjack','name':'Jacky学长校招 · 公开招聘线索','url':'https://www.offerjack.cn/','adapter':'offerjack'})
+SDEI_SCHOOLS = [
+    ('jobsdufe', '山东财经大学'), ('ujn', '济南大学'), ('sdut', '山东理工大学'), ('qlu', '齐鲁工业大学'),
+    ('sdnu', '山东师范大学'), ('sdsmu', '山东中医药大学'), ('qust', '青岛科技大学'), ('qdu', '青岛大学'),
+    ('ytu', '烟台大学'), ('ldu', '鲁东大学'), ('sdfmu', '山东第一医科大学'),
+    ('bzmc', '山东航空学院'), ('lcu', '聊城大学'), ('lyu', '临沂大学'),
+    ('sdtbu', '山东工商学院'), ('dzu', '德州学院'), ('sdua', '山东农业工程学院'),
+]
+for school, name in SDEI_SCHOOLS:
+    for channel, label in [('announcements', '招聘公告'), ('positions', '具体岗位')]:
+        SOURCES.append({'id': f'{school}-{channel}', 'name': f'{name} · {label}',
+                        'url': f'https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo?type=' + ('zwxx' if channel == 'positions' else 'zpgg'),
+                        'adapter': 'sdei', 'school': school, 'channel': channel})
+SOURCES.append({'id': 'upc', 'name': '中国石油大学（华东）就业网', 'url': 'https://career.upc.edu.cn/career/zpxx/zpxx', 'adapter': 'upc'})
+SOURCES.append({'id': 'qdhrss', 'name': '青岛市人社局 · 招聘与引才', 'url': 'https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/', 'adapter': 'qdhrss'})
+SOURCES.append({'id': 'wondercv', 'name': '超级简历 · 公开校招线索', 'url': 'https://www.wondercv.com/xiaozhao/', 'adapter': 'wondercv'})
+SOURCES.append({'id': 'offerjack', 'name': 'Jacky学长校招 · 公开招聘线索', 'url': 'https://www.offerjack.cn/', 'adapter': 'offerjack'})
 VOID = {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}
 
 
@@ -314,6 +322,77 @@ def offerjack_list(page, city='', page_size=20):
     return items,int(data.get('pages') or 1)
 
 
+def upc_list(page, page_size=10):
+    url = f'https://career.upc.edu.cn/career/zpxx/search/zpxx/{page}/{page_size}'
+    raw = fetch(url, form={})
+    payload = json.loads(raw)
+    data = payload.get('data') or {}
+    records = data.get('list') or []
+    total = data.get('total') or 0
+    items = []
+    for row in records:
+        if not isinstance(row, dict): continue
+        zpxxid = str(row.get('zpxxid') or '')
+        if not zpxxid: continue
+        company = clean(str(row.get('dwmc') or '招聘单位待核实'))
+        title = clean(str(row.get('zpzt') or f'{company} 招聘公告'))
+        published = (row.get('fbrq') or '')[:10] or None
+        deadline_val = (row.get('zpjzrq') or '')[:10] or None
+        email = clean(str(row.get('jltdyx') or ''))
+        website = clean(str(row.get('dwwz') or ''))
+        city = clean(str(row.get('szsmc') or ''))
+        province = clean(str(row.get('szssmc') or ''))
+        positions = clean(str(row.get('zwmcs') or ''))
+        address = clean(str(row.get('xxdz') or ''))
+        nature = clean(str(row.get('xzyjmc') or ''))
+        industry = clean(str(row.get('hyyjmc') or ''))
+        values = [
+            ('招聘单位', company),
+            ('工作城市', city if city and city != '市辖区' else province),
+            ('单位性质', nature),
+            ('所属行业', industry),
+            ('招聘岗位', positions),
+            ('详细地址', address),
+            ('网申或官网', website),
+            ('简历投递邮箱', email),
+            ('报名截止时间', deadline_val),
+        ]
+        body = ''.join('<p>' + html_lib.escape(f'{k}：{v}') + '</p>' for k, v in values if v)
+        detail_url = f'https://career.upc.edu.cn/career/zpxx/view/zpxx/{zpxxid}'
+        items.append({
+            'identity': f'upc:{zpxxid}',
+            'url': detail_url,
+            'title': title,
+            'published_at': published,
+            'inline_html': '<div id="zoom">' + body + '</div>',
+            'structured': row,
+            'kind': '招聘公告',
+        })
+    return items, max(1, (int(total) + page_size - 1) // page_size)
+
+
+def qdhrss_list(html, base):
+    root = Tree(html).root
+    items = []
+    for li in root.find('li'):
+        links = li.find('a')
+        if not links: continue
+        a = links[0]
+        title = clean(a.attrs.get('title') or a.text())
+        if not re.search(r'招聘|引才|招录|选拔|招考|遴选|拟聘|公示|岗位|优选', title):
+            continue
+        href = a.attrs.get('href', '')
+        url = safe_url(href, base)
+        if not url: continue
+        date_match = re.search(r'20\d{2}-\d{2}-\d{2}', li.text())
+        published = date_match[0] if date_match else None
+        items.append({'url': url, 'title': title, 'published_at': published, 'kind': '招聘公告'})
+    pages = [1]
+    for m in re.finditer(r'index_(\d+)\.shtml', html):
+        pages.append(int(m.group(1)) + 1)
+    return items, max(pages, default=1)
+
+
 OVERSEAS_LOCATION_PATTERN = re.compile(r'海外|国外|境外|境外地区|海外地区')
 DOMESTIC_LOCATION_PATTERN = re.compile(
     r'国内|中国大陆|境内|全国|各地可选|不限城市|各地招聘|各省市|山东|广东|江苏|浙江|安徽|福建|湖北|湖南|河南|陕西|四川|云南|贵州|江西|广西|海南|山西|河北|辽宁|吉林|黑龙江|甘肃|青海|宁夏|新疆|西藏|内蒙古'
@@ -488,6 +567,18 @@ def parse_detail(html, item, source):
         dates=root.find(cls='ggTime')
         match=re.search(r'20\d{2}-\d{2}-\d{2}',dates[0].text()) if dates else None
         published=match[0] if match else item.get('published_at')
+    elif source.get('adapter')=='upc':
+        contents=root.find(cls='ck-content') or root.find(id='zoom')
+        body=contents[0] if contents else root
+        title=item['title']
+        company=structured.get('dwmc') or ''
+        published=item.get('published_at')
+    elif source.get('adapter')=='qdhrss':
+        contents=root.find(cls='wencon') or root.find(cls='article') or root.find(id='zoom')
+        body=contents[0] if contents else root
+        title=metas.get('articletitle') or item['title']
+        company='青岛市人社局'
+        published=(metas.get('pubdate') or item.get('published_at') or '')[:10] or None
     else:
         contents=root.find(id='zoom')
         if not contents:
@@ -540,6 +631,9 @@ def parse_detail(html, item, source):
         city=shandong[code[:4]]
         if city not in cities: cities.append(city)
         location_evidence.append(f"岗位工作地行政区划代码 {code}，归属{city}（来源结构化字段）")
+    if source.get('adapter')=='qdhrss' and '青岛' not in cities:
+        cities.append('青岛')
+        location_evidence.append('青岛市人社局发布（来源主管部门）')
     possible=[city for city in CITIES if city in combined and city not in cities]
     location_status=domestic_status(location_evidence,cities)
     expires,expires_text,precision=deadline(text)
@@ -551,6 +645,9 @@ def parse_detail(html, item, source):
         address=structured.get('deliveryAddress')
         delivery=safe_url(address,item['url'],True) if isinstance(address,str) and re.match(r'^https?://',address.strip(),re.I) else None
         if delivery and delivery!=item['url']: application_url=delivery
+    if source.get('adapter')=='upc' and structured.get('dwwz'):
+        website=safe_url(structured['dwwz'],item['url'],True)
+        if website and website!=item['url']: application_url=website
     links=[]
     attachments=[]
     for node in body.find('img'):
@@ -613,28 +710,112 @@ def atomic_json(path,value,pretty=True):
     os.replace(temp,path)
 
 
+def normalize_company(name):
+    if not name:
+        return ''
+    c = re.sub(r'\s+', '', name).translate(str.maketrans('（）', '()'))
+    c = re.sub(r'\((?:中国|集团|有限|股份|分公司|有限责任).*?\)', '', c)
+    c = re.sub(r'(?:有限责任公司|股份有限公司|有限公司|集团有限公司|集团)$', '', c)
+    return c.strip()
+
+
+def normalize_title_core(title):
+    if not title:
+        return ''
+    t = re.sub(r'\s+', '', title).translate(str.maketrans('（）', '()'))
+    t = re.sub(r'^[【\[\(（][^】\]\)）]{1,20}[】\]\)）]', '', t)
+    t = re.sub(r'(?:校园招聘(?:简章|公告|启事)?|招聘(?:简章|公告|启事|信息)?|简章|公告|启事|专场)$', '', t)
+    return t.strip()
+
+
 def deduplicate(jobs):
-    """Collapse exact reposts only. Preserve every source URL and differing job/location facts."""
-    groups={}
-    for job in sorted(jobs,key=lambda j:(j['first_seen_at'],j['id'])):
-        # Identical titles alone are insufficient: different branches and roles must survive.
-        text=re.sub(r'\s+','',job['body'])
-        company=re.sub(r'\s+','',job.get('company') or '')
-        key=(re.sub(r'\s+','',job['title']),company,job['kind'],tuple(sorted(job['cities'])),text)
-        if len(text)<60 or not company: key=key+(job['id'],)
-        if key not in groups:
-            groups[key]=dict(job,duplicate_sources=[],duplicate_ids=[])
+    """Collapse same-opportunity reposts and cross-channel listings.
+    Preserve every source URL, application URLs, and differing job/location facts.
+    """
+    groups = {}
+    for job in sorted(jobs, key=lambda j: (j['first_seen_at'], j['id'])):
+        text = re.sub(r'\s+', '', job.get('body', ''))
+        company = re.sub(r'\s+', '', job.get('company') or '')
+        kind = job.get('kind', '招聘公告')
+        cities = tuple(sorted(job.get('cities', [])))
+        norm_comp = normalize_company(company)
+        norm_title = normalize_title_core(job.get('title', ''))
+
+        if kind == '具体岗位':
+            if not company or not job.get('title'):
+                key = ('position_fallback', job['id'])
+            else:
+                key = ('position', norm_comp, re.sub(r'\s+', '', job['title']), cities)
         else:
-            groups[key]['duplicate_sources'].append({
-                'title':job['source_name'],
-                'url':job['source_url'],
-                **({'application_url':job['application_url']} if job.get('application_url') else {}),
-            })
-            groups[key]['duplicate_ids'].append(job['id'])
-            # Keep a direct application path when one repost has it and the
-            # first source only points to an announcement.
-            if not groups[key].get('application_url') and job.get('application_url'):
-                groups[key]['application_url']=job['application_url']
+            title_cohorts = re.findall(r'(20\d{2})\s*届', job.get('title', ''))
+            cohorts = tuple(sorted(set(title_cohorts or job.get('graduation_years', []))))
+            phase = '校招'
+            if re.search(r'春(?:季校园招聘|季招聘|招)', job.get('title', '')): phase = '春招'
+            elif re.search(r'秋(?:季校园招聘|季招聘|招)', job.get('title', '')): phase = '秋招'
+            elif re.search(r'提前批', job.get('title', '')): phase = '提前批'
+            elif re.search(r'社招|社会', job.get('title', '')): phase = '社招'
+            elif re.search(r'实习', job.get('title', '')): phase = '实习'
+
+            if not company and not norm_title:
+                key = ('announcement_id', job['id'])
+            elif norm_comp and cohorts and '校招' in job.get('types', ['校招']):
+                key = ('campus_announcement', norm_comp, cohorts, phase)
+            elif norm_comp and norm_title:
+                key = ('announcement_norm', norm_comp, norm_title)
+            elif norm_title:
+                key = ('announcement_title', norm_title, cities)
+            else:
+                key = ('announcement_exact', re.sub(r'\s+', '', job['title']), company, text)
+
+        if key not in groups:
+            groups[key] = dict(job, duplicate_sources=[], duplicate_ids=[])
+        else:
+            parent = groups[key]
+            existing_urls = {parent.get('source_url')} | {s.get('url') for s in parent['duplicate_sources']}
+            if job.get('source_url') and job['source_url'] not in existing_urls:
+                parent['duplicate_sources'].append({
+                    'title': job.get('source_name', ''),
+                    'url': job['source_url'],
+                    **({'published_at': job['published_at']} if job.get('published_at') else {}),
+                    **({'application_url': job['application_url']} if job.get('application_url') else {}),
+                })
+            parent['duplicate_ids'].append(job['id'])
+
+            if not parent.get('application_url') and job.get('application_url'):
+                parent['application_url'] = job['application_url']
+            if not parent.get('deadline') and job.get('deadline'):
+                parent['deadline'] = job['deadline']
+                parent['deadline_evidence'] = job.get('deadline_evidence')
+                parent['deadline_precision'] = job.get('deadline_precision')
+            if job.get('emails'):
+                parent['emails'] = list(dict.fromkeys(parent.get('emails', []) + job['emails']))
+            if job.get('cities'):
+                parent['cities'] = sorted(set(parent.get('cities', []) + job['cities']))
+            if job.get('location_evidence'):
+                parent['location_evidence'] = list(dict.fromkeys(parent.get('location_evidence', []) + job['location_evidence']))
+            if job.get('graduation_years'):
+                parent['graduation_years'] = sorted(set(parent.get('graduation_years', []) + job['graduation_years']))
+            if job.get('types'):
+                parent['types'] = sorted(set(parent.get('types', []) + job['types']))
+            if job.get('attachments'):
+                att_urls = {a.get('url') for a in parent.get('attachments', [])}
+                for a in job['attachments']:
+                    if a.get('url') not in att_urls:
+                        parent.setdefault('attachments', []).append(a)
+                        att_urls.add(a.get('url'))
+            if parent.get('provenance') == '第三方线索' and job.get('provenance') == '公开原始来源':
+                parent['source_name'] = job['source_name']
+                parent['source_url'] = job['source_url']
+                parent['source_id'] = job['source_id']
+                parent['provenance'] = '公开原始来源'
+                parent['title'] = job['title']
+                if job.get('body'):
+                    parent['body'] = job['body']
+                    parent['excerpt'] = job.get('excerpt', parent.get('excerpt', ''))
+            elif len(job.get('body', '')) > len(parent.get('body', '')) + 200:
+                parent['body'] = job['body']
+                parent['excerpt'] = job.get('excerpt', parent.get('excerpt', ''))
+
     return list(groups.values())
 
 
@@ -681,7 +862,7 @@ def public_summary(job):
     """Keep listing/filter fields in the index; full announcement text lives separately."""
     heavy={
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
-        'possible_cities','province_possible','duplicate_sources','details_available','company_original',
+        'possible_cities','province_possible','details_available','company_original',
     }
     row={k:v for k,v in job.items() if k not in heavy}
     return row
@@ -739,7 +920,7 @@ def run(args):
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
         status=dict(source,last_attempt_at=now,last_success_at=previous['sources'].get(source['id'],{}).get('last_success_at'),pages=0,discovered=0,parsed=0,errors=[],status='ok',coverage='近期分页，非全量历史')
         try:
-            first=fetch(source['url']) if source.get('adapter') not in {'sdei','offerjack'} else ''
+            first=fetch(source['url']) if source.get('adapter') not in {'sdei','offerjack','upc'} else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
             items=[]
@@ -771,6 +952,12 @@ def run(args):
                         page_number=offerjack_page
                     elif source.get('adapter')=='sdei':
                         found,total=sdei_list(source,page)
+                    elif source.get('adapter')=='upc':
+                        found,total=upc_list(page)
+                    elif source.get('adapter')=='qdhrss':
+                        page_url=source['url'] if page==1 else urllib.parse.urljoin(source['url'],f'index_{page-1}.shtml')
+                        html=first if page==1 else fetch(page_url)
+                        found,total=qdhrss_list(html,source['url'])
                     elif source.get('adapter')=='wondercv':
                         html=first if page==1 else fetch(f'https://www.wondercv.com/xiaozhao/page/pn{page}/')
                         found,total=wonder_list(html,source['url'])

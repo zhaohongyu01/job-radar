@@ -40,7 +40,21 @@ export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadC
               {job.classification_note?.startsWith('仅核实') && <span className="tag">详情待核对</span>}
             </th>
             <td><div className="table-location" title={locationSummary(job)}>{locationSummary(job)}</div></td>
-            <td>{job.published_at || '日期未明确'}<p className="small muted">{job.date_label || '发布'} · {job.source_name}</p>{job.provenance === '第三方线索' && <p className="small muted">第三方线索 · 待原文复核</p>}</td>
+            <td>
+              {job.published_at || '日期未明确'}
+              <p className="small muted">
+                {job.date_label || '发布'} · {job.source_name}
+                {!!job.duplicate_sources?.length && (
+                  <span
+                    className="channel-pill-table"
+                    title={`同步收录渠道：${[job.source_name, ...job.duplicate_sources.map((s) => s.source_name || s.source)].filter(Boolean).join('、')}`}
+                  >
+                    +{job.duplicate_sources.length}渠道
+                  </span>
+                )}
+              </p>
+              {job.provenance === '第三方线索' && <p className="small muted">第三方线索 · 待原文复核</p>}
+            </td>
             <td>{job.deadline ? <><span>{expired ? '已截止' : countdown && countdown.urgency !== 'normal' ? `⏳ ${countdown.text}` : '公告截止'}</span><p>{new Date(job.deadline).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p></> : '未明确，需核对'}</td>
             <td>
               <Button size="sm" variant="ghost" className={unread ? 'read-status unread' : 'read-status'} disabled={!ready} onClick={() => onReadChange(job, unread)} aria-label={`${unread ? '标为已读' : '标为未读'}：${job.title}`}>{unread ? '未读' : '已读'}</Button>

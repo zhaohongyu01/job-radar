@@ -6,14 +6,18 @@ export type Job = {
   company_original?: string;
   company_conflict?: boolean;
   source_id: string;
+  source?: string;
   source_name: string;
   source_url: string;
   published_at: string | null;
   date_label?: string;
   provenance?: string;
   duplicate_sources?: {
+    source?: string;
+    source_name?: string;
     title: string;
     url: string;
+    published_at?: string | null;
     application_url?: string;
   }[];
   duplicate_ids?: string[];
@@ -117,6 +121,155 @@ export const defaultFilters: Filters = {
 };
 export function isExpired(job: Job, now = Date.now()) {
   return !!job.deadline && Date.parse(job.deadline) < now;
+}
+export function normalizeCompanyName(name?: string | null): string {
+  if (!name) return '';
+  return name
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/\((?:中国|集团|有限|股份|分公司|有限责任).*?\)/g, '')
+    .replace(/(?:有限责任公司|股份有限公司|有限公司|集团有限公司|集团)$/g, '');
+}
+export function normalizeTitleCore(title: string): string {
+  if (!title) return '';
+  return title
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/^[【[(][^】\])]{1,20}[】\])]/g, '')
+    .replace(/(?:校园招聘(?:简章|公告|启事)?|招聘(?:简章|公告|启事|信息)?|简章|公告|启事|专场)$/g, '');
+}
+export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
+  const groups = new Map<string, Job>();
+  for (const job of jobs) {
+    const company = job.company?.trim() ?? '';
+    const normComp = normalizeCompanyName(company);
+    const normTitle = normalizeTitleCore(job.title ?? '');
+    const kind = job.kind ?? '招聘公告';
+    const cities = (job.cities ?? []).slice().sort().join(',');
+
+    let key: string;
+    if (kind === '具体岗位') {
+      if (!company || !job.title) {
+        key = `pos_fallback_${job.id}`;
+      } else {
+        key = `pos_${normComp}_${job.title.replace(/\s+/g, '')}_${cities}`;
+      }
+    } else {
+      const titleCohorts = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*届/g)].map((m) => m[1]))];
+      const cohorts = (titleCohorts.length ? titleCohorts : job.graduation_years ?? []).slice().sort().join(',');
+      let phase = '校招';
+      if (/春(?:季校园招聘|季招聘|招)/.test(job.title)) phase = '春招';
+      else if (/秋(?:季校园招聘|季招聘|招)/.test(job.title)) phase = '秋招';
+      else if (/提前批/.test(job.title)) phase = '提前批';
+      else if (/社招|社会/.test(job.title)) phase = '社招';
+      else if (/实习/.test(job.title)) phase = '实习';
+
+      if (!company && !normTitle) {
+        key = `ann_id_${job.id}`;
+      } else if (normComp && cohorts && job.types?.includes('校招')) {
+        key = `campus_${normComp}_${cohorts}_${phase}`;
+      } else if (normComp && normTitle) {
+        key = `ann_norm_${normComp}_${normTitle}`;
+      } else if (normTitle) {
+        key = `ann_title_${normTitle}_${cities}`;
+      } else {
+        key = `ann_exact_${job.title.replace(/\s+/g, '')}_${company}`;
+      }
+    }
+
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        ...job,
+        duplicate_sources: job.duplicate_sources ? [...job.duplicate_sources] : [],
+        duplicate_ids: job.duplicate_ids ? [...job.duplicate_ids] : [],
+      });
+    } else {
+      const existingUrls = new Set([
+        existing.source_url,
+        ...(existing.duplicate_sources ?? []).map((s) => s.url),
+      ]);
+      if (job.source_url && !existingUrls.has(job.source_url)) {
+        existing.duplicate_sources = existing.duplicate_sources ?? [];
+        existing.duplicate_sources.push({
+          source: job.source || job.source_id,
+          source_name: job.source_name,
+          title: job.title || job.source_name,
+          url: job.source_url,
+          ...(job.published_at ? { published_at: job.published_at } : {}),
+          ...(job.application_url ? { application_url: job.application_url } : {}),
+        });
+        existingUrls.add(job.source_url);
+      }
+      if (job.duplicate_sources?.length) {
+        for (const ds of job.duplicate_sources) {
+          if (ds.url && !existingUrls.has(ds.url)) {
+            existing.duplicate_sources = existing.duplicate_sources ?? [];
+            existing.duplicate_sources.push({ ...ds });
+            existingUrls.add(ds.url);
+          }
+        }
+      }
+      existing.duplicate_ids = existing.duplicate_ids ?? [];
+      existing.duplicate_ids.push(job.id);
+      if (job.duplicate_ids?.length) {
+        existing.duplicate_ids = [...new Set([...existing.duplicate_ids, ...job.duplicate_ids])];
+      }
+
+      if (!existing.application_url && job.application_url) {
+        existing.application_url = job.application_url;
+      }
+      if (!existing.deadline && job.deadline) {
+        existing.deadline = job.deadline;
+        existing.deadline_evidence = job.deadline_evidence;
+        existing.deadline_precision = job.deadline_precision;
+      }
+      if (job.emails?.length) {
+        existing.emails = [...new Set([...(existing.emails ?? []), ...job.emails])];
+      }
+      if (job.cities?.length) {
+        existing.cities = [...new Set([...(existing.cities ?? []), ...job.cities])].sort();
+      }
+      if (job.location_evidence?.length) {
+        existing.location_evidence = [...new Set([...(existing.location_evidence ?? []), ...job.location_evidence])];
+      }
+      if (job.graduation_years?.length) {
+        existing.graduation_years = [...new Set([...(existing.graduation_years ?? []), ...job.graduation_years])].sort();
+      }
+      if (job.types?.length) {
+        existing.types = [...new Set([...(existing.types ?? []), ...job.types])];
+      }
+      if (job.attachments?.length) {
+        const attUrls = new Set((existing.attachments ?? []).map((a) => a.url));
+        for (const a of job.attachments) {
+          if (!attUrls.has(a.url)) {
+            existing.attachments = existing.attachments ?? [];
+            existing.attachments.push(a);
+            attUrls.add(a.url);
+          }
+        }
+      }
+      if (existing.provenance === '第三方线索' && job.provenance === '公开原始来源') {
+        existing.source_name = job.source_name;
+        existing.source_url = job.source_url;
+        existing.source_id = job.source_id;
+        existing.provenance = '公开原始来源';
+        existing.title = job.title;
+        if (job.body) {
+          existing.body = job.body;
+          existing.excerpt = job.excerpt || existing.excerpt;
+        }
+      } else if ((job.body?.length ?? 0) > (existing.body?.length ?? 0) + 200) {
+        existing.body = job.body;
+        existing.excerpt = job.excerpt || existing.excerpt;
+      }
+    }
+  }
+  return [...groups.values()];
 }
 export function personalFor(job: Job, personal: Personal) {
   if (personal[job.id]) return personal[job.id];

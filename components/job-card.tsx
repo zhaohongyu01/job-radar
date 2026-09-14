@@ -157,6 +157,14 @@ export function JobCard({
           {since && Date.parse(job.first_seen_at) > Date.parse(since) && (
             <span className="tag new">首次收录</span>
           )}
+          {!!job.duplicate_sources?.length && (
+            <span
+              className="tag channel-pill"
+              title={`同步收录渠道：${[job.source_name, ...job.duplicate_sources.map((s) => s.source_name || s.source)].filter(Boolean).join('、')}`}
+            >
+              {job.duplicate_sources.length + 1} 渠道同步
+            </span>
+          )}
           {applied && <span className="tag new">已投递</span>}
         </div>
         <div className="card-top-actions">
@@ -241,7 +249,10 @@ export function JobCard({
             )}
           </p>
           <p className="small muted">
-            {job.kind} · {job.source_name} · {job.date_label || '发布'}{' '}
+            {job.kind} · {job.source_name}
+            {!!job.duplicate_sources?.length && ` 等 ${job.duplicate_sources.length + 1} 渠道`}
+            {' · '}
+            {job.date_label || '发布'}{' '}
             {job.published_at || '日期未明确'}
             {job.provenance === '第三方线索' && ' · 未经企业原文复核'}
           </p>

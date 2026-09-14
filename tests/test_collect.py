@@ -238,13 +238,74 @@ class CollectionTests(unittest.TestCase):
              'attachments':[{'title':'附件','url':'https://a.example/file'}],
              'links':[{'title':'链接','url':'https://a.example/link'}],
              'excerpt':'完整公告正文','directions':['财务 / 经济'],'education':'本科',
-             'location_evidence':['工作地点：济南']}
+             'location_evidence':['工作地点：济南'],
+             'duplicate_sources':[{'title':'高校乙','url':'https://b.example'}]}
         summary=c.public_summary(row)
         self.assertNotIn('body',summary)
         self.assertNotIn('attachments',summary)
         self.assertNotIn('links',summary)
         self.assertIn('财务 / 经济',summary['directions'])
         self.assertNotIn('search_text',summary)
+        self.assertIn('duplicate_sources',summary)
+
+    def test_cross_channel_campus_recruitment_merges_without_duplicates(self):
+        sdu_job = {
+            'id': 'sdu_1',
+            'title': '浪潮集团2027届校园招聘简章',
+            'company': '浪潮集团有限公司',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'cities': ['济南'],
+            'location_evidence': ['工作地点：济南'],
+            'emails': ['hr@inspur.com'],
+            'body': '浪潮集团2027届校园招聘启动！'*20,
+            'source_name': '山东大学就业信息网',
+            'source_url': 'https://jobcareer.sdu.edu.cn/view/1',
+            'provenance': '公开原始来源',
+            'first_seen_at': '2026-09-01',
+        }
+        nankai_job = {
+            'id': 'nankai_2',
+            'title': '浪潮集团2027届校园招聘',
+            'company': '浪潮集团',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'cities': ['天津'],
+            'location_evidence': ['工作地点：天津'],
+            'body': '浪潮集团2027校园招聘，工作地点济南、天津。'*15,
+            'source_name': '南开大学就业网',
+            'source_url': 'https://career.nankai.edu.cn/view/2',
+            'provenance': '公开原始来源',
+            'first_seen_at': '2026-09-02',
+        }
+        wonder_job = {
+            'id': 'wonder_3',
+            'title': '【校招】浪潮集团2027届校园招聘公告',
+            'company': '浪潮集团',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'cities': ['济南'],
+            'body': '浪潮集团2027校招在线投递。'*10,
+            'application_url': 'https://career.inspur.com/campus',
+            'source_name': '超级简历 · 公开校招线索',
+            'source_url': 'https://wondercv.com/job/3',
+            'provenance': '第三方线索',
+            'first_seen_at': '2026-09-03',
+        }
+        merged = c.deduplicate([sdu_job, nankai_job, wonder_job])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]['source_name'], '山东大学就业信息网')
+        self.assertEqual(merged[0]['application_url'], 'https://career.inspur.com/campus')
+        self.assertEqual(len(merged[0]['duplicate_sources']), 2)
+        titles = {s['title'] for s in merged[0]['duplicate_sources']}
+        self.assertIn('南开大学就业网', titles)
+        self.assertIn('超级简历 · 公开校招线索', titles)
+        self.assertIn('济南', merged[0]['cities'])
+        self.assertIn('天津', merged[0]['cities'])
+        self.assertIn('hr@inspur.com', merged[0]['emails'])
 
     def test_offerjack_run_rotates_public_city_queries_after_auth_limit(self):
         calls=[]

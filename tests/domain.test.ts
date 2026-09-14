@@ -11,6 +11,9 @@ import {
   isDomestic,
   parseSalaryRange,
   getDeadlineCountdown,
+  normalizeCompanyName,
+  normalizeTitleCore,
+  mergeDuplicateOpportunities,
 } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 const job = {
@@ -329,4 +332,101 @@ void test('filterJobs multi-mode sorting operates correctly', () => {
   const salarySorted = filterJobs([jobSoon, jobLater, jobNoDeadline], { ...defaultFilters, sort: 'salary_desc' }, {}, null, baseTime);
   assert.deepEqual(salarySorted.map((j) => j.id), ['later', 'nodeadline', 'soon']);
 });
+
+void test('normalizeCompanyName strips common legal suffixes', () => {
+  assert.equal(normalizeCompanyName('中国石油天然气股份有限公司'), '中国石油天然气');
+  assert.equal(normalizeCompanyName('浪潮集团有限公司'), '浪潮');
+  assert.equal(normalizeCompanyName('海尔智家股份有限公司'), '海尔智家');
+  assert.equal(normalizeCompanyName(undefined), '');
+});
+
+void test('normalizeTitleCore removes bracket prefixes and notice noise', () => {
+  assert.equal(normalizeTitleCore('【央企直聘】中国石化2027年度校园招聘公告'), '中国石化2027年度');
+  assert.equal(normalizeTitleCore('浪潮集团2027届校园招聘简章'), '浪潮集团2027届');
+  assert.equal(normalizeTitleCore('青岛海尔软件开发工程师招聘'), '青岛海尔软件开发工程师');
+});
+
+void test('mergeDuplicateOpportunities merges multi-channel postings of same company and cohort', () => {
+  const jobSdu: Job = {
+    ...job,
+    id: 'sdu-101',
+    source_id: 'sdu',
+    source: 'sdu',
+    source_name: '山东大学就业网',
+    source_url: 'https://job.sdu.edu.cn/101',
+    company: '中国石化集团有限公司',
+    title: '【央企直聘】中国石化2027届校园招聘公告',
+    kind: '招聘公告',
+    published_at: '2026-09-12',
+    cities: ['济南'],
+  };
+
+  const jobUpc: Job = {
+    ...job,
+    id: 'upc-202',
+    source_id: 'upc',
+    source: 'upc',
+    source_name: '中国石油大学（华东）就业指导中心',
+    source_url: 'https://career.upc.edu.cn/202',
+    application_url: 'https://job.sinopec.com/apply',
+    company: '中国石化股份有限公司',
+    title: '中国石化2027届高校毕业生校园招聘简章',
+    kind: '招聘公告',
+    published_at: '2026-09-13',
+    cities: ['青岛'],
+  };
+
+  const jobDifferent: Job = {
+    ...job,
+    id: 'ytu-303',
+    source_id: 'ytu',
+    source: 'ytu',
+    source_name: '烟台大学就业网',
+    source_url: 'https://job.ytu.edu.cn/303',
+    company: '烟台万华化学集团股份有限公司',
+    title: '万华化学2027届校园招聘',
+    kind: '招聘公告',
+    published_at: '2026-09-14',
+    cities: ['烟台'],
+  };
+
+  const merged = mergeDuplicateOpportunities([jobSdu, jobUpc, jobDifferent]);
+  assert.equal(merged.length, 2);
+
+  const sinopecJob = merged.find((j) => j.company.includes('中国石化'));
+  assert.ok(sinopecJob);
+  assert.ok(sinopecJob.cities.includes('济南'));
+  assert.ok(sinopecJob.cities.includes('青岛'));
+  assert.equal(sinopecJob.application_url, 'https://job.sinopec.com/apply');
+  assert.equal(sinopecJob.source || sinopecJob.source_id, 'sdu');
+  assert.equal(sinopecJob.duplicate_sources?.length, 1);
+  assert.equal(sinopecJob.duplicate_sources[0].source, 'upc');
+});
+
+void test('mergeDuplicateOpportunities does not incorrectly merge different specific positions', () => {
+  const posA: Job = {
+    ...job,
+    id: 'pos-1',
+    source_id: 'sdu',
+    source: 'sdu',
+    company: '歌尔股份有限公司',
+    title: '声学算法工程师',
+    kind: '具体岗位',
+    cities: ['潍坊'],
+  };
+  const posB: Job = {
+    ...job,
+    id: 'pos-2',
+    source_id: 'upc',
+    source: 'upc',
+    company: '歌尔股份有限公司',
+    title: '嵌入式软件工程师',
+    kind: '具体岗位',
+    cities: ['潍坊'],
+  };
+
+  const merged = mergeDuplicateOpportunities([posA, posB]);
+  assert.equal(merged.length, 2);
+});
+
 

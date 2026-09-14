@@ -50,6 +50,7 @@ import {
   isUnread,
   mergePersonal,
   locationSummary,
+  mergeDuplicateOpportunities,
 } from '@/lib/jobs';
 import type { Job, Snapshot, Personal, Filters } from '@/lib/jobs';
 import { restoreBrowsing } from '@/lib/browsing';
@@ -360,9 +361,11 @@ export default function Home() {
   }, [needsSearch, data, searchIndex]);
 
   const searchPending = needsSearch && !searchIndex;
-  const searchableJobs = useMemo(() => searchPending ? [] :
-    (data?.jobs ?? []).map((j) => needsSearch ? { ...j, search_text: searchIndex?.[j.id] ?? '' } : j),
-    [data, needsSearch, searchIndex, searchPending]);
+  const searchableJobs = useMemo(() => {
+    if (searchPending) return [];
+    const base = mergeDuplicateOpportunities(data?.jobs ?? []);
+    return base.map((j) => (needsSearch ? { ...j, search_text: searchIndex?.[j.id] ?? '' } : j));
+  }, [data, needsSearch, searchIndex, searchPending]);
 
   const filtered = useMemo(
     () => filterJobs(searchableJobs, filters, personal, since, now),

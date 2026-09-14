@@ -130,7 +130,8 @@ class CollectionTests(unittest.TestCase):
         other=dict(two,id='c',cities=['青岛'])
         result=c.deduplicate([one,two,other])
         self.assertEqual(len(result),2)
-        self.assertEqual(result[0]['duplicate_sources'],[{'title':'高校乙','url':'https://b.example/job'}])
+        self.assertEqual(result[0]['duplicate_sources'][0]['url'], 'https://b.example/job')
+        self.assertEqual(result[0]['duplicate_sources'][0]['title'], '高校乙')
 
     def test_secondary_metadata_never_copies_editorial_or_claims_primary(self):
         source=next(s for s in c.SOURCES if s['id']=='wondercv')
@@ -347,5 +348,96 @@ class CollectionTests(unittest.TestCase):
         # Historical company background mentions should be safely filtered out
         self.assertEqual(c.extract_graduation_years('自2006届启动校园招聘以来累计招聘万人'), [])
         self.assertEqual(c.extract_graduation_years('2018届管培生成长纪实'), [])
+
+    def test_extract_locations_enrichment(self):
+        # 1. Non-standard location labels like 招聘机构, 用人单位所在地
+        evidence = c.extract_locations_from_text([], "二、招聘机构\n济南市分行、青岛市分行、淄博市分行", title="校园招聘", company="某国有大行")
+        self.assertTrue(any('济南' in e for e in evidence))
+        self.assertTrue(any('青岛' in e for e in evidence))
+
+        # 2. Placeholders / boilerplate should be ignored
+        ignored = c.extract_locations_from_text([], "工作地点：详见招聘岗位表\n意向城市：点击查看详情", title="招聘", company="某公司")
+        self.assertEqual(len(ignored), 0)
+
+        # 3. City branch in title / company
+        branch_evidence = c.extract_locations_from_text([], "欢迎投递", title="平安银行北京分行2027校园招聘", company="平安银行")
+        self.assertTrue(any('北京' in e for e in branch_evidence))
+
+        # 4. Province branch in title / company
+        prov_evidence = c.extract_locations_from_text([], "欢迎加入", title="中国邮政储蓄银行山东省分行招聘", company="中国邮政储蓄银行")
+        self.assertTrue(any('山东省各分支机构' in e for e in prov_evidence))
+
+        # 5. public_record updates cities and domestic_status
+        record = c.public_record({
+            'id': 'test_branch',
+            'source_id': 'sdu',
+            'title': '中国邮政储蓄银行山东省分行招聘',
+            'company': '中国邮政储蓄银行山东省分行',
+            'body': '二、招聘机构\n济南市分行、青岛市分行',
+            'location_evidence': [],
+            'cities': []
+        })
+        self.assertIn('济南', record['cities'])
+        self.assertIn('青岛', record['cities'])
+        self.assertEqual(record['domestic_status'], 'domestic')
+
+    def test_supplemental_recruitment_not_merged_and_upc_qdhrss_cleanups(self):
+        # 1. Regular campus announcement and supplemental recruitment must NOT be merged
+        regular_job = {
+            'id': 'reg-1',
+            'title': '某大厂2027届秋季校园招聘',
+            'company': '某互联网大厂',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'first_seen_at': '2026-09-01',
+            'published_at': '2026-09-01',
+            'deadline': '2026-09-10T23:59:59+08:00',
+            'source_name': '山大',
+            'source_url': 'https://sdu.example/reg',
+        }
+        supplemental_job = {
+            'id': 'supp-1',
+            'title': '某大厂2027届秋招补录公告',
+            'company': '某互联网大厂',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'first_seen_at': '2026-09-12',
+            'published_at': '2026-09-12',
+            'deadline': '2026-10-31T23:59:59+08:00',
+            'source_name': '南开',
+            'source_url': 'https://nankai.example/supp',
+        }
+        merged = c.deduplicate([regular_job, supplemental_job])
+        self.assertEqual(len(merged), 2, "补录公告与原秋招公告应保留为独立机会，不能被强行合并")
+
+        # 2. qdhrss list filters out 拟聘, 公示, 体检
+        sample_html = '''
+        <ul>
+            <li><a href="1.shtml" title="2026青岛市事业单位招聘工作人员公告">招聘公告</a>2026-09-10</li>
+            <li><a href="2.shtml" title="2026公开遴选公务员拟录取人员公示">拟录取名单</a>2026-09-10</li>
+            <li><a href="3.shtml" title="2026高层次人才引才体检通知">体检通知</a>2026-09-10</li>
+        </ul>
+        '''
+        items, _ = c.qdhrss_list(sample_html, 'https://hrss.qingdao.gov.cn')
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['title'], '2026青岛市事业单位招聘工作人员公告')
+
+        # 3. UPC generic website is not application_url unless career path
+        upc_source = next(s for s in c.SOURCES if s['id'] == 'upc')
+        parsed_home = c.parse_detail('<div><p>招聘</p></div>', {
+            'url': 'https://career.upc.edu.cn/detail',
+            'title': '某企业招聘',
+            'structured': {'dwwz': 'http://www.example.com'}
+        }, upc_source)
+        self.assertIsNone(parsed_home['application_url'], "企业首页不应作为直达投递入口")
+
+        parsed_career = c.parse_detail('<div><p>招聘</p></div>', {
+            'url': 'https://career.upc.edu.cn/detail',
+            'title': '某企业招聘',
+            'structured': {'dwwz': 'http://campus.example.com/apply'}
+        }, upc_source)
+        self.assertEqual(parsed_career['application_url'], 'http://campus.example.com/apply')
 
 if __name__=='__main__': unittest.main()

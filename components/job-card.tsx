@@ -160,7 +160,7 @@ export function JobCard({
           {!!job.duplicate_sources?.length && (
             <span
               className="tag channel-pill"
-              title={`同步收录渠道：${[job.source_name, ...job.duplicate_sources.map((s) => s.source_name || s.source)].filter(Boolean).join('、')}`}
+              title={`同步收录渠道：${[job.source_name, ...job.duplicate_sources.map((s) => s.source_name || s.source || s.title)].filter(Boolean).join('、')}`}
             >
               {job.duplicate_sources.length + 1} 渠道同步
             </span>

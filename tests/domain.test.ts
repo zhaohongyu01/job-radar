@@ -429,4 +429,86 @@ void test('mergeDuplicateOpportunities does not incorrectly merge different spec
   assert.equal(merged.length, 2);
 });
 
+void test('locationMatch handles province branch and expanded detailLocation labels', () => {
+  const provBranchJob: Job = {
+    ...job,
+    cities: [],
+    location_evidence: ['工作地点：山东省各分支机构（标题/单位明确机构）'],
+  };
+  assert.equal(locationMatch(provBranchJob, '济南'), 'possible');
+  assert.equal(locationMatch(provBranchJob, '青岛'), 'possible');
+  assert.equal(locationMatch(provBranchJob, '广州'), 'none');
+
+  const orgJob: Job = {
+    ...job,
+    cities: [],
+    location_evidence: ['招聘机构：济南市分行、淄博市分行'],
+  };
+  assert.equal(locationMatch(orgJob, '济南'), 'exact');
+  assert.equal(locationMatch(orgJob, '淄博'), 'exact');
+  assert.equal(locationMatch(orgJob, '青岛'), 'none');
+
+  const locJob: Job = {
+    ...job,
+    cities: [],
+    location_evidence: ['用人单位所在地：青岛市'],
+  };
+  assert.equal(locationMatch(locJob, '青岛'), 'exact');
+  assert.equal(locationMatch(locJob, '济南'), 'none');
+});
+
+void test('personalFor preserves duplicate saved status when master has readAt', () => {
+  const masterJob: Job = { ...job, id: 'master-1', duplicate_ids: ['dup-1'] };
+  const personal = {
+    'dup-1': { saved: true },
+    'master-1': { readAt: '2026-09-14T10:00:00.000Z' },
+  };
+  const status = personalFor(masterJob, personal);
+  assert.equal(status.saved, true, '副记录的收藏状态不能被主记录的已读状态抹掉');
+  assert.equal(status.readAt, '2026-09-14T10:00:00.000Z');
+});
+
+void test('parseSalaryRange converts annual salary in text and salary_desc sorts correctly', () => {
+  const annualJob: Job = {
+    ...job,
+    title: '某央企科技管培生',
+    excerpt: '薪资待遇：80000-120000元/年，提供五险一金',
+  };
+  const parsed = parseSalaryRange(annualJob);
+  assert.ok(parsed);
+  assert.equal(parsed.min, Math.round(80000 / 12));
+  assert.equal(parsed.max, Math.round(120000 / 12));
+
+  // Sorting test: 30k-40k/月 should rank above 6000元以上
+  const jobHighSalary: Job = { ...job, id: 'high-1', title: '高薪架构师（30k-40k）' };
+  const jobAboveSalary: Job = { ...job, id: 'above-1', title: '初级助理 6000元以上' };
+  const sorted = filterJobs([jobAboveSalary, jobHighSalary], { ...defaultFilters, sort: 'salary_desc' }, {}, null);
+  assert.equal(sorted[0].id, 'high-1', '30k-40k 应当排在 6000元以上 前面');
+});
+
+void test('mergeDuplicateOpportunities keeps supplemental recruitment separate from regular campus recruitment', () => {
+  const regJob: Job = {
+    ...job,
+    id: 'reg-a',
+    title: '字节跳动2027届秋季校园招聘',
+    company: '北京字节跳动科技有限公司',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2027'],
+  };
+  const suppJob: Job = {
+    ...job,
+    id: 'supp-a',
+    title: '字节跳动2027届秋招补录公告',
+    company: '北京字节跳动科技有限公司',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2027'],
+  };
+  const merged = mergeDuplicateOpportunities([regJob, suppJob]);
+  assert.equal(merged.length, 2, '秋招补录公告不应与原秋招公告合并');
+});
+
+
+
 

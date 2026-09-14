@@ -162,9 +162,12 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
       const titleCohorts = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*届/g)].map((m) => m[1]))];
       const cohorts = (titleCohorts.length ? titleCohorts : job.graduation_years ?? []).slice().sort().join(',');
       let phase = '校招';
-      if (/春(?:季校园招聘|季招聘|招)/.test(job.title)) phase = '春招';
-      else if (/秋(?:季校园招聘|季招聘|招)/.test(job.title)) phase = '秋招';
+      if (/春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]/.test(job.title)) phase = '春招补录';
+      else if (/秋(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?秋[季招]/.test(job.title)) phase = '秋招补录';
+      else if (/补录|补招|追加|第[二两三]批|续聘/.test(job.title)) phase = '补录';
       else if (/提前批/.test(job.title)) phase = '提前批';
+      else if (/春(?:季校园招聘|季招聘|招)/.test(job.title)) phase = '春招';
+      else if (/秋(?:季校园招聘|季招聘|招)/.test(job.title)) phase = '秋招';
       else if (/社招|社会/.test(job.title)) phase = '社招';
       else if (/实习/.test(job.title)) phase = '实习';
 
@@ -220,13 +223,20 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         existing.duplicate_ids = [...new Set([...existing.duplicate_ids, ...job.duplicate_ids])];
       }
 
+      if (job.published_at) {
+        if (!existing.published_at || job.published_at > existing.published_at) {
+          existing.published_at = job.published_at;
+        }
+      }
       if (!existing.application_url && job.application_url) {
         existing.application_url = job.application_url;
       }
-      if (!existing.deadline && job.deadline) {
-        existing.deadline = job.deadline;
-        existing.deadline_evidence = job.deadline_evidence;
-        existing.deadline_precision = job.deadline_precision;
+      if (job.deadline) {
+        if (!existing.deadline || job.deadline > existing.deadline) {
+          existing.deadline = job.deadline;
+          existing.deadline_evidence = job.deadline_evidence;
+          existing.deadline_precision = job.deadline_precision;
+        }
       }
       if (job.emails?.length) {
         existing.emails = [...new Set([...(existing.emails ?? []), ...job.emails])];
@@ -272,13 +282,43 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
   return [...groups.values()];
 }
 export function personalFor(job: Job, personal: Personal) {
-  if (personal[job.id]) return personal[job.id];
-  const records = (job.duplicate_ids ?? []).map((id) => personal[id]);
-  const readAt = records.flatMap((record) => record?.readAt ? [record.readAt] : []).sort().at(-1);
+  const master = personal[job.id];
+  const duplicateRecords = (job.duplicate_ids ?? [])
+    .map((id) => personal[id])
+    .filter((r): r is NonNullable<typeof r> => Boolean(r));
+
+  let saved: boolean;
+  if (master && typeof master.saved === 'boolean') {
+    saved = master.saved;
+  } else {
+    saved = duplicateRecords.some((r) => r.saved);
+  }
+
+  let applied: boolean;
+  if (master && typeof master.applied === 'boolean') {
+    applied = master.applied;
+  } else {
+    applied = duplicateRecords.some((r) => r.applied);
+  }
+
+  let hidden: boolean;
+  if (master && typeof master.hidden === 'boolean') {
+    hidden = master.hidden;
+  } else {
+    hidden = duplicateRecords.some((r) => r.hidden);
+  }
+
+  let readAt: string | undefined;
+  if (master && 'readAt' in master) {
+    readAt = master.readAt ?? undefined;
+  } else {
+    readAt = duplicateRecords.flatMap((r) => (r.readAt ? [r.readAt] : [])).sort().at(-1);
+  }
+
   return {
-    saved: records.some((record) => record?.saved),
-    applied: records.some((record) => record?.applied),
-    hidden: records.some((record) => record?.hidden),
+    saved,
+    applied,
+    hidden,
     ...(readAt ? { readAt } : {}),
   };
 }
@@ -318,8 +358,8 @@ export function locationMatch(
   // A specific city in a recruitment-location line takes precedence over a
   // nearby province/national label. This prevents “上海、全国、海外” from
   // being presented as a possible Jinan opportunity.
-  const broadPattern = province && new RegExp(`${province}(?:省)?[ \\t]*(?=$|[/、，,；;\\n]|各地|全省|不限|多个城市|分行辖属)`);
-  const detailLocations = (job.location_evidence ?? []).filter((line) => /^(?:工作地点|工作城市|岗位地点|招聘地点)/.test(line));
+  const broadPattern = province && new RegExp(`${province}(?:省)?[ \\t]*(?=$|[/、，,；;\\n]|各地|全省|不限|多个城市|分行辖属|各分支机构)`);
+  const detailLocations = (job.location_evidence ?? []).filter((line) => /^(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|用人单位所在地|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)/.test(line));
   const specificCities = Object.values(PROVINCE_CITIES)
     .flat()
     .filter((candidate) => detailLocations.some((line) => line.includes(candidate)));
@@ -462,9 +502,19 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
   let val1 = Number.parseFloat(m[1]);
   const unit1 = m[2] || '';
 
+  const matchedStr = m[0];
+  const isAnnual =
+    title.includes('/年') ||
+    excerpt.includes('年薪') ||
+    matchedStr.includes('/年') ||
+    matchedStr.includes('年');
+
   if (isAbove) {
     if (['万', 'w', 'W'].includes(unit1)) val1 *= 10000;
     else if (['k', 'K'].includes(unit1)) val1 *= 1000;
+    if (isAnnual || (val1 >= 50000 && !matchedStr.includes('月') && !matchedStr.includes('/月'))) {
+      val1 /= 12;
+    }
     if (val1 < 1000) return null;
     return { min: Math.round(val1), max: Number.POSITIVE_INFINITY, raw: m[0].trim() };
   }
@@ -472,7 +522,6 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
   let val2 = Number.parseFloat(m[3]);
   const unit2 = m[4] || '';
   const unit = unit2 || unit1 || '';
-  const isAnnual = title.includes('/年') || excerpt.includes('年薪');
 
   if (['万', 'w', 'W'].includes(unit)) {
     val1 *= 10000;
@@ -482,7 +531,11 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
     val2 *= 1000;
   }
 
-  if (isAnnual || (['万', 'w', 'W'].includes(unit) && val1 >= 50000)) {
+  if (
+    isAnnual ||
+    (['万', 'w', 'W'].includes(unit) && val1 >= 50000) ||
+    (val1 >= 50000 && !matchedStr.includes('月') && !matchedStr.includes('/月'))
+  ) {
     val1 /= 12;
     val2 /= 12;
   }
@@ -621,8 +674,10 @@ export function filterJobs(
       }
 
       if (f.sort === 'salary_desc') {
-        const aSal = parseSalaryRange(a)?.max ?? -1;
-        const bSal = parseSalaryRange(b)?.max ?? -1;
+        const aRange = parseSalaryRange(a);
+        const bRange = parseSalaryRange(b);
+        const aSal = aRange ? (Number.isFinite(aRange.max) ? aRange.max : aRange.min) : -1;
+        const bSal = bRange ? (Number.isFinite(bRange.max) ? bRange.max : bRange.min) : -1;
         if (aSal !== bSal) return bSal - aSal;
         return (
           (b.published_at ?? '').localeCompare(a.published_at ?? '') ||

@@ -192,12 +192,12 @@ export function DetailDrawer({
                       <div className="channel-card" key={`${dup.url}-${idx}`}>
                         <div className="channel-card-top">
                           <span className="channel-tag">同步渠道</span>
-                          <span className="channel-name">{dup.source_name || dup.source}</span>
+                          <span className="channel-name">{dup.source_name || dup.source || dup.title}</span>
                           {dup.published_at && (
                             <span className="channel-date">{dup.published_at}</span>
                           )}
                         </div>
-                        <div className="channel-card-title">{dup.title}</div>
+                        <div className="channel-card-title">{dup.title || dup.source_name || dup.source}</div>
                         <div className="channel-card-actions">
                           <OutLink url={dup.url} onOpen={() => onRead(selected)}>
                             查看该渠道原公告

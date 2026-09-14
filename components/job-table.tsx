@@ -47,7 +47,7 @@ export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadC
                 {!!job.duplicate_sources?.length && (
                   <span
                     className="channel-pill-table"
-                    title={`同步收录渠道：${[job.source_name, ...job.duplicate_sources.map((s) => s.source_name || s.source)].filter(Boolean).join('、')}`}
+                    title={`同步收录渠道：${[job.source_name, ...job.duplicate_sources.map((s) => s.source_name || s.source || s.title)].filter(Boolean).join('、')}`}
                   >
                     +{job.duplicate_sources.length}渠道
                   </span>

@@ -58,10 +58,13 @@ def snapshot_state(snapshot, load_asset):
         rows = [full]
         for idx, copy_id in enumerate(copy_ids):
             source = copies[idx] if idx < len(copies) else (copies[-1] if copies else {})
+            source_name = source.get('source_name') or source.get('title') or full['source_name']
+            source_title = source.get('title') or full['title']
             rows.append(dict(full, id=copy_id,
+                             title=source_title,
                              source_url=source.get('url') or full['source_url'],
-                             source_name=source.get('title') or full['source_name'],
-                             source_id=source_ids.get(source.get('title', ''), full['source_id']),
+                             source_name=source_name,
+                             source_id=source_ids.get(source_name, full['source_id']),
                              application_url=source.get('application_url') or full.get('application_url')))
         for item in rows:
             row = {k: v for k, v in item.items() if k not in {'duplicate_ids', 'duplicate_sources'}}

@@ -24,6 +24,33 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 TZ = dt.timezone(dt.timedelta(hours=8))
 CITIES = '济南 青岛 淄博 枣庄 东营 烟台 潍坊 济宁 泰安 威海 日照 临沂 德州 聊城 滨州 菏泽 北京 天津 上海 重庆 南京 苏州 杭州 宁波 合肥 福州 厦门 广州 深圳 珠海 东莞 佛山 武汉 长沙 郑州 西安 成都 昆明 贵阳 南昌 南宁 海口 太原 石家庄 沈阳 大连 长春 哈尔滨 兰州 西宁 银川 乌鲁木齐 拉萨'.split()
+LOCATION_LABEL = r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|用人单位所在地|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)'
+PROVINCES_LIST = '北京 天津 上海 重庆 河北 山西 辽宁 吉林 黑龙江 江苏 浙江 安徽 福建 江西 山东 河南 湖北 湖南 广东 广西 海南 四川 贵州 云南 陕西 甘肃 青海 宁夏 新疆 内蒙古 西藏 香港 澳门 台湾'.split()
+
+
+def extract_locations_from_text(evidence, text, title='', company=''):
+    evidence = list(evidence)
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        m = re.search(LOCATION_LABEL + r'[\]】 ：:\t]*(.*)', line)
+        if m:
+            value = m[1].strip() or (lines[index + 1] if index + 1 < len(lines) else '')
+            if value and len(value) >= 2 and not re.match(r'^(?:详见|点击|扫码|请先|岗位表$)', value):
+                evidence.append('工作地点：' + value[:1200])
+
+    name_scope = f"{title} {company}"
+    for city in CITIES:
+        if re.search(rf'{city}(?:市)?(?:分行|分公司|支行|管辖行)', name_scope):
+            evidence.append(f'工作地点：{city}（标题/单位明确分支机构）')
+        if re.search(rf'[（(]{city}(?:市)?[）)]', name_scope):
+            evidence.append(f'工作地点：{city}（标题/单位标注地点）')
+
+    for province in PROVINCES_LIST:
+        if re.search(rf'{province}(?:省)?(?:分行|分公司|分院|管辖行)', name_scope):
+            evidence.append(f'工作地点：{province}省各分支机构（标题/单位明确机构）')
+
+    return list(dict.fromkeys(evidence))
+
 SOURCES = [
     {'id': 'nankai', 'name': '南开大学就业网', 'url': 'https://career.nankai.edu.cn/correcruit/index.html'},
     {'id': 'jinan', 'name': '济南市政府 · 求职招聘', 'url': 'https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/index.html'},
@@ -33,9 +60,9 @@ SOURCES = [
 ]
 SDEI_SCHOOLS = [
     ('jobsdufe', '山东财经大学'), ('ujn', '济南大学'), ('sdut', '山东理工大学'), ('qlu', '齐鲁工业大学'),
-    ('sdnu', '山东师范大学'), ('sdsmu', '山东中医药大学'), ('qust', '青岛科技大学'), ('qdu', '青岛大学'),
+    ('sdnu', '山东师范大学'), ('sdsmu', '山东第二医科大学'), ('qust', '青岛科技大学'), ('qdu', '青岛大学'),
     ('ytu', '烟台大学'), ('ldu', '鲁东大学'), ('sdfmu', '山东第一医科大学'),
-    ('bzmc', '山东航空学院'), ('lcu', '聊城大学'), ('lyu', '临沂大学'),
+    ('bzmc', '滨州医学院'), ('lcu', '聊城大学'), ('lyu', '临沂大学'),
     ('sdtbu', '山东工商学院'), ('dzu', '德州学院'), ('sdua', '山东农业工程学院'),
 ]
 for school, name in SDEI_SCHOOLS:
@@ -348,12 +375,12 @@ def upc_list(page, page_size=10):
         industry = clean(str(row.get('hyyjmc') or ''))
         values = [
             ('招聘单位', company),
-            ('工作城市', city if city and city != '市辖区' else province),
+            ('用人单位所在地', city if city and city != '市辖区' else province),
             ('单位性质', nature),
             ('所属行业', industry),
             ('招聘岗位', positions),
             ('详细地址', address),
-            ('网申或官网', website),
+            ('企业官网', website),
             ('简历投递邮箱', email),
             ('报名截止时间', deadline_val),
         ]
@@ -379,7 +406,9 @@ def qdhrss_list(html, base):
         if not links: continue
         a = links[0]
         title = clean(a.attrs.get('title') or a.text())
-        if not re.search(r'招聘|引才|招录|选拔|招考|遴选|拟聘|公示|岗位|优选', title):
+        if not re.search(r'招聘|引才|招录|选拔|招考|遴选|岗位|优选', title):
+            continue
+        if re.search(r'拟聘|拟录用|录取人员|名单公示|结果公示|体检通知|递补|资格复审|成绩查询|放弃', title):
             continue
         href = a.attrs.get('href', '')
         url = safe_url(href, base)
@@ -607,18 +636,13 @@ def parse_detail(html, item, source):
     location_evidence=[]
     if fields.get('工作地域'): location_evidence.append(fields['工作地域'])
     if fields.get('工作地点'): location_evidence.append('工作地点：'+fields['工作地点'])
-    lines=text.splitlines()
-    for index,line in enumerate(lines):
-        m=re.search(r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点)[\]】 ：:\t]*(.*)',line)
-        if not m: continue
-        value=m[1].strip()
-        if not value and index+1<len(lines): value=lines[index+1]
-        if value: location_evidence.append('工作地点：'+value[:1200])
+    if fields.get('用人单位所在地'): location_evidence.append('工作地点：'+fields['用人单位所在地'])
+    location_evidence = extract_locations_from_text(location_evidence, text, title, company)
     for table in body.find('table'):
         rows=table.find('tr')
-        if rows and re.search('工作地点|工作城市',rows[0].text()):
+        if rows and re.search('工作地点|工作城市|招聘地点',rows[0].text()):
             headers=rows[0].find('td') or rows[0].find('th')
-            indexes=[i for i,c in enumerate(headers) if re.search('工作地点|工作城市',c.text())]
+            indexes=[i for i,c in enumerate(headers) if re.search('工作地点|工作城市|招聘地点',c.text())]
             for row in rows[1:]:
                 cells=row.find('td')
                 for i in indexes:
@@ -631,9 +655,6 @@ def parse_detail(html, item, source):
         city=shandong[code[:4]]
         if city not in cities: cities.append(city)
         location_evidence.append(f"岗位工作地行政区划代码 {code}，归属{city}（来源结构化字段）")
-    if source.get('adapter')=='qdhrss' and '青岛' not in cities:
-        cities.append('青岛')
-        location_evidence.append('青岛市人社局发布（来源主管部门）')
     possible=[city for city in CITIES if city in combined and city not in cities]
     location_status=domestic_status(location_evidence,cities)
     expires,expires_text,precision=deadline(text)
@@ -647,7 +668,8 @@ def parse_detail(html, item, source):
         if delivery and delivery!=item['url']: application_url=delivery
     if source.get('adapter')=='upc' and structured.get('dwwz'):
         website=safe_url(structured['dwwz'],item['url'],True)
-        if website and website!=item['url']: application_url=website
+        if website and website!=item['url'] and re.search(r'job|career|campus|apply|hr|zhaopin|hire|recruit|zp', website, re.I):
+            application_url=website
     links=[]
     attachments=[]
     for node in body.find('img'):
@@ -750,9 +772,12 @@ def deduplicate(jobs):
             title_cohorts = re.findall(r'(20\d{2})\s*届', job.get('title', ''))
             cohorts = tuple(sorted(set(title_cohorts or job.get('graduation_years', []))))
             phase = '校招'
-            if re.search(r'春(?:季校园招聘|季招聘|招)', job.get('title', '')): phase = '春招'
-            elif re.search(r'秋(?:季校园招聘|季招聘|招)', job.get('title', '')): phase = '秋招'
+            if re.search(r'春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]', job.get('title', '')): phase = '春招补录'
+            elif re.search(r'秋(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?秋[季招]', job.get('title', '')): phase = '秋招补录'
+            elif re.search(r'补录|补招|追加|第[二两三]批|续聘', job.get('title', '')): phase = '补录'
             elif re.search(r'提前批', job.get('title', '')): phase = '提前批'
+            elif re.search(r'春(?:季校园招聘|季招聘|招)', job.get('title', '')): phase = '春招'
+            elif re.search(r'秋(?:季校园招聘|季招聘|招)', job.get('title', '')): phase = '秋招'
             elif re.search(r'社招|社会', job.get('title', '')): phase = '社招'
             elif re.search(r'实习', job.get('title', '')): phase = '实习'
 
@@ -774,19 +799,27 @@ def deduplicate(jobs):
             existing_urls = {parent.get('source_url')} | {s.get('url') for s in parent['duplicate_sources']}
             if job.get('source_url') and job['source_url'] not in existing_urls:
                 parent['duplicate_sources'].append({
+                    'id': job['id'],
+                    'source': job.get('source_name') or job.get('source_id', ''),
+                    'source_name': job.get('source_name', ''),
                     'title': job.get('source_name', ''),
+                    'announcement_title': job.get('title', ''),
                     'url': job['source_url'],
                     **({'published_at': job['published_at']} if job.get('published_at') else {}),
                     **({'application_url': job['application_url']} if job.get('application_url') else {}),
                 })
             parent['duplicate_ids'].append(job['id'])
 
+            if job.get('published_at'):
+                if not parent.get('published_at') or job['published_at'] > parent['published_at']:
+                    parent['published_at'] = job['published_at']
             if not parent.get('application_url') and job.get('application_url'):
                 parent['application_url'] = job['application_url']
-            if not parent.get('deadline') and job.get('deadline'):
-                parent['deadline'] = job['deadline']
-                parent['deadline_evidence'] = job.get('deadline_evidence')
-                parent['deadline_precision'] = job.get('deadline_precision')
+            if job.get('deadline'):
+                if not parent.get('deadline') or job['deadline'] > parent['deadline']:
+                    parent['deadline'] = job['deadline']
+                    parent['deadline_evidence'] = job.get('deadline_evidence')
+                    parent['deadline_precision'] = job.get('deadline_precision')
             if job.get('emails'):
                 parent['emails'] = list(dict.fromkeys(parent.get('emails', []) + job['emails']))
             if job.get('cities'):
@@ -822,20 +855,14 @@ def deduplicate(jobs):
 def public_record(job):
     """Recompute derived location labels from retained text, without advancing verification time."""
     row=refine_facts({k:v for k,v in job.items() if k!='fingerprint'})
-    row['provenance']='第三方线索' if row['source_id'] in {'wondercv','offerjack'} else '公开原始来源'
+    row['provenance']='第三方线索' if row.get('source_id') in {'wondercv','offerjack'} else '公开原始来源'
     row.setdefault('kind','招聘公告')
     combined_text=row.get('title','')+'\n'+(row.get('body') or row.get('excerpt') or '')
     extra_years=extract_graduation_years(combined_text)
     row['graduation_years']=sorted(set(row.get('graduation_years',[])+extra_years))
-    label=r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点)'
+    label=LOCATION_LABEL
     # Preserve structured regions, table cells and district-code evidence; re-read text sections.
     evidence=[s for s in row.get('location_evidence',[]) if not re.match(label,s)]
-    lines=row.get('body','').splitlines()
-    for index,line in enumerate(lines):
-        m=re.search(label+r'[\]】 ：:\t]*(.*)',line)
-        if m:
-            value=m[1].strip() or (lines[index+1] if index+1<len(lines) else '')
-            if value: evidence.append('工作地点：'+value[:1200])
     # Some structured location fields do not appear in body; retain their first value line.
     for old in row.get('location_evidence',[]):
         if re.match(label,old):
@@ -843,12 +870,13 @@ def public_record(job):
             value=re.sub('^'+label+r'[\]】 ：:\t]*','',parts[0]).strip()
             if not value and len(parts)>1: value=parts[1]
             if value: evidence.append('工作地点：'+value)
+    evidence = extract_locations_from_text(evidence, row.get('body', ''), row.get('title', ''), row.get('company', ''))
     row['location_evidence']=list(dict.fromkeys(evidence))
     row['cities']=[city for city in CITIES if any(city in s for s in evidence)]
     row['domestic_status']=domestic_status(row['location_evidence'],row['cities'])
     if 'graduation_years' in row:
         row['graduation_years']=[y for y in row['graduation_years'] if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
-    if row['source_id']=='wondercv':
+    if row.get('source_id')=='wondercv':
         row['types']=list(dict.fromkeys(row['types']+['校招']))
         combined=row['title']+'\n'+row.get('body','')
         extra_years=extract_graduation_years(combined)

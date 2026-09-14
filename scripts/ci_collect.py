@@ -53,7 +53,7 @@ def snapshot_state(snapshot, load_asset):
             raise ValueError('Incomplete published detail')
         copies = full.get('duplicate_sources', [])
         copy_ids = full.get('duplicate_ids', [])
-        if bool(copies) != bool(copy_ids):
+        if copies and not copy_ids:
             raise ValueError('Repost identities do not match their sources')
         rows = [full]
         for idx, copy_id in enumerate(copy_ids):

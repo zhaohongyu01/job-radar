@@ -53,12 +53,15 @@ def snapshot_state(snapshot, load_asset):
             raise ValueError('Incomplete published detail')
         copies = full.get('duplicate_sources', [])
         copy_ids = full.get('duplicate_ids', [])
-        if len(copies) != len(copy_ids):
+        if bool(copies) != bool(copy_ids):
             raise ValueError('Repost identities do not match their sources')
         rows = [full]
-        for copy_id, source in zip(copy_ids, copies):
-            rows.append(dict(full, id=copy_id, source_url=source['url'], source_name=source['title'],
-                             source_id=source_ids.get(source['title'], full['source_id']),
+        for idx, copy_id in enumerate(copy_ids):
+            source = copies[idx] if idx < len(copies) else (copies[-1] if copies else {})
+            rows.append(dict(full, id=copy_id,
+                             source_url=source.get('url') or full['source_url'],
+                             source_name=source.get('title') or full['source_name'],
+                             source_id=source_ids.get(source.get('title', ''), full['source_id']),
                              application_url=source.get('application_url') or full.get('application_url')))
         for item in rows:
             row = {k: v for k, v in item.items() if k not in {'duplicate_ids', 'duplicate_sources'}}

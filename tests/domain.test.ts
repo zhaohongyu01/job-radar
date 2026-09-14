@@ -16,6 +16,7 @@ import {
   mergeDuplicateOpportunities,
   getLifecycleStage,
   generateJobTimeline,
+  isExpired,
 } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 const job = {
@@ -786,5 +787,84 @@ void test('mergeDuplicateOpportunities and generateJobTimeline strictly produce 
   assert.ok(repostEvents.length >= 1, '跨校重复发布必须显示为跨渠道发布');
   assert.equal(repostEvents[0].date, '2026-09-14');
   assert.ok(repostEvents[0].detail.includes('中国石油大学'));
+});
+
+void test('long-term recruitment with null deadline remains active and visible even when published > 60 days ago', () => {
+  const now = Date.parse('2026-09-14T10:00:00+08:00');
+  const longTermJob: Job = {
+    ...job,
+    id: 'long-term-1',
+    title: '某央企研究院长期招募青年科学家及博士后公告',
+    published_at: '2026-07-01',
+    last_verified_at: '2026-09-14T09:00:00+08:00',
+    deadline: null,
+    body: '长期招聘，招满为止，目前持续接受简历投递。',
+  };
+
+  assert.equal(isExpired(longTermJob, now), false);
+
+  const stage = getLifecycleStage(longTermJob, now);
+  assert.notEqual(stage.stage, 'expired');
+  assert.ok(stage.label.includes('长期招募中') || stage.badge.includes('长期') || stage.badge.includes('进行中'));
+
+  const filtered = filterJobs([longTermJob], { ...defaultFilters, city: '全部城市' }, {}, null, now);
+  assert.equal(filtered.length, 1);
+});
+
+void test('radar change filter and filterJobs 有变更 both respect 30-day window and exclude 岗位表就绪', () => {
+  const now = Date.parse('2026-09-14T10:00:00+08:00');
+
+  const oldChangeJob: Job = {
+    ...job,
+    id: 'old-change',
+    recent_change: {
+      type: 'content_updated',
+      label: '正文更新',
+      date: '2026-01-10',
+      detail: '更新了联系人电话',
+    },
+  };
+
+  const initialTableJob: Job = {
+    ...job,
+    id: 'initial-table',
+    recent_change: {
+      type: 'positions_updated',
+      label: '岗位表就绪',
+      date: '2026-09-10',
+      detail: '提取到 5 个岗位',
+    },
+  };
+
+  const freshChangeJob: Job = {
+    ...job,
+    id: 'fresh-change',
+    recent_change: {
+      type: 'deadline_extended',
+      label: '截止延期',
+      date: '2026-09-12',
+      detail: '截止日期延至10月底',
+    },
+  };
+
+  const byChangeType = filterJobs(
+    [oldChangeJob, initialTableJob, freshChangeJob],
+    { ...defaultFilters, city: '全部城市', changeType: '有变更' },
+    {},
+    null,
+    now,
+  );
+  assert.equal(byChangeType.length, 1);
+  assert.equal(byChangeType[0].id, 'fresh-change');
+
+  const byRadarChange = filterJobs(
+    [oldChangeJob, initialTableJob, freshChangeJob],
+    { ...defaultFilters, city: '全部城市', radarFocus: 'change' },
+    {},
+    null,
+    now,
+  );
+  assert.equal(byRadarChange.length, 1);
+  assert.equal(byRadarChange[0].id, 'fresh-change');
 });
 

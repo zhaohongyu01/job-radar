@@ -623,7 +623,7 @@ def parse_detail(html, item, source):
         contents=root.find(cls='ck-content') or root.find(id='zoom')
         body=contents[0] if contents else root
         title=item['title']
-        company=structured.get('dwmc') or ''
+        company=structured.get('dwmc') or item.get('company') or ''
         published=item.get('published_at')
     elif source.get('adapter')=='qdhrss':
         contents=root.find(cls='wencon') or root.find(cls='article') or root.find(id='zoom')
@@ -689,10 +689,13 @@ def parse_detail(html, item, source):
         address=structured.get('deliveryAddress')
         delivery=safe_url(address,item['url'],True) if isinstance(address,str) and re.match(r'^https?://',address.strip(),re.I) else None
         if delivery and delivery!=item['url']: application_url=delivery
-    if source.get('adapter')=='upc' and structured.get('dwwz'):
-        website=safe_url(structured['dwwz'],item['url'],True)
-        if website and website!=item['url'] and re.search(r'job|career|campus|apply|hr|zhaopin|hire|recruit|zp', website, re.I):
-            application_url=website
+    if source.get('adapter')=='upc':
+        if structured.get('dwwz'):
+            website=safe_url(structured['dwwz'],item['url'],True)
+            if website and website!=item['url'] and re.search(r'job|career|campus|apply|hr|zhaopin|hire|recruit|zp', website, re.I):
+                application_url=website
+        elif item.get('application_url'):
+            application_url=item['application_url']
     links=[]
     attachments=[]
     for node in body.find('img'):
@@ -1012,11 +1015,10 @@ def deduplicate(jobs):
                 key = ('announcement_exact', re.sub(r'\s+', '', job['title']), company, text)
 
         if key not in groups:
-            groups[key] = dict(job, duplicate_sources=[], duplicate_ids=[])
-        else:
-            parent = groups[key]
-            existing_urls = {parent.get('source_url')} | {s.get('url') for s in parent['duplicate_sources']}
-            duplicate_facts = {
+            primary_facts = {
+                'id': job['id'],
+                'identity': job.get('identity'),
+                'company': job.get('company', ''),
                 'title': job.get('title', ''),
                 'published_at': job.get('published_at'),
                 'cities': list(job.get('cities', [])),
@@ -1032,11 +1034,44 @@ def deduplicate(jobs):
                 'sample_positions': job.get('sample_positions'),
                 'majors': job.get('majors'),
                 'application_url': job.get('application_url'),
+                'source_url': job.get('source_url', ''),
+                'source_id': job.get('source_id', ''),
+                'source_name': job.get('source_name', ''),
+                'body': job.get('body'),
+                'excerpt': job.get('excerpt'),
+            }
+            groups[key] = dict(job, duplicate_sources=[], duplicate_ids=[], primary_facts=primary_facts)
+        else:
+            parent = groups[key]
+            existing_urls = {parent.get('source_url')} | {s.get('url') for s in parent['duplicate_sources']}
+            duplicate_facts = {
+                'id': job['id'],
+                'identity': job.get('identity'),
+                'company': job.get('company', ''),
+                'title': job.get('title', ''),
+                'published_at': job.get('published_at'),
+                'cities': list(job.get('cities', [])),
+                'location_evidence': list(job.get('location_evidence', [])),
+                'education': job.get('education', ''),
+                'deadline': job.get('deadline'),
+                'deadline_evidence': job.get('deadline_evidence'),
+                'deadline_precision': job.get('deadline_precision'),
+                'types': list(job.get('types', [])),
+                'graduation_years': list(job.get('graduation_years', [])),
+                'positions': job.get('positions'),
+                'position_count': job.get('position_count'),
+                'sample_positions': job.get('sample_positions'),
+                'majors': job.get('majors'),
+                'application_url': job.get('application_url'),
+                'source_url': job.get('source_url', ''),
+                'source_id': job.get('source_id', ''),
+                'source_name': job.get('source_name', ''),
                 'body': job.get('body'),
                 'excerpt': job.get('excerpt'),
             }
             parent['duplicate_sources'].append({
                 'id': job['id'],
+                'identity': job.get('identity'),
                 'source': job.get('source_name') or job.get('source_id', ''),
                 'source_name': job.get('source_name', ''),
                 'title': job.get('source_name', ''),
@@ -1160,6 +1195,20 @@ def public_record(job):
             if not value and len(parts)>1: value=parts[1]
             if value: evidence.append('工作地点：'+value)
     evidence = extract_locations_from_text(evidence, row.get('body', ''), row.get('title', ''), row.get('company', ''))
+    if row.get('source_id') == 'upc':
+        body_and_title = (row.get('body', '') + '\n' + row.get('title', ''))
+        pos_text = ' '.join((p.get('city', '') or '') + ' ' + (p.get('name', '') or '') for p in (row.get('positions') or []))
+        content_haystack = body_and_title + ' ' + pos_text
+        sanitized_evidence = []
+        for ev in evidence:
+            m = re.match(r'^工作地点[：:\s]*(.*)', ev)
+            if m:
+                ev_val = m[1].strip()
+                matched_cities = [c for c in CITIES if c in ev_val]
+                if matched_cities and all(c not in content_haystack for c in matched_cities):
+                    continue
+            sanitized_evidence.append(ev)
+        evidence = sanitized_evidence
     row['location_evidence']=list(dict.fromkeys(evidence))
     row['cities']=[city for city in CITIES if any(city in s for s in evidence if not s.startswith('用人单位所在地：'))]
     row['domestic_status']=domestic_status(row['location_evidence'],row['cities'])
@@ -1187,7 +1236,7 @@ def public_summary(job):
     heavy={
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
         'possible_cities','province_possible','details_available','company_original',
-        'positions',
+        'positions','primary_facts',
     }
     row={k:v for k,v in job.items() if k not in heavy}
     if 'timeline' in row and isinstance(row['timeline'], list) and len(row['timeline']) > 5:
@@ -1403,21 +1452,53 @@ def run(args):
             status['probed']=len(selected_probes)
 
             for p_job in selected_probes:
+                structured_ctx = dict(p_job.get('structured') or {})
+                if p_job.get('company') and not structured_ctx.get('dwmc'):
+                    structured_ctx['dwmc'] = p_job['company']
+                if p_job.get('company') and not structured_ctx.get('companyName'):
+                    structured_ctx['companyName'] = p_job['company']
                 remaining.append({
-                    'url':p_job['source_url'],
-                    'title':p_job.get('title',''),
-                    'published_at':p_job.get('published_at'),
-                    'identity':p_job.get('identity') or p_job.get('source_url'),
-                    'target_id':p_job['id'],
-                    'is_probe':True,
+                    'url': p_job['source_url'],
+                    'title': p_job.get('title', ''),
+                    'published_at': p_job.get('published_at'),
+                    'identity': p_job.get('identity') or p_job.get('source_url'),
+                    'target_id': p_job['id'],
+                    'kind': p_job.get('kind', '招聘公告'),
+                    'company': p_job.get('company', ''),
+                    'application_url': p_job.get('application_url'),
+                    'structured': structured_ctx,
+                    'previous_facts': p_job,
+                    'is_probe': True,
                 })
 
             def read_detail(item):
-                res = parse_detail(item['inline_html'] if 'inline_html' in item else fetch(item['url']),item,source)
+                res = parse_detail(item['inline_html'] if 'inline_html' in item else fetch(item['url']), item, source)
                 if item.get('target_id'):
                     res['id'] = item['target_id']
                 if item.get('identity'):
                     res['identity'] = item['identity']
+                if item.get('structured'):
+                    res['structured'] = item['structured']
+                if item.get('is_probe') and item.get('previous_facts'):
+                    prev = item['previous_facts']
+                    if not res.get('company') and prev.get('company'):
+                        res['company'] = prev['company']
+                    if not res.get('application_url') and prev.get('application_url'):
+                        res['application_url'] = prev['application_url']
+                    if (not res.get('education') or res.get('education') == '未明确 / 见原公告') and prev.get('education') and prev.get('education') != '未明确 / 见原公告':
+                        res['education'] = prev['education']
+                    if not res.get('deadline') and prev.get('deadline'):
+                        res['deadline'] = prev['deadline']
+                        res['deadline_evidence'] = prev.get('deadline_evidence')
+                        res['deadline_precision'] = prev.get('deadline_precision')
+                    if not res.get('positions') and prev.get('positions'):
+                        res['positions'] = list(prev['positions'])
+                        res['position_count'] = prev.get('position_count')
+                    if not res.get('cities') and prev.get('cities'):
+                        res['cities'] = list(prev['cities'])
+                        res['location_evidence'] = list(prev.get('location_evidence', []))
+                    if not res.get('graduation_years') and prev.get('graduation_years'):
+                        res['graduation_years'] = list(prev['graduation_years'])
                 return res
             # Bounded to two concurrent requests per source; retain progress on disk.
             with ThreadPoolExecutor(max_workers=2) as pool:

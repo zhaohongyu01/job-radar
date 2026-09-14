@@ -1,5 +1,5 @@
 import type { Filters, Job } from './jobs.ts';
-import { getDeadlineCountdown, parseSalaryRange } from './jobs.ts';
+import { getDeadlineCountdown, hasRecentJobChange, parseSalaryRange } from './jobs.ts';
 
 export type RadarPreset = {
   id: string;
@@ -102,26 +102,7 @@ export function computeRadarMetrics(jobs: Job[], now = Date.now()): RadarMetrics
     if (sal && sal.min >= 10000) {
       highSalaryCount++;
     }
-    const isRecentDate = (d?: string | null) => {
-      if (!d) return false;
-      const t = Date.parse(d);
-      if (Number.isNaN(t)) return false;
-      const diffDays = (now - t) / 86400000;
-      return diffDays >= -1 && diffDays <= 30;
-    };
-    const hasRecentChangeObj = Boolean(job.recent_change && isRecentDate(job.recent_change.date));
-    const hasRecentTimeline = Boolean(
-      job.timeline && job.timeline.some((e) => e.type !== 'published' && e.type !== 'source_repost' && isRecentDate(e.date))
-    );
-    const isRecentJob = isRecentDate(job.updated_at || job.published_at || job.first_seen_at);
-    if (
-      hasRecentChangeObj ||
-      hasRecentTimeline ||
-      ((job.lifecycle_stage === 'extended' ||
-        job.lifecycle_stage === 'supplemental' ||
-        job.lifecycle_stage === 'selection' ||
-        /延长|延期|补录|追加|笔试|面试/.test(job.title)) && isRecentJob)
-    ) {
+    if (hasRecentJobChange(job, now)) {
       changeCount++;
     }
   }

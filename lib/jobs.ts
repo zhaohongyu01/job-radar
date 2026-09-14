@@ -9,6 +9,7 @@ export type PositionRequirement = {
   notes?: string;
   source_type?: string;
   source_file?: string;
+  source_url?: string;
 };
 
 export type LifecycleStage =
@@ -190,12 +191,6 @@ export function isExpired(job: Job, now = Date.now()) {
   if (job.deadline) {
     const t = Date.parse(job.deadline);
     return !Number.isNaN(t) && t < now;
-  }
-  if (job.published_at) {
-    const pub = Date.parse(job.published_at);
-    if (!Number.isNaN(pub) && (now - pub) > 60 * 24 * 60 * 60 * 1000) {
-      return true;
-    }
   }
   return false;
 }
@@ -789,12 +784,28 @@ export function getLifecycleStage(
         };
       }
     }
+    return {
+      stage: 'accepting',
+      label: '网申进行中',
+      badge: '✨ 网申中',
+      badgeClass: 'badge-stage-accepting',
+    };
+  }
+
+  // When job.deadline is null:
+  if (/长期|常态|常年|招满为止/.test(title + bodySlice)) {
+    return {
+      stage: 'accepting',
+      label: '长期招募中',
+      badge: '长期招聘',
+      badgeClass: 'badge-stage-accepting',
+    };
   }
 
   return {
     stage: 'accepting',
-    label: '网申进行中',
-    badge: '✨ 网申中',
+    label: '进行中（截止未明）',
+    badge: '常态进行',
     badgeClass: 'badge-stage-accepting',
   };
 }
@@ -905,6 +916,10 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
       const days = Math.ceil((Date.parse(job.deadline) - now) / (1000 * 60 * 60 * 24));
       statusDetail = `报名中，预计 ${job.deadline.slice(0, 10)} 截止（还剩 ${Math.max(0, days)} 天）`;
     }
+  } else {
+    statusDetail = /长期|常态|常年|招满为止/.test((job.title || '') + (job.body || job.excerpt || ''))
+      ? '长期招聘，招满为止，持续接收简历'
+      : '持续招聘中，原公告未明确具体截止时间';
   }
   events.push({
     date: '当前状态',
@@ -914,6 +929,50 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
   });
 
   return events;
+}
+
+export function isRecentDate(d?: string | null, now = Date.now()): boolean {
+  if (!d) return false;
+  const t = Date.parse(d);
+  if (Number.isNaN(t)) return false;
+  const diffDays = (now - t) / 86400000;
+  return diffDays >= -1 && diffDays <= 30;
+}
+
+export function hasRecentJobChange(j: Job, now = Date.now()): boolean {
+  const isInitialTableReadiness = Boolean(
+    j.recent_change &&
+      (j.recent_change.label === '岗位表就绪' ||
+        (j.recent_change.type === 'positions_updated' &&
+          /就绪|首次提取/.test((j.recent_change.label || '') + (j.recent_change.detail || '')))),
+  );
+  const hasRecentChangeObj = Boolean(
+    j.recent_change &&
+      !isInitialTableReadiness &&
+      isRecentDate(j.recent_change.date, now),
+  );
+  const hasRecentTimeline = Boolean(
+    j.timeline &&
+      j.timeline.some(
+        (e) =>
+          e.type !== 'published' &&
+          e.type !== 'source_repost' &&
+          e.title !== '岗位表就绪' &&
+          !/就绪|首次提取/.test(e.title + (e.detail || '')) &&
+          isRecentDate(e.date, now),
+      ),
+  );
+  const stage = getLifecycleStage(j, now).stage;
+  const isRecentJob = isRecentDate(j.updated_at || j.published_at || j.first_seen_at, now);
+  return (
+    hasRecentChangeObj ||
+    hasRecentTimeline ||
+    ((stage === 'extended' ||
+      stage === 'supplemental' ||
+      stage === 'selection' ||
+      /延长|延期|补录|追加|笔试|面试/.test(j.title)) &&
+      isRecentJob)
+  );
 }
 
 export function filterJobs(
@@ -969,28 +1028,15 @@ export function filterJobs(
         if (!sal || sal.max < threshold) return false;
       }
       if (f.changeType && f.changeType !== '全部') {
-        const isRecentDate = (d?: string | null) => {
-          if (!d) return false;
-          const t = Date.parse(d);
-          if (Number.isNaN(t)) return false;
-          const diffDays = (now - t) / 86400000;
-          return diffDays >= -1 && diffDays <= 30;
-        };
-        const hasRecentChangeObj = Boolean(j.recent_change && isRecentDate(j.recent_change.date));
-        const hasRecentTimeline = Boolean(
-          j.timeline && j.timeline.some((e) => e.type !== 'published' && e.type !== 'source_repost' && isRecentDate(e.date))
-        );
+        const hasChange = hasRecentJobChange(j, now);
         const stage = getLifecycleStage(j, now).stage;
-        const isRecentJob = isRecentDate(j.updated_at || j.published_at || j.first_seen_at);
-        const hasChange =
-          hasRecentChangeObj ||
-          hasRecentTimeline ||
-          ((stage === 'extended' || stage === 'supplemental' || stage === 'selection') && isRecentJob);
+        const isRecentJob = isRecentDate(j.updated_at || j.published_at || j.first_seen_at, now);
+        const hasRecentChangeObj = Boolean(j.recent_change && isRecentDate(j.recent_change.date, now));
 
         if (f.changeType === '有变更' && !hasChange) return false;
         if (f.changeType === '截止延期' && (stage !== 'extended' || !isRecentJob) && !(j.recent_change?.type === 'deadline_extended' && hasRecentChangeObj)) return false;
         if (f.changeType === '补录招募' && (stage !== 'supplemental' || !isRecentJob) && !(j.recent_change?.type === 'supplemental' && hasRecentChangeObj)) return false;
-        if (f.changeType === '岗位调整' && !(j.recent_change?.type === 'positions_updated' && hasRecentChangeObj) && !(j.timeline?.some((e) => e.type === 'positions_updated' && isRecentDate(e.date)))) return false;
+        if (f.changeType === '岗位调整' && !(j.recent_change?.type === 'positions_updated' && hasRecentChangeObj) && !(j.timeline?.some((e) => e.type === 'positions_updated' && e.title !== '岗位表就绪' && isRecentDate(e.date, now)))) return false;
         if (f.changeType === '考核阶段' && (stage !== 'selection' || !isRecentJob) && !(j.recent_change?.type === 'selection_stage' && hasRecentChangeObj)) return false;
       }
       if (f.radarFocus && f.radarFocus !== 'none') {
@@ -1008,15 +1054,7 @@ export function filterJobs(
           const countdown = getDeadlineCountdown(j.deadline, now);
           if (!countdown || countdown.urgency !== 'urgent') return false;
         } else if (f.radarFocus === 'change') {
-          const stage = getLifecycleStage(j, now).stage;
-          const hasChange =
-            Boolean(j.recent_change) ||
-            stage === 'extended' ||
-            stage === 'supplemental' ||
-            stage === 'selection' ||
-            Boolean(j.timeline && j.timeline.some((e) => e.type !== 'published' && e.type !== 'source_repost')) ||
-            /延长|延期|补录|追加|笔试|面试/.test(j.title);
-          if (!hasChange) return false;
+          if (!hasRecentJobChange(j, now)) return false;
         }
       }
       if (f.query.trim()) {

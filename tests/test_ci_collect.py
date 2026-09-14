@@ -183,5 +183,79 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(ci.read_json(data / 'ci-report.json')['deployment_blocked'])
 
 
+    def test_combine_states_prioritizes_raw_cache_over_online_snapshot_on_equal_timestamp(self):
+        timestamp = '2026-09-14T12:00:00+08:00'
+        git_state = {'jobs': {'j1': {'id': 'j1', 'title': 'Git版本', 'fingerprint': 'fp1', 'last_verified_at': timestamp}}, 'sources': {}, 'last_run_at': timestamp, 'priority': 1}
+        raw_cache = {'jobs': {'j1': {'id': 'j1', 'title': '真实缓存版本', 'fingerprint': 'fp2', 'last_verified_at': timestamp}}, 'sources': {}, 'last_run_at': timestamp, 'priority': 2}
+        online_snapshot = {'jobs': {'j1': {'id': 'j1', 'title': '线上有损快照', 'fingerprint': 'fp3', 'last_verified_at': timestamp}}, 'sources': {}, 'last_run_at': timestamp, 'priority': 1}
+        
+        combined = ci.combine_states(git_state, raw_cache, online_snapshot)
+        self.assertEqual(combined['jobs']['j1']['title'], '真实缓存版本')
+        self.assertEqual(combined['jobs']['j1']['fingerprint'], 'fp2')
+
+    def test_snapshot_state_restores_primary_facts_and_copy_identities(self):
+        with TemporaryDirectory() as tmp:
+            public = Path(tmp)
+            id1 = 'a1' + '0' * 18
+            id2 = 'b2' + '0' * 18
+            primary_job = {
+                'id': id1, 'identity': 'offerjack:101', 'title': '科技公司校招',
+                'company': '某科技集团', 'source_id': 'offerjack', 'source_name': 'OfferJack',
+                'source_url': 'https://offerjack.example.com/1',
+                'published_at': '2026-09-01', 'cities': ['北京'],
+                'location_evidence': ['北京'], 'education': '硕士',
+                'deadline': '2026-10-01', 'deadline_evidence': '10月1日截止', 'deadline_precision': 'day',
+                'types': ['校招'], 'graduation_years': ['2026'],
+                'positions': [{'name': '算法研发', 'city': '北京'}], 'position_count': 1,
+                'sample_positions': ['算法研发'], 'majors': ['计算机'],
+                'application_url': 'https://apply1.example.com',
+                'body': '科技公司校招，工作地点北京。', 'excerpt': '科技公司校招',
+                'last_verified_at': '2026-09-14T10:00:00+08:00',
+                'fingerprint': 'fp_primary',
+            }
+            duplicate_job = {
+                'id': id2, 'identity': 'upc:202', 'title': '科技公司校招（海大站）',
+                'company': '某科技集团', 'source_id': 'upc', 'source_name': '中国石油大学',
+                'source_url': 'https://upc.example.com/2',
+                'published_at': '2026-09-02', 'cities': ['青岛'],
+                'location_evidence': ['青岛'], 'education': '本科',
+                'deadline': '2026-10-05', 'deadline_evidence': '10月5日截止', 'deadline_precision': 'day',
+                'types': ['校招'], 'graduation_years': ['2026'],
+                'positions': [{'name': '测试开发', 'city': '青岛'}], 'position_count': 1,
+                'sample_positions': ['测试开发'], 'majors': ['自动化'],
+                'application_url': 'https://apply2.example.com',
+                'body': '科技公司校招，工作地点青岛。', 'excerpt': '科技公司校招',
+                'last_verified_at': '2026-09-14T10:00:00+08:00',
+                'fingerprint': 'fp_dup',
+            }
+            state = {
+                'jobs': {id1: primary_job, id2: duplicate_job},
+                'sources': {
+                    'offerjack': {'id': 'offerjack', 'name': 'OfferJack', 'last_attempt_at': '2026-09-14T10:00:00+08:00'},
+                    'upc': {'id': 'upc', 'name': '中国石油大学', 'last_attempt_at': '2026-09-14T10:00:00+08:00'}
+                },
+                'last_run_at': '2026-09-14T10:00:00+08:00'
+            }
+            snapshot = c.export_snapshot(state, public)
+            self.assertEqual(len(snapshot['jobs']), 1)
+            
+            def load_asset(path):
+                return ci.read_json(public / path.lstrip('/'))
+            restored = ci.snapshot_state(snapshot, load_asset)
+            self.assertEqual(len(restored['jobs']), 2)
+            
+            restored_p1 = restored['jobs'][id1]
+            self.assertEqual(restored_p1['identity'], 'offerjack:101')
+            self.assertEqual(restored_p1['cities'], ['北京'])
+            self.assertEqual(len(restored_p1['positions']), 1)
+            self.assertEqual(restored_p1['positions'][0]['name'], '算法研发')
+            
+            restored_p2 = restored['jobs'][id2]
+            self.assertEqual(restored_p2['identity'], 'upc:202')
+            self.assertEqual(restored_p2['cities'], ['青岛'])
+            self.assertEqual(len(restored_p2['positions']), 1)
+            self.assertEqual(restored_p2['positions'][0]['name'], '测试开发')
+
+
 if __name__ == '__main__':
     unittest.main()

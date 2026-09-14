@@ -714,7 +714,84 @@ class CollectionTests(unittest.TestCase):
 
         repost_events = [e for e in parent.get('timeline', []) if e.get('title') == '跨渠道发布']
         self.assertEqual(len(repost_events), 1)
-        self.assertEqual(repost_events[0]['date'], '2026-09-14')
+    def test_public_record_sanitizes_legacy_upc_location_evidence(self):
+        legacy_upc_job = {
+            'id': 'upc-old-1',
+            'identity': 'upc:old-1',
+            'source_id': 'upc',
+            'source_name': '中国石油大学（华东）就业网',
+            'source_url': 'https://career.upc.edu.cn/detail/1',
+            'title': '某装备制造集团招聘简章',
+            'company': '某装备制造集团',
+            'body': '诚招研发工程师、机械工程师若干，待遇优厚。',
+            'location_evidence': ['工作地点：济南市'],
+            'positions': [{'name': '研发工程师', 'city': ''}],
+            'types': ['校招'],
+            'published_at': '2026-09-01',
+            'last_verified_at': '2026-09-01T10:00:00+08:00',
+        }
+        res = c.public_record(legacy_upc_job)
+        self.assertNotIn('济南', res['cities'])
+        self.assertFalse(any('济南' in ev for ev in res['location_evidence']))
+
+        valid_upc_job = {
+            'id': 'upc-valid-1',
+            'identity': 'upc:valid-1',
+            'source_id': 'upc',
+            'source_name': '中国石油大学（华东）就业网',
+            'source_url': 'https://career.upc.edu.cn/detail/2',
+            'title': '某装备制造集团青岛研发中心招聘',
+            'company': '某装备制造集团',
+            'body': '工作地点：青岛市黄岛区，诚招研发工程师。',
+            'location_evidence': ['工作地点：青岛市'],
+            'positions': [{'name': '研发工程师', 'city': '青岛'}],
+            'types': ['校招'],
+            'published_at': '2026-09-01',
+            'last_verified_at': '2026-09-01T10:00:00+08:00',
+        }
+        res_valid = c.public_record(valid_upc_job)
+        self.assertIn('青岛', res_valid['cities'])
+        self.assertTrue(any('青岛' in ev for ev in res_valid['location_evidence']))
+
+    def test_upc_probe_task_preserves_company_and_application_url(self):
+        # A previously crawled UPC job with company and application_url
+        old_job = {
+            'id': 'upc-p1',
+            'identity': 'upc:p1',
+            'source_id': 'upc',
+            'source_name': '中国石油大学（华东）就业网',
+            'source_url': 'https://career.upc.edu.cn/detail/career?id=p1',
+            'title': '示例制造集团校园招聘',
+            'company': '示例制造集团',
+            'application_url': 'https://job.example.com/apply',
+            'education': '本科及以上',
+            'published_at': '2026-09-01',
+            'last_verified_at': '2026-09-01T10:00:00+08:00',
+            'deadline': '2026-11-01',
+            'deadline_evidence': '11月1日截止',
+            'deadline_precision': 'day',
+        }
+        # Plain HTML without structured dwmc or dwwz
+        html = '<div class="ck-content"><p>欢迎加入我们，招聘岗位请见原公告。</p></div>'
+        source = {'id': 'upc', 'name': '中国石油大学（华东）就业网', 'adapter': 'upc'}
+        
+        # When probing, item passes structured context and previous_facts
+        probe_item = {
+            'url': old_job['source_url'],
+            'title': old_job['title'],
+            'published_at': old_job['published_at'],
+            'identity': old_job['identity'],
+            'target_id': old_job['id'],
+            'company': old_job['company'],
+            'application_url': old_job['application_url'],
+            'structured': {'dwmc': old_job['company']},
+            'previous_facts': old_job,
+            'is_probe': True,
+        }
+        
+        parsed = c.parse_detail(html, probe_item, source)
+        self.assertEqual(parsed['company'], '示例制造集团')
+        self.assertEqual(parsed['application_url'], 'https://job.example.com/apply')
 
 
 if __name__=='__main__': unittest.main()

@@ -56,30 +56,38 @@ def snapshot_state(snapshot, load_asset):
         copy_ids = full.get('duplicate_ids', [])
         if copies and not copy_ids:
             raise ValueError('Repost identities do not match their sources')
-        rows = [full]
+        primary_record = dict(full)
+        if 'primary_facts' in full and isinstance(full['primary_facts'], dict):
+            for k, v in full['primary_facts'].items():
+                if v is not None:
+                    primary_record[k] = v
+        rows = [primary_record]
         copies_by_id = {s['id']: s for s in copies if isinstance(s, dict) and s.get('id')}
         for idx, copy_id in enumerate(copy_ids):
             source = copies_by_id.get(copy_id) or (copies[idx] if idx < len(copies) else (copies[-1] if copies else {}))
             source_name = source.get('source_name') or source.get('title') or full['source_name']
             source_facts = source.get('facts') or {}
             source_title = source_facts.get('title') or source.get('announcement_title') or (source.get('title') if source.get('title') != source_name else '') or full['title']
+            source_identity = source.get('identity') or source_facts.get('identity')
             restored = dict(full, id=copy_id,
                             title=source_title,
                             source_url=source.get('url') or full['source_url'],
                             source_name=source_name,
                             source_id=source_ids.get(source_name, full.get('source_id', '')),
                             application_url=source_facts.get('application_url', source.get('application_url')))
+            if source_identity:
+                restored['identity'] = source_identity
             for field in ('published_at', 'cities', 'location_evidence', 'education',
                           'deadline', 'deadline_evidence', 'deadline_precision',
                           'types', 'graduation_years', 'positions', 'position_count',
-                          'sample_positions', 'majors', 'application_url', 'body', 'excerpt'):
+                          'sample_positions', 'majors', 'application_url', 'body', 'excerpt', 'company'):
                 if field in source_facts:
                     restored[field] = source_facts[field]
             if 'published_at' in source and 'published_at' not in source_facts:
                 restored['published_at'] = source['published_at']
             rows.append(restored)
         for item in rows:
-            row = {k: v for k, v in item.items() if k not in {'duplicate_ids', 'duplicate_sources'}}
+            row = {k: v for k, v in item.items() if k not in {'duplicate_ids', 'duplicate_sources', 'primary_facts'}}
             if row['id'] in jobs:
                 raise ValueError('Published identities overlap')
             facts = {k: v for k, v in row.items() if k not in HISTORY_FIELDS}
@@ -92,19 +100,32 @@ def snapshot_state(snapshot, load_asset):
 
 def combine_states(*states):
     result = {'jobs': {}, 'sources': {}, 'last_run_at': ''}
+    job_priorities = {}
+    source_priorities = {}
     for state in states:
         if not isinstance(state.get('jobs'), dict) or not isinstance(state.get('sources'), dict):
             raise ValueError('Invalid collector state')
+        state_prio = state.get('priority', 1)
         for identifier, job in state['jobs'].items():
             if job.get('id') != identifier or not job.get('fingerprint'):
                 raise ValueError('Invalid retained job identity')
             old = result['jobs'].get(identifier)
-            if not old or job['last_verified_at'] >= old['last_verified_at']:
+            old_prio = job_priorities.get(identifier, 0)
+            if not old or job['last_verified_at'] > old['last_verified_at'] or (
+                job['last_verified_at'] == old['last_verified_at'] and state_prio >= old_prio
+            ):
                 result['jobs'][identifier] = job
+                job_priorities[identifier] = state_prio
         for identifier, source in state['sources'].items():
             old = result['sources'].get(identifier)
-            if not old or source.get('last_attempt_at', '') >= old.get('last_attempt_at', ''):
+            old_prio = source_priorities.get(identifier, 0)
+            cur_time = source.get('last_attempt_at', '')
+            old_time = old.get('last_attempt_at', '') if old else ''
+            if not old or cur_time > old_time or (
+                cur_time == old_time and state_prio >= old_prio
+            ):
                 result['sources'][identifier] = source
+                source_priorities[identifier] = state_prio
         result['last_run_at'] = max(result['last_run_at'], state['last_run_at'])
     return result
 
@@ -115,10 +136,14 @@ def prepare(public_dir, data_dir, site):
         if not ASSET.fullmatch(path):
             raise ValueError('Invalid local detail path')
         return read_json(public_dir / path.lstrip('/'))
-    states = [snapshot_state(local_snapshot, local_asset)]
+    local_state = snapshot_state(local_snapshot, local_asset)
+    local_state['priority'] = 1
+    states = [local_state]
     state_path = data_dir / 'state.json'
     if state_path.exists():
-        states.append(read_json(state_path))
+        raw_state = read_json(state_path)
+        raw_state['priority'] = 2
+        states.append(raw_state)
     # A cache can be evicted: compare against the live site as well as the git snapshot.
     if site:
         if not re.fullmatch(r'https://[a-zA-Z0-9.-]+', site):
@@ -133,8 +158,11 @@ def prepare(public_dir, data_dir, site):
             if hashlib.sha256(raw).hexdigest()[:20] != match[1]:
                 raise ValueError('Detail content hash mismatch')
             return json.loads(raw)
-        states.append(snapshot_state(live, remote_asset))
+        remote_state = snapshot_state(live, remote_asset)
+        remote_state['priority'] = 1
+        states.append(remote_state)
     state = combine_states(*states)
+    state.pop('priority', None)
     atomic_json(state_path, state)
     atomic_json(data_dir / 'ci-baseline.json', {'ids': sorted(state['jobs']), 'generated_at': state['last_run_at']})
     print(f"Restored {len(state['jobs'])} retained records from git, cache and published baseline", flush=True)

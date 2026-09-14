@@ -83,6 +83,33 @@ class TestParsePositions(unittest.TestCase):
         self.assertIn('会计学', positions[1]['majors'])
         self.assertEqual(positions[1]['city'], '青岛')
 
+    def test_parse_multi_row_header_html_table(self):
+        html = """
+        <table>
+            <tr>
+                <th rowspan="2">岗位名称</th>
+                <th colspan="2">资格要求</th>
+                <th rowspan="2">工作地点</th>
+            </tr>
+            <tr>
+                <th>需求专业</th>
+                <th>学历要求</th>
+            </tr>
+            <tr>
+                <td>审计岗</td>
+                <td>审计学</td>
+                <td>本科</td>
+                <td>济南</td>
+            </tr>
+        </table>
+        """
+        positions = parse_html_tables(html)
+        self.assertEqual(len(positions), 1)
+        self.assertEqual(positions[0]['name'], '审计岗')
+        self.assertEqual(positions[0]['majors'], ['审计学'])
+        self.assertEqual(positions[0]['education'], '本科')
+        self.assertEqual(positions[0]['city'], '济南')
+
     def test_parse_vertical_kv_html_table(self):
         html = """
         <table>

@@ -86,55 +86,78 @@ def parse_table_grid(grid: List[List[str]], source_type: str = 'table') -> List[
     if not grid or len(grid) < 2:
         return []
 
-    # 1. Identify Horizontal Table Header
+    def is_likely_header_row(cells: List[str]) -> bool:
+        non_empty = [c for c in cells if c]
+        if not non_empty:
+            return False
+        header_keywords = re.compile(
+            r'岗位|职位|专业|学历|人数|地点|城市|工作地|要求|条件|备注|序号|类别|部门|单位|生源|届别|代码|职责|说明|资格|层次|范围|学科|名称',
+            re.I,
+        )
+        return any(header_keywords.search(c) for c in non_empty) and all(len(c) <= 50 for c in non_empty)
+
+    best_candidate = None
+    for start_r in range(min(5, len(grid))):
+        for depth in (1, 2, 3):
+            if start_r + depth > len(grid):
+                continue
+            if not all(is_likely_header_row([clean_cell(c) for c in grid[r]]) for r in range(start_r, start_r + depth)):
+                continue
+            # Build composite header row across rows in this header block
+            max_cols = max(len(grid[r]) for r in range(start_r, start_r + depth))
+            composite = []
+            for c in range(max_cols):
+                parts = [clean_cell(grid[r][c]) for r in range(start_r, start_r + depth) if c < len(grid[r]) and clean_cell(grid[r][c])]
+                composite.append(' '.join(parts))
+
+            mapping: Dict[str, int] = {}
+            for c_idx, cell in enumerate(composite):
+                if not cell:
+                    continue
+                if 'specific_name' not in mapping and HEADER_SPECIFIC_NAME.search(cell):
+                    mapping['specific_name'] = c_idx
+                elif 'category' not in mapping and HEADER_CATEGORY.search(cell):
+                    mapping['category'] = c_idx
+                elif 'fallback_name' not in mapping and HEADER_NAME_FALLBACK.search(cell):
+                    mapping['fallback_name'] = c_idx
+
+                if 'majors' not in mapping and HEADER_MAJORS.search(cell):
+                    mapping['majors'] = c_idx
+                elif 'education' not in mapping and HEADER_EDUCATION.search(cell):
+                    mapping['education'] = c_idx
+                elif 'count' not in mapping and HEADER_COUNT.search(cell):
+                    mapping['count'] = c_idx
+                elif 'city' not in mapping and HEADER_CITY.search(cell):
+                    mapping['city'] = c_idx
+                elif 'cohort' not in mapping and HEADER_COHORT.search(cell):
+                    mapping['cohort'] = c_idx
+                elif 'notes' not in mapping and HEADER_NOTES.search(cell):
+                    mapping['notes'] = c_idx
+
+            if 'specific_name' in mapping:
+                mapping['name'] = mapping['specific_name']
+            elif 'fallback_name' in mapping:
+                mapping['name'] = mapping['fallback_name']
+            elif 'category' in mapping:
+                mapping['name'] = mapping['category']
+
+            col_assigned = {k: mapping[k] for k in ('name', 'majors', 'education', 'count', 'city', 'cohort') if k in mapping}
+            distinct_cols = set(col_assigned.values())
+            has_id_col = 'name' in mapping or 'majors' in mapping
+            if has_id_col and len(distinct_cols) >= 2:
+                score = len(distinct_cols) * 10 + depth
+                if best_candidate is None or score > best_candidate[0]:
+                    best_candidate = (score, start_r, depth, mapping)
+
     header_idx = -1
     col_mapping: Dict[str, int] = {}
-
-    for r_idx, row in enumerate(grid[:8]):
-        cleaned_row = [clean_cell(c) for c in row]
-        mapping: Dict[str, int] = {}
-        for c_idx, cell in enumerate(cleaned_row):
-            if not cell:
-                continue
-            if 'specific_name' not in mapping and HEADER_SPECIFIC_NAME.search(cell):
-                mapping['specific_name'] = c_idx
-            elif 'category' not in mapping and HEADER_CATEGORY.search(cell):
-                mapping['category'] = c_idx
-            elif 'fallback_name' not in mapping and HEADER_NAME_FALLBACK.search(cell):
-                mapping['fallback_name'] = c_idx
-
-            if 'majors' not in mapping and HEADER_MAJORS.search(cell):
-                mapping['majors'] = c_idx
-            elif 'education' not in mapping and HEADER_EDUCATION.search(cell):
-                mapping['education'] = c_idx
-            elif 'count' not in mapping and HEADER_COUNT.search(cell):
-                mapping['count'] = c_idx
-            elif 'city' not in mapping and HEADER_CITY.search(cell):
-                mapping['city'] = c_idx
-            elif 'cohort' not in mapping and HEADER_COHORT.search(cell):
-                mapping['cohort'] = c_idx
-            elif 'notes' not in mapping and HEADER_NOTES.search(cell):
-                mapping['notes'] = c_idx
-
-        # Choose the best column for position title
-        if 'specific_name' in mapping:
-            mapping['name'] = mapping['specific_name']
-        elif 'fallback_name' in mapping:
-            mapping['name'] = mapping['fallback_name']
-        elif 'category' in mapping:
-            mapping['name'] = mapping['category']
-
-        # Valid table header requires name or majors + at least 1 other recruitment field
-        has_id_col = 'name' in mapping or 'majors' in mapping
-        field_count = len([k for k in mapping if k in {'name', 'majors', 'education', 'count', 'city', 'cohort'}])
-        if has_id_col and field_count >= 2:
-            header_idx = r_idx
-            col_mapping = mapping
-            break
+    if best_candidate:
+        header_idx = best_candidate[1] + best_candidate[2] - 1
+        col_mapping = best_candidate[3]
 
     positions: List[Dict[str, Any]] = []
     if header_idx >= 0 and col_mapping:
-        for r_idx in range(header_idx + 1, min(len(grid), header_idx + 120)):
+        for r_idx in range(header_idx + 1, min(len(grid), header_idx + 1000)):
             row = grid[r_idx]
             cleaned_row = [clean_cell(c) for c in row]
             if not cleaned_row or all(not c for c in cleaned_row):
@@ -412,7 +435,7 @@ def extract_positions_from_text(text: str, max_rows: int = 50) -> List[Dict[str,
 
 
 def deduplicate_positions(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Deduplicate positions by name, city, education, and majors."""
+    """Deduplicate positions by name, city, education, majors, cohort, and notes."""
     seen = set()
     unique = []
     for p in positions:
@@ -420,11 +443,13 @@ def deduplicate_positions(positions: List[Dict[str, Any]]) -> List[Dict[str, Any
         if not name or len(name) > 100:
             continue
         majors_key = ','.join(sorted(p.get('majors') or []))
-        key = (name, p.get('city', '').strip(), p.get('education', '').strip(), majors_key)
+        cohort = (p.get('cohort') or '').strip()
+        notes = (p.get('notes') or '').strip()
+        key = (name, p.get('city', '').strip(), p.get('education', '').strip(), majors_key, cohort, notes)
         if key not in seen:
             seen.add(key)
             unique.append(p)
-    return unique[:200]
+    return unique[:500]
 
 
 def extract_all_positions(
@@ -463,14 +488,18 @@ def extract_all_positions(
                     continue
                 if re.search(r'\.xlsx?(?:\?|$)', url, re.I) or 'excel' in title.lower() or '表格' in title:
                     att_positions = parse_excel_bytes(data, filename=title)
+                    for p in att_positions:
+                        p['source_url'] = url
                     all_positions.extend(att_positions)
                 elif re.search(r'\.pdf(?:\?|$)', url, re.I):
                     att_positions = parse_pdf_bytes(data, filename=title)
+                    for p in att_positions:
+                        p['source_url'] = url
                     all_positions.extend(att_positions)
             except Exception:
                 continue
 
-            if len(all_positions) >= 50:
+            if len(all_positions) >= 500:
                 break
 
     return deduplicate_positions(all_positions)

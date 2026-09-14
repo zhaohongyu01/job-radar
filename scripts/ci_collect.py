@@ -17,7 +17,8 @@ from collect import ROOT, TZ, atomic_json
 
 ASSET = re.compile(r'^/job-assets/detail-[0-9a-f]{2}-([0-9a-f]{20})\.json$')
 HISTORY_FIELDS = {'fingerprint', 'first_seen_at', 'updated_at', 'last_verified_at', 'revision',
-                  'duplicate_ids', 'duplicate_sources', 'search_text', 'details_available'}
+                  'duplicate_ids', 'duplicate_sources', 'search_text', 'details_available',
+                  'timeline', 'recent_change', 'lifecycle_stage'}
 
 
 def read_json(path):
@@ -56,16 +57,27 @@ def snapshot_state(snapshot, load_asset):
         if copies and not copy_ids:
             raise ValueError('Repost identities do not match their sources')
         rows = [full]
+        copies_by_id = {s['id']: s for s in copies if isinstance(s, dict) and s.get('id')}
         for idx, copy_id in enumerate(copy_ids):
-            source = copies[idx] if idx < len(copies) else (copies[-1] if copies else {})
+            source = copies_by_id.get(copy_id) or (copies[idx] if idx < len(copies) else (copies[-1] if copies else {}))
             source_name = source.get('source_name') or source.get('title') or full['source_name']
-            source_title = source.get('title') or full['title']
-            rows.append(dict(full, id=copy_id,
-                             title=source_title,
-                             source_url=source.get('url') or full['source_url'],
-                             source_name=source_name,
-                             source_id=source_ids.get(source_name, full['source_id']),
-                             application_url=source.get('application_url') or full.get('application_url')))
+            source_facts = source.get('facts') or {}
+            source_title = source_facts.get('title') or source.get('announcement_title') or (source.get('title') if source.get('title') != source_name else '') or full['title']
+            restored = dict(full, id=copy_id,
+                            title=source_title,
+                            source_url=source.get('url') or full['source_url'],
+                            source_name=source_name,
+                            source_id=source_ids.get(source_name, full.get('source_id', '')),
+                            application_url=source.get('application_url') or full.get('application_url'))
+            for field in ('published_at', 'cities', 'location_evidence', 'education',
+                          'deadline', 'deadline_evidence', 'deadline_precision',
+                          'types', 'graduation_years', 'positions', 'position_count',
+                          'sample_positions', 'majors'):
+                if field in source_facts and source_facts[field] is not None:
+                    restored[field] = source_facts[field]
+            if 'published_at' in source and 'published_at' not in source_facts:
+                restored['published_at'] = source['published_at']
+            rows.append(restored)
         for item in rows:
             row = {k: v for k, v in item.items() if k not in {'duplicate_ids', 'duplicate_sources'}}
             if row['id'] in jobs:
@@ -153,10 +165,10 @@ def write_report(data_dir, code, state, error=''):
     atomic_json(data_dir / 'ci-report.json', report)
     lines = ['## 招聘数据采集', f"保留记录：{report['records']}；采集器退出码：{code}。",
              '允许构建发布；部分来源问题见下表。' if not error else '阻止发布：' + error,
-             '', '| 来源 | 状态 | 列表页 | 解析 | 缓存复用 | 问题数 |', '|---|---|---:|---:|---:|---:|']
+             '', '| 来源 | 状态 | 列表页 | 解析 | 缓存复用 | 老公告复检 | 问题数 |', '|---|---|---:|---:|---:|---:|---:|']
     for source in sources:
         name = source['name'].replace('|', ' ')
-        lines.append(f"| {name} | {source['status']} | {source.get('pages', 0)} | {source.get('parsed', 0)} | {source.get('cached', 0)} | {len(source.get('errors', []))} |")
+        lines.append(f"| {name} | {source['status']} | {source.get('pages', 0)} | {source.get('parsed', 0)} | {source.get('cached', 0)} | {source.get('probed', 0)} | {len(source.get('errors', []))} |")
     for source in sources:
         if source.get('errors'):
             lines.extend(['', f"### {source['name']}", source.get('coverage', '')])
@@ -175,7 +187,8 @@ def collect(args):
     baseline = read_json(args.data_dir / 'ci-baseline.json')
     command = [sys.executable, '-u', str(ROOT / 'scripts/collect.py'), '--data-dir', str(args.data_dir),
                '--public-dir', str(args.public_dir), '--pages', str(args.pages), '--days', str(args.days),
-               '--offerjack-pages', '1', '--refresh-hours', str(args.refresh_hours)]
+               '--offerjack-pages', '1', '--refresh-hours', str(args.refresh_hours),
+               '--probe-budget', str(getattr(args, 'probe_budget', 10))]
     code = subprocess.run(command, check=False).returncode
     state = read_json(args.data_dir / 'state.json')
     try:
@@ -202,9 +215,11 @@ if __name__ == '__main__':
     parser.add_argument('--data-dir', type=Path, default=ROOT / 'data')
     parser.add_argument('--site', default='')
     parser.add_argument('--pages', type=int, default=5)
-    parser.add_argument('--days', type=int, default=14)
+    parser.add_argument('--days', type=int, default=30)
     parser.add_argument('--refresh-hours', type=int, default=72,
                         help='reuse recently verified detail pages for this many hours')
+    parser.add_argument('--probe-budget', type=int, default=10,
+                        help='maximum number of active historical announcements to probe/re-check per source')
     args = parser.parse_args()
     try:
         if args.operation == 'prepare':

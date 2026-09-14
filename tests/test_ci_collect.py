@@ -46,6 +46,72 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(again['raw_records'], 2)
             self.assertEqual(len(again['jobs']), 1)
 
+    def test_snapshot_restore_fidelity_preserves_duplicate_facts(self):
+        with TemporaryDirectory() as tmp:
+            public, data = Path(tmp) / 'public', Path(tmp) / 'data'
+            public.mkdir()
+            stamp = '2026-09-01T12:00:00+08:00'
+            source = {'id': 'fixture', 'name': 'Fixture', 'url': 'https://example.com', 'status': 'ok',
+                      'last_attempt_at': stamp, 'last_success_at': stamp, 'parsed': 2, 'errors': []}
+            master = {
+                'id': '11000000000000000000',
+                'title': '某集团2027届校园招聘',
+                'company': '某大型集团',
+                'kind': '招聘公告',
+                'types': ['校招'],
+                'graduation_years': ['2027'],
+                'published_at': '2026-09-01',
+                'cities': ['北京'],
+                'location_evidence': ['工作地点：北京'],
+                'education': '硕士及以上',
+                'deadline': '2026-11-30',
+                'source_id': 'fixture',
+                'source_name': '总公司招聘网',
+                'source_url': 'https://example.com/master',
+                'provenance': '公开原始来源',
+                'first_seen_at': '2026-09-01T10:00:00+08:00',
+                'last_verified_at': stamp,
+                'body': '总公司招聘正文' * 20,
+            }
+            duplicate = {
+                'id': '22000000000000000000',
+                'title': '某集团山东分部2027校招',
+                'company': '某大型集团',
+                'kind': '招聘公告',
+                'types': ['校招'],
+                'graduation_years': ['2027'],
+                'published_at': '2026-09-02',
+                'cities': ['济南'],
+                'location_evidence': ['工作地点：济南'],
+                'education': '本科及以上',
+                'deadline': '2026-10-15',
+                'position_count': 5,
+                'source_id': 'fixture',
+                'source_name': '山大就业网',
+                'source_url': 'https://example.com/sdu',
+                'provenance': '公开原始来源',
+                'first_seen_at': '2026-09-02T10:00:00+08:00',
+                'last_verified_at': stamp,
+                'body': '分部招聘正文' * 20,
+            }
+            state = {'jobs': {master['id']: master, duplicate['id']: duplicate},
+                     'sources': {'fixture': source}, 'last_run_at': stamp}
+            snapshot = c.export_snapshot(state, public)
+            self.assertEqual(len(snapshot['jobs']), 1)
+            self.assertIn(duplicate['id'], snapshot['jobs'][0]['duplicate_ids'])
+
+            ci.prepare(public, data, '')
+            restored = ci.read_json(data / 'state.json')
+            self.assertEqual(len(restored['jobs']), 2)
+
+            restored_dup = restored['jobs'][duplicate['id']]
+            self.assertEqual(restored_dup['title'], '某集团山东分部2027校招')
+            self.assertEqual(restored_dup['cities'], ['济南'])
+            self.assertEqual(restored_dup['education'], '本科及以上')
+            self.assertEqual(restored_dup['deadline'], '2026-10-15')
+            self.assertEqual(restored_dup['position_count'], 5)
+            self.assertEqual(restored_dup['source_url'], 'https://example.com/sdu')
+
     def test_cache_union_keeps_newer_facts_and_additional_jobs(self):
         before = fixture()
         newer = json.loads(json.dumps(before))

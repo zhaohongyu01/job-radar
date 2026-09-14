@@ -520,4 +520,148 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(summary['recent_change']['type'], 'supplemental')
         self.assertTrue(len(summary['timeline']) > 0)
 
+    def test_deduplicate_attaches_facts_dictionary(self):
+        job1 = {
+            'id': 'job_alpha',
+            'title': '中石化2027届校园招聘',
+            'company': '中国石化',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'published_at': '2026-09-01',
+            'cities': ['北京'],
+            'location_evidence': ['工作地点：北京'],
+            'education': '硕士',
+            'deadline': '2026-11-01',
+            'source_name': '中石化官网',
+            'source_url': 'https://sinopec.example/job1',
+            'first_seen_at': '2026-09-01T09:00:00+08:00',
+            'body': '中石化总公司招聘正文'*15,
+        }
+        job2 = {
+            'id': 'job_beta',
+            'title': '中国石化胜利油田分公司2027校招',
+            'company': '中国石化',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'published_at': '2026-09-02',
+            'cities': ['东营'],
+            'location_evidence': ['工作地点：东营'],
+            'education': '本科及以上',
+            'deadline': '2026-10-15',
+            'position_count': 12,
+            'source_name': '中国石油大学就业网',
+            'source_url': 'https://upc.example/job2',
+            'first_seen_at': '2026-09-02T09:00:00+08:00',
+            'body': '胜利油田招聘正文'*15,
+        }
+        merged = c.deduplicate([job1, job2])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(len(merged[0]['duplicate_sources']), 1)
+        dup_source = merged[0]['duplicate_sources'][0]
+        self.assertEqual(dup_source['id'], 'job_beta')
+        self.assertEqual(dup_source['announcement_title'], '中国石化胜利油田分公司2027校招')
+        self.assertIn('facts', dup_source)
+        facts = dup_source['facts']
+        self.assertEqual(facts['title'], '中国石化胜利油田分公司2027校招')
+        self.assertEqual(facts['cities'], ['东营'])
+        self.assertEqual(facts['education'], '本科及以上')
+        self.assertEqual(facts['deadline'], '2026-10-15')
+        self.assertEqual(facts['position_count'], 12)
+
+    def test_active_announcement_probing_selects_unexpired_stale_records(self):
+        # Setup mock previous jobs
+        now = c.dt.datetime.now(c.TZ)
+        stale_time = (now - c.dt.timedelta(hours=80)).isoformat()
+        fresh_time = (now - c.dt.timedelta(hours=10)).isoformat()
+        future_deadline = (now.date() + c.dt.timedelta(days=30)).isoformat()
+        past_deadline = (now.date() - c.dt.timedelta(days=30)).isoformat()
+
+        # Job 1: unexpired, verified 80h ago -> should be probed
+        job_stale_active = {
+            'id': 'stale1',
+            'source_id': 'nankai',
+            'source_url': 'https://career.nankai.edu.cn/job/stale1',
+            'title': '某集团秋招',
+            'published_at': (now.date() - c.dt.timedelta(days=25)).isoformat(),
+            'deadline': future_deadline,
+            'last_verified_at': stale_time,
+        }
+        # Job 2: unexpired, verified 10h ago -> fresh, should NOT be probed
+        job_fresh_active = {
+            'id': 'fresh2',
+            'source_id': 'nankai',
+            'source_url': 'https://career.nankai.edu.cn/job/fresh2',
+            'title': '某银行秋招',
+            'published_at': (now.date() - c.dt.timedelta(days=20)).isoformat(),
+            'deadline': future_deadline,
+            'last_verified_at': fresh_time,
+        }
+        # Job 3: expired 30d ago, verified 80h ago -> expired, should NOT be probed
+        job_expired = {
+            'id': 'exp3',
+            'source_id': 'nankai',
+            'source_url': 'https://career.nankai.edu.cn/job/exp3',
+            'title': '某公司旧公告',
+            'published_at': (now.date() - c.dt.timedelta(days=60)).isoformat(),
+            'deadline': past_deadline,
+            'last_verified_at': stale_time,
+        }
+        # Job 4: different source
+        job_other_source = {
+            'id': 'other4',
+            'source_id': 'sdu',
+            'source_url': 'https://jobcareer.sdu.edu.cn/job/other4',
+            'title': '山大秋招',
+            'published_at': (now.date() - c.dt.timedelta(days=25)).isoformat(),
+            'deadline': future_deadline,
+            'last_verified_at': stale_time,
+        }
+
+        previous = {
+            'jobs': {
+                'stale1': job_stale_active,
+                'fresh2': job_fresh_active,
+                'exp3': job_expired,
+                'other4': job_other_source,
+            },
+            'sources': {},
+        }
+
+        source = {'id': 'nankai', 'name': '南开大学'}
+        items = [] # no items from current list page
+        args = type('Args', (), {'refresh_hours': 72, 'probe_budget': 10})()
+
+        # Simulate probe selection logic from collect.py
+        today_str = now.date().isoformat()
+        recent_expiry_cutoff = (now.date() - c.dt.timedelta(days=7)).isoformat()
+        probe_refresh_cutoff = (now - c.dt.timedelta(hours=args.refresh_hours)).isoformat()
+        existing_urls = {i.get('url') for i in items if i.get('url')}
+        existing_ids = {c.hashlib.sha256(i.get('identity', i['url']).encode()).hexdigest()[:20] for i in items if i.get('url')}
+
+        probe_candidates = []
+        for j_id, old_job in previous.get('jobs', {}).items():
+            if old_job.get('source_id') != source['id']:
+                continue
+            url = old_job.get('source_url')
+            if not url or url in existing_urls or j_id in existing_ids:
+                continue
+            d_line = old_job.get('deadline')
+            is_active = (d_line is None) or (d_line >= today_str) or (d_line >= recent_expiry_cutoff)
+            if not is_active:
+                continue
+            last_ver = old_job.get('last_verified_at', '')
+            if probe_refresh_cutoff and last_ver and last_ver >= probe_refresh_cutoff:
+                continue
+            probe_candidates.append(old_job)
+
+        probe_candidates.sort(key=lambda j: j.get('last_verified_at') or '')
+        selected = probe_candidates[:args.probe_budget]
+
+        # Only stale1 should be selected!
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0]['id'], 'stale1')
+
+
 if __name__=='__main__': unittest.main()

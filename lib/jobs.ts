@@ -65,12 +65,15 @@ export type Job = {
   date_label?: string;
   provenance?: string;
   duplicate_sources?: {
+    id?: string;
     source?: string;
     source_name?: string;
     title: string;
+    announcement_title?: string;
     url: string;
     published_at?: string | null;
     application_url?: string;
+    facts?: Record<string, unknown>;
   }[];
   duplicate_ids?: string[];
   classification_note?: string;

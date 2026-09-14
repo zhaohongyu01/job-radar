@@ -1006,17 +1006,33 @@ def deduplicate(jobs):
         else:
             parent = groups[key]
             existing_urls = {parent.get('source_url')} | {s.get('url') for s in parent['duplicate_sources']}
-            if job.get('source_url') and job['source_url'] not in existing_urls:
-                parent['duplicate_sources'].append({
-                    'id': job['id'],
-                    'source': job.get('source_name') or job.get('source_id', ''),
-                    'source_name': job.get('source_name', ''),
-                    'title': job.get('source_name', ''),
-                    'announcement_title': job.get('title', ''),
-                    'url': job['source_url'],
-                    **({'published_at': job['published_at']} if job.get('published_at') else {}),
-                    **({'application_url': job['application_url']} if job.get('application_url') else {}),
-                })
+            duplicate_facts = {
+                'title': job.get('title', ''),
+                'published_at': job.get('published_at'),
+                'cities': list(job.get('cities', [])),
+                'location_evidence': list(job.get('location_evidence', [])),
+                'education': job.get('education', ''),
+                'deadline': job.get('deadline'),
+                'deadline_evidence': job.get('deadline_evidence'),
+                'deadline_precision': job.get('deadline_precision'),
+                'types': list(job.get('types', [])),
+                'graduation_years': list(job.get('graduation_years', [])),
+                'positions': job.get('positions'),
+                'position_count': job.get('position_count'),
+                'sample_positions': job.get('sample_positions'),
+                'majors': job.get('majors'),
+            }
+            parent['duplicate_sources'].append({
+                'id': job['id'],
+                'source': job.get('source_name') or job.get('source_id', ''),
+                'source_name': job.get('source_name', ''),
+                'title': job.get('source_name', ''),
+                'announcement_title': job.get('title', ''),
+                'url': job.get('source_url', ''),
+                'facts': duplicate_facts,
+                **({'published_at': job['published_at']} if job.get('published_at') else {}),
+                **({'application_url': job['application_url']} if job.get('application_url') else {}),
+            })
             parent['duplicate_ids'].append(job['id'])
 
             if job.get('published_at'):
@@ -1156,7 +1172,7 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     """Publish the index last; immutable assets cannot mix across refreshes."""
     jobs=state['jobs']
     public_jobs=sorted(deduplicate([public_record(j) for j in jobs.values()]),
-                       key=lambda j:j['published_at'] or '',reverse=True)
+                       key=lambda j:j.get('published_at') or '',reverse=True)
     assets=public_dir/'job-assets'
     assets.mkdir(parents=True,exist_ok=True)
     def asset(prefix, payload):
@@ -1306,6 +1322,39 @@ def run(args):
                     cached+=1
                 else: remaining.append(item)
             status['cached']=cached
+            # Active announcement probe: inspect historical unexpired jobs for this source that need re-verification.
+            today_str=dt.datetime.now(TZ).date().isoformat()
+            recent_expiry_cutoff=(dt.datetime.now(TZ).date()-dt.timedelta(days=7)).isoformat()
+            probe_refresh_cutoff=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat() if args.refresh_hours else ''
+            existing_urls={i.get('url') for i in items if i.get('url')}
+            existing_ids={hashlib.sha256(i.get('identity',i['url']).encode()).hexdigest()[:20] for i in items if i.get('url')}
+
+            probe_candidates=[]
+            for j_id,old_job in previous.get('jobs',{}).items():
+                if old_job.get('source_id')!=source['id']: continue
+                url=old_job.get('source_url')
+                if not url or url in existing_urls or j_id in existing_ids: continue
+                d_line=old_job.get('deadline')
+                is_active=(d_line is None) or (d_line>=today_str) or (d_line>=recent_expiry_cutoff)
+                if not is_active: continue
+                last_ver=old_job.get('last_verified_at','')
+                if probe_refresh_cutoff and last_ver and last_ver>=probe_refresh_cutoff: continue
+                probe_candidates.append(old_job)
+
+            probe_candidates.sort(key=lambda j:j.get('last_verified_at') or '')
+            probe_budget=getattr(args,'probe_budget',10)
+            selected_probes=probe_candidates[:probe_budget]
+            status['probed']=len(selected_probes)
+
+            for p_job in selected_probes:
+                remaining.append({
+                    'url':p_job['source_url'],
+                    'title':p_job.get('title',''),
+                    'published_at':p_job.get('published_at'),
+                    'identity':p_job.get('source_url'),
+                    'is_probe':True,
+                })
+
             def read_detail(item):
                 return parse_detail(item['inline_html'] if 'inline_html' in item else fetch(item['url']),item,source)
             # Bounded to two concurrent requests per source; retain progress on disk.
@@ -1317,14 +1366,17 @@ def run(args):
                         incoming.append(future.result())
                         status['parsed']+=1
                     except Exception as e:
-                        status['errors'].append({'url':item['url'],'reason':str(e)[:200]})
-                        # Keep verified list discoveries when external detail templates are unsupported.
-                        # Never replace a previously parsed record with a weaker fallback.
-                        identifier=hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20]
-                        if identifier not in previous['jobs']:
-                            fallback=parse_detail('<div id="zoom">详情尚未读取，请打开原公告核对岗位、工作地点与报名要求。</div>',item,{'id':'fallback','name':source['name']})
-                            fallback.update(source_id=source['id'],classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
-                            incoming.append(fallback)
+                        if item.get('is_probe'):
+                            status.setdefault('probe_errors',[]).append({'url':item['url'],'reason':str(e)[:200]})
+                        else:
+                            status['errors'].append({'url':item['url'],'reason':str(e)[:200]})
+                            # Keep verified list discoveries when external detail templates are unsupported.
+                            # Never replace a previously parsed record with a weaker fallback.
+                            identifier=hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20]
+                            if identifier not in previous['jobs']:
+                                fallback=parse_detail('<div id="zoom">详情尚未读取，请打开原公告核对岗位、工作地点与报名要求。</div>',item,{'id':'fallback','name':source['name']})
+                                fallback.update(source_id=source['id'],classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
+                                incoming.append(fallback)
                     if (status['parsed']+len(status['errors']))%25==0:
                         atomic_json(data_dir/'checkpoint.json',{'run_at':now,'incoming':incoming,'source':status})
                     if (status['parsed']+len(status['errors']))%10==0:
@@ -1366,6 +1418,7 @@ if __name__=='__main__':
     parser.add_argument('--offerjack-pages',type=int,default=0,help='OfferJack pages per city query; 0 keeps reading until the public endpoint stops or authentication is required')
     parser.add_argument('--data-dir',default=os.environ.get('JOB_RADAR_DATA_DIR',''),help='state/checkpoint directory; defaults to ./data')
     parser.add_argument('--public-dir',default=os.environ.get('JOB_RADAR_PUBLIC_DIR',''),help='generated snapshot directory; defaults to ./public')
+    parser.add_argument('--probe-budget',type=int,default=10,help='maximum number of active historical announcements to probe/re-check per source')
     args=parser.parse_args()
     if not 1<=args.pages<=500 or not 1<=args.days<=365: parser.error('pages 1..500; days 1..365')
     if not 0<=args.offerjack_pages<=1000: parser.error('offerjack-pages 0..1000')

@@ -199,53 +199,88 @@ def parse_table_grid(grid: List[List[str]], source_type: str = 'table') -> List[
     return []
 
 
+def _parse_html_tables_regex(html_str: str) -> List[Dict[str, Any]]:
+    """Fallback standard-library HTML <table> parser when BeautifulSoup is unavailable."""
+    if not html_str or '<table' not in html_str.lower():
+        return []
+    results: List[Dict[str, Any]] = []
+    table_pattern = re.compile(r'<table[^>]*>(.*?)</table>', re.I | re.S)
+    row_pattern = re.compile(r'<tr[^>]*>(.*?)</tr>', re.I | re.S)
+    cell_pattern = re.compile(r'<t[hd][^>]*>(.*?)</t[hd]>', re.I | re.S)
+    tag_cleaner = re.compile(r'<[^>]+>')
+
+    for table_match in table_pattern.finditer(html_str):
+        table_html = table_match.group(1)
+        grid: List[List[str]] = []
+        for row_match in row_pattern.finditer(table_html):
+            row_html = row_match.group(1)
+            raw_cells = cell_pattern.findall(row_html)
+            cells = [clean_cell(tag_cleaner.sub('', c)) for c in raw_cells]
+            if cells:
+                grid.append(cells)
+        if grid:
+            parsed = parse_table_grid(grid, source_type='html_table')
+            results.extend(parsed)
+    return deduplicate_positions(results)
+
+
 def parse_html_tables(html_or_soup: Any) -> List[Dict[str, Any]]:
     """Parse HTML <table> elements into structured positions."""
     if not html_or_soup:
         return []
     if isinstance(html_or_soup, str):
-        soup = BeautifulSoup(html_or_soup, 'html.parser')
-        tables = soup.find_all('table')
-        results: List[Dict[str, Any]] = []
-        for table in tables:
-            rows = table.find_all('tr')
-            grid: List[List[str]] = []
-            for r in rows:
-                cells = [clean_cell(c.get_text()) for c in r.find_all(['td', 'th'])]
-                if cells:
-                    grid.append(cells)
-            parsed = parse_table_grid(grid, source_type='html_table')
-            results.extend(parsed)
-        return deduplicate_positions(results)
+        if BeautifulSoup is not None:
+            try:
+                soup = BeautifulSoup(html_or_soup, 'html.parser')
+                tables = soup.find_all('table')
+                results: List[Dict[str, Any]] = []
+                for table in tables:
+                    rows = table.find_all('tr')
+                    grid: List[List[str]] = []
+                    for r in rows:
+                        cells = [clean_cell(c.get_text()) for c in r.find_all(['td', 'th'])]
+                        if cells:
+                            grid.append(cells)
+                    parsed = parse_table_grid(grid, source_type='html_table')
+                    results.extend(parsed)
+                return deduplicate_positions(results)
+            except Exception:
+                return _parse_html_tables_regex(html_or_soup)
+        return _parse_html_tables_regex(html_or_soup)
 
     if hasattr(html_or_soup, 'find_all'):
-        tables = html_or_soup.find_all('table')
-        results = []
-        for table in tables:
-            rows = table.find_all('tr')
-            grid = []
-            for r in rows:
-                cells = [clean_cell(c.get_text()) for c in r.find_all(['td', 'th'])]
-                if cells:
-                    grid.append(cells)
-            parsed = parse_table_grid(grid, source_type='html_table')
-            results.extend(parsed)
-        return deduplicate_positions(results)
+        try:
+            tables = html_or_soup.find_all('table')
+            results = []
+            for table in tables:
+                rows = table.find_all('tr')
+                grid = []
+                for r in rows:
+                    cells = [clean_cell(c.get_text()) for c in r.find_all(['td', 'th'])]
+                    if cells:
+                        grid.append(cells)
+                parsed = parse_table_grid(grid, source_type='html_table')
+                results.extend(parsed)
+            return deduplicate_positions(results)
+        except Exception:
+            return []
 
     if hasattr(html_or_soup, 'find'):
-        # Node object from collect.py
-        tables = html_or_soup.find('table')
-        results = []
-        for table in tables:
-            rows = table.find('tr')
-            grid = []
-            for r in rows:
-                cells = [clean_cell(c.text()) for c in (r.find('th') or r.find('td'))]
-                if cells:
-                    grid.append(cells)
-            parsed = parse_table_grid(grid, source_type='html_table')
-            results.extend(parsed)
-        return deduplicate_positions(results)
+        try:
+            tables = html_or_soup.find('table')
+            results = []
+            for table in tables:
+                rows = table.find('tr')
+                grid = []
+                for r in rows:
+                    cells = [clean_cell(c.text()) for c in (r.find('th') or r.find('td'))]
+                    if cells:
+                        grid.append(cells)
+                parsed = parse_table_grid(grid, source_type='html_table')
+                results.extend(parsed)
+            return deduplicate_positions(results)
+        except Exception:
+            return []
 
     return []
 

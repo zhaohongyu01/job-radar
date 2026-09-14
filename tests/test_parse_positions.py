@@ -2,9 +2,20 @@
 import io
 import unittest
 
-from bs4 import BeautifulSoup
-import openpyxl
-import fitz
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
+try:
+    import openpyxl
+except ImportError:
+    openpyxl = None
+
+try:
+    import fitz
+except ImportError:
+    fitz = None
 
 from scripts.parse_positions import (
     clean_cell,
@@ -100,6 +111,7 @@ class TestParsePositions(unittest.TestCase):
         self.assertEqual(positions[0]['education'], '硕士研究生')
         self.assertEqual(positions[0]['city'], '威海')
 
+    @unittest.skipUnless(openpyxl is not None, 'openpyxl is not installed')
     def test_parse_excel_bytes(self):
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -118,6 +130,7 @@ class TestParsePositions(unittest.TestCase):
         self.assertEqual(positions[0]['city'], '济南')
         self.assertEqual(positions[0]['source_file'], '2027校招岗位需求表.xlsx')
 
+    @unittest.skipUnless(fitz is not None, 'fitz (PyMuPDF) is not installed')
     def test_parse_pdf_bytes_tabular(self):
         doc = fitz.open()
         page = doc.new_page()

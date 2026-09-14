@@ -121,7 +121,9 @@ export function JobCard({
   const excerptText = cleanExcerpt(job.excerpt);
   const stageInfo = getLifecycleStage(job, now);
   const changeAlert =
-    job.recent_change?.detail ||
+    (job.recent_change?.detail && job.recent_change.detail !== '招聘公告正文或附件内容已同步最新变动'
+      ? job.recent_change.detail
+      : null) ||
     (stageInfo.stage === 'extended' ? '报名截止时间已延期（详见原公告）' : null) ||
     (stageInfo.stage === 'supplemental' ? '补录 / 追加招聘批次进行中' : null) ||
     (stageInfo.stage === 'selection' ? '发布考核选拔或录用进展通知' : null);

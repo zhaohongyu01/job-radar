@@ -16,6 +16,7 @@ import {
   mergeDuplicateOpportunities,
   getLifecycleStage,
   generateJobTimeline,
+  hasRecentJobChange,
   isExpired,
 } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
@@ -911,4 +912,62 @@ void test('mergeDuplicateOpportunities merges branch company names with intermed
   const merged = mergeDuplicateOpportunities([jobYtu, jobUpc]);
   assert.equal(merged.length, 1, '应成功合并跨渠道的中国邮政储蓄银行山东省分行校招公告');
   assert.equal(merged[0].duplicate_sources?.length, 1);
+});
+
+void test('hasRecentJobChange and generateJobTimeline filter out generic boilerplate and accept specific diffs', () => {
+  const now = Date.parse('2026-09-14T12:00:00+08:00');
+  const boilerplateJob: Job = {
+    ...job,
+    id: 'bp-job',
+    title: '某科技公司招聘启事',
+    recent_change: {
+      type: 'content_updated',
+      label: '信息更新',
+      date: '2026-09-14',
+      detail: '招聘公告正文或附件内容已同步最新变动',
+    },
+    timeline: [
+      {
+        date: '2026-09-14',
+        type: 'content_updated',
+        title: '信息更新',
+        detail: '招聘公告正文或附件内容已同步最新变动',
+      },
+    ],
+  };
+
+  assert.equal(hasRecentJobChange(boilerplateJob, now), false, '通用占位文案不应触发近期变更');
+  const bpTimeline = generateJobTimeline(boilerplateJob, now);
+  assert.equal(
+    bpTimeline.some((e) => e.detail === '招聘公告正文或附件内容已同步最新变动'),
+    false,
+    '时间线应过滤掉无实质意义的通用占位文案',
+  );
+
+  const specificJob: Job = {
+    ...job,
+    id: 'specific-job',
+    title: '某科技公司招聘启事',
+    recent_change: {
+      type: 'content_updated',
+      label: '地点调整',
+      date: '2026-09-14',
+      detail: '工作地点新增「青岛」',
+    },
+    timeline: [
+      {
+        date: '2026-09-14',
+        type: 'content_updated',
+        title: '地点调整',
+        detail: '工作地点新增「青岛」',
+      },
+    ],
+  };
+
+  assert.equal(hasRecentJobChange(specificJob, now), true, '具体地点调整应触发近期变更');
+  const specificTimeline = generateJobTimeline(specificJob, now);
+  assert.ok(
+    specificTimeline.some((e) => e.detail === '工作地点新增「青岛」'),
+    '时间线应保留具体差异内容',
+  );
 });

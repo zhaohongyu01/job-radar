@@ -553,6 +553,93 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(summary['recent_change']['type'], 'supplemental')
         self.assertTrue(len(summary['timeline']) > 0)
 
+    def test_concrete_change_diff_extraction_and_fake_change_filtering(self):
+        base_job = {
+            'id': 'diff_job_1',
+            'title': '某科技公司2027校园招聘',
+            'company': '某科技公司',
+            'source_name': '测试招聘网',
+            'published_at': '2026-09-01',
+            'cities': ['济南'],
+            'education': '本科',
+            'application_url': 'https://apply1.example.com',
+            'attachments': [{'title': '岗位表v1.xlsx', 'url': 'https://files.example.com/1.xlsx'}],
+            'body': '诚聘软件工程师。\n工作地点济南。',
+            'structured': {'updateTime': '2026-09-01 10:00:00', 'viewCount': 10},
+        }
+        res1, counts1 = c.merge({}, [base_job], '2026-09-01T10:00:00+08:00')
+        self.assertEqual(counts1['new'], 1)
+
+        # 1. Fake change: only volatile structured metadata and whitespace changed
+        fake_change_job = dict(
+            base_job,
+            structured={'updateTime': '2026-09-14 12:00:00', 'viewCount': 250},
+            body='诚聘软件工程师。 \n 工作地点济南。  ',
+        )
+        res_fake, counts_fake = c.merge(res1, [fake_change_job], '2026-09-14T12:00:00+08:00')
+        self.assertEqual(counts_fake['changed'], 0)
+        self.assertEqual(counts_fake['unchanged'], 1)
+        self.assertIsNone(res_fake['diff_job_1'].get('recent_change'))
+
+        # 2. Location added
+        city_job = dict(base_job, cities=['济南', '青岛'])
+        res_city, counts_city = c.merge(res1, [city_job], '2026-09-14T12:00:00+08:00')
+        self.assertEqual(counts_city['changed'], 1)
+        rc_city = res_city['diff_job_1']['recent_change']
+        self.assertEqual(rc_city['label'], '地点调整')
+        self.assertIn('工作地点新增「青岛」', rc_city['detail'])
+
+        # 3. Application URL updated
+        url_job = dict(base_job, application_url='https://apply2.example.com/career')
+        res_url, counts_url = c.merge(res1, [url_job], '2026-09-14T12:00:00+08:00')
+        self.assertEqual(counts_url['changed'], 1)
+        rc_url = res_url['diff_job_1']['recent_change']
+        self.assertEqual(rc_url['label'], '入口更新')
+        self.assertIn('网申投递入口已更新为最新链接', rc_url['detail'])
+
+        # 4. Attachment added
+        att_job = dict(base_job, attachments=[
+            {'title': '岗位表v1.xlsx', 'url': 'https://files.example.com/1.xlsx'},
+            {'title': '新增专业补录需求表.xlsx', 'url': 'https://files.example.com/2.xlsx'},
+        ])
+        res_att, counts_att = c.merge(res1, [att_job], '2026-09-14T12:00:00+08:00')
+        self.assertEqual(counts_att['changed'], 1)
+        rc_att = res_att['diff_job_1']['recent_change']
+        self.assertEqual(rc_att['label'], '附件变动')
+        self.assertIn('新增专业补录需求表.xlsx', rc_att['detail'])
+
+        # 5. Education requirement changed
+        edu_job = dict(base_job, education='硕士及以上')
+        res_edu, counts_edu = c.merge(res1, [edu_job], '2026-09-14T12:00:00+08:00')
+        self.assertEqual(counts_edu['changed'], 1)
+        rc_edu = res_edu['diff_job_1']['recent_change']
+        self.assertEqual(rc_edu['label'], '资格调整')
+        self.assertIn('学历要求调整为「硕士及以上」', rc_edu['detail'])
+
+        # 6. Text body updated with salary keywords
+        salary_job = dict(base_job, body='诚聘软件工程师。\n提供有竞争力的年薪与月度津贴福利。')
+        res_sal, counts_sal = c.merge(res1, [salary_job], '2026-09-14T12:00:00+08:00')
+        self.assertEqual(counts_sal['changed'], 1)
+        rc_sal = res_sal['diff_job_1']['recent_change']
+        self.assertIn('公告正文补充薪酬福利与待遇说明', rc_sal['detail'])
+
+        # 7. Legacy boilerplate cleanup on unchanged job
+        legacy_job = dict(base_job, recent_change={
+            'type': 'content_updated',
+            'label': '内容更新',
+            'date': '2026-09-13',
+            'detail': '招聘公告正文或附件内容已同步最新变动',
+        }, timeline=[{
+            'date': '2026-09-13',
+            'type': 'content_updated',
+            'title': '信息更新',
+            'detail': '招聘公告正文或附件内容已同步最新变动',
+        }])
+        res_cleaned, counts_clean = c.merge({'diff_job_1': legacy_job}, [base_job], '2026-09-14T12:00:00+08:00')
+        self.assertEqual(counts_clean['unchanged'], 1)
+        self.assertIsNone(res_cleaned['diff_job_1'].get('recent_change'))
+        self.assertEqual(len(res_cleaned['diff_job_1'].get('timeline', [])), 0)
+
     def test_deduplicate_attaches_facts_dictionary(self):
         job1 = {
             'id': 'job_alpha',

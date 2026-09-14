@@ -847,82 +847,149 @@ def detect_job_events(job, old, now, changed):
                 'detail': f'包含 {job.get("position_count")} 个具体招聘岗位与专业要求',
             })
     elif changed:
-        detected_event = None
+        event_type = None
+        event_title = None
+        diff_snippets = []
 
-        # 1. Deadline extension
+        # 1. Deadline change
         old_dl = old.get('deadline') or ''
         new_dl = job.get('deadline') or ''
         if old_dl and new_dl and new_dl > old_dl:
-            detail = f'报名截止时间延长至 {new_dl}（原截止时间：{old_dl}）'
-            detected_event = {
-                'date': today,
-                'timestamp': now,
-                'type': 'deadline_extended',
-                'title': '截止延期',
-                'detail': detail,
-            }
-            recent_change = {'type': 'deadline_extended', 'label': '截止延期', 'date': today, 'detail': detail}
+            diff_snippets.append(f'报名截止时间延长至 {new_dl}（原截止时间：{old_dl}）')
+            event_type = 'deadline_extended'
+            event_title = '截止延期'
+        elif not old_dl and new_dl:
+            diff_snippets.append(f'明确报名截止时间为 {new_dl}')
+            event_type = 'deadline_extended'
+            event_title = '明确截止时间'
+        elif old_dl and new_dl and new_dl < old_dl:
+            diff_snippets.append(f'报名截止时间调整为 {new_dl}（原截止时间：{old_dl}）')
+            event_type = 'deadline_extended'
+            event_title = '截止调整'
 
-        # 2. Position updates
+        # 2. Supplemental
+        old_supp = bool(re.search(r'补录|补招|追加|第[二两三]批|续聘', old.get('title', '')))
+        new_supp = bool(re.search(r'补录|补招|追加|第[二两三]批|续聘', job.get('title', '')))
+        if new_supp and not old_supp:
+            diff_snippets.append('招聘变更为补录 / 追加招聘批次')
+            if not event_type:
+                event_type = 'supplemental'
+                event_title = '补录招募'
+
+        # 3. Selection stage
+        old_sel = bool(re.search(r'笔试|面试|初试|复试|录用名单|拟录用|公示', old.get('title', '')))
+        new_sel = bool(re.search(r'笔试|面试|初试|复试|录用名单|拟录用|公示', job.get('title', '')))
+        if new_sel and not old_sel:
+            diff_snippets.append('发布笔试/面试或录用公示通知')
+            if not event_type:
+                event_type = 'selection_stage'
+                event_title = '考核进展'
+
+        # 4. Position & Major updates
         old_pc = old.get('position_count') or 0
         new_pc = job.get('position_count') or 0
         old_majors = set(old.get('majors') or [])
         new_majors = set(job.get('majors') or [])
-        if not detected_event and (new_pc != old_pc or (new_majors - old_majors)):
+        if new_pc != old_pc or (new_majors - old_majors):
             added = list(new_majors - old_majors)[:3]
             major_text = f"，新增专业：{'、'.join(added)}" if added else ''
-            detail = f'岗位需求变动为 {new_pc} 个职位{major_text}'
-            detected_event = {
-                'date': today,
-                'timestamp': now,
-                'type': 'positions_updated',
-                'title': '岗位表更新',
-                'detail': detail,
-            }
-            recent_change = {'type': 'positions_updated', 'label': '岗位表更新', 'date': today, 'detail': detail}
+            diff_snippets.append(f'岗位需求变动为 {new_pc} 个职位{major_text}')
+            if not event_type:
+                event_type = 'positions_updated'
+                event_title = '岗位表更新'
 
-        # 3. Supplemental
-        old_supp = bool(re.search(r'补录|补招|追加|第[二两三]批|续聘', old.get('title', '')))
-        new_supp = bool(re.search(r'补录|补招|追加|第[二两三]批|续聘', job.get('title', '')))
-        if not detected_event and (new_supp and not old_supp):
-            detail = '招聘变更为补录 / 追加招聘批次'
-            detected_event = {
-                'date': today,
-                'timestamp': now,
-                'type': 'supplemental',
-                'title': '补录招募启动',
-                'detail': detail,
-            }
-            recent_change = {'type': 'supplemental', 'label': '补录招募', 'date': today, 'detail': detail}
+        # 5. Work location / Cities change
+        old_cities = set(old.get('cities') or [])
+        new_cities = set(job.get('cities') or [])
+        if old_cities != new_cities:
+            added_cities = sorted(list(new_cities - old_cities))
+            removed_cities = sorted(list(old_cities - new_cities))
+            if added_cities and not removed_cities:
+                diff_snippets.append(f'工作地点新增「{"、".join(added_cities)}」')
+            elif added_cities and removed_cities:
+                diff_snippets.append(f'工作地点调整为「{"、".join(sorted(new_cities))}」（新增{"、".join(added_cities)}）')
+            elif removed_cities and new_cities:
+                diff_snippets.append(f'工作地点调整为「{"、".join(sorted(new_cities))}」')
+            if not event_type:
+                event_type = 'content_updated'
+                event_title = '地点调整'
 
-        # 4. Selection stage
-        old_sel = bool(re.search(r'笔试|面试|初试|复试|录用名单|拟录用|公示', old.get('title', '')))
-        new_sel = bool(re.search(r'笔试|面试|初试|复试|录用名单|拟录用|公示', job.get('title', '')))
-        if not detected_event and (new_sel and not old_sel):
-            detail = '发布笔试/面试或录用公示通知'
-            detected_event = {
-                'date': today,
-                'timestamp': now,
-                'type': 'selection_stage',
-                'title': '考核选拔进展',
-                'detail': detail,
-            }
-            recent_change = {'type': 'selection_stage', 'label': '考核进展', 'date': today, 'detail': detail}
+        # 6. Application URL update
+        old_app = (old.get('application_url') or '').strip()
+        new_app = (job.get('application_url') or '').strip()
+        if new_app != old_app:
+            if new_app and not old_app:
+                diff_snippets.append('新增网申投递入口')
+            elif new_app and old_app:
+                diff_snippets.append('网申投递入口已更新为最新链接')
+            else:
+                diff_snippets.append('网申投递方式调整')
+            if not event_type:
+                event_type = 'content_updated'
+                event_title = '入口更新'
 
-        # 5. General content update
-        if not detected_event:
-            detail = '招聘公告正文或附件内容已同步最新变动'
-            detected_event = {
-                'date': today,
-                'timestamp': now,
-                'type': 'content_updated',
-                'title': '信息更新',
-                'detail': detail,
-            }
-            recent_change = {'type': 'content_updated', 'label': '内容更新', 'date': today, 'detail': detail}
+        # 7. Attachments change
+        old_atts = [(a.get('title') or '').strip() for a in old.get('attachments') or [] if isinstance(a, dict) and a.get('title')]
+        new_atts = [(a.get('title') or '').strip() for a in job.get('attachments') or [] if isinstance(a, dict) and a.get('title')]
+        added_atts = [t for t in new_atts if t not in old_atts]
+        if added_atts:
+            sample_att = added_atts[0]
+            if len(sample_att) > 20: sample_att = sample_att[:19] + '…'
+            att_text = f'新增/更新附件「{sample_att}」' + (f' 等 {len(added_atts)} 个文件' if len(added_atts) > 1 else '')
+            diff_snippets.append(att_text)
+            if not event_type:
+                event_type = 'content_updated'
+                event_title = '附件变动'
 
-        if detected_event:
-            timeline.append(detected_event)
+        # 8. Education requirement change
+        old_edu = (old.get('education') or '').strip()
+        new_edu = (job.get('education') or '').strip()
+        if old_edu and new_edu and old_edu != new_edu:
+            diff_snippets.append(f'学历要求调整为「{new_edu}」（原要求：{old_edu}）')
+            if not event_type:
+                event_type = 'content_updated'
+                event_title = '资格调整'
+
+        # 9. Substantive text changes in announcement body / excerpt
+        if not diff_snippets:
+            old_text = re.sub(r'<[^>]+>', ' ', old.get('body') or old.get('excerpt') or '')
+            new_text = re.sub(r'<[^>]+>', ' ', job.get('body') or job.get('excerpt') or '')
+            old_lines = set(line.strip() for line in old_text.splitlines() if len(line.strip()) >= 5)
+            new_lines = [line.strip() for line in new_text.splitlines() if len(line.strip()) >= 5]
+            added_lines = [line for line in new_lines if line not in old_lines]
+            if added_lines:
+                added_sample = ' '.join(added_lines)
+                if re.search(r'待遇|薪资|津贴|年薪|月薪|福利', added_sample):
+                    diff_snippets.append('公告正文补充薪酬福利与待遇说明')
+                elif re.search(r'投递|邮箱|简历|报名|入口|方式|流程', added_sample):
+                    diff_snippets.append('公告正文补充简历投递与报名流程说明')
+                elif re.search(r'专业|学科|学历|要求|条件|资格|生源', added_sample):
+                    diff_snippets.append('公告正文微调应聘条件与资格要求')
+                else:
+                    sample = added_lines[0]
+                    if len(sample) > 24: sample = sample[:23] + '…'
+                    diff_snippets.append(f'正文变动：补充「{sample}」')
+            else:
+                diff_snippets.append('招聘公告正文说明已同步最新修订')
+            if not event_type:
+                event_type = 'content_updated'
+                event_title = '内容更新'
+
+        final_detail = '；'.join(diff_snippets[:2])
+        detected_event = {
+            'date': today,
+            'timestamp': now,
+            'type': event_type or 'content_updated',
+            'title': event_title or '信息更新',
+            'detail': final_detail,
+        }
+        recent_change = {
+            'type': event_type or 'content_updated',
+            'label': event_title or '信息更新',
+            'date': today,
+            'detail': final_detail,
+        }
+        timeline.append(detected_event)
 
     # Deduplicate timeline events by (date, type, title)
     seen_keys = set()
@@ -937,22 +1004,62 @@ def detect_job_events(job, old, now, changed):
     return deduped_timeline, recent_change
 
 
+def compute_job_fingerprint(job):
+    """Compute content-based fingerprint ignoring volatile metadata, timestamps, and unstructured raw payloads."""
+    core = {
+        'title': (job.get('title') or '').strip(),
+        'company': (job.get('company') or '').strip(),
+        'deadline': job.get('deadline'),
+        'cities': sorted(job.get('cities') or []),
+        'education': (job.get('education') or '').strip(),
+        'types': sorted(job.get('types') or []),
+        'graduation_years': sorted(job.get('graduation_years') or []),
+        'application_url': (job.get('application_url') or '').strip(),
+        'emails': sorted(job.get('emails') or []),
+        'attachments': sorted([
+            ((a.get('title') or '').strip(), (a.get('url') or '').strip())
+            for a in (job.get('attachments') or []) if isinstance(a, dict)
+        ]),
+        'positions': sorted([
+            ((p.get('name') or '').strip(), (p.get('city') or '').strip(), (p.get('education') or '').strip(),
+             ','.join(sorted(p.get('majors') or [])))
+            for p in (job.get('positions') or []) if isinstance(p, dict)
+        ]),
+        'body_text': re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', job.get('body') or job.get('excerpt') or '')).strip(),
+    }
+    return hashlib.sha256(json.dumps(core, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+
+
 def merge(previous, incoming, now):
-    result=dict(previous)
-    counts={'new':0,'changed':0,'unchanged':0}
+    result = dict(previous)
+    counts = {'new': 0, 'changed': 0, 'unchanged': 0}
     for job in incoming:
-        fingerprint=hashlib.sha256(json.dumps(job,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
-        old=previous.get(job['id'])
-        changed=bool(old and old['fingerprint']!=fingerprint)
+        fingerprint = compute_job_fingerprint(job)
+        old = previous.get(job['id'])
+        changed = False
+        if old:
+            old_fp = old.get('content_fingerprint')
+            if not old_fp:
+                old_fp = compute_job_fingerprint(old)
+            changed = bool(old_fp != fingerprint)
+
         timeline, recent_change = detect_job_events(job, old, now, changed)
+
+        # Clear out legacy generic boilerplate if no substantive change occurred
+        if not changed and recent_change and recent_change.get('detail') == '招聘公告正文或附件内容已同步最新变动':
+            recent_change = None
+            if timeline:
+                timeline = [e for e in timeline if e.get('detail') != '招聘公告正文或附件内容已同步最新变动']
+
         stage = compute_lifecycle_stage({**job, 'recent_change': recent_change}, now)
-        row=dict(job,fingerprint=fingerprint,first_seen_at=old['first_seen_at'] if old else now,
-                 updated_at=now if changed or not old else old['updated_at'],last_verified_at=now,
-                 revision=old.get('revision',1)+int(changed) if old else 1,
-                 timeline=timeline, recent_change=recent_change, lifecycle_stage=stage)
-        result[job['id']]=row
-        counts['changed' if changed else 'unchanged' if old else 'new']+=1
-    return result,counts
+        row = dict(job, fingerprint=fingerprint, content_fingerprint=fingerprint,
+                   first_seen_at=old.get('first_seen_at', now) if old else now,
+                   updated_at=now if changed or not old else old.get('updated_at', now), last_verified_at=now,
+                   revision=old.get('revision', 1) + int(changed) if old else 1,
+                   timeline=timeline, recent_change=recent_change, lifecycle_stage=stage)
+        result[job['id']] = row
+        counts['changed' if changed else 'unchanged' if old else 'new'] += 1
+    return result, counts
 
 
 def atomic_json(path,value,pretty=True):
@@ -1201,7 +1308,9 @@ def deduplicate(jobs):
                 else:
                     curr_p = change_prio.get(parent['recent_change'].get('type'), 0)
                     new_p = change_prio.get(job['recent_change'].get('type'), 0)
-                    if new_p > curr_p:
+                    curr_is_placeholder = parent['recent_change'].get('detail') == '招聘公告正文或附件内容已同步最新变动'
+                    new_is_placeholder = job['recent_change'].get('detail') == '招聘公告正文或附件内容已同步最新变动'
+                    if new_p > curr_p or (new_p == curr_p and curr_is_placeholder and not new_is_placeholder):
                         parent['recent_change'] = job['recent_change']
 
             if not parent.get('lifecycle_stage') and job.get('lifecycle_stage'):

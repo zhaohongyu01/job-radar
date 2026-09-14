@@ -830,7 +830,9 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
   // 1. Any backend recorded timeline events first
   if (job.timeline?.length) {
     for (const e of job.timeline) {
-      addEvt({ ...e });
+      if (e.detail !== '招聘公告正文或附件内容已同步最新变动') {
+        addEvt({ ...e });
+      }
     }
   }
 
@@ -869,7 +871,11 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
   }
 
   // 4. Any inferred changes from recent_change
-  if (job.recent_change && !events.some((e) => e.type === job.recent_change!.type)) {
+  if (
+    job.recent_change &&
+    job.recent_change.detail !== '招聘公告正文或附件内容已同步最新变动' &&
+    !events.some((e) => e.type === job.recent_change!.type)
+  ) {
     const pubDate = (job.published_at || job.first_seen_at || '').slice(0, 10) || '近期';
     addEvt({
       date: job.recent_change.date || pubDate,
@@ -957,9 +963,14 @@ export function hasRecentJobChange(j: Job, now = Date.now()): boolean {
         (j.recent_change.type === 'positions_updated' &&
           /就绪|首次提取/.test((j.recent_change.label || '') + (j.recent_change.detail || '')))),
   );
+  const isGenericBoilerplate = Boolean(
+    j.recent_change &&
+      j.recent_change.detail === '招聘公告正文或附件内容已同步最新变动',
+  );
   const hasRecentChangeObj = Boolean(
     j.recent_change &&
       !isInitialTableReadiness &&
+      !isGenericBoilerplate &&
       isRecentDate(j.recent_change.date, now),
   );
   const hasRecentTimeline = Boolean(
@@ -969,6 +980,7 @@ export function hasRecentJobChange(j: Job, now = Date.now()): boolean {
           e.type !== 'published' &&
           e.type !== 'source_repost' &&
           e.title !== '岗位表就绪' &&
+          e.detail !== '招聘公告正文或附件内容已同步最新变动' &&
           !/就绪|首次提取/.test(e.title + (e.detail || '')) &&
           isRecentDate(e.date, now),
       ),

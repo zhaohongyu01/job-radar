@@ -61,6 +61,7 @@ import type { JobGroup } from '@/lib/grouping';
 import { FilterSidebar } from '@/components/filter-sidebar';
 import { JobCard, formatDate as date, OutLink, extractSalary } from '@/components/job-card';
 import { DetailDrawer } from '@/components/detail-drawer';
+import { PersonalRadar } from '@/components/personal-radar';
 
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
 const STORAGE = 'quancheng-personal-v1',
@@ -649,6 +650,28 @@ export default function Home() {
           />
 
           <section className="results" aria-label="招聘机会">
+            <PersonalRadar
+              currentFilters={filters}
+              filteredJobs={filtered}
+              onApplyPreset={(presetFilters) => {
+                setFilters((prev) => ({ ...prev, ...presetFilters }));
+                setPage(1);
+              }}
+              onQuickFocus={(focus) => {
+                if (focus === 'today') {
+                  setFilters((prev) => ({ ...prev, onlyUnread: true }));
+                  setNotice('已为您聚焦最新变动与未读机会');
+                } else if (focus === 'supplement') {
+                  setFilters((prev) => ({ ...prev, query: '补录' }));
+                  setNotice('已为您筛选包含“补录”关键词的机会');
+                } else if (focus === 'urgent') {
+                  setFilters((prev) => ({ ...prev, sort: 'deadline_asc' }));
+                  setNotice('已按截止日期由近及远排序');
+                }
+                setPage(1);
+              }}
+            />
+
             <div className="search-box-row">
               <div className="search-box">
                 <Search size={20} />

@@ -1075,6 +1075,22 @@ export default function Home() {
                         : '本次读取失败'}
                   </span>
                 </h3>
+                {(s.scope || s.recruitment_types?.length || s.sectors?.length || s.trust) && (
+                  <div className="tags" aria-label="来源范围与类型">
+                    {s.scope && <span className="tag">范围：{s.scope}</span>}
+                    {s.recruitment_types?.map((type) => (
+                      <span className="tag blue" key={`${s.id}-${type}`}>
+                        {type}
+                      </span>
+                    ))}
+                    {s.sectors?.map((sector) => (
+                      <span className="tag" key={`${s.id}-${sector}`}>
+                        {sector}
+                      </span>
+                    ))}
+                    {s.trust && <span className="tag">{s.trust}</span>}
+                  </div>
+                )}
                 <p>
                   读取 {s.pages} 页，发现 {s.discovered} 条、详情解析 {s.parsed}{' '}
                   条{s.cached ? `、复用近期已核实 ${s.cached} 条` : ''} · {s.coverage}
@@ -1090,7 +1106,7 @@ export default function Home() {
               </article>
             ))}
             <p className="source-note">
-              银行原站、更多高校、事业单位和公务员专栏仍需逐步适配。当前没有结果不代表没有招聘。邮件摘要将在后续接入。
+              当前已接入山东省平台招聘速递、中国银行和邮储银行官方招聘公告；更多银行、企业官网、事业单位和公务员专栏仍会按来源健康度逐步适配。当前没有结果不代表没有招聘。
             </p>
           </div>
         </SheetContent>

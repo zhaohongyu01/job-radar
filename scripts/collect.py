@@ -84,6 +84,40 @@ SOURCES.append({'id': 'upc', 'name': '中国石油大学（华东）就业网', 
 SOURCES.append({'id': 'qdhrss', 'name': '青岛市人社局 · 招聘与引才', 'url': 'https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/', 'adapter': 'qdhrss'})
 SOURCES.append({'id': 'wondercv', 'name': '超级简历 · 公开校招线索', 'url': 'https://www.wondercv.com/xiaozhao/', 'adapter': 'wondercv'})
 SOURCES.append({'id': 'offerjack', 'name': 'Jacky学长校招 · 公开招聘线索', 'url': 'https://www.offerjack.cn/', 'adapter': 'offerjack'})
+# Province-wide and sector-specific official sources.  These are deliberately
+# kept separate from university feeds: the province hub contains cross-school
+# announcements, while bank sites also publish social recruitment.
+SOURCES.extend([
+    {'id': 'sdei-news', 'name': '山东省大学生就业服务平台 · 招聘速递',
+     'url': 'https://gxjy.sdei.edu.cn/channel.jsp?classid=96', 'adapter': 'sdei_news',
+     'scope': '山东及全国', 'recruitment_types': ['校招', '社招', '事业单位'],
+     'sectors': ['综合'], 'trust': '官方原始来源', 'source_family': '山东省大学生就业服务平台'},
+    {'id': 'boc-recruitment', 'name': '中国银行 · 官方招聘公告',
+     'url': 'https://www.boc.cn/aboutboc/bi4/', 'adapter': 'official_bank',
+     'institution': '中国银行', 'bank_type': 'boc', 'scope': '全国',
+     'recruitment_types': ['校招', '社招'], 'sectors': ['银行 / 金融'],
+     'trust': '官方原始来源', 'source_family': '银行官方招聘'},
+    {'id': 'psbc-campus', 'name': '中国邮政储蓄银行 · 校园招聘',
+     'url': 'https://www.psbc.com/cn/gyyc/rczp/xyzp/', 'adapter': 'official_bank',
+     'institution': '中国邮政储蓄银行', 'bank_type': 'psbc', 'default_type': '校招',
+     'scope': '全国', 'recruitment_types': ['校招'], 'sectors': ['银行 / 金融'],
+     'trust': '官方原始来源', 'source_family': '银行官方招聘'},
+    {'id': 'psbc-social', 'name': '中国邮政储蓄银行 · 社会招聘',
+     'url': 'https://www.psbc.com/cn/gyyc/rczp/shzp/', 'adapter': 'official_bank',
+     'institution': '中国邮政储蓄银行', 'bank_type': 'psbc', 'default_type': '社招',
+     'scope': '全国', 'recruitment_types': ['社招'], 'sectors': ['银行 / 金融'],
+     'trust': '官方原始来源', 'source_family': '银行官方招聘'},
+])
+# Keep the source registry self-describing.  The UI can show these fields and
+# future city source packs can select them without changing the collector's
+# parsing loop.
+for _source in SOURCES:
+    _adapter = _source.get('adapter')
+    _source.setdefault('scope', '国内')
+    _source.setdefault('recruitment_types', ['校招'] if _adapter in {'sdei', 'wondercv', 'offerjack'} or _source['id'] in {'nankai', 'sdu', 'upc'} else ['社招', '事业单位', '国企'])
+    _source.setdefault('sectors', ['综合'])
+    _source.setdefault('trust', '第三方线索' if _adapter in {'wondercv', 'offerjack'} else '官方原始来源')
+    _source.setdefault('source_family', _source['name'].split(' · ', 1)[0])
 VOID = {'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}
 
 
@@ -212,14 +246,29 @@ def fetch(url, form=None, timeout=18, retries=1):
                          **({'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'} if form is not None else {})})
             with OPENER.open(req, timeout=timeout) as r:
                 raw = r.read(3_000_001)
-                charset = r.headers.get_content_charset() or 'utf-8'
+                charset = r.headers.get_content_charset()
             if len(raw) > 3_000_000:
                 raise ValueError('response exceeds size limit')
-            return raw.decode(charset)
+            # A number of legacy Chinese government/university sites omit the
+            # charset header and serve GBK/GB2312 HTML.  Honor a charset meta
+            # tag before falling back to UTF-8 so those public announcements
+            # do not look like unreachable detail pages.
+            meta_match = re.search(rb'<meta[^>]+charset\s*=\s*["\']?\s*([\w.-]+)', raw[:8192], re.I)
+            meta_charset = meta_match.group(1).decode('ascii', 'ignore') if meta_match else ''
+            candidates = [x for x in [meta_charset, charset, 'utf-8', 'gb18030'] if x]
+            for candidate in dict.fromkeys(candidates):
+                try:
+                    return raw.decode(candidate)
+                except (LookupError, UnicodeDecodeError):
+                    continue
+            return raw.decode('utf-8', 'replace')
         except Exception:
             if attempt:
                 raise
-            time.sleep(1)
+            if attempt < retries:
+                time.sleep(1)
+            else:
+                raise
 
 
 def fetch_bytes(url, max_size=3_500_000, timeout=6):
@@ -329,6 +378,94 @@ def sdei_list(source, page):
         items.append({'url':url,'title':title,'published_at':published,'inline_html':'<div id="zoom">'+body+'</div>',
                       'structured':row,'kind':'具体岗位' if positions else '招聘公告'})
     return items,(int(payload['total'])+19)//20
+
+
+def sdei_news_list(page, page_size=50):
+    """Read the province-wide public 招聘速递 feed.
+
+    The hub renders this list through a public GBK JSON endpoint.  It is
+    separate from each university's school feed and therefore catches
+    province-level public institution and enterprise announcements that are
+    not present in the 17 school views above.
+    """
+    endpoint = 'https://gxjy.sdei.edu.cn/getArticleList.jsp'
+    form = {
+        'fType': '', 'ref': '0', 'jg': '', 'isremove': '0',
+        'counts': str(page_size), 'divid': 'channelArticle', 'classids': '96',
+        'showNum': str(page_size), 'pagenum': str(page), 'artStr': '',
+        'timestamps': str(int(time.time() * 1000)),
+    }
+    payload = json.loads(fetch(endpoint, form=form))
+    rows = payload.get('rows') or '[]'
+    if isinstance(rows, str):
+        rows = json.loads(rows)
+    if not isinstance(rows, list):
+        raise ValueError('province recruitment feed returned invalid rows')
+    items = []
+    base = 'https://html.gxjy.sdei.edu.cn/'
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = clean(str(row.get('title') or ''))
+        href = safe_url(row.get('urlRead') or '', base)
+        if not title or not href:
+            continue
+        items.append({
+            'identity': f"sdei-news:{row.get('id') or href}",
+            'url': href,
+            'title': title,
+            'published_at': str(row.get('pubdate') or '')[:10] or None,
+            'kind': '招聘公告',
+        })
+    total_pages = int(payload.get('totalPage') or 1)
+    return items, max(1, total_pages)
+
+
+def official_bank_list(html, base, source):
+    """Parse the public announcement list used by BOC and PSBC.
+
+    Both sites expose dated article links in a stable ``YYYYMM/tYYYYMMDD``
+    path.  Filtering that path prevents navigation links and non-recruitment
+    corporate notices from entering the job index.
+    """
+    root = Tree(html).root
+    items = []
+    seen = set()
+    for anchor in root.find('a'):
+        href = anchor.attrs.get('href', '')
+        if not re.search(r'/(20\d{4})/t20\d{6,}_?\d*\.html(?:$|[?#])', href, re.I):
+            continue
+        title = clean(anchor.attrs.get('title') or anchor.text())
+        if not title or not re.search(r'招聘|人才|校园|实习|社会|博士后', title):
+            continue
+        if re.search(r'拟接收|拟录用|录用名单|名单公示|结果公示|面试名单|笔试名单|体检通知|递补', title):
+            continue
+        url = safe_url(href, base)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        parent = anchor
+        while parent and parent.tag != 'li':
+            parent = parent.parent
+        parent_text = parent.text() if parent else anchor.text()
+        date_match = re.search(r'20\d{2}[-./年]\d{1,2}[-./月]\d{1,2}', parent_text)
+        published = re.sub(r'[./年]', '-', date_match[0]).replace('月', '-').replace('日', '') if date_match else None
+        if not published:
+            path_date = re.search(r'/(20\d{4})/t20(\d{2})(\d{2})', href)
+            if path_date:
+                published = f'{path_date[1]}-{path_date[2]}-{path_date[3]}'
+        items.append({'url': url, 'title': title, 'published_at': published, 'kind': '招聘公告'})
+
+    page_match = re.search(r'createPageHTML\(\s*(\d+)\s*,', html, re.I)
+    if not page_match:
+        page_match = re.search(r'countPage\s*=\s*(\d+)', html, re.I)
+    return items, max(1, int(page_match[1]) if page_match else 1)
+
+
+def official_bank_page_url(source, page):
+    if page <= 1:
+        return source['url']
+    return urllib.parse.urljoin(source['url'], f'index_{page - 1}.html')
 
 
 def wonder_list(html, base):
@@ -639,6 +776,20 @@ def parse_detail(html, item, source):
         title=metas.get('articletitle') or item['title']
         company='青岛市人社局'
         published=(metas.get('pubdate') or item.get('published_at') or '')[:10] or None
+    elif source.get('adapter')=='sdei_news':
+        contents=root.find(cls='x1_tit2') or root.find(cls='sub_x')
+        body=contents[0] if contents else root
+        titles=root.find(cls='xl_tit')
+        dates=root.find(cls='time')
+        title=clean(titles[0].text()) if titles else item['title']
+        company=''
+        published=clean(dates[0].text())[:10] if dates else item.get('published_at')
+    elif source.get('adapter')=='official_bank':
+        contents=root.find(cls='trs_editor_view') or root.find(cls='view') or root.find(cls='psbc_contentbox') or root.find(cls='tckMain')
+        body=contents[0] if contents else root
+        title=metas.get('articletitle') or item['title']
+        company=source.get('institution','')
+        published=(metas.get('pubdate') or item.get('published_at') or '')[:10] or None
     else:
         contents=root.find(id='zoom')
         if not contents:
@@ -653,7 +804,9 @@ def parse_detail(html, item, source):
     combined=title+'\n'+text
     types=[]
     if source.get('adapter')=='wondercv' or re.search(r'校园招聘|校招|应届.*招聘|20\d{2}[届屆].*招聘',combined): types.append('校招')
-    if re.search(r'社会招聘|社招|社会公开招聘',combined): types.append('社招')
+    if re.search(r'社会招聘|社招|社会公开招聘|公开招聘(?:公告|人员|工作人员)|事业单位招聘',combined): types.append('社招')
+    if source.get('default_type') and source['default_type'] not in types:
+        types.append(source['default_type'])
     years=extract_graduation_years(combined)
     if source.get('adapter')=='offerjack':
         batch=structured.get('recruitmentBatch') or ''
@@ -720,11 +873,26 @@ def parse_detail(html, item, source):
     # Explicit recruitment URL text is the current source of truth.  Probe
     # records can carry an older structured URL, so let a newly published
     # labelled URL replace it even when a fallback URL was already found.
-    m=re.search(r'(?:报名网址|投递网址|网申地址|招聘官网|应聘网址)[：:\s（(]*?(https?://[^\s<>，。；）)]+)',text)
+    m=re.search(r'(?:报名网址|投递网址|网申地址|招聘官网|应聘网址|招聘网申系统|招聘网站|报名系统|网上报名|PC端)[：:\s（(]*?(https?://[^\s<>，。；）)]+)',text,re.I)
     if m:
         explicit_url=safe_url(m[1],item['url'],True)
         if explicit_url:
             application_url=explicit_url
+    if not application_url:
+        # Some bank notices place the recruitment URL in a sentence without
+        # a dedicated label (for example, “登录招聘网站 https://…”).  Accept
+        # only URLs on a line that clearly describes applying, and never use
+        # the announcement page itself as an application link.
+        for line in text.splitlines():
+            if not re.search(r'报名|应聘|网申|投递|招聘网站|招聘网', line, re.I):
+                continue
+            for raw_url in re.findall(r'https?://[^\s<>，。；）)"“”]+', line, re.I):
+                candidate=safe_url(raw_url,item['url'],True)
+                if candidate and candidate.rstrip('/') != item['url'].rstrip('/'):
+                    application_url=candidate
+                    break
+            if application_url:
+                break
     emails=[]
     for line in text.splitlines():
         if re.search('报名|投递|简历|应聘',line):
@@ -1479,7 +1647,7 @@ def run(args):
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
         status=dict(source,last_attempt_at=now,last_success_at=previous['sources'].get(source['id'],{}).get('last_success_at'),pages=0,discovered=0,parsed=0,cached=0,probed=0,detail_attempted=0,detail_failed=0,detail_skipped=0,errors=[],status='ok',coverage='近期分页，非全量历史')
         try:
-            first=fetch(source['url']) if source.get('adapter') not in {'sdei','offerjack','upc'} else ''
+            first=fetch(source['url']) if source.get('adapter') not in {'sdei','sdei_news','offerjack','upc'} else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
             items=[]
@@ -1511,8 +1679,14 @@ def run(args):
                         page_number=offerjack_page
                     elif source.get('adapter')=='sdei':
                         found,total=sdei_list(source,page)
+                    elif source.get('adapter')=='sdei_news':
+                        found,total=sdei_news_list(page)
                     elif source.get('adapter')=='upc':
                         found,total=upc_list(page)
+                    elif source.get('adapter')=='official_bank':
+                        page_url=official_bank_page_url(source,page)
+                        html=first if page==1 else fetch(page_url)
+                        found,total=official_bank_list(html,source['url'],source)
                     elif source.get('adapter')=='qdhrss':
                         page_url=source['url'] if page==1 else urllib.parse.urljoin(source['url'],f'index_{page-1}.shtml')
                         html=first if page==1 else fetch(page_url)
@@ -1789,7 +1963,11 @@ def run(args):
                     print(source['id'],'circuit-open',circuit_reason,'skipped',len(skipped_items),flush=True)
             if status['errors']:
                 status['status']='partial'
-            elif not status['parsed'] and not cached and total!=0:
+            # A source can legitimately have no records inside the requested
+            # date window even when its list reports older pages.  It was
+            # read successfully; only a parser that produced no usable page
+            # at all should be marked failed here.
+            elif status['pages'] == 0 and not status['parsed'] and not cached and total != 0:
                 status['status']='failed'
             if status['status']=='ok': status['last_success_at']=dt.datetime.now(TZ).isoformat(timespec='seconds')
         except Exception as e:

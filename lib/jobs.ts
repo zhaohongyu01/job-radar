@@ -117,6 +117,11 @@ export type Source = {
   id: string;
   name: string;
   url: string;
+  scope?: string;
+  recruitment_types?: string[];
+  sectors?: string[];
+  trust?: string;
+  source_family?: string;
   status: string;
   pages: number;
   discovered: number;

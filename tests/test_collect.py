@@ -136,6 +136,68 @@ class CollectionTests(unittest.TestCase):
         self.assertIn('/edit1/20449',job['source_url'])
         self.assertNotIn('济南',job['cities'])
 
+    def test_province_recruitment_feed_parses_public_json_pages(self):
+        payload=json.dumps({
+            'total': 2,
+            'totalPage': 3,
+            'rows': json.dumps([
+                {'id': 207402, 'title': '济南市事业单位公开招聘公告',
+                 'urlRead': '/html/2026/09/07/207402.html', 'pubdate': '2026-09-07'},
+                {'id': 207403, 'title': '某银行2027校园招聘',
+                 'urlRead': '/html/2026/09/08/207403.html', 'pubdate': '2026-09-08'},
+            ], ensure_ascii=False),
+        }, ensure_ascii=False)
+        with patch.object(c, 'fetch', return_value=payload):
+            items, pages=c.sdei_news_list(1)
+        self.assertEqual(pages, 3)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]['url'], 'https://html.gxjy.sdei.edu.cn/html/2026/09/07/207402.html')
+        self.assertEqual(items[1]['identity'], 'sdei-news:207403')
+
+    def test_official_bank_list_filters_result_notices_and_reads_pagination(self):
+        html='''
+        <div class="list"><ul>
+          <li><a href="./202609/t20260903_25689311.html" title="中国银行2027年度校园招聘公告">中国银行2027年度校园招聘公告</a><span>[ 2026-09-03 ]</span></li>
+          <li><a href="./202604/t20260415_25661369.html" title="中国银行2026年度拟接收境内院校应届毕业生情况公示">结果名单</a><span>[ 2026-04-15 ]</span></li>
+        </ul></div>
+        <script>createPageHTML(18, 0, "index", "html");</script>
+        '''
+        source=next(s for s in c.SOURCES if s['id']=='boc-recruitment')
+        items,pages=c.official_bank_list(html,source['url'],source)
+        self.assertEqual(pages,18)
+        self.assertEqual(len(items),1)
+        self.assertEqual(items[0]['published_at'],'2026-09-03')
+        self.assertTrue(items[0]['url'].endswith('/202609/t20260903_25689311.html'))
+
+    def test_official_bank_detail_uses_editor_body_and_source_type(self):
+        source=next(s for s in c.SOURCES if s['id']=='psbc-social')
+        html='''
+        <html><head>
+          <meta name="ArticleTitle" content="邮储银行总行社会招聘公告">
+          <meta name="PubDate" content="2026-06-15 09:00:00">
+        </head><body><div class="view trs_editor_view">
+          <p>工作地点：济南</p><p>报名截止时间：2026年10月1日</p>
+          <p>投递网址：https://example.com/apply</p>
+        </div></body></html>
+        '''
+        job=c.parse_detail(html,{'url':'https://www.psbc.com/job.html','title':'fallback'},source)
+        self.assertEqual(job['company'],'中国邮政储蓄银行')
+        self.assertIn('社招',job['types'])
+        self.assertEqual(job['cities'],['济南'])
+        self.assertEqual(job['application_url'],'https://example.com/apply')
+
+    def test_old_only_source_is_successful_inside_recent_window(self):
+        source=next(s for s in c.SOURCES if s['id']=='psbc-social')
+        html='''<ul><li><span>2020-01-01</span>
+          <a href="./202001/t20200101_1.html" title="邮储银行2020年社会招聘公告">旧招聘公告</a></li></ul>'''
+        with TemporaryDirectory() as temp, patch.object(c, 'fetch', return_value=html):
+            args=SimpleNamespace(data_dir=temp,public_dir=temp,sources=source['id'],pages=1,days=30,
+                                 refresh_hours=0,nankai_area=0,target_city='',offerjack_pages=1,
+                                 probe_budget=0,detail_timeout=1,detail_retries=0,detail_failure_limit=2)
+            self.assertEqual(c.run(args),0)
+            state=json.loads((Path(temp)/'state.json').read_text(encoding='utf8'))
+            self.assertEqual(state['sources'][source['id']]['status'],'ok')
+
     def test_announcement_api_image_and_list_date_survive(self):
         source=next(s for s in c.SOURCES if s['id']=='jobsdufe-announcements')
         payload=(ROOT/'tests/fixtures/sdufe-list-sample.json').read_text(encoding='utf8')

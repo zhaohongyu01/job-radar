@@ -258,6 +258,17 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(len(restored_p2['positions']), 1)
             self.assertEqual(restored_p2['positions'][0]['name'], '测试开发')
 
+    def test_collect_script_accepts_all_ci_collect_arguments(self):
+        cmd = [
+            sys.executable,
+            str(ci.ROOT / 'scripts/collect.py'),
+            '--help',
+        ]
+        out = ci.subprocess.check_output(cmd, text=True)
+        self.assertIn('--detail-timeout', out)
+        self.assertIn('--detail-retries', out)
+        self.assertIn('--detail-failure-limit', out)
+
 
 if __name__ == '__main__':
     unittest.main()

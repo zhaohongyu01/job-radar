@@ -465,4 +465,59 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(summary.get('position_count'), 1)
         self.assertEqual(summary.get('sample_positions'), ['芯片验证工程师'])
 
+    def test_lifecycle_and_change_alerts(self):
+        # 1. Initial job publication timeline
+        job_v1 = {
+            'id': 'life123',
+            'title': '某集团2027校招启事',
+            'company': '某大型集团',
+            'source_name': '山东大学就业网',
+            'published_at': '2026-09-01',
+            'deadline': '2026-09-20',
+            'position_count': 2,
+            'body': '欢迎应届毕业生投递。',
+        }
+        res1, counts1 = c.merge({}, [job_v1], '2026-09-01T10:00:00+08:00')
+        self.assertEqual(counts1['new'], 1)
+        saved1 = res1['life123']
+        self.assertEqual(saved1['lifecycle_stage'], 'accepting')
+        self.assertEqual(len(saved1['timeline']), 2) # published + positions_updated
+        self.assertEqual(saved1['timeline'][0]['type'], 'published')
+
+        # 2. Deadline extended update in second run
+        job_v2 = dict(job_v1, deadline='2026-10-15', body='欢迎应届毕业生投递。报名截止日期现延长至10月15日。')
+        res2, counts2 = c.merge(res1, [job_v2], '2026-09-10T12:00:00+08:00')
+        self.assertEqual(counts2['changed'], 1)
+        saved2 = res2['life123']
+        self.assertEqual(saved2['lifecycle_stage'], 'extended')
+        self.assertIsNotNone(saved2.get('recent_change'))
+        self.assertEqual(saved2['recent_change']['type'], 'deadline_extended')
+        self.assertIn('2026-10-15', saved2['recent_change']['detail'])
+        types = [e['type'] for e in saved2['timeline']]
+        self.assertIn('deadline_extended', types)
+
+        # 3. Supplemental update in third run
+        job_v3 = dict(job_v2, title='某集团2027校招春招补录通知', body='启动第二批补录。')
+        res3, counts3 = c.merge(res2, [job_v3], '2026-09-14T09:00:00+08:00')
+        saved3 = res3['life123']
+        self.assertEqual(saved3['lifecycle_stage'], 'supplemental')
+        self.assertEqual(saved3['recent_change']['type'], 'supplemental')
+        types3 = [e['type'] for e in saved3['timeline']]
+        self.assertIn('supplemental', types3)
+
+        # 4. Deduplicate merges timeline events without duplicates
+        dup_job = dict(job_v3, id='life456', source_name='南开大学就业网', source_url='https://nankai.example/job')
+        deduped = c.deduplicate([saved3, dup_job])
+        self.assertEqual(len(deduped), 1)
+        self.assertEqual(deduped[0]['lifecycle_stage'], 'supplemental')
+        # All timeline events unique
+        keys = [(e['date'], e['type'], e['title']) for e in deduped[0]['timeline']]
+        self.assertEqual(len(keys), len(set(keys)))
+
+        # 5. Public summary preserves lifecycle_stage and recent_change
+        summary = c.public_summary(saved3)
+        self.assertEqual(summary['lifecycle_stage'], 'supplemental')
+        self.assertEqual(summary['recent_change']['type'], 'supplemental')
+        self.assertTrue(len(summary['timeline']) > 0)
+
 if __name__=='__main__': unittest.main()

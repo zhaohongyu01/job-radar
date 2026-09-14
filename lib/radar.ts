@@ -13,6 +13,7 @@ export type RadarMetrics = {
   supplementCount: number;
   urgentCount: number;
   highSalaryCount: number;
+  changeCount: number;
 };
 
 export const RADAR_PRESETS_STORAGE = 'job-radar-presets-v1';
@@ -84,6 +85,7 @@ export function computeRadarMetrics(jobs: Job[], now = Date.now()): RadarMetrics
   let supplementCount = 0;
   let urgentCount = 0;
   let highSalaryCount = 0;
+  let changeCount = 0;
 
   for (const job of jobs) {
     if (job.published_at === todayStr || job.first_seen_at?.slice(0, 10) === todayStr) {
@@ -100,6 +102,16 @@ export function computeRadarMetrics(jobs: Job[], now = Date.now()): RadarMetrics
     if (sal && sal.min >= 10000) {
       highSalaryCount++;
     }
+    if (
+      job.recent_change ||
+      job.lifecycle_stage === 'extended' ||
+      job.lifecycle_stage === 'supplemental' ||
+      job.lifecycle_stage === 'selection' ||
+      /延长|延期|补录|追加|笔试|面试/.test(job.title) ||
+      (job.timeline && job.timeline.some((e) => e.type !== 'published' && e.type !== 'source_repost'))
+    ) {
+      changeCount++;
+    }
   }
 
   return {
@@ -107,5 +119,6 @@ export function computeRadarMetrics(jobs: Job[], now = Date.now()): RadarMetrics
     supplementCount,
     urgentCount,
     highSalaryCount,
+    changeCount,
   };
 }

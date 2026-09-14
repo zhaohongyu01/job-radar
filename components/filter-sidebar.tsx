@@ -215,6 +215,12 @@ export function FilterSidebar({
         options={['全部', '具体岗位', '招聘公告']}
         onChange={(v) => onChange('kind', v)}
       />
+      <Choice
+        label="招聘变更 / 状态"
+        value={filters.changeType}
+        options={['全部', '有变更', '截止延期', '补录招募', '岗位调整', '考核阶段']}
+        onChange={(v) => onChange('changeType', v as Filters['changeType'])}
+      />
       <div className="filter-checks">
         <Toggle
           label="保留招聘类型、届别或学历未明确的公告"

@@ -9,11 +9,13 @@ import {
   MapPin,
   Share2,
   ArrowUpRight,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   externalUrl,
   getDeadlineCountdown,
+  getLifecycleStage,
   isExpired,
   isUnread,
   locationMatch,
@@ -117,6 +119,12 @@ export function JobCard({
   const countdown = getDeadlineCountdown(job.deadline, now);
   const { cleanTitle, salary } = extractSalary(job);
   const excerptText = cleanExcerpt(job.excerpt);
+  const stageInfo = getLifecycleStage(job, now);
+  const changeAlert =
+    job.recent_change?.detail ||
+    (stageInfo.stage === 'extended' ? '报名截止时间已延期（详见原公告）' : null) ||
+    (stageInfo.stage === 'supplemental' ? '补录 / 追加招聘批次进行中' : null) ||
+    (stageInfo.stage === 'selection' ? '发布考核选拔或录用进展通知' : null);
 
   return (
     <article className={'job-card' + (expired ? ' expired' : '')}>
@@ -130,6 +138,13 @@ export function JobCard({
           >
             {unread ? '未读' : '已读'}
           </button>
+          {stageInfo.stage !== 'accepting' &&
+            stageInfo.stage !== 'expired' &&
+            stageInfo.stage !== 'expiring_soon' && (
+              <span className={`tag ${stageInfo.badgeClass}`}>
+                {stageInfo.badge}
+              </span>
+            )}
           {countdown && countdown.urgency !== 'expired' && countdown.urgency !== 'normal' && (
             <span className={`tag deadline-${countdown.urgency}`}>
               ⏳ {countdown.text}
@@ -232,6 +247,15 @@ export function JobCard({
         </div>
       )}
       {job.company_conflict && <p className="small muted">{job.company_note}</p>}
+      {changeAlert && (
+        <div className="card-change-callout">
+          <AlertCircle size={14} className="change-callout-icon" />
+          <span className="change-callout-text">
+            <strong>变更提醒：</strong>
+            {changeAlert}
+          </span>
+        </div>
+      )}
       <div className="job-meta">
         <span>
           <MapPin size={14} />

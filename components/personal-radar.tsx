@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Radar, Plus, Zap, Clock, BookmarkCheck, ChevronUp, ChevronDown, Check } from 'lucide-react';
+import { Radar, Plus, Zap, Clock, BookmarkCheck, ChevronUp, ChevronDown, Check, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { Filters, Job } from '@/lib/jobs';
@@ -17,7 +17,7 @@ export type PersonalRadarProps = {
   currentFilters: Filters;
   filteredJobs: Job[];
   onApplyPreset: (presetFilters: Partial<Filters>) => void;
-  onQuickFocus: (focus: 'today' | 'supplement' | 'urgent') => void;
+  onQuickFocus: (focus: 'today' | 'supplement' | 'urgent' | 'change') => void;
 };
 
 export function PersonalRadar({
@@ -225,6 +225,17 @@ export function PersonalRadar({
               <Clock size={14} className="stat-icon" />
               <span className="stat-label">3天内截止</span>
               <span className="stat-count">{metrics.urgentCount}</span>
+            </button>
+
+            <button
+              type="button"
+              className="radar-stat-pill change"
+              onClick={() => onQuickFocus('change')}
+              title="点击快速筛选延期、补录及重要变更机会"
+            >
+              <Bell size={14} className="stat-icon" />
+              <span className="stat-label">近期变更</span>
+              <span className="stat-count">{metrics.changeCount}</span>
             </button>
           </div>
         </>

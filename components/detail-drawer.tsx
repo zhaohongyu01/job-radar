@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet } from 'lucide-react';
+import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet, Clock } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -10,7 +10,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { isUnread, personalFor } from '@/lib/jobs';
+import { generateJobTimeline, getLifecycleStage, isUnread, personalFor } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 import { formatDate, OutLink } from '@/components/job-card';
 
@@ -54,6 +54,16 @@ export function DetailDrawer({
         (p.majors ?? []).some((m) => m.toLowerCase().includes(kw)),
     );
   }, [selected?.positions, positionFilter]);
+
+  const timelineEvents = useMemo(
+    () => (selected ? generateJobTimeline(selected) : []),
+    [selected],
+  );
+
+  const currentStage = useMemo(
+    () => (selected ? getLifecycleStage(selected) : null),
+    [selected],
+  );
   return (
     <Sheet
       open={!!selected}
@@ -226,6 +236,48 @@ export function DetailDrawer({
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+              {timelineEvents.length > 0 && (
+                <div className="drawer-timeline-section">
+                  <div className="drawer-timeline-header">
+                    <div className="timeline-header-title">
+                      <Clock size={16} className="timeline-clock-icon" />
+                      <h3>招聘全流程与变更时间线</h3>
+                    </div>
+                    {currentStage && (
+                      <span className={`tag ${currentStage.badgeClass}`}>
+                        {currentStage.badge}
+                      </span>
+                    )}
+                  </div>
+                  <div className="timeline-track">
+                    {timelineEvents.map((evt, idx) => {
+                      const isLast = idx === timelineEvents.length - 1;
+                      const isCurrent = evt.date === '当前状态';
+                      return (
+                        <div
+                          key={`${evt.date}-${evt.type}-${idx}`}
+                          className={`timeline-item ${isCurrent ? 'current' : ''}`}
+                        >
+                          <div className="timeline-marker">
+                            <span className={`timeline-dot dot-${evt.type}`} />
+                            {!isLast && <span className="timeline-line" />}
+                          </div>
+                          <div className="timeline-content">
+                            <div className="timeline-top">
+                              <span className="timeline-title">{evt.title}</span>
+                              <span className="timeline-date">{evt.date}</span>
+                            </div>
+                            <p className="timeline-detail">{evt.detail}</p>
+                            {evt.source && (
+                              <span className="timeline-source">来源渠道：{evt.source}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

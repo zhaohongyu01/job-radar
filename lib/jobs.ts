@@ -11,6 +11,45 @@ export type PositionRequirement = {
   source_file?: string;
 };
 
+export type LifecycleStage =
+  | 'upcoming'
+  | 'accepting'
+  | 'extended'
+  | 'supplemental'
+  | 'selection'
+  | 'expiring_soon'
+  | 'expired';
+
+export interface TimelineEvent {
+  date: string;
+  timestamp?: string;
+  type:
+    | 'published'
+    | 'deadline_extended'
+    | 'supplemental'
+    | 'positions_updated'
+    | 'selection_stage'
+    | 'content_updated'
+    | 'source_repost';
+  title: string;
+  detail: string;
+  source?: string;
+}
+
+export interface RecentChange {
+  type:
+    | 'deadline_extended'
+    | 'supplemental'
+    | 'positions_updated'
+    | 'selection_stage'
+    | 'content_updated';
+  label: string;
+  date: string;
+  detail: string;
+}
+
+export type ChangeTypeFilter = '全部' | '有变更' | '截止延期' | '补录招募' | '岗位调整' | '考核阶段';
+
 export type Job = {
   id: string;
   title: string;
@@ -66,6 +105,9 @@ export type Job = {
   position_count?: number;
   sample_positions?: string[];
   majors?: string[];
+  lifecycle_stage?: LifecycleStage;
+  timeline?: TimelineEvent[];
+  recent_change?: RecentChange;
 };
 export type Source = {
   id: string;
@@ -116,6 +158,7 @@ export type Filters = {
   kind: string;
   salary: string;
   sort: SortOrder;
+  changeType: ChangeTypeFilter;
 };
 export const defaultFilters: Filters = {
   city: '济南',
@@ -135,6 +178,7 @@ export const defaultFilters: Filters = {
   kind: '全部',
   salary: '全部',
   sort: 'newest',
+  changeType: '全部',
 };
 export function isExpired(job: Job, now = Date.now()) {
   return !!job.deadline && Date.parse(job.deadline) < now;
@@ -313,6 +357,44 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
       } else if ((job.body?.length ?? 0) > (existing.body?.length ?? 0) + 200) {
         existing.body = job.body;
         existing.excerpt = job.excerpt || existing.excerpt;
+      }
+
+      if (job.timeline?.length) {
+        existing.timeline = existing.timeline ?? [];
+        const existingKeys = new Set(
+          existing.timeline.map((e) => `${e.date}-${e.type}-${e.title}`),
+        );
+        for (const e of job.timeline) {
+          const key = `${e.date}-${e.type}-${e.title}`;
+          if (!existingKeys.has(key)) {
+            existing.timeline.push(e);
+            existingKeys.add(key);
+          }
+        }
+        existing.timeline.sort((a, b) => a.date.localeCompare(b.date));
+      }
+
+      if (job.recent_change) {
+        const changePrio: Record<string, number> = {
+          deadline_extended: 5,
+          supplemental: 4,
+          selection_stage: 3,
+          positions_updated: 2,
+          content_updated: 1,
+        };
+        if (!existing.recent_change) {
+          existing.recent_change = job.recent_change;
+        } else {
+          const currP = changePrio[existing.recent_change.type] ?? 0;
+          const newP = changePrio[job.recent_change.type] ?? 0;
+          if (newP > currP) {
+            existing.recent_change = job.recent_change;
+          }
+        }
+      }
+
+      if (!existing.lifecycle_stage && job.lifecycle_stage) {
+        existing.lifecycle_stage = job.lifecycle_stage;
       }
     }
   }
@@ -605,6 +687,169 @@ export function salaryThreshold(salaryFilter: string): number {
   }
 }
 
+export function getLifecycleStage(
+  job: Job,
+  now = Date.now(),
+): {
+  stage: LifecycleStage;
+  label: string;
+  badge: string;
+  badgeClass: string;
+} {
+  if (isExpired(job, now)) {
+    return {
+      stage: 'expired',
+      label: '网申已截止',
+      badge: '已截止',
+      badgeClass: 'badge-stage-expired',
+    };
+  }
+
+  const title = job.title || '';
+  const body = job.body || job.excerpt || '';
+  const combined = `${title}\n${body.slice(0, 1000)}`;
+
+  if (
+    /(?:笔试|面试|初试|复试).*(?:安排|通知|名单|公示|复审)|(?:拟录用|录取公示|录用名单)/.test(
+      combined,
+    )
+  ) {
+    return {
+      stage: 'selection',
+      label: '考核选拔中',
+      badge: '📢 考核阶段',
+      badgeClass: 'badge-stage-selection',
+    };
+  }
+
+  if (job.recent_change?.type === 'deadline_extended' || /延长|延期|推迟/.test(title)) {
+    return {
+      stage: 'extended',
+      label: '截止已延期',
+      badge: '🔔 截止延期',
+      badgeClass: 'badge-stage-extended',
+    };
+  }
+
+  if (/补录|补招|追加|第[二两三]批|续聘/.test(title) || job.recent_change?.type === 'supplemental') {
+    return {
+      stage: 'supplemental',
+      label: '补录进行中',
+      badge: '🔥 补录招募',
+      badgeClass: 'badge-stage-supplemental',
+    };
+  }
+
+  if (job.deadline) {
+    const dTime = Date.parse(job.deadline);
+    if (!Number.isNaN(dTime)) {
+      const daysLeft = Math.ceil((dTime - now) / (1000 * 60 * 60 * 24));
+      if (daysLeft >= 0 && daysLeft <= 3) {
+        return {
+          stage: 'expiring_soon',
+          label: '网申即将截止',
+          badge: daysLeft === 0 ? '⏳ 今日截止' : `⏳ 剩 ${daysLeft} 天截止`,
+          badgeClass: 'badge-stage-expiring',
+        };
+      }
+    }
+  }
+
+  return {
+    stage: 'accepting',
+    label: '网申进行中',
+    badge: '✨ 网申中',
+    badgeClass: 'badge-stage-accepting',
+  };
+}
+
+export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[] {
+  const events: TimelineEvent[] = [];
+  const seenKeys = new Set<string>();
+
+  const addEvt = (evt: TimelineEvent) => {
+    const key = `${evt.date}-${evt.type}-${evt.title}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      events.push(evt);
+    }
+  };
+
+  // 1. Initial publication
+  const pubDate = (job.published_at || job.first_seen_at || '').slice(0, 10) || '近期';
+  addEvt({
+    date: pubDate,
+    type: 'published',
+    title: '首次发布',
+    detail: `由 ${job.source_name || '招聘渠道'} 发布公告`,
+    source: job.source_name,
+  });
+
+  // 2. Cross-channel publications
+  if (job.duplicate_sources?.length) {
+    for (const ds of job.duplicate_sources) {
+      if (ds.published_at && ds.source_name && ds.source_name !== job.source_name) {
+        addEvt({
+          date: ds.published_at.slice(0, 10),
+          type: 'source_repost',
+          title: '跨渠道发布',
+          detail: `在「${ds.source_name}」同步发布`,
+          source: ds.source_name,
+        });
+      }
+    }
+  }
+
+  // 3. Any backend recorded timeline events
+  if (job.timeline?.length) {
+    for (const e of job.timeline) {
+      addEvt(e);
+    }
+  }
+
+  // 4. Any inferred changes from recent_change
+  if (job.recent_change) {
+    addEvt({
+      date: job.recent_change.date || pubDate,
+      type: job.recent_change.type,
+      title: job.recent_change.label,
+      detail: job.recent_change.detail,
+    });
+  }
+
+  // 5. If position count exists and no positions_updated event
+  if (job.position_count && !events.some((e) => e.type === 'positions_updated')) {
+    addEvt({
+      date: pubDate,
+      type: 'positions_updated',
+      title: '岗位表就绪',
+      detail: `解析提取出 ${job.position_count} 个具体岗位与专业要求`,
+    });
+  }
+
+  events.sort((a, b) => a.date.localeCompare(b.date));
+
+  // 6. Current stage status node
+  const currentStage = getLifecycleStage(job, now);
+  let statusDetail = currentStage.label;
+  if (job.deadline) {
+    if (isExpired(job, now)) {
+      statusDetail = `报名已于 ${job.deadline.slice(0, 10)} 截止`;
+    } else {
+      const days = Math.ceil((Date.parse(job.deadline) - now) / (1000 * 60 * 60 * 24));
+      statusDetail = `报名中，预计 ${job.deadline.slice(0, 10)} 截止（还剩 ${Math.max(0, days)} 天）`;
+    }
+  }
+  events.push({
+    date: '当前状态',
+    type: currentStage.stage === 'expired' ? 'content_updated' : 'published',
+    title: currentStage.label,
+    detail: statusDetail,
+  });
+
+  return events;
+}
+
 export function filterJobs(
   jobs: Job[],
   f: Filters,
@@ -656,6 +901,21 @@ export function filterJobs(
         const threshold = salaryThreshold(f.salary);
         const sal = parseSalaryRange(j);
         if (!sal || sal.max < threshold) return false;
+      }
+      if (f.changeType && f.changeType !== '全部') {
+        const stage = getLifecycleStage(j, now).stage;
+        const hasChange =
+          Boolean(j.recent_change) ||
+          stage === 'extended' ||
+          stage === 'supplemental' ||
+          stage === 'selection' ||
+          Boolean(j.timeline && j.timeline.some((e) => e.type !== 'published' && e.type !== 'source_repost'));
+
+        if (f.changeType === '有变更' && !hasChange) return false;
+        if (f.changeType === '截止延期' && stage !== 'extended' && j.recent_change?.type !== 'deadline_extended') return false;
+        if (f.changeType === '补录招募' && stage !== 'supplemental' && j.recent_change?.type !== 'supplemental') return false;
+        if (f.changeType === '岗位调整' && (j.position_count ?? 0) === 0 && j.recent_change?.type !== 'positions_updated') return false;
+        if (f.changeType === '考核阶段' && stage !== 'selection' && j.recent_change?.type !== 'selection_stage') return false;
       }
       if (f.query.trim()) {
         const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);

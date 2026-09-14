@@ -14,6 +14,8 @@ import {
   normalizeCompanyName,
   normalizeTitleCore,
   mergeDuplicateOpportunities,
+  getLifecycleStage,
+  generateJobTimeline,
 } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 const job = {
@@ -586,3 +588,142 @@ void test('mergeDuplicateOpportunities merges positions and majors across channe
   assert.ok(merged[0].majors?.includes('电子信息'));
   assert.ok(merged[0].majors?.includes('国际经济与贸易'));
 });
+
+void test('getLifecycleStage computes accurate stage labels and badges', () => {
+  const now = Date.parse('2026-09-14T10:00:00+08:00');
+
+  // 1. Expired
+  const expJob: Job = { ...job, deadline: '2026-09-10' };
+  assert.equal(getLifecycleStage(expJob, now).stage, 'expired');
+  assert.equal(getLifecycleStage(expJob, now).badge, '已截止');
+
+  // 2. Expiring soon (within 3 days)
+  const soonJob: Job = { ...job, deadline: '2026-09-16' };
+  assert.equal(getLifecycleStage(soonJob, now).stage, 'expiring_soon');
+  assert.ok(getLifecycleStage(soonJob, now).badge.includes('剩 2 天截止'));
+
+  // 3. Extended deadline
+  const extJob: Job = {
+    ...job,
+    title: '关于延长2027年秋季校园招聘报名时间的通知',
+    deadline: '2026-10-15',
+  };
+  assert.equal(getLifecycleStage(extJob, now).stage, 'extended');
+  assert.equal(getLifecycleStage(extJob, now).badge, '🔔 截止延期');
+
+  // 4. Supplemental
+  const suppJob: Job = {
+    ...job,
+    title: '某国企2027校招春季补录公告',
+    deadline: '2026-10-30',
+  };
+  assert.equal(getLifecycleStage(suppJob, now).stage, 'supplemental');
+  assert.equal(getLifecycleStage(suppJob, now).badge, '🔥 补录招募');
+
+  // 5. Selection stage
+  const selJob: Job = {
+    ...job,
+    title: '某科技公司2027校招笔试面试考核安排通知',
+    deadline: '2026-10-30',
+  };
+  assert.equal(getLifecycleStage(selJob, now).stage, 'selection');
+  assert.equal(getLifecycleStage(selJob, now).badge, '📢 考核阶段');
+
+  // 6. Regular accepting
+  const normalJob: Job = {
+    ...job,
+    title: '某科技公司2027秋季校园招聘启事',
+    deadline: '2026-10-30',
+  };
+  assert.equal(getLifecycleStage(normalJob, now).stage, 'accepting');
+  assert.equal(getLifecycleStage(normalJob, now).badge, '✨ 网申中');
+});
+
+void test('generateJobTimeline synthesizes chronological events and current status', () => {
+  const testJob: Job = {
+    ...job,
+    source_name: '山东大学就业网',
+    published_at: '2026-09-01',
+    deadline: '2026-09-25',
+    position_count: 5,
+    duplicate_sources: [
+      {
+        source_name: '南开大学就业网',
+        url: 'https://nankai.example/job',
+        title: '南开大学就业网',
+        published_at: '2026-09-08',
+      },
+    ],
+    recent_change: {
+      type: 'deadline_extended',
+      label: '截止延期',
+      date: '2026-09-10',
+      detail: '报名截止时间延长至 2026-09-25',
+    },
+  };
+
+  const timeline = generateJobTimeline(testJob, Date.parse('2026-09-14T10:00:00+08:00'));
+  assert.ok(timeline.length >= 4, '应生成包含首发、跨渠道发布、变更及当前状态的时间线');
+
+  const types = timeline.map((e) => e.type);
+  assert.ok(types.includes('published'), '应包含首次发布');
+  assert.ok(types.includes('source_repost'), '应包含跨校发布');
+  assert.ok(types.includes('deadline_extended'), '应包含截止延期');
+
+  const lastNode = timeline[timeline.length - 1];
+  assert.equal(lastNode.date, '当前状态');
+  assert.ok(lastNode.detail.includes('还剩'));
+});
+
+void test('filterJobs filters opportunities by changeType', () => {
+  const now = Date.parse('2026-09-14T10:00:00+08:00');
+
+  const normalJob: Job = {
+    ...job,
+    id: 'norm-1',
+    title: '浪潮集团2027校园招聘启事',
+    published_at: '2026-09-01',
+    deadline: '2026-10-30',
+  };
+  const extendedJob: Job = {
+    ...job,
+    id: 'ext-1',
+    title: '海信集团2027校招报名延期公告',
+    deadline: '2026-10-15',
+    recent_change: {
+      type: 'deadline_extended',
+      label: '截止延期',
+      date: '2026-09-10',
+      detail: '报名时间延长至10-15',
+    },
+  };
+  const suppJob: Job = {
+    ...job,
+    id: 'supp-1',
+    title: '重汽集团2027秋招补录公告',
+    deadline: '2026-10-20',
+  };
+
+  const jobsList = [normalJob, extendedJob, suppJob];
+
+  // 1. 全部
+  const all = filterJobs(jobsList, { ...defaultFilters, city: '全部城市', changeType: '全部' }, {}, null, now);
+  assert.equal(all.length, 3);
+
+  // 2. 有变更
+  const changed = filterJobs(jobsList, { ...defaultFilters, city: '全部城市', changeType: '有变更' }, {}, null, now);
+  assert.equal(changed.length, 2);
+  assert.ok(changed.some((j) => j.id === 'ext-1'));
+  assert.ok(changed.some((j) => j.id === 'supp-1'));
+
+  // 3. 截止延期
+  const extOnly = filterJobs(jobsList, { ...defaultFilters, city: '全部城市', changeType: '截止延期' }, {}, null, now);
+  assert.equal(extOnly.length, 1);
+  assert.equal(extOnly[0].id, 'ext-1');
+
+  // 4. 补录招募
+  const suppOnly = filterJobs(jobsList, { ...defaultFilters, city: '全部城市', changeType: '补录招募' }, {}, null, now);
+  assert.equal(suppOnly.length, 1);
+  assert.equal(suppOnly[0].id, 'supp-1');
+});
+

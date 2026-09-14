@@ -390,6 +390,7 @@ export default function Home() {
     if (filters.showExpired !== defaultFilters.showExpired) count++;
     if (filters.salary !== defaultFilters.salary) count++;
     if (filters.sort !== defaultFilters.sort) count++;
+    if (filters.changeType !== defaultFilters.changeType) count++;
     return count;
   }, [filters]);
 
@@ -667,6 +668,9 @@ export default function Home() {
                 } else if (focus === 'urgent') {
                   setFilters((prev) => ({ ...prev, sort: 'deadline_asc' }));
                   setNotice('已按截止日期由近及远排序');
+                } else if (focus === 'change') {
+                  setFilters((prev) => ({ ...prev, changeType: '有变更' }));
+                  setNotice('已为您聚焦近期有延期、补录或内容变动的机会');
                 }
                 setPage(1);
               }}

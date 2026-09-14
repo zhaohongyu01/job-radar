@@ -734,6 +734,187 @@ def parse_detail(html, item, source):
     return enrich_job_with_positions(raw_job, positions)
 
 
+def compute_lifecycle_stage(job, now_str):
+    deadline = job.get('deadline')
+    today = (now_str or '')[:10]
+    if deadline and today and deadline < today:
+        return 'expired'
+    title = job.get('title', '')
+    text = job.get('body', '') or job.get('excerpt', '')
+    combined = title + '\n' + text[:1000]
+    if re.search(r'笔试名单|面试名单|笔试安排|面试通知|资格复审|拟录用|录取公示', combined):
+        return 'selection'
+    recent = job.get('recent_change') or {}
+    if recent.get('type') == 'deadline_extended' or re.search(r'延长|延期|推迟', title):
+        return 'extended'
+    if re.search(r'补录|补招|追加|第[二两三]批|续聘', title):
+        return 'supplemental'
+    if deadline and today:
+        try:
+            d1 = dt.date.fromisoformat(today)
+            d2 = dt.date.fromisoformat(deadline[:10])
+            if 0 <= (d2 - d1).days <= 3:
+                return 'expiring_soon'
+        except Exception:
+            pass
+    return 'accepting'
+
+
+def detect_job_events(job, old, now, changed):
+    """Detect changes between previous and incoming versions of a job."""
+    today = (now or '')[:10]
+    pub_date = (job.get('published_at') or today)[:10]
+
+    timeline = list(old.get('timeline') or []) if old else []
+    recent_change = old.get('recent_change') if old else None
+
+    # Base initial publication event
+    if not timeline:
+        timeline.append({
+            'date': pub_date,
+            'timestamp': job.get('published_at') or now,
+            'type': 'published',
+            'title': '首次发布',
+            'detail': f'来源于 {job.get("source_name", "招聘信息渠道")}',
+            'source': job.get('source_name', ''),
+        })
+
+    title = job.get('title', '')
+    text = job.get('body', '') or job.get('excerpt', '')
+
+    if not old:
+        # First seen - check if announcement itself announces an extension, supplemental or selection
+        if re.search(r'延长|延期|推迟', title) or re.search(r'经研究.*?延长|报名时间延长至|截止时间延长至', text):
+            dl = job.get('deadline')
+            detail = f'报名截止时间延期至 {dl}' if dl else '报名截止时间已延期（见原公告）'
+            recent_change = {'type': 'deadline_extended', 'label': '截止延期', 'date': pub_date, 'detail': detail}
+            timeline.append({
+                'date': pub_date,
+                'timestamp': job.get('published_at') or now,
+                'type': 'deadline_extended',
+                'title': '截止延期',
+                'detail': detail,
+            })
+        elif re.search(r'补录|补招|追加|第[二两三]批|续聘', title):
+            detail = '启动补录 / 追加招聘批次'
+            recent_change = {'type': 'supplemental', 'label': '补录招募', 'date': pub_date, 'detail': detail}
+            timeline.append({
+                'date': pub_date,
+                'timestamp': job.get('published_at') or now,
+                'type': 'supplemental',
+                'title': '补录招募启动',
+                'detail': detail,
+            })
+        elif re.search(r'笔试|面试|初试|复试|录用名单|拟录用|体检通知|公示', title):
+            detail = '发布考核选拔或录用进展通知'
+            recent_change = {'type': 'selection_stage', 'label': '考核进展', 'date': pub_date, 'detail': detail}
+            timeline.append({
+                'date': pub_date,
+                'timestamp': job.get('published_at') or now,
+                'type': 'selection_stage',
+                'title': '考核选拔进展',
+                'detail': detail,
+            })
+
+        if job.get('position_count'):
+            timeline.append({
+                'date': pub_date,
+                'timestamp': job.get('published_at') or now,
+                'type': 'positions_updated',
+                'title': '岗位表就绪',
+                'detail': f'包含 {job.get("position_count")} 个具体招聘岗位与专业要求',
+            })
+    elif changed:
+        detected_event = None
+
+        # 1. Deadline extension
+        old_dl = old.get('deadline') or ''
+        new_dl = job.get('deadline') or ''
+        if old_dl and new_dl and new_dl > old_dl:
+            detail = f'报名截止时间延长至 {new_dl}（原截止时间：{old_dl}）'
+            detected_event = {
+                'date': today,
+                'timestamp': now,
+                'type': 'deadline_extended',
+                'title': '截止延期',
+                'detail': detail,
+            }
+            recent_change = {'type': 'deadline_extended', 'label': '截止延期', 'date': today, 'detail': detail}
+
+        # 2. Position updates
+        old_pc = old.get('position_count') or 0
+        new_pc = job.get('position_count') or 0
+        old_majors = set(old.get('majors') or [])
+        new_majors = set(job.get('majors') or [])
+        if not detected_event and (new_pc != old_pc or (new_majors - old_majors)):
+            added = list(new_majors - old_majors)[:3]
+            major_text = f"，新增专业：{'、'.join(added)}" if added else ''
+            detail = f'岗位需求变动为 {new_pc} 个职位{major_text}'
+            detected_event = {
+                'date': today,
+                'timestamp': now,
+                'type': 'positions_updated',
+                'title': '岗位表更新',
+                'detail': detail,
+            }
+            recent_change = {'type': 'positions_updated', 'label': '岗位表更新', 'date': today, 'detail': detail}
+
+        # 3. Supplemental
+        old_supp = bool(re.search(r'补录|补招|追加|第[二两三]批|续聘', old.get('title', '')))
+        new_supp = bool(re.search(r'补录|补招|追加|第[二两三]批|续聘', job.get('title', '')))
+        if not detected_event and (new_supp and not old_supp):
+            detail = '招聘变更为补录 / 追加招聘批次'
+            detected_event = {
+                'date': today,
+                'timestamp': now,
+                'type': 'supplemental',
+                'title': '补录招募启动',
+                'detail': detail,
+            }
+            recent_change = {'type': 'supplemental', 'label': '补录招募', 'date': today, 'detail': detail}
+
+        # 4. Selection stage
+        old_sel = bool(re.search(r'笔试|面试|初试|复试|录用名单|拟录用|公示', old.get('title', '')))
+        new_sel = bool(re.search(r'笔试|面试|初试|复试|录用名单|拟录用|公示', job.get('title', '')))
+        if not detected_event and (new_sel and not old_sel):
+            detail = '发布笔试/面试或录用公示通知'
+            detected_event = {
+                'date': today,
+                'timestamp': now,
+                'type': 'selection_stage',
+                'title': '考核选拔进展',
+                'detail': detail,
+            }
+            recent_change = {'type': 'selection_stage', 'label': '考核进展', 'date': today, 'detail': detail}
+
+        # 5. General content update
+        if not detected_event:
+            detail = '招聘公告正文或附件内容已同步最新变动'
+            detected_event = {
+                'date': today,
+                'timestamp': now,
+                'type': 'content_updated',
+                'title': '信息更新',
+                'detail': detail,
+            }
+            recent_change = {'type': 'content_updated', 'label': '内容更新', 'date': today, 'detail': detail}
+
+        if detected_event:
+            timeline.append(detected_event)
+
+    # Deduplicate timeline events by (date, type, title)
+    seen_keys = set()
+    deduped_timeline = []
+    for evt in timeline:
+        key = (evt.get('date'), evt.get('type'), evt.get('title'))
+        if key not in seen_keys:
+            seen_keys.add(key)
+            deduped_timeline.append(evt)
+
+    deduped_timeline.sort(key=lambda e: e.get('date') or '')
+    return deduped_timeline, recent_change
+
+
 def merge(previous, incoming, now):
     result=dict(previous)
     counts={'new':0,'changed':0,'unchanged':0}
@@ -741,9 +922,12 @@ def merge(previous, incoming, now):
         fingerprint=hashlib.sha256(json.dumps(job,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         old=previous.get(job['id'])
         changed=bool(old and old['fingerprint']!=fingerprint)
+        timeline, recent_change = detect_job_events(job, old, now, changed)
+        stage = compute_lifecycle_stage({**job, 'recent_change': recent_change}, now)
         row=dict(job,fingerprint=fingerprint,first_seen_at=old['first_seen_at'] if old else now,
                  updated_at=now if changed or not old else old['updated_at'],last_verified_at=now,
-                 revision=old.get('revision',1)+int(changed) if old else 1)
+                 revision=old.get('revision',1)+int(changed) if old else 1,
+                 timeline=timeline, recent_change=recent_change, lifecycle_stage=stage)
         result[job['id']]=row
         counts['changed' if changed else 'unchanged' if old else 'new']+=1
     return result,counts
@@ -780,7 +964,7 @@ def deduplicate(jobs):
     Preserve every source URL, application URLs, and differing job/location facts.
     """
     groups = {}
-    for job in sorted(jobs, key=lambda j: (j['first_seen_at'], j['id'])):
+    for job in sorted(jobs, key=lambda j: (j.get('first_seen_at', ''), j['id'])):
         text = re.sub(r'\s+', '', job.get('body', ''))
         company = re.sub(r'\s+', '', job.get('company') or '')
         kind = job.get('kind', '招聘公告')
@@ -874,6 +1058,38 @@ def deduplicate(jobs):
                 parent['body'] = job['body']
                 parent['excerpt'] = job.get('excerpt', parent.get('excerpt', ''))
 
+            # Merge timeline events across duplicate sources
+            if job.get('timeline'):
+                p_timeline = parent.get('timeline') or []
+                p_keys = {(e.get('date'), e.get('type'), e.get('title')) for e in p_timeline}
+                for e in job['timeline']:
+                    k = (e.get('date'), e.get('type'), e.get('title'))
+                    if k not in p_keys:
+                        p_timeline.append(e)
+                        p_keys.add(k)
+                p_timeline.sort(key=lambda e: e.get('date') or '')
+                parent['timeline'] = p_timeline
+
+            # Merge recent_change with priority
+            change_prio = {
+                'deadline_extended': 5,
+                'supplemental': 4,
+                'selection_stage': 3,
+                'positions_updated': 2,
+                'content_updated': 1,
+            }
+            if job.get('recent_change'):
+                if not parent.get('recent_change'):
+                    parent['recent_change'] = job['recent_change']
+                else:
+                    curr_p = change_prio.get(parent['recent_change'].get('type'), 0)
+                    new_p = change_prio.get(job['recent_change'].get('type'), 0)
+                    if new_p > curr_p:
+                        parent['recent_change'] = job['recent_change']
+
+            if not parent.get('lifecycle_stage') and job.get('lifecycle_stage'):
+                parent['lifecycle_stage'] = job['lifecycle_stage']
+
     return list(groups.values())
 
 
@@ -908,6 +1124,13 @@ def public_record(job):
         row['graduation_years']=sorted(set(row['graduation_years']+extra_years))
         if not row.get('deadline'):
             row['deadline'],row['deadline_evidence'],row['deadline_precision']=deadline(row.get('body',''))
+    if not row.get('timeline'):
+        timeline, recent_change = detect_job_events(row, None, row.get('published_at') or '', False)
+        row['timeline'] = timeline
+        if not row.get('recent_change') and recent_change:
+            row['recent_change'] = recent_change
+    if not row.get('lifecycle_stage'):
+        row['lifecycle_stage'] = compute_lifecycle_stage(row, row.get('updated_at') or row.get('published_at') or '')
     return row
 
 
@@ -919,6 +1142,8 @@ def public_summary(job):
         'positions',
     }
     row={k:v for k,v in job.items() if k not in heavy}
+    if 'timeline' in row and isinstance(row['timeline'], list) and len(row['timeline']) > 5:
+        row['timeline'] = row['timeline'][-5:]
     return row
 
 

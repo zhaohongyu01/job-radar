@@ -1143,5 +1143,97 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(len(deduped), 1)
         self.assertEqual(len(deduped[0].get('duplicate_sources', [])), 1)
 
+    def test_get_active_sdei_schools_rotation_and_deep_scan(self):
+        # Day of year 1 (Jan 1) -> 1 % 4 = 1
+        d1 = c.dt.datetime(2026, 1, 1, 12, 0, 0, tzinfo=c.TZ)
+        schools1, grp1 = c.get_active_sdei_schools(now_dt=d1)
+        self.assertEqual(grp1, 1)
+        self.assertTrue(all(core in schools1 for core in c.CORE_SDEI_SCHOOLS))
+        self.assertTrue(all(s in schools1 for s in c.ROTATING_SDEI_GROUPS[1]))
+        self.assertFalse(any(s in schools1 for s in c.ROTATING_SDEI_GROUPS[0]))
+
+        # Forced group
+        schools_f, grp_f = c.get_active_sdei_schools(now_dt=d1, force_group=3)
+        self.assertEqual(grp_f, 3)
+        self.assertTrue(all(s in schools_f for s in c.ROTATING_SDEI_GROUPS[3]))
+
+        # Deep scan includes all schools
+        schools_all, _ = c.get_active_sdei_schools(now_dt=d1, deep_scan=True)
+        self.assertEqual(len(schools_all), 17)
+
+    def test_sdei_pacing_and_rejection_pauses(self):
+        import collector_runtime as cr
+        err_403 = urllib.error.HTTPError('https://school.gxjy.sdei.edu.cn', 403, 'Forbidden', {}, None)
+        err_420 = urllib.error.HTTPError('https://jnhrss.jinan.gov.cn', 420, 'Enhance Your Calm', {}, None)
+        
+        # 403 and 420 should never be retried immediately
+        self.assertIsNone(cr.retry_delay(err_403, 0))
+        self.assertIsNone(cr.retry_delay(err_420, 0))
+
+        # Rejection triggers host pause
+        cr.pause_on_rejection('https://school.gxjy.sdei.edu.cn/test', err_403)
+        with self.assertRaises(cr.HostPaused):
+            cr.pace('https://school.gxjy.sdei.edu.cn/test')
+
+        # Clean up paused host
+        with cr._lock:
+            cr._paused.pop('school.gxjy.sdei.edu.cn', None)
+
+    def test_safe_early_exit_on_chronological_feed(self):
+        source = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        stamp = '2026-09-10'
+        item = {
+            'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1001',
+            'title': '测试公告已在库中',
+            'published_at': stamp,
+            'inline_html': '<div id="zoom">测试内容</div>',
+        }
+        item_job_id = c.item_id(item)
+        with TemporaryDirectory() as temp:
+            # Seed state with this job
+            state = {
+                'jobs': {
+                    item_job_id: {
+                        'id': item_job_id,
+                        'source_id': source['id'],
+                        'published_at': stamp,
+                        'url': item['url'],
+                    }
+                },
+                'sources': {
+                    source['id']: {
+                        'id': source['id'],
+                        'status': 'ok',
+                        'total_items': 10,
+                    }
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+            
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=source['id'], pages=5, days=180,
+                refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+            
+            fetch_called_pages = []
+            def fake_sdei_list(src, page):
+                fetch_called_pages.append(page)
+                return [item], 5
+
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
+                res = c.run(args)
+            
+            self.assertEqual(res, 0)
+            # Only page 1 should have been fetched thanks to safe early exit!
+            self.assertEqual(fetch_called_pages, [1])
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertTrue(new_state['sources'][source['id']].get('early_exit'))
+
 
 if __name__=='__main__': unittest.main()
+

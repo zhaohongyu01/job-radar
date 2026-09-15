@@ -301,6 +301,35 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('--detail-timeout', out)
         self.assertIn('--detail-retries', out)
         self.assertIn('--detail-failure-limit', out)
+        self.assertIn('--sdei-group', out)
+        self.assertIn('--deep-scan', out)
+        self.assertIn('--force-positions', out)
+
+    def test_validate_result_accepts_deferred_and_blocked_sources(self):
+        started = dt.datetime(2026, 9, 15, 10, 0, 0, tzinfo=c.TZ)
+        stamp = started.isoformat()
+        state = {
+            'jobs': {'job1': {'id': 'job1', 'source_id': 'sdut-announcements'}},
+            'sources': {
+                'sdut-announcements': {
+                    'id': 'sdut-announcements', 'name': '山东理工大学', 'status': 'deferred',
+                    'last_attempt_at': stamp, 'parsed': 0, 'cached': 0, 'errors': []
+                },
+                'ujn-announcements': {
+                    'id': 'ujn-announcements', 'name': '济南大学', 'status': 'blocked',
+                    'last_attempt_at': stamp, 'parsed': 0, 'cached': 0, 'errors': []
+                }
+            },
+            'last_run_at': stamp
+        }
+        snapshot = {
+            'jobs': [{'id': 'job1'}],
+            'generated_at': stamp
+        }
+        baseline_ids = ['job1']
+        # Should not raise ValueError
+        attempted = ci.validate_result(0, state, snapshot, baseline_ids, started)
+        self.assertEqual(len(attempted), 2)
 
     def test_write_report_isolates_shard_sources_when_source_filter_specified(self):
         with TemporaryDirectory() as tmp:

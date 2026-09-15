@@ -60,11 +60,16 @@ def pace(url):
     host = urllib.parse.urlsplit(url).netloc
     with _lock:
         if _paused.get(host, 0) > time.monotonic():
-            raise HostPaused('host paused after HTTP 403/429: ' + host)
+            raise HostPaused('host paused after HTTP 403/420/429: ' + host)
         now = time.monotonic()
         delay = max(0, _next_request.get(host, 0) - now)
-        # The school platform hosts dozens of feeds on the same server.
-        interval = 1.0 if host == 'school.gxjy.sdei.edu.cn' else 0.3
+        # SDEI shared school platform runs on a dedicated slow channel with jitter.
+        if host == 'school.gxjy.sdei.edu.cn':
+            interval = random.uniform(3.0, 4.5)
+        elif host.endswith('.gov.cn'):
+            interval = random.uniform(1.8, 2.8)
+        else:
+            interval = 0.3 + random.uniform(0, 0.2)
         _next_request[host] = now + delay + interval
     if delay:
         if remaining(delay) < delay:
@@ -73,7 +78,7 @@ def pace(url):
 
 
 def retry_delay(error, attempt):
-    """None means a permanent error: never retry 403, 404 or parse failures."""
+    """None means a permanent error: never retry 403, 404, 420 or parse failures."""
     if isinstance(error, urllib.error.HTTPError):
         if error.code not in {408, 429, 500, 502, 503, 504}:
             return None
@@ -92,10 +97,16 @@ def retry_delay(error, attempt):
 
 
 def pause_on_rejection(url, error):
-    if getattr(error, 'code', None) in {403, 429}:
-        delay = retry_delay(error, 0) if error.code == 429 else 60
+    code = getattr(error, 'code', None)
+    if code in {403, 420, 429}:
+        if code == 429:
+            delay = retry_delay(error, 0) or 180
+        elif code == 403:
+            delay = 3600 * 4  # 4-hour cooldown for 403
+        else:
+            delay = 300  # 5-minute cooldown for 420
         with _lock:
-            _paused[urllib.parse.urlsplit(url).netloc] = time.monotonic() + max(60, delay or 0)
+            _paused[urllib.parse.urlsplit(url).netloc] = time.monotonic() + max(60, delay)
 
 
 def retry_request(url, error, attempt, retries):

@@ -90,6 +90,34 @@ SDEI_SCHOOLS = [
     ('bzmc', '滨州医学院'), ('lcu', '聊城大学'), ('lyu', '临沂大学'),
     ('sdtbu', '山东工商学院'), ('dzu', '德州学院'), ('sdua', '山东农业工程学院'),
 ]
+CORE_SDEI_SCHOOLS = {'jobsdufe', 'ujn', 'sdnu', 'qlu'}
+ROTATING_SDEI_GROUPS = [
+    ['qdu', 'qust', 'ytu', 'ldu'],
+    ['sdsmu', 'sdfmu', 'bzmc'],
+    ['sdut', 'lcu', 'lyu'],
+    ['sdtbu', 'dzu', 'sdua'],
+]
+
+
+def get_active_sdei_schools(now_dt=None, force_group=None, deep_scan=False):
+    """Determine which SDEI schools are active for this collection run.
+    
+    CORE schools are collected every run.
+    Rotating schools are divided into 4 groups by day-of-year.
+    If deep_scan is True, all schools are active.
+    """
+    if deep_scan:
+        return {s[0] for s in SDEI_SCHOOLS}, -1
+    if force_group is not None and 0 <= force_group < len(ROTATING_SDEI_GROUPS):
+        active_group = force_group
+    else:
+        now = now_dt or dt.datetime.now(TZ)
+        active_group = now.timetuple().tm_yday % len(ROTATING_SDEI_GROUPS)
+    active = set(CORE_SDEI_SCHOOLS)
+    active.update(ROTATING_SDEI_GROUPS[active_group])
+    return active, active_group
+
+
 for school, name in SDEI_SCHOOLS:
     for channel, label in [('announcements', '招聘公告'), ('positions', '具体岗位')]:
         SOURCES.append({'id': f'{school}-{channel}', 'name': f'{name} · {label}',
@@ -207,7 +235,11 @@ def connect_ipv4_first(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_a
     """Prefer reachable IPv4 on dual-stack hosts, retain IPv6 fallback and TLS checks."""
     host,port=address
     candidates=socket.getaddrinfo(host,port,0,socket.SOCK_STREAM)
-    candidates.sort(key=lambda row: row[0]!=socket.AF_INET)
+    ipv4_candidates = [c for c in candidates if c[0] == socket.AF_INET]
+    if ipv4_candidates and (host.endswith('.gov.cn') or host == 'school.gxjy.sdei.edu.cn'):
+        candidates = ipv4_candidates
+    else:
+        candidates.sort(key=lambda row: row[0]!=socket.AF_INET)
     error=None
     for family,kind,proto,_,sockaddr in candidates:
         sock=socket.socket(family,kind,proto)
@@ -326,7 +358,7 @@ def safe_url(value, base, keep_fragment=False):
 
 
 @bounded_request
-def fetch(url, form=None, timeout=18, retries=1, referer=''):
+def fetch(url, form=None, timeout=18, retries=1, referer='', extra_headers=None):
     # Keep list/API requests tolerant of slow public sites, while allowing
     # detail callers to opt into a shorter budget.  No TLS weakening or login
     # bypass is used here.
@@ -342,7 +374,12 @@ def fetch(url, form=None, timeout=18, retries=1, referer=''):
                 origin = urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], '', '', ''))
                 headers['Referer'] = origin + '/'
             if form is not None:
+                origin = urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], '', '', ''))
+                if origin:
+                    headers['Origin'] = origin
                 headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
+            if extra_headers:
+                headers.update(extra_headers)
             req = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode() if form is not None else None,
                 headers=headers)
             with OPENER.open(req, timeout=remaining(timeout)) as r:
@@ -509,38 +546,71 @@ def sdu_list(html, base):
     return items, next_links[0] if next_links else None
 
 
+_sdei_sessions = set()
+
+
+def warm_sdei_session(school):
+    """Visit the school portal entry to capture session / WAF cookies before hitting AJAX endpoints."""
+    if school in _sdei_sessions:
+        return
+    portal_url = f"https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo"
+    try:
+        req = urllib.request.Request(
+            portal_url,
+            headers={
+                'User-Agent': DEFAULT_USER_AGENT,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+            }
+        )
+        with OPENER.open(req, timeout=10) as r:
+            _ = r.read(100_000)
+        _sdei_sessions.add(school)
+    except Exception:
+        pass
+
+
 def sdei_list(source, page):
-    base=f"https://school.gxjy.sdei.edu.cn/{source['school']}/"
-    positions=source['channel']=='positions'
-    params={'pageNum':page,'pageSize':20}
-    url=base+('school/companyissueinfo/list1' if positions else 'front/indexZpggList')
-    referer=f"{base}front/JiuYeInfo"
-    payload=json.loads(fetch(url,params,referer=referer) if positions else fetch(url+'?'+urllib.parse.urlencode(params),referer=referer))
-    if not isinstance(payload.get('rows'),list) or 'total' not in payload:
+    base = f"https://school.gxjy.sdei.edu.cn/{source['school']}/"
+    warm_sdei_session(source['school'])
+    positions = source['channel'] == 'positions'
+    params = {'pageNum': page, 'pageSize': 20}
+    url = base + ('school/companyissueinfo/list1' if positions else 'front/indexZpggList')
+    referer = f"{base}front/JiuYeInfo?type={'zwxx' if positions else 'zpgg'}"
+    extra_headers = {
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+    payload = json.loads(
+        fetch(url, params, referer=referer, extra_headers=extra_headers)
+        if positions else
+        fetch(url + '?' + urllib.parse.urlencode(params), referer=referer, extra_headers=extra_headers)
+    )
+    if not isinstance(payload.get('rows'), list) or 'total' not in payload:
         raise ValueError('public list response missing rows/total')
-    items=[]
+    items = []
     for row in payload['rows']:
         if positions:
-            company=(row.get('companyName') or row.get('companyname') or row.get('unitName') or
-                     row.get('orgName') or '招聘单位见原页面')
-            role=row.get('jobsort2') or row.get('jobName') or '招聘岗位'
-            title=str(company)+' · '+str(role)
-            comid=row.get('comid') or row.get('id')
+            company = (row.get('companyName') or row.get('companyname') or row.get('unitName') or
+                       row.get('orgName') or '招聘单位见原页面')
+            role = row.get('jobsort2') or row.get('jobName') or '招聘岗位'
+            title = str(company) + ' · ' + str(role)
+            comid = row.get('comid') or row.get('id')
             if not comid: raise ValueError('position row missing company id')
-            url=base+'school/companyissueinfo/edit1/'+str(comid)
-            values=[('工作地点',row.get('areaString')),('学历要求',row.get('degreereq')),('专业要求',row.get('specialty')),
-                    ('薪资',row.get('basewage')),('招聘人数',row.get('requestnum')),('岗位职责',row.get('jobdescribe')),
-                    ('任职要求',row.get('workexp')),('报名截止',row.get('endtime'))]
-            body=''.join('<p>'+html_lib.escape(f'{key}：{value}')+'</p>' for key,value in values if value is not None)
-            published=(row.get('starttime') or row.get('createtime') or '')[:10] or None
+            url = base + 'school/companyissueinfo/edit1/' + str(comid)
+            values = [('工作地点', row.get('areaString')), ('学历要求', row.get('degreereq')), ('专业要求', row.get('specialty')),
+                      ('薪资', row.get('basewage')), ('招聘人数', row.get('requestnum')), ('岗位职责', row.get('jobdescribe')),
+                      ('任职要求', row.get('workexp')), ('报名截止', row.get('endtime'))]
+            body = ''.join('<p>' + html_lib.escape(f'{key}：{value}') + '</p>' for key, value in values if value is not None)
+            published = (row.get('starttime') or row.get('createtime') or '')[:10] or None
         else:
-            title=row['gonggaoTitle']
-            url=base+'jiuye/zhaopingg/detail/'+str(row['gonggaoId'])
-            body=row.get('gonggaoContent') or ''
-            published=(row.get('checkTime') or row.get('createTime') or '')[:10] or None
-        items.append({'url':url,'title':title,'published_at':published,'inline_html':'<div id="zoom">'+body+'</div>',
-                      'structured':row,'kind':'具体岗位' if positions else '招聘公告'})
-    return items,(int(payload['total'])+19)//20
+            title = row['gonggaoTitle']
+            url = base + 'jiuye/zhaopingg/detail/' + str(row['gonggaoId'])
+            body = row.get('gonggaoContent') or ''
+            published = (row.get('checkTime') or row.get('createTime') or '')[:10] or None
+        items.append({'url': url, 'title': title, 'published_at': published, 'inline_html': '<div id="zoom">' + body + '</div>',
+                      'structured': row, 'kind': '具体岗位' if positions else '招聘公告'})
+    return items, (int(payload['total']) + 19) // 20
 
 
 def sdei_news_list(page, page_size=50):
@@ -2082,6 +2152,13 @@ def run(args):
         if source_filter and source_filter != pack_source_ids:
             raise ValueError('--sources and --source-pack select different source sets')
         source_filter = pack_source_ids
+    is_deep_scan = bool(getattr(args, 'deep_scan', False) or dt.datetime.now(TZ).weekday() == 6)
+    active_sdei_schools, sdei_group = get_active_sdei_schools(
+        now_dt=dt.datetime.now(TZ),
+        force_group=getattr(args, 'sdei_group', None),
+        deep_scan=is_deep_scan
+    )
+    schools_with_new_announcements = set()
     for source in SOURCES:
         if source_filter and source['id'] not in source_filter: continue
         source=dict(source)
@@ -2093,6 +2170,27 @@ def run(args):
         if source['id']=='nankai' and args.nankai_area:
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
         status=dict(source,last_attempt_at=now,last_success_at=previous['sources'].get(source['id'],{}).get('last_success_at'),pages=0,discovered=0,parsed=0,cached=0,probed=0,detail_attempted=0,detail_failed=0,detail_skipped=0,errors=[],status='ok',coverage='近期分页，非全量历史')
+        if source.get('adapter') == 'sdei':
+            school = source['school']
+            channel = source['channel']
+            is_single_explicit_source = bool(source_filter and source_filter == {source['id']})
+            if not is_single_explicit_source:
+                if school not in active_sdei_schools:
+                    status['status'] = 'deferred'
+                    status['coverage'] = f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据'
+                    sources[source['id']] = status
+                    print(source['id'], 'deferred 0 0', flush=True)
+                    continue
+                if channel == 'positions' and not is_deep_scan and not getattr(args, 'force_positions', False):
+                    announcements_id = f'{school}-announcements'
+                    ann_status = sources.get(announcements_id, {})
+                    has_activity = (ann_status.get('parsed', 0) > 0 or school in schools_with_new_announcements)
+                    if not has_activity:
+                        status['status'] = 'deferred'
+                        status['coverage'] = '具体岗位按需联动：本轮对应招聘公告无新增或变更，暂缓查询具体岗位'
+                        sources[source['id']] = status
+                        print(source['id'], 'deferred 0 0', flush=True)
+                        continue
         try:
             api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus'}
             first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
@@ -2179,6 +2277,21 @@ def run(args):
                         known.add(item.get('identity',item['url']))
                         if item.get('is_active_listing') or not item['published_at'] or item['published_at']>=cutoff:
                             items.append(item)
+                # Safe early exit for reverse-chronological feeds when all items already exist
+                is_chrono_feed = source.get('adapter') in {'sdei', 'sdei_news', 'jinan_cms', 'qdhrss'}
+                if is_chrono_feed and not is_deep_scan and found and page == 1:
+                    all_found_exist = all(item_id(i) in previous['jobs'] for i in found)
+                    source_known = [j for j in previous['jobs'].values() if j.get('source_id') == source['id']]
+                    max_known_date = max((j.get('published_at') or '') for j in source_known) if source_known else ''
+                    max_page_date = max((i.get('published_at') or '') for i in found)
+                    not_newer = (max_page_date <= max_known_date) if (max_known_date and max_page_date) else False
+                    prev_total = previous.get('sources', {}).get(source['id'], {}).get('total_items')
+                    total_stable = (prev_total is None) or (abs(total - prev_total) <= 5)
+                    if all_found_exist and not_newer and total_stable:
+                        status['coverage'] = '首屏公告已全量覆盖且无新发布，安全早停'
+                        status['early_exit'] = True
+                        status['total_items'] = total
+                        break
                 if is_offerjack:
                     if offerjack_page>=min(total,offerjack_query_limit):
                         if total>offerjack_query_limit:
@@ -2473,9 +2586,21 @@ def run(args):
             if status['status']=='ok': status['last_success_at']=dt.datetime.now(TZ).isoformat(timespec='seconds')
             queues[source['id']] = list(queued_by_url.values())
         except Exception as e:
-            status['status']='failed'
-            status['errors'].append({'url':source['url'],'reason':str(e)[:200]})
+            err_str = str(e)
+            is_blocked = ('403' in err_str or '420' in err_str or
+                          'host paused' in err_str.lower() or 'forbidden' in err_str.lower())
+            if is_blocked:
+                status['status'] = 'blocked'
+                blocked_until = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
+                status['blocked_until'] = blocked_until
+                status['coverage'] = f'上游安全策略拦截(HTTP 403/420)；进入冷却至 {blocked_until[:19]}，保留历史记录'
+            else:
+                status['status'] = 'failed'
+                status['coverage'] = f'采集器错误：{err_str[:120]}'
+            status['errors'].append({'url':source['url'],'reason':err_str[:200]})
         sources[source['id']]=status
+        if source.get('adapter') == 'sdei' and source.get('channel') == 'announcements' and status.get('parsed', 0) > 0:
+            schools_with_new_announcements.add(source['school'])
         status['elapsed_seconds'] = round(time.monotonic() - source_started, 2)
         status['pending_details'] = len(queues.get(source['id'], []))
         status['inventory_complete'] = inventory_complete if is_active_listing_source else None
@@ -2503,7 +2628,7 @@ def run(args):
     if not getattr(args, 'state_only', False):
         export_snapshot(state,public_dir,args.days,changes)
     print(json.dumps({'total':len(jobs),'changes':changes},ensure_ascii=False),flush=True)
-    return 0 if all(s['status']=='ok' for s in sources.values() if not source_filter or s['id'] in source_filter) else 2
+    return 0 if all(s['status'] in {'ok', 'deferred', 'blocked'} for s in sources.values() if not source_filter or s['id'] in source_filter) else 2
 
 
 if __name__=='__main__':
@@ -2523,6 +2648,9 @@ if __name__=='__main__':
     parser.add_argument('--detail-timeout',type=float,default=8,help='network timeout in seconds for individual detail pages')
     parser.add_argument('--detail-retries',type=int,default=1,help='number of retries for an individual detail page')
     parser.add_argument('--detail-failure-limit',type=int,default=6,help='open a source circuit after this many consecutive detail failures')
+    parser.add_argument('--sdei-group',type=int,default=None,help='override SDEI rotation group index (0..3)')
+    parser.add_argument('--deep-scan',action='store_true',help='bypass safe early exit and scan all rotation groups and positions')
+    parser.add_argument('--force-positions',action='store_true',help='force scanning SDEI position endpoints even if announcements have no updates')
     args=parser.parse_args()
     if not 1<=args.pages<=500 or not 1<=args.days<=365: parser.error('pages 1..500; days 1..365')
     if not 0<=args.offerjack_pages<=1000: parser.error('offerjack-pages 0..1000')

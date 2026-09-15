@@ -255,7 +255,7 @@ def validate_result(code, state, snapshot, baseline_ids, started):
         raise ValueError('Historical records are missing; deployment blocked')
     attempted = [s for s in state['sources'].values()
                  if dt.datetime.fromisoformat(s['last_attempt_at']) >= started]
-    usable = [s for s in attempted if s.get('parsed', 0) or s.get('cached', 0) or s.get('status') == 'ok']
+    usable = [s for s in attempted if s.get('parsed', 0) or s.get('cached', 0) or s.get('status') in {'ok', 'deferred', 'blocked'}]
     if not usable:
         raise ValueError('No source produced a usable verification; deployment blocked')
     return attempted
@@ -519,6 +519,12 @@ def run_source(definition, prior, args, budget):
                    '--detail-timeout', str(getattr(args,'detail_timeout',8)),
                    '--detail-retries', str(getattr(args,'detail_retries',1)),
                    '--detail-failure-limit', str(getattr(args,'detail_failure_limit',6))]
+        if getattr(args, 'deep_scan', False):
+            command.append('--deep-scan')
+        if getattr(args, 'sdei_group', None) is not None:
+            command.extend(['--sdei-group', str(args.sdei_group)])
+        if getattr(args, 'force_positions', False):
+            command.append('--force-positions')
         before = time.monotonic()
         code, timed_out = run_process(command, budget)
         state = recover_source(directory, definition, prior, started, code, timed_out)
@@ -540,6 +546,14 @@ def collect(args):
              'delta_version':1, 'base_generation':baseline['last_run_at'], 'source_pack':source_pack}
     atomic_json(args.data_dir / 'state.json', state)
     host_rejections = {}
+    is_deep_scan = bool(getattr(args, 'deep_scan', False) or dt.datetime.now(TZ).weekday() == 6)
+    active_sdei_schools, sdei_group = collector.get_active_sdei_schools(
+        now_dt=dt.datetime.now(TZ),
+        force_group=getattr(args, 'sdei_group', None),
+        deep_scan=is_deep_scan
+    )
+    schools_with_new_announcements = set()
+    is_single_explicit_source = bool(len(selected) == 1)
     for definition in definitions:
         identifier = definition['id']
         host = urllib.parse.urlsplit(definition['url']).netloc
@@ -548,18 +562,55 @@ def collect(args):
                  'sources':{identifier:baseline['sources'][identifier]} if identifier in baseline['sources'] else {},
                  'pending':{identifier:baseline.get('pending', {}).get(identifier, [])},
                  'last_run_at':baseline['last_run_at']}
+        if definition.get('adapter') == 'sdei' and not is_single_explicit_source:
+            school = definition['school']
+            channel = definition['channel']
+            if school not in active_sdei_schools:
+                now = dt.datetime.now(TZ).isoformat(timespec='seconds')
+                status = dict(definition, status='deferred', last_attempt_at=now, parsed=0, cached=0,
+                              last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
+                              coverage=f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据')
+                result = dict(prior, sources={identifier: status}, last_run_at=now)
+                combine_states(result)
+                state['sources'][identifier] = status
+                atomic_json(args.data_dir / 'state.json', state)
+                write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
+                             state, source_filter=selected, pack_name=source_pack, emit_summary=False)
+                continue
+            if channel == 'positions' and not is_deep_scan and not getattr(args, 'force_positions', False):
+                announcements_id = f'{school}-announcements'
+                ann_status = state['sources'].get(announcements_id, {})
+                has_activity = (ann_status.get('parsed', 0) > 0 or school in schools_with_new_announcements)
+                if not has_activity:
+                    now = dt.datetime.now(TZ).isoformat(timespec='seconds')
+                    status = dict(definition, status='deferred', last_attempt_at=now, parsed=0, cached=0,
+                                  last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
+                                  coverage='具体岗位按需联动：本轮对应招聘公告无新增或变更，暂缓查询具体岗位')
+                    result = dict(prior, sources={identifier: status}, last_run_at=now)
+                    combine_states(result)
+                    state['sources'][identifier] = status
+                    atomic_json(args.data_dir / 'state.json', state)
+                    write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
+                                 state, source_filter=selected, pack_name=source_pack, emit_summary=False)
+                    continue
         if budget <= 1 or len(host_rejections.get(host, set())) >= 2:
             now = dt.datetime.now(TZ).isoformat(timespec='seconds')
+            is_host_blocked = len(host_rejections.get(host, set())) >= 2
             reason = '分片达到软截止；下次继续' if budget <= 1 else '同主机多个订阅被拒绝，暂停本轮请求并保留历史'
-            status = dict(definition, status='failed', last_attempt_at=now, parsed=0, cached=0,
+            status = dict(definition, status='blocked' if is_host_blocked else 'partial',
+                          last_attempt_at=now, parsed=0, cached=0,
                           last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
                           errors=[{'url':definition['url'],'reason':reason}], coverage=reason)
+            if is_host_blocked:
+                status['blocked_until'] = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
             result = dict(prior, sources={identifier:status}, last_run_at=now)
         else:
             result = run_source(definition, prior, args, budget)
         combine_states(result)
         status = result['sources'][identifier]
-        if any(re.search(r'HTTP Error (?:403|429)|host paused', issue.get('reason','')) for issue in status.get('errors', [])):
+        if definition.get('adapter') == 'sdei' and definition.get('channel') == 'announcements' and status.get('parsed', 0) > 0:
+            schools_with_new_announcements.add(definition['school'])
+        if any(re.search(r'HTTP Error (?:403|420|429)|host paused', issue.get('reason','')) for issue in status.get('errors', [])):
             host_rejections.setdefault(host,set()).add(definition.get('school') or identifier)
         state['jobs'].update({k:v for k,v in result['jobs'].items() if v != baseline['jobs'].get(k)})
         state['sources'].update(result['sources'])
@@ -567,9 +618,9 @@ def collect(args):
         state['last_run_at'] = max(state['last_run_at'], result['last_run_at'])
         # A job-level interruption still leaves an uploadable delta after each source.
         atomic_json(args.data_dir / 'state.json', state)
-        write_report(args.data_dir, 0 if all(s.get('status')=='ok' for s in state['sources'].values()) else 2,
+        write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
                      state, source_filter=selected, pack_name=source_pack, emit_summary=False)
-    code = 0 if all(s.get('status')=='ok' for s in state['sources'].values()) else 2
+    code = 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2
     write_report(args.data_dir, code, state, source_filter=selected, pack_name=source_pack)
 
 
@@ -597,6 +648,9 @@ if __name__ == '__main__':
                         help='number of retries for an individual detail page')
     parser.add_argument('--detail-failure-limit', type=int, default=6,
                         help='open a source circuit after this many consecutive detail failures')
+    parser.add_argument('--sdei-group', type=int, default=None, help='override SDEI rotation group index (0..3)')
+    parser.add_argument('--deep-scan', action='store_true', help='bypass safe early exit and scan all rotation groups and positions')
+    parser.add_argument('--force-positions', action='store_true', help='force scanning SDEI position endpoints')
     args = parser.parse_args()
     try:
         if args.operation == 'prepare':

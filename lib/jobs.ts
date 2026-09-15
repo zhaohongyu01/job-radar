@@ -125,15 +125,15 @@ export type Source = {
   sectors?: string[];
   trust?: string;
   source_family?: string;
-  status: string;
-  pages: number;
-  discovered: number;
-  parsed: number;
+  status?: string;
+  pages?: number;
+  discovered?: number;
+  parsed?: number;
   cached?: number;
-  coverage: string;
-  last_success_at: string | null;
-  last_attempt_at: string;
-  errors: { url: string; reason: string }[];
+  coverage?: string;
+  last_success_at?: string | null;
+  last_attempt_at?: string | null;
+  errors?: { url: string; reason: string }[];
 };
 export type Snapshot = {
   schema_version: number;

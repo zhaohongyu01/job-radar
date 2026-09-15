@@ -553,7 +553,14 @@ def collect(args):
         deep_scan=is_deep_scan
     )
     schools_with_new_announcements = set()
-    is_single_explicit_source = bool(len(selected) == 1)
+    def make_idle_source_status(defn, st, at, cov, succ=None, errs=None, **extra):
+        base = dict(defn, status=st, last_attempt_at=at, last_success_at=succ,
+                    pages=0, discovered=0, parsed=0, cached=0, probed=0,
+                    detail_attempted=0, detail_failed=0, detail_skipped=0,
+                    errors=errs if errs is not None else [], coverage=cov)
+        base.update(extra)
+        return base
+
     for definition in definitions:
         identifier = definition['id']
         host = urllib.parse.urlsplit(definition['url']).netloc
@@ -568,10 +575,12 @@ def collect(args):
             try:
                 if dt.datetime.fromisoformat(prior_blocked) > dt.datetime.now(TZ):
                     now = dt.datetime.now(TZ).isoformat(timespec='seconds')
-                    status = dict(definition, status='blocked', last_attempt_at=now, parsed=0, cached=0,
-                                  blocked_until=prior_blocked,
-                                  last_success_at=prior_source.get('last_success_at'),
-                                  coverage=f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录')
+                    status = make_idle_source_status(
+                        definition, status='blocked', last_attempt_at=now,
+                        coverage=f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录',
+                        last_success_at=prior_source.get('last_success_at'),
+                        blocked_until=prior_blocked
+                    )
                     if 'total_items' in prior_source:
                         status['total_items'] = prior_source['total_items']
                     result = dict(prior, sources={identifier: status}, last_run_at=now)
@@ -588,9 +597,11 @@ def collect(args):
             channel = definition['channel']
             if school not in active_sdei_schools:
                 now = dt.datetime.now(TZ).isoformat(timespec='seconds')
-                status = dict(definition, status='deferred', last_attempt_at=now, parsed=0, cached=0,
-                              last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
-                              coverage=f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据')
+                status = make_idle_source_status(
+                    definition, status='deferred', last_attempt_at=now,
+                    coverage=f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据',
+                    last_success_at=prior['sources'].get(identifier, {}).get('last_success_at')
+                )
                 if 'total_items' in prior_source:
                     status['total_items'] = prior_source['total_items']
                 if 'blocked_until' in prior_source:
@@ -608,9 +619,11 @@ def collect(args):
                 has_activity = (school in schools_with_new_announcements or ann_status.get('has_new_announcements', False))
                 if not has_activity:
                     now = dt.datetime.now(TZ).isoformat(timespec='seconds')
-                    status = dict(definition, status='deferred', last_attempt_at=now, parsed=0, cached=0,
-                                  last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
-                                  coverage='具体岗位按需联动：本轮对应招聘公告无新增或变更，暂缓查询具体岗位')
+                    status = make_idle_source_status(
+                        definition, status='deferred', last_attempt_at=now,
+                        coverage='具体岗位按需联动：本轮对应招聘公告无新增或变更，暂缓查询具体岗位',
+                        last_success_at=prior['sources'].get(identifier, {}).get('last_success_at')
+                    )
                     if 'total_items' in prior_source:
                         status['total_items'] = prior_source['total_items']
                     if 'blocked_until' in prior_source:
@@ -626,10 +639,12 @@ def collect(args):
             now = dt.datetime.now(TZ).isoformat(timespec='seconds')
             is_host_blocked = len(host_rejections.get(host, set())) >= 2
             reason = '分片达到软截止；下次继续' if budget <= 1 else '同主机多个订阅被拒绝，暂停本轮请求并保留历史'
-            status = dict(definition, status='blocked' if is_host_blocked else 'partial',
-                          last_attempt_at=now, parsed=0, cached=0,
-                          last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
-                          errors=[{'url':definition['url'],'reason':reason}], coverage=reason)
+            status = make_idle_source_status(
+                definition, status='blocked' if is_host_blocked else 'partial',
+                last_attempt_at=now, coverage=reason,
+                last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
+                errs=[{'url': definition['url'], 'reason': reason}]
+            )
             if is_host_blocked:
                 status['blocked_until'] = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
             result = dict(prior, sources={identifier:status}, last_run_at=now)

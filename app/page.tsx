@@ -1072,7 +1072,11 @@ export default function Home() {
                       ? '本次读取成功'
                       : s.status === 'partial'
                         ? '部分失败'
-                        : '本次读取失败'}
+                        : s.status === 'deferred'
+                          ? '按需联动'
+                          : s.status === 'blocked'
+                            ? '临时冷却'
+                            : '本次读取失败'}
                   </span>
                 </h3>
                 {(s.scope || s.recruitment_types?.length || s.sectors?.length || s.trust) && (
@@ -1092,14 +1096,14 @@ export default function Home() {
                   </div>
                 )}
                 <p>
-                  读取 {s.pages} 页，发现 {s.discovered} 条、详情解析 {s.parsed}{' '}
-                  条{s.cached ? `、复用近期已核实 ${s.cached} 条` : ''} · {s.coverage}
+                  读取 {s.pages ?? 0} 页，发现 {s.discovered ?? 0} 条、详情解析 {s.parsed ?? 0}{' '}
+                  条{s.cached ? `、复用近期已核实 ${s.cached} 条` : ''} · {s.coverage || '按规则运行'}
                 </p>
                 <p>最近完整成功：{date(s.last_success_at, true)}</p>
                 <p>最近尝试：{date(s.last_attempt_at, true)}</p>
-                {s.errors.length > 0 && (
+                {Boolean(s.errors && s.errors.length > 0) && (
                   <p className="warning-text">
-                    {s.errors.length} 项读取异常，相关旧记录仍保留。
+                    {s.errors?.length} 项读取异常，相关旧记录仍保留。
                   </p>
                 )}
                 <OutLink url={s.url}>访问来源</OutLink>

@@ -297,6 +297,9 @@ export function DetailDrawer({
                   {(selected.attachments ?? []).map((a, i) => (
                     <div className="attachment" key={i}>
                       <OutLink url={a.url}>{a.title}</OutLink>
+                      {a.parse_status === 'deferred' && (
+                        <span className="text-muted">岗位表尚未解析完整，请查看原附件</span>
+                      )}
                       {(() => {
                         const positions = selected.positions ?? [];
                         const hasBoundPositionSources = positions.some((p) => Boolean(p.source_url));

@@ -3,6 +3,11 @@ from __future__ import annotations
 
 import io
 import re
+import json
+from pathlib import Path
+import subprocess
+import sys
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 try:
@@ -495,6 +500,9 @@ def extract_all_positions(
         text_positions = extract_positions_from_text(text)
         all_positions.extend(text_positions)
 
+    # CPU-heavy documents run outside the detail thread, so a damaged workbook
+    # or PDF can be killed without losing the announcement or other sources.
+    attachment_deadline = time.monotonic() + 20
     # 3. Attachments (XLSX / PDF) if fetcher is available
     if attachments and fetch_attachment_fn:
         for att in attachments:
@@ -507,20 +515,31 @@ def extract_all_positions(
             if not is_pos_doc or not url:
                 continue
 
+            att['parse_status'] = 'deferred'
+            if time.monotonic() >= attachment_deadline:
+                continue
+
             try:
                 data = fetch_attachment_fn(url)
                 if not data:
                     continue
-                if re.search(r'\.xlsx?(?:\?|$)', url, re.I) or 'excel' in title.lower() or '表格' in title:
-                    att_positions = parse_excel_bytes(data, filename=title)
-                    for p in att_positions:
-                        p['source_url'] = url
-                    all_positions.extend(att_positions)
-                elif re.search(r'\.pdf(?:\?|$)', url, re.I):
-                    att_positions = parse_pdf_bytes(data, filename=title)
-                    for p in att_positions:
-                        p['source_url'] = url
-                    all_positions.extend(att_positions)
+                kind = ('xlsx' if re.search(r'\.xlsx?(?:\?|$)', url, re.I) or 'excel' in title.lower() or '表格' in title
+                        else 'pdf' if re.search(r'\.pdf(?:\?|$)', url, re.I) else '')
+                if not kind:
+                    att.pop('parse_status', None)
+                    continue
+                budget = min(8, attachment_deadline - time.monotonic())
+                if budget <= 0:
+                    continue
+                result = subprocess.run([sys.executable, str(Path(__file__).with_name('attachment_worker.py')), kind, title],
+                                        input=data, capture_output=True, timeout=budget, check=True)
+                if len(result.stdout) > 8_000_000:
+                    continue
+                att_positions = json.loads(result.stdout)
+                for p in att_positions:
+                    p['source_url'] = url
+                all_positions.extend(att_positions)
+                att['parse_status'] = 'parsed' if att_positions else 'no_table'
             except Exception:
                 continue
 

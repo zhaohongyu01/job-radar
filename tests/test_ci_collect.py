@@ -29,6 +29,11 @@ def fixture():
 
 
 class PipelineTests(unittest.TestCase):
+    def setUp(self):
+        summary_patch = patch.dict(c.os.environ, {'GITHUB_STEP_SUMMARY':''})
+        summary_patch.start()
+        self.addCleanup(summary_patch.stop)
+
     def test_merge_shards_keeps_baseline_and_requires_fresh_pack_sources(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -193,23 +198,22 @@ class PipelineTests(unittest.TestCase):
             state = fixture()
             c.export_snapshot(state, public)
             ci.prepare(public, data, '')
-            args = SimpleNamespace(public_dir=public, data_dir=data, pages=5, days=14, refresh_hours=72)
-            def partial_run(command, check):
+            args = SimpleNamespace(public_dir=public, data_dir=data, pages=5, days=14, refresh_hours=72, sources='fixture')
+            def partial_run(definition, prior, args, budget):
                 stamp = dt.datetime.now(c.TZ).replace(microsecond=0).isoformat()
                 state['last_run_at'] = stamp
                 state['sources']['fixture'].update(last_attempt_at=stamp, status='partial', errors=[{'reason': 'public pagination limit', 'url': 'https://example.com'}])
-                c.atomic_json(data / 'state.json', state)
-                c.export_snapshot(state, public)
-                return SimpleNamespace(returncode=2)
-            with patch.object(ci.subprocess, 'run', side_effect=partial_run):
+                for job in state['jobs'].values():
+                    job['last_verified_at'] = stamp
+                return state
+            original_snapshot = (public/'jobs.json').read_bytes()
+            with patch.object(ci, 'SOURCES', [state['sources']['fixture']]), patch.object(ci, 'run_source', side_effect=partial_run):
                 ci.collect(args)
             report = ci.read_json(data / 'ci-report.json')
             self.assertFalse(report['deployment_blocked'])
             self.assertEqual(report['records'], 2)
-            with patch.object(ci.subprocess, 'run', return_value=SimpleNamespace(returncode=1)):
-                with self.assertRaisesRegex(ValueError, 'crashed'):
-                    ci.collect(args)
-            self.assertTrue(ci.read_json(data / 'ci-report.json')['deployment_blocked'])
+            self.assertEqual((public/'jobs.json').read_bytes(), original_snapshot)
+            self.assertEqual(ci.read_json(data/'state.json')['delta_version'], 1)
 
 
     def test_combine_states_prioritizes_raw_cache_over_online_snapshot_on_equal_timestamp(self):

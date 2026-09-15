@@ -5,14 +5,15 @@
 ## 本地运行
 
 ```powershell
-npm install
+py -3.12 -m pip install -r requirements.txt
+npm ci
 python scripts/collect.py --pages 100 --days 180
 npm run dev
 ```
 
 采集器额外接入山东省大学生就业服务平台“招聘速递”省级汇总，中国银行、邮储银行、中国太平保险的官方校招/社招页面，以及海尔、海信的公开岗位接口。济南市人社局的事业单位招聘、公共就业招聘和济南市国资委招聘专栏通过其公开 CMS 接口读取，不依赖浏览器执行脚本；结果公示、面试、体检等已经无法投递的通知会在列表阶段过滤。
 
-采集器使用 Python 标准库。普通来源默认最多 100 页、120 天，可用 `--pages 1..500 --days 1..365` 调整。OfferJack 公开接口固定每页 20 条，未登录时只能读取第一页；默认会轮询全部配置城市各自的公开首屏，避免只拿到一个城市的 20 条。可用 `--offerjack-pages 0..1000` 设置每个查询的分页预算（0 表示一直尝试到接口限制）；接口要求登录的后续页会明确标记为部分覆盖，不尝试绕过认证。来源面板区分读至末页、达到日期边界和页数预算，不能把预算内成功当作全历史覆盖。每个来源最多两个详情并发请求；独立网络请求超时重试一次。双栈网络优先 IPv4，仍保留 IPv6 回退和完整 TLS 校验。
+开发与 CI 统一使用 Python 3.12，解析依赖版本固定在 `requirements.txt`。普通来源默认最多 100 页、120 天，可用 `--pages 1..500 --days 1..365` 调整。OfferJack 公开接口固定每页 20 条，未登录时只能读取第一页；默认轮询全部配置城市各自的公开首屏。可用 `--offerjack-pages 0..1000` 设置每个查询的分页预算（0 表示一直尝试到接口限制）；接口要求登录的后续页明确标记为部分覆盖。来源面板区分末页、日期边界和页数预算。每源最多两个详情并发，按主机限速；网络超时、部分 5xx 有界退避，404 不重试，429 尊重 Retry-After。双栈网络优先 IPv4，保留 IPv6 回退和 TLS 校验。
 
 可用 `--sources jobsdufe-positions,ujn-positions` 只刷新指定渠道，其他来源与历史记录继续保留。默认复用 24 小时内读取过的详情；`--refresh-hours 0` 强制重读。省平台列表已包含正文，不重复请求每条详情。每完成一个来源保存状态，降低中途中断的损失。
 
@@ -49,13 +50,17 @@ npx wrangler deploy --config dist/server/wrangler.json
 
 本机 Wrangler 已有 Cloudflare 授权；其他电脑需要先运行 `npx wrangler login`。只重新整理已采集内容时，先运行 `python scripts/export_snapshot.py`，该操作不会伪造新的采集时间。数据和程序一起发布，刷新网页只重新读取快照。
 
-GitHub Actions 的 `.github/workflows/daily-collect.yml` 每天北京时间 06:30、18:30，或推送 main、手动触发时运行 Python 采集器并部署 Cloudflare。采集阶段按区域官方、高校、银行保险、大型企业、公开线索拆成 6 个分片，最多 4 个分片并行；全部完成后再合并岗位状态、生成快照并部署。需要在仓库 Actions Secrets 中配置 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`。Worker 本身只提供网页和数据快照，采集由 GitHub 执行。
+GitHub Actions 的 `.github/workflows/daily-collect.yml` 每天北京时间 06:30、18:30，或推送 main、手动触发时采集并部署。6 个分片最多 4 个并行，共享高校平台的订阅集中在同一分片限速。每源独立进程默认最多 180 秒，分片 1080 秒后停止启动新来源，为 25 分钟的 CI 硬超时预留保存时间。前端测试、类型检查、lint 和构建与采集并行；所有质量检查通过后才发布。需要配置 Actions Secrets：`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`。
 
 新增来源时需要把它加入 `scripts/collect.py` 的 `SOURCE_PACKS`；测试会检查每个来源都属于且只属于一个分片，避免扩容后静默漏采。
 
-CI 先从仓库公开快照、上次缓存及当前线上快照合并恢复岗位库，缓存丢失也不会从零开始覆盖线上数据。`scripts/ci_collect.py` 只在采集器退出 0 或 2、快照完成、至少有一个来源完成有效读取、全部历史 ID 和详情/全文资产通过校验时继续发布；退出码 2 表示部分来源覆盖不完整，显示警告并保留来源错误。程序崩溃、全部来源失败、快照缺失或历史记录减少仍阻止发布。
+CI 从 git、缓存和线上快照恢复基线。`snapshot-manifest.json` 与缓存校验信息一致时复用完整原始状态，避免下载全部详情；缓存丢失时仍可从线上恢复。线上暂时不可读时先继续采集，最终发布前必须核验最新基线。分片只输出所属来源的变更和待续队列，最终合并统一去重、导出并校验。缺失分片保留历史并标记失败；没有有效来源、历史 ID 丢失、产物损坏或线上基线无法确认时禁止覆盖线上数据。
 
-状态缓存只保存 `data/state.json`，不保存锁文件；分片从同一份基线启动，合并任务只在历史岗位完整、所有分片产物齐全且资产校验通过后发布。每次执行的 Summary 显示来源状态及部分错误原因，并提供保留 7 天的 `collection-report` 诊断文件。日常分片采用 5 页、30 天发现窗口，历史库持续保留；OfferJack 查询所有配置城市的公开首屏。超过窗口和来源访问受限的机会仍可能漏采，流程成功不代表所有来源完整。
+状态缓存保存 `data/state.json` 和 `data/published-baseline.json`，不保存锁文件。后者记录快照与原始状态校验值，只有与实时线上 manifest 匹配才能跳过详情恢复，并不将一次构建等同于已经上线。每个来源的已完成记录写入日志，超时后恢复并保存待续详情。Summary 显示耗时、失败数和待续数量，`collection-report` 保留 7 天。日常采用 5 页、30 天发现窗口，历史持续保留；来源访问受限和窗口之外的机会仍可能漏采。
+
+前端构建产物通过 artifact 传给合并任务，`scripts/stage_public.py` 校验内容哈希及 Worker 静态目录后附加当前数据，部署时无需第二次安装整套前端依赖和编译。企业完整岗位接口连续两轮、间隔至少 6 小时都缺失某岗位时标记“官网已下架”；一次缺失显示“在架待核验”，分页不足或访问失败不判定下架。原记录、收藏和投递状态继续保留。
+
+复杂附件最多使用 20 秒处理预算，每个 PDF/Excel 解析进程最多 8 秒；未完成时显示提示并保留原附件入口。山大历史错误链接自动修正，原有记录 ID 继续有效。
 
 ## 更新与部署边界
 
@@ -69,7 +74,7 @@ Docker/NAS 入口已按 24 小时循环执行采集、构建并重启网站，�
 
 ```powershell
 python -m unittest discover -s tests -p 'test_*.py'
-node --experimental-strip-types --test tests/domain.test.ts tests/browsing.test.ts tests/grouping.test.ts
+node --experimental-strip-types --test tests/*.test.ts
 npx tsc --noEmit
 npm run lint
 npm run build

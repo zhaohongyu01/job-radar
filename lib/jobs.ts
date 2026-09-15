@@ -19,6 +19,7 @@ export type LifecycleStage =
   | 'supplemental'
   | 'selection'
   | 'expiring_soon'
+  | 'unconfirmed'
   | 'expired';
 
 export interface TimelineEvent {
@@ -96,7 +97,7 @@ export type Job = {
   deadline_precision: string | null;
   application_url: string | null;
   emails?: string[];
-  attachments?: { title: string; url: string }[];
+  attachments?: { title: string; url: string; parse_status?: 'parsed' | 'no_table' | 'deferred' }[];
   links?: { title: string; url: string }[];
   qr_attachment?: boolean;
   excerpt: string;
@@ -110,6 +111,8 @@ export type Job = {
   sample_positions?: string[];
   majors?: string[];
   lifecycle_stage?: LifecycleStage;
+  listing_status?: 'active' | 'unconfirmed' | 'withdrawn';
+  listing_checked_at?: string;
   timeline?: TimelineEvent[];
   recent_change?: RecentChange;
 };
@@ -193,6 +196,7 @@ export const defaultFilters: Filters = {
   radarFocus: 'none',
 };
 export function isExpired(job: Job, now = Date.now()) {
+  if (job.listing_status === 'withdrawn') return true;
   if (job.deadline) {
     const t = Date.parse(job.deadline);
     return !Number.isNaN(t) && t < now;
@@ -434,6 +438,10 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         }
       }
 
+      if ((job.listing_checked_at ?? '') > (existing.listing_checked_at ?? '')) {
+        existing.listing_status = job.listing_status;
+        existing.listing_checked_at = job.listing_checked_at;
+      }
       if (!existing.lifecycle_stage && job.lifecycle_stage) {
         existing.lifecycle_stage = job.lifecycle_stage;
       }
@@ -737,6 +745,12 @@ export function getLifecycleStage(
   badge: string;
   badgeClass: string;
 } {
+  if (job.listing_status === 'withdrawn') {
+    return { stage: 'expired', label: '官网已下架', badge: '官网已下架', badgeClass: 'badge-stage-expired' };
+  }
+  if (job.listing_status === 'unconfirmed') {
+    return { stage: 'unconfirmed', label: '官网在架状态待核验', badge: '在架待核验', badgeClass: 'badge-stage-selection' };
+  }
   if (isExpired(job, now)) {
     return {
       stage: 'expired',
@@ -925,7 +939,11 @@ export function generateJobTimeline(job: Job, now = Date.now()): TimelineEvent[]
   // 6. Current stage status node
   const currentStage = getLifecycleStage(job, now);
   let statusDetail = currentStage.label;
-  if (job.deadline) {
+  if (job.listing_status === 'withdrawn') {
+    statusDetail = '连续完整核验中未再发现此岗位；保留原公告及个人记录，请以企业官网为准';
+  } else if (job.listing_status === 'unconfirmed') {
+    statusDetail = '最近一次完整岗位列表中未发现此岗位，等待再次核验';
+  } else if (job.deadline) {
     if (isExpired(job, now)) {
       statusDetail = `报名已于 ${job.deadline.slice(0, 10)} 截止`;
     } else {

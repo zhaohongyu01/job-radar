@@ -20,6 +20,7 @@ import socket
 import time
 import urllib.parse
 import urllib.request
+from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 
 ROOT = Path(__file__).resolve().parents[1]
 TZ = dt.timezone(dt.timedelta(hours=8))
@@ -170,15 +171,13 @@ for _source in SOURCES:
 
 # Keep the CI fan-out definition next to the source registry.  A pack is a
 # bounded group of sources that can be collected independently from the same
-# historical baseline.  The two university packs are intentionally split so
-# that one slow campus feed cannot hold the whole university group hostage.
+# historical baseline. Feeds sharing the school platform stay on one runner;
+# independent university hosts run in the other pack.
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
-_university_ids = ['nankai', 'sdu', 'upc'] + _sdei_source_ids
-_university_midpoint = (len(_university_ids) + 1) // 2
 SOURCE_PACKS = {
     'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': _university_ids[:_university_midpoint],
-    'universities-b': _university_ids[_university_midpoint:],
+    'universities-a': ['nankai', 'sdu', 'upc'],
+    'universities-b': _sdei_source_ids,
     'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
     'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
     'public-leads': ['wondercv', 'offerjack'],
@@ -213,7 +212,7 @@ def connect_ipv4_first(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_a
     for family,kind,proto,_,sockaddr in candidates:
         sock=socket.socket(family,kind,proto)
         try:
-            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT: sock.settimeout(timeout)
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT: sock.settimeout(remaining(timeout))
             if source_address: sock.bind(source_address)
             sock.connect(sockaddr)
             return sock
@@ -326,6 +325,7 @@ def safe_url(value, base, keep_fragment=False):
         return None
 
 
+@bounded_request
 def fetch(url, form=None, timeout=18, retries=1, referer=''):
     # Keep list/API requests tolerant of slow public sites, while allowing
     # detail callers to opt into a shorter budget.  No TLS weakening or login
@@ -334,7 +334,7 @@ def fetch(url, form=None, timeout=18, retries=1, referer=''):
     retries = max(0, int(retries))
     for attempt in range(retries + 1):
         try:
-            time.sleep(0.3)
+            pace(url)
             headers = dict(DEFAULT_HEADERS)
             if referer:
                 headers['Referer'] = referer
@@ -345,8 +345,8 @@ def fetch(url, form=None, timeout=18, retries=1, referer=''):
                 headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
             req = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode() if form is not None else None,
                 headers=headers)
-            with OPENER.open(req, timeout=timeout) as r:
-                raw = r.read(3_000_001)
+            with OPENER.open(req, timeout=remaining(timeout)) as r:
+                raw = bounded_read(r, 3_000_000, timeout)
                 charset = r.headers.get_content_charset()
             if len(raw) > 3_000_000:
                 raise ValueError('response exceeds size limit')
@@ -363,15 +363,12 @@ def fetch(url, form=None, timeout=18, retries=1, referer=''):
                 except (LookupError, UnicodeDecodeError):
                     continue
             return raw.decode('utf-8', 'replace')
-        except Exception:
-            if attempt:
-                raise
-            if attempt < retries:
-                time.sleep(1.5)
-            else:
+        except Exception as error:
+            if not retry_request(url, error, attempt, retries):
                 raise
 
 
+@bounded_request
 def fetch_json_post(url, payload, timeout=18, retries=1, referer=''):
     """POST one bounded JSON request to a public recruitment API."""
     timeout = max(1, float(timeout))
@@ -380,7 +377,7 @@ def fetch_json_post(url, payload, timeout=18, retries=1, referer=''):
     trace_id = hashlib.sha256(f'{url}:{time.time_ns()}'.encode()).hexdigest()[:32]
     for attempt in range(retries + 1):
         try:
-            time.sleep(0.3)
+            pace(url)
             origin = urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], '', '', ''))
             req = urllib.request.Request(
                 url,
@@ -395,24 +392,24 @@ def fetch_json_post(url, payload, timeout=18, retries=1, referer=''):
                     **({'Referer': referer} if referer else {}),
                 },
             )
-            with OPENER.open(req, timeout=timeout) as response:
-                raw = response.read(3_000_001)
+            with OPENER.open(req, timeout=remaining(timeout)) as response:
+                raw = bounded_read(response, 3_000_000, timeout)
             if len(raw) > 3_000_000:
                 raise ValueError('response exceeds size limit')
             return json.loads(raw.decode('utf-8'))
-        except Exception:
-            if attempt < retries:
-                time.sleep(1)
-            else:
+        except Exception as error:
+            if not retry_request(url, error, attempt, retries):
                 raise
 
 
+@bounded_request
 def fetch_bytes(url, max_size=3_500_000, timeout=6):
     """Safely fetch raw binary content for Excel/PDF attachments with strict timeout and size limits."""
     try:
         req = urllib.request.Request(url, headers={'User-Agent': DEFAULT_USER_AGENT, 'Accept': '*/*'})
-        with OPENER.open(req, timeout=timeout) as r:
-            raw = r.read(max_size + 1)
+        pace(url)
+        with OPENER.open(req, timeout=remaining(timeout)) as r:
+            raw = bounded_read(r, max_size, timeout)
         if len(raw) > max_size:
             return None
         return raw
@@ -506,7 +503,7 @@ def sdu_list(html, base):
         if not match: continue
         row=a.parent.parent
         date=re.search(r'20\d{2}-\d{2}-\d{2}',row.text()) if row else None
-        url=urllib.parse.urljoin(base,'/eweb/jygl/index.so?')+urllib.parse.urlencode({'modcode':'jygl_zpxxck','subsyscode':'zpfw','rklx':'jyw','lmxhV':'0402','type':'ssoZxzpView','id':match[1]})
+        url=urllib.parse.urljoin(base,'/eweb/jygl/index.so')+'?'+urllib.parse.urlencode({'modcode':'jygl_zpxxck','subsyscode':'zpfw','rklx':'jyw','lmxhV':'0402','type':'ssoZxzpView','id':match[1]})
         items.append({'url':url,'title':clean(a.text()),'published_at':date[0] if date else None})
     next_links=[safe_url(a.attrs.get('href',''),base) for a in root.find('a') if 'pageMethod=next' in a.attrs.get('href','')]
     return items, next_links[0] if next_links else None
@@ -1274,6 +1271,10 @@ def parse_detail(html, item, source):
 
 
 def compute_lifecycle_stage(job, now_str):
+    if job.get('listing_status') == 'withdrawn':
+        return 'expired'
+    if job.get('listing_status') == 'unconfirmed':
+        return 'unconfirmed'
     deadline = job.get('deadline')
     today = (now_str or '')[:10]
     if deadline and today and deadline < today:
@@ -1547,10 +1548,72 @@ def compute_job_fingerprint(job):
     return hashlib.sha256(json.dumps(core, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
 
 
+def repair_sdu_urls(jobs):
+    """Repair transport URLs, preserving every historical ID and its identity."""
+    repaired = {}
+    for identifier, original in jobs.items():
+        job = dict(original)
+        if job.get('source_id') == 'sdu':
+            old_url = job.get('source_url', '')
+            if 'jobcareer.sdu.edu.cn/eweb/jygl/index.somodcode=' in old_url:
+                job.setdefault('identity', old_url)
+                job['source_url'] = old_url.replace('index.somodcode=', 'index.so?modcode=', 1)
+            app_url = job.get('application_url') or ''
+            if 'jobcareer.sdu.edu.cn/eweb/jygl/index.somodcode=' in app_url:
+                job['application_url'] = app_url.replace('index.somodcode=', 'index.so?modcode=', 1)
+        repaired[identifier] = job
+    return repaired
+
+
+def item_id(item):
+    return item.get('target_id') or hashlib.sha256(item.get('identity', item['url']).encode()).hexdigest()[:20]
+
+
+LISTING_FIELDS = ('listing_status', 'listing_checked_at', 'listing_missing_count', 'listing_missing_at')
+
+
+def reconcile_listings(jobs, source_id, seen_ids, complete, now):
+    """Only consecutive complete inventories can establish an official removal."""
+    result = dict(jobs)
+    for identifier, old in jobs.items():
+        if old.get('source_id') != source_id:
+            continue
+        job = dict(old)
+        if identifier in seen_ids:
+            job.update(listing_status='active', listing_checked_at=now, listing_missing_count=0)
+            job.pop('listing_missing_at', None)
+        elif complete:
+            last_missing = old.get('listing_missing_at')
+            count = old.get('listing_missing_count', 0)
+            # A manual rerun minutes later is not an independent verification.
+            if not last_missing or (dt.datetime.fromisoformat(now) - dt.datetime.fromisoformat(last_missing)).total_seconds() >= 6 * 3600:
+                count += 1
+                job['listing_missing_at'] = now
+            job.update(listing_status='withdrawn' if count >= 2 else 'unconfirmed',
+                       listing_missing_count=count, listing_checked_at=now)
+        else:
+            continue
+        job['lifecycle_stage'] = compute_lifecycle_stage(job, now)
+        result[identifier] = job
+    return result
+
+
 def merge(previous, incoming, now):
+    # Old malformed and correct SDU URLs can both have saved browser records.
+    # Refresh their facts together and collapse only the public presentation.
+    incoming = {job['id']: job for job in incoming}
+    by_url = {}
+    for old in previous.values():
+        if old.get('source_id') == 'sdu':
+            by_url.setdefault(old.get('source_url'), []).append(old)
+    for job in list(incoming.values()):
+        if job.get('source_id') == 'sdu':
+            for alias in by_url.get(job.get('source_url'), []):
+                if alias['id'] not in incoming:
+                    incoming[alias['id']] = dict(job, id=alias['id'], identity=alias.get('identity', alias['source_url']))
     result = dict(previous)
     counts = {'new': 0, 'changed': 0, 'unchanged': 0}
-    for job in incoming:
+    for job in incoming.values():
         fingerprint = compute_job_fingerprint(job)
         old = previous.get(job['id'])
         changed = False
@@ -1611,6 +1674,7 @@ def deduplicate(jobs):
     Preserve every source URL, application URLs, and differing job/location facts.
     """
     groups = {}
+    sdu_keys = {}
     for job in sorted(jobs, key=lambda j: (j.get('first_seen_at', ''), j['id'])):
         text = re.sub(r'\s+', '', job.get('body', ''))
         company = re.sub(r'\s+', '', job.get('company') or '')
@@ -1656,6 +1720,8 @@ def deduplicate(jobs):
             else:
                 key = ('announcement_exact', re.sub(r'\s+', '', job['title']), company, text)
 
+        if job.get('source_id') == 'sdu':
+            key = sdu_keys.setdefault(job.get('source_url'), key)
         if key not in groups:
             primary_facts = {
                 'id': job['id'],
@@ -1690,6 +1756,7 @@ def deduplicate(jobs):
                 'lifecycle_stage': job.get('lifecycle_stage'),
                 'structured': job.get('structured'),
             }
+            primary_facts.update({field: job.get(field) for field in LISTING_FIELDS})
             groups[key] = dict(job, duplicate_sources=[], duplicate_ids=[], primary_facts=primary_facts)
         else:
             parent = groups[key]
@@ -1727,6 +1794,9 @@ def deduplicate(jobs):
                 'lifecycle_stage': job.get('lifecycle_stage'),
                 'structured': job.get('structured'),
             }
+            duplicate_facts.update({field: job.get(field) for field in LISTING_FIELDS})
+            if (job.get('listing_checked_at') or '') > (parent.get('listing_checked_at') or ''):
+                parent.update({field: job.get(field) for field in LISTING_FIELDS})
             parent['duplicate_sources'].append({
                 'id': job['id'],
                 'identity': job.get('identity'),
@@ -1914,17 +1984,20 @@ def public_summary(job):
     heavy={
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
         'possible_cities','province_possible','details_available','company_original',
-        'positions','primary_facts','structured',
+        'positions','primary_facts','structured','identity','fingerprint','content_fingerprint',
+        'probe_attempt_at','listing_missing_count','listing_missing_at',
     }
     row={k:v for k,v in job.items() if k not in heavy}
-    if 'timeline' in row and isinstance(row['timeline'], list) and len(row['timeline']) > 5:
-        row['timeline'] = row['timeline'][-5:]
+    # The full timeline remains in the detail. Retain all recent change events
+    # needed by filters; initial publication/reposts are derived from metadata.
+    row['timeline'] = [event for event in row.get('timeline', [])
+                       if event.get('type') not in {'published', 'source_repost'}]
     if 'duplicate_sources' in row and isinstance(row['duplicate_sources'], list):
         cleaned_sources = []
         for s in row['duplicate_sources']:
             s_clean = dict(s)
-            if 'facts' in s_clean and isinstance(s_clean['facts'], dict):
-                s_clean['facts'] = {fk: fv for fk, fv in s_clean['facts'].items() if fk not in {'positions', 'body', 'structured'}}
+            s_clean.pop('facts', None)
+            s_clean.pop('identity', None)
             cleaned_sources.append(s_clean)
         row['duplicate_sources'] = cleaned_sources
     return row
@@ -1951,7 +2024,7 @@ def schedule_enabled():
 
 def export_snapshot(state, public_dir, days=180, changes=None):
     """Publish the index last; immutable assets cannot mix across refreshes."""
-    jobs=state['jobs']
+    jobs=repair_sdu_urls(state['jobs'])
     public_jobs=sorted(deduplicate([public_record(j) for j in jobs.values()]),
                        key=lambda j:j.get('published_at') or '',reverse=True)
     assets=public_dir/'job-assets'
@@ -1975,6 +2048,11 @@ def export_snapshot(state, public_dir, days=180, changes=None):
               'jobs':[public_summary(j) for j in public_jobs],
               'sources':list(state['sources'].values()),'changes':changes or {}}
     atomic_json(public_dir/'jobs.json',snapshot,pretty=False)
+    atomic_json(public_dir/'snapshot-manifest.json', {
+        'schema_version': 1, 'generated_at': snapshot['generated_at'],
+        'raw_records': len(jobs),
+        'index_sha256': hashlib.sha256((public_dir/'jobs.json').read_bytes()).hexdigest(),
+    }, pretty=False)
     return snapshot
 
 
@@ -1985,6 +2063,14 @@ def run(args):
     public_dir.mkdir(parents=True,exist_ok=True)
     path=data_dir/'state.json'
     previous=json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'jobs':{},'sources':{}}
+    previous['jobs'] = repair_sdu_urls(previous['jobs'])
+    initial_jobs = dict(previous['jobs'])
+    queues = dict(previous.get('pending', {}))
+    journal = data_dir / 'progress.jsonl'
+    journal.write_text('', encoding='utf-8')
+    def persist_job(job, item, verified=True):
+        with journal.open('a', encoding='utf-8') as handle:
+            handle.write(json.dumps({'job': job, 'url': item['url'], 'verified': verified}, ensure_ascii=False) + '\n')
     now=dt.datetime.now(TZ).isoformat(timespec='seconds')
     cutoff=(dt.datetime.now(TZ)-dt.timedelta(days=args.days)).date().isoformat()
     incoming=[]
@@ -1999,6 +2085,11 @@ def run(args):
     for source in SOURCES:
         if source_filter and source['id'] not in source_filter: continue
         source=dict(source)
+        source_started = time.monotonic()
+        now=dt.datetime.now(TZ).isoformat(timespec='seconds')
+        inventory_complete = False
+        inventory_ids = set()
+        is_active_listing_source = source.get('adapter') in {'zhiye_jobs','haier_jobs','haier_campus'}
         if source['id']=='nankai' and args.nankai_area:
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
         status=dict(source,last_attempt_at=now,last_success_at=previous['sources'].get(source['id'],{}).get('last_success_at'),pages=0,discovered=0,parsed=0,cached=0,probed=0,detail_attempted=0,detail_failed=0,detail_skipped=0,errors=[],status='ok',coverage='近期分页，非全量历史')
@@ -2104,6 +2195,7 @@ def run(args):
                         break
                     continue
                 if page>=total:
+                    inventory_complete = True
                     status['coverage']=('已读取官网当前全部在架岗位' if is_active_listing_source else
                                         '已读至来源列表末页（保留所选时间范围）')
                     break
@@ -2125,14 +2217,34 @@ def run(args):
                 if seed not in {i['url'] for i in items}:
                     items.append({'url':seed,'title':'浪潮集团2027届校园招聘简章','published_at':'2026-09-01'})
             status['discovered']=len(items)
+            # Bind corrected SDU URLs to existing IDs before cache/queue lookup.
+            sdu_by_url = {j['source_url']: j for j in sorted(previous['jobs'].values(), key=lambda j:j.get('last_verified_at','')) if j.get('source_id')=='sdu'}
+            if source['id'] == 'sdu':
+                for item in items:
+                    old = sdu_by_url.get(item['url'])
+                    if old:
+                        item.update(target_id=old['id'], identity=old.get('identity') or old['source_url'])
+            inventory_ids = {item_id(item) for item in items}
+            # Resume details left by a previous source budget, including items
+            # that have since moved beyond the first discovery pages.
+            item_urls = {item['url'] for item in items}
+            for queued in queues.get(source['id'], []):
+                if queued['url'] not in item_urls:
+                    items.append(queued)
+                    item_urls.add(queued['url'])
             cached=0
             remaining=[]
             for item in items:
-                old=previous['jobs'].get(hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20])
+                old=previous['jobs'].get(item_id(item))
                 if 'inline_html' not in item and old and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and old['last_verified_at']>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
                     cached+=1
                 else: remaining.append(item)
             status['cached']=cached
+            queued_by_url = {item['url']: item for item in remaining}
+            queues[source['id']] = list(queued_by_url.values())
+            atomic_json(data_dir/'checkpoint.json', {'run_at':now, 'source':status,
+                        'pending':queues[source['id']], 'inventory_complete':inventory_complete,
+                        'inventory_ids':sorted(inventory_ids)})
             # Active announcement probe: inspect historical unexpired jobs for this source that need re-verification.
             today_str=dt.datetime.now(TZ).date().isoformat()
             recent_expiry_cutoff=(dt.datetime.now(TZ).date()-dt.timedelta(days=7)).isoformat()
@@ -2143,6 +2255,9 @@ def run(args):
             probe_candidates=[]
             for j_id,old_job in previous.get('jobs',{}).items():
                 if old_job.get('source_id')!=source['id']: continue
+                # API inventories are their own recheck; their JS detail pages
+                # must not be passed to the generic announcement HTML parser.
+                if is_active_listing_source: continue
                 url=old_job.get('source_url')
                 if not url or url in existing_urls or j_id in existing_ids: continue
                 d_line=old_job.get('deadline')
@@ -2217,7 +2332,7 @@ def run(args):
                 return res
             def add_list_fallback(item):
                 """Keep a new list discovery visible when its detail is unavailable."""
-                identifier=hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20]
+                identifier=item_id(item)
                 if identifier in previous['jobs']:
                     return
                 fallback=parse_detail(
@@ -2226,10 +2341,8 @@ def run(args):
                     {'id':'fallback','name':source['name']},
                 )
                 fallback.update(source_id=source['id'],classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
+                persist_job(fallback, item, verified=False)
                 incoming.append(fallback)
-
-            def is_page_not_found(error):
-                return getattr(error, 'code', None) == 404 or '404: Not Found' in str(error) or str(getattr(error, 'code', '')) == '404'
 
             def record_detail_failure(item, error):
                 status['detail_failed'] = status.get('detail_failed', 0) + 1
@@ -2241,15 +2354,19 @@ def run(args):
                 else:
                     status['errors'].append({'url':item['url'],'reason':reason})
                     add_list_fallback(item)
-                # Historical probes and 404s (expired/deleted announcements) do not indicate a broken source pipeline.
-                if item.get('is_probe') or is_page_not_found(error):
+                # A disappeared historical page is isolated. Repeated 404s on
+                # newly discovered URLs can instead indicate a broken adapter.
+                if item.get('is_probe'):
                     return False
                 return True
 
             def record_detail_success(future, item):
                 status['detail_attempted'] = status.get('detail_attempted', 0) + 1
                 try:
-                    incoming.append(future.result())
+                    job = future.result()
+                    persist_job(job, item)
+                    incoming.append(job)
+                    queued_by_url.pop(item['url'], None)
                     status['parsed']+=1
                     return True, False
                 except Exception as error:
@@ -2258,8 +2375,10 @@ def run(args):
 
             def checkpoint_progress():
                 completed = status.get('detail_attempted', 0) + status.get('detail_skipped', 0)
-                if completed and completed % 25 == 0:
-                    atomic_json(data_dir/'checkpoint.json',{'run_at':now,'incoming':incoming,'source':status})
+                if completed and completed % 10 == 0:
+                    atomic_json(data_dir/'checkpoint.json',{'run_at':now, 'source':status,
+                                'pending':list(queued_by_url.values()), 'inventory_complete':inventory_complete,
+                                'inventory_ids':sorted(inventory_ids)})
                 if completed and completed % 10 == 0:
                     print(source['id'],'progress',status['parsed'],'/',len(items),
                           'skipped',status.get('detail_skipped', 0),flush=True)
@@ -2352,23 +2471,37 @@ def run(args):
             elif status['pages'] == 0 and not status['parsed'] and not cached and total != 0:
                 status['status']='failed'
             if status['status']=='ok': status['last_success_at']=dt.datetime.now(TZ).isoformat(timespec='seconds')
+            queues[source['id']] = list(queued_by_url.values())
         except Exception as e:
             status['status']='failed'
             status['errors'].append({'url':source['url'],'reason':str(e)[:200]})
         sources[source['id']]=status
+        status['elapsed_seconds'] = round(time.monotonic() - source_started, 2)
+        status['pending_details'] = len(queues.get(source['id'], []))
+        status['inventory_complete'] = inventory_complete if is_active_listing_source else None
         if source['id']=='nankai' and args.nankai_area:
             status['coverage']=f'省份定向列表（原站区域 {args.nankai_area}）；'+status['coverage']
         if source['id']=='offerjack' and args.target_city:
             status['coverage']=f'{args.target_city}定向列表；'+status['coverage']
         # Save completed sources so an interruption never discards earlier source progress.
         saved,_=merge(previous['jobs'],incoming,now)
-        atomic_json(path,{'jobs':saved,'sources':sources,'last_run_at':now})
+        if is_active_listing_source:
+            saved = reconcile_listings(saved, source['id'], inventory_ids, inventory_complete, now)
+            previous['jobs'] = saved
+            incoming = []
+        atomic_json(path,{'jobs':saved,'sources':sources,'last_run_at':now,'pending':queues})
         print(source['id'],status['status'],status['pages'],status['parsed'],flush=True)
     now=dt.datetime.now(TZ).isoformat(timespec='seconds')
     jobs,changes=merge(previous['jobs'],incoming,now)
-    state={'jobs':jobs,'sources':sources,'last_run_at':now}
+    new_count = len(set(jobs) - set(initial_jobs))
+    changed_count = sum(j.get('content_fingerprint') != initial_jobs[key].get('content_fingerprint') or
+                        j.get('listing_status') != initial_jobs[key].get('listing_status')
+                        for key,j in jobs.items() if key in initial_jobs)
+    changes = {'new':new_count, 'changed':changed_count, 'unchanged':len(jobs)-new_count-changed_count}
+    state={'jobs':jobs,'sources':sources,'last_run_at':now,'pending':queues}
     atomic_json(path,state)
-    export_snapshot(state,public_dir,args.days,changes)
+    if not getattr(args, 'state_only', False):
+        export_snapshot(state,public_dir,args.days,changes)
     print(json.dumps({'total':len(jobs),'changes':changes},ensure_ascii=False),flush=True)
     return 0 if all(s['status']=='ok' for s in sources.values() if not source_filter or s['id'] in source_filter) else 2
 
@@ -2378,6 +2511,7 @@ if __name__=='__main__':
     parser.add_argument('--pages',type=int,default=100)
     parser.add_argument('--days',type=int,default=120)
     parser.add_argument('--sources',default='',help='comma-separated source ids; omitted sources retain previous state')
+    parser.add_argument('--state-only',action='store_true',help='save raw source results without rebuilding public assets')
     parser.add_argument('--source-pack',choices=sorted(SOURCE_PACKS),default='',help='collect one predefined CI source pack')
     parser.add_argument('--refresh-hours',type=int,default=24,help='reuse recently verified details; 0 forces refresh')
     parser.add_argument('--nankai-area',type=int,default=0,help='optional original-site region filter; 15 is Shandong')

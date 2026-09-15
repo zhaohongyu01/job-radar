@@ -104,7 +104,7 @@ class CollectionTests(unittest.TestCase):
             self.assertGreater(status['detail_skipped'],0)
             self.assertTrue(any('单源熔断' in error['reason'] for error in status['errors']))
 
-    def test_detail_circuit_breaker_ignores_not_found_pages(self):
+    def test_detail_circuit_breaker_stops_repeated_new_page_404s(self):
         source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')
         items=[{
             'url':f'https://example.com/detail/{idx}',
@@ -122,8 +122,8 @@ class CollectionTests(unittest.TestCase):
             snapshot=json.loads((Path(temp)/'jobs.json').read_text(encoding='utf8'))
             self.assertEqual(len(snapshot['jobs']),8)
             status=snapshot['sources'][0]
-            self.assertEqual(status.get('detail_skipped', 0), 0)
-            self.assertFalse(any('单源熔断' in error['reason'] for error in status.get('errors', [])))
+            self.assertGreater(status.get('detail_skipped', 0), 0)
+            self.assertTrue(any('单源熔断' in error['reason'] for error in status.get('errors', [])))
 
     def test_public_supplement_preserves_application_fragment_and_provenance(self):
         payload=(ROOT/'tests/fixtures/offerjack-sample.json').read_text(encoding='utf8')

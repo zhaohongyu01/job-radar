@@ -209,6 +209,25 @@ void test('expired announcement is not shown as open', () => {
     0,
   );
 });
+
+void test('official withdrawals are excluded from open jobs without losing personal history', () => {
+  const removed = { ...job, listing_status: 'withdrawn' as const, deadline: null };
+  assert.equal(isExpired(removed), true);
+  assert.equal(getLifecycleStage(removed).badge, '官网已下架');
+  assert.equal(filterJobs([removed], { ...defaultFilters, city: '全部城市' }, {}, null).length, 0);
+  assert.equal(filterJobs([removed], { ...defaultFilters, city: '全部城市', showExpired: true }, {}, null).length, 1);
+  assert.equal(personalFor(removed, { [removed.id]: { saved: true, applied: true } }).saved, true);
+  assert.match(generateJobTimeline(removed).at(-1)!.detail, /完整核验/);
+});
+
+void test('a single missing inventory shows uncertainty and a later reappearance reopens the job', () => {
+  const missing = { ...job, listing_status: 'unconfirmed' as const, deadline: null };
+  assert.equal(isExpired(missing), false);
+  assert.equal(getLifecycleStage(missing).stage, 'unconfirmed');
+  assert.match(generateJobTimeline(missing).at(-1)!.detail, /等待再次核验/);
+  const reopened = { ...missing, listing_status: 'active' as const };
+  assert.equal(getLifecycleStage(reopened).stage, 'accepting');
+});
 void test('hidden opportunities remain recoverable', () => {
   const personal = { [job.id]: { hidden: true } };
   assert.equal(filterJobs([job], defaultFilters, personal, null).length, 0);

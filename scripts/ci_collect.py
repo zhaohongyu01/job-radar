@@ -191,12 +191,17 @@ def validate_result(code, state, snapshot, baseline_ids, started):
     return attempted
 
 
-def write_report(data_dir, code, state, error=''):
-    sources = list(state.get('sources', {}).values())
+def write_report(data_dir, code, state, error='', source_filter=None, pack_name=''):
+    all_sources = list(state.get('sources', {}).values())
+    if source_filter:
+        sources = [s for s in all_sources if s['id'] in source_filter]
+    else:
+        sources = all_sources
     report = {'collector_exit_code': code, 'records': len(state.get('jobs', {})),
               'deployment_blocked': bool(error), 'error': error, 'sources': sources}
     atomic_json(data_dir / 'ci-report.json', report)
-    lines = ['## 招聘数据采集', f"保留记录：{report['records']}；采集器退出码：{code}。",
+    title = f"## 招聘数据采集（分片：{pack_name}）" if pack_name else "## 招聘数据采集"
+    lines = [title, f"保留记录：{report['records']}；采集器退出码：{code}。",
              '允许构建发布；部分来源问题见下表。' if not error else '阻止发布：' + error,
              '', '| 来源 | 状态 | 列表页 | 解析 | 缓存复用 | 老公告复检 | 详情失败 | 详情跳过 | 问题数 |', '|---|---|---:|---:|---:|---:|---:|---:|---:|']
     for source in sources:
@@ -339,6 +344,11 @@ def collect(args):
         command.extend(['--source-pack', source_pack])
     elif sources:
         command.extend(['--sources', sources])
+    source_filter = None
+    if source_pack:
+        source_filter = set(source_pack_ids(source_pack))
+    elif sources:
+        source_filter = set(filter(None, sources.split(',')))
     code = subprocess.run(command, check=False).returncode
     state = read_json(args.data_dir / 'state.json')
     try:
@@ -347,9 +357,9 @@ def collect(args):
         # Validate every referenced detail and repost before uploading a deployment.
         _snapshot_checks(snapshot, args.public_dir)
     except (ValueError, KeyError, OSError) as error:
-        write_report(args.data_dir, code, state, str(error))
+        write_report(args.data_dir, code, state, str(error), source_filter=source_filter, pack_name=source_pack)
         raise
-    write_report(args.data_dir, code, state)
+    write_report(args.data_dir, code, state, source_filter=source_filter, pack_name=source_pack)
 
 
 if __name__ == '__main__':

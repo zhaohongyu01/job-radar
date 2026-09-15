@@ -289,6 +289,17 @@ class PublicPaginationLimit(RuntimeError):
     """The public endpoint exposes only its first page without authentication."""
 
 
+DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
+DEFAULT_HEADERS = {
+    'User-Agent': DEFAULT_USER_AGENT,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8,application/json',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Sec-Ch-Ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+}
+
+
 def clean(value):
     return '\n'.join(re.sub(r'\s+', ' ', s).strip() for s in value.splitlines() if s.strip())
 
@@ -315,7 +326,7 @@ def safe_url(value, base, keep_fragment=False):
         return None
 
 
-def fetch(url, form=None, timeout=18, retries=1):
+def fetch(url, form=None, timeout=18, retries=1, referer=''):
     # Keep list/API requests tolerant of slow public sites, while allowing
     # detail callers to opt into a shorter budget.  No TLS weakening or login
     # bypass is used here.
@@ -324,9 +335,16 @@ def fetch(url, form=None, timeout=18, retries=1):
     for attempt in range(retries + 1):
         try:
             time.sleep(0.3)
+            headers = dict(DEFAULT_HEADERS)
+            if referer:
+                headers['Referer'] = referer
+            elif url.startswith('http'):
+                origin = urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], '', '', ''))
+                headers['Referer'] = origin + '/'
+            if form is not None:
+                headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
             req = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode() if form is not None else None,
-                headers={'User-Agent':'JobOpportunityReader/0.1', 'Accept':'text/html,application/json',
-                         **({'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'} if form is not None else {})})
+                headers=headers)
             with OPENER.open(req, timeout=timeout) as r:
                 raw = r.read(3_000_001)
                 charset = r.headers.get_content_charset()
@@ -349,7 +367,7 @@ def fetch(url, form=None, timeout=18, retries=1):
             if attempt:
                 raise
             if attempt < retries:
-                time.sleep(1)
+                time.sleep(1.5)
             else:
                 raise
 
@@ -368,7 +386,7 @@ def fetch_json_post(url, payload, timeout=18, retries=1, referer=''):
                 url,
                 data=raw_payload,
                 headers={
-                    'User-Agent': 'JobOpportunityReader/0.1',
+                    'User-Agent': DEFAULT_USER_AGENT,
                     'Accept': 'application/json',
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'xmlhttprequest',
@@ -392,7 +410,7 @@ def fetch_json_post(url, payload, timeout=18, retries=1, referer=''):
 def fetch_bytes(url, max_size=3_500_000, timeout=6):
     """Safely fetch raw binary content for Excel/PDF attachments with strict timeout and size limits."""
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'JobOpportunityReader/0.1'})
+        req = urllib.request.Request(url, headers={'User-Agent': DEFAULT_USER_AGENT, 'Accept': '*/*'})
         with OPENER.open(req, timeout=timeout) as r:
             raw = r.read(max_size + 1)
         if len(raw) > max_size:
@@ -499,7 +517,8 @@ def sdei_list(source, page):
     positions=source['channel']=='positions'
     params={'pageNum':page,'pageSize':20}
     url=base+('school/companyissueinfo/list1' if positions else 'front/indexZpggList')
-    payload=json.loads(fetch(url,params) if positions else fetch(url+'?'+urllib.parse.urlencode(params)))
+    referer=f"{base}front/JiuYeInfo"
+    payload=json.loads(fetch(url,params,referer=referer) if positions else fetch(url+'?'+urllib.parse.urlencode(params),referer=referer))
     if not isinstance(payload.get('rows'),list) or 'total' not in payload:
         raise ValueError('public list response missing rows/total')
     items=[]
@@ -536,13 +555,14 @@ def sdei_news_list(page, page_size=50):
     not present in the 17 school views above.
     """
     endpoint = 'https://gxjy.sdei.edu.cn/getArticleList.jsp'
+    referer = 'https://gxjy.sdei.edu.cn/channel.jsp?classid=96'
     form = {
         'fType': '', 'ref': '0', 'jg': '', 'isremove': '0',
         'counts': str(page_size), 'divid': 'channelArticle', 'classids': '96',
         'showNum': str(page_size), 'pagenum': str(page), 'artStr': '',
         'timestamps': str(int(time.time() * 1000)),
     }
-    payload = json.loads(fetch(endpoint, form=form))
+    payload = json.loads(fetch(endpoint, form=form, referer=referer))
     rows = payload.get('rows') or '[]'
     if isinstance(rows, str):
         rows = json.loads(rows)
@@ -2208,6 +2228,9 @@ def run(args):
                 fallback.update(source_id=source['id'],classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
                 incoming.append(fallback)
 
+            def is_page_not_found(error):
+                return getattr(error, 'code', None) == 404 or '404: Not Found' in str(error) or str(getattr(error, 'code', '')) == '404'
+
             def record_detail_failure(item, error):
                 status['detail_failed'] = status.get('detail_failed', 0) + 1
                 reason = str(error)[:200]
@@ -2218,16 +2241,20 @@ def run(args):
                 else:
                     status['errors'].append({'url':item['url'],'reason':reason})
                     add_list_fallback(item)
+                # Historical probes and 404s (expired/deleted announcements) do not indicate a broken source pipeline.
+                if item.get('is_probe') or is_page_not_found(error):
+                    return False
+                return True
 
             def record_detail_success(future, item):
                 status['detail_attempted'] = status.get('detail_attempted', 0) + 1
                 try:
                     incoming.append(future.result())
                     status['parsed']+=1
-                    return True
+                    return True, False
                 except Exception as error:
-                    record_detail_failure(item, error)
-                    return False
+                    should_count = record_detail_failure(item, error)
+                    return False, should_count
 
             def checkpoint_progress():
                 completed = status.get('detail_attempted', 0) + status.get('detail_skipped', 0)
@@ -2259,9 +2286,10 @@ def run(args):
                     done,_=wait(tuple(pending),return_when=FIRST_COMPLETED)
                     for future in done:
                         item=pending.pop(future)
-                        if record_detail_success(future,item):
+                        succeeded, should_count = record_detail_success(future,item)
+                        if succeeded:
                             consecutive_failures=0
-                        else:
+                        elif should_count:
                             consecutive_failures += 1
                         checkpoint_progress()
                         if consecutive_failures >= detail_failure_limit:
@@ -2288,9 +2316,10 @@ def run(args):
                     if future.cancelled():
                         skipped_items.append(item)
                         continue
-                    if record_detail_success(future,item):
+                    succeeded, should_count = record_detail_success(future,item)
+                    if succeeded:
                         consecutive_failures=0
-                    else:
+                    elif should_count:
                         consecutive_failures += 1
                     checkpoint_progress()
 

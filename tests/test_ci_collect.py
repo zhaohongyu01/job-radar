@@ -298,6 +298,21 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('--detail-retries', out)
         self.assertIn('--detail-failure-limit', out)
 
+    def test_write_report_isolates_shard_sources_when_source_filter_specified(self):
+        with TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            state = {
+                'jobs': {'j1': {'id': 'j1'}},
+                'sources': {
+                    's1': {'id': 's1', 'name': '源1', 'status': 'ok'},
+                    's2': {'id': 's2', 'name': '源2', 'status': 'failed'},
+                },
+            }
+            ci.write_report(data, 0, state, source_filter={'s1'}, pack_name='test-pack')
+            report = ci.read_json(data / 'ci-report.json')
+            self.assertEqual(len(report['sources']), 1)
+            self.assertEqual(report['sources'][0]['id'], 's1')
+
 
 if __name__ == '__main__':
     unittest.main()

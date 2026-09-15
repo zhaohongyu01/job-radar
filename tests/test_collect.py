@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+import urllib.error
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('collect',ROOT/'scripts/collect.py')
@@ -102,6 +103,27 @@ class CollectionTests(unittest.TestCase):
             self.assertGreaterEqual(status['detail_failed'],3)
             self.assertGreater(status['detail_skipped'],0)
             self.assertTrue(any('单源熔断' in error['reason'] for error in status['errors']))
+
+    def test_detail_circuit_breaker_ignores_not_found_pages(self):
+        source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')
+        items=[{
+            'url':f'https://example.com/detail/{idx}',
+            'title':f'示例企业{idx} 财务招聘',
+            'published_at':'2026-09-10',
+        } for idx in range(8)]
+        with TemporaryDirectory() as temp:
+            args=SimpleNamespace(data_dir=temp,public_dir=temp,sources=source['id'],pages=1,days=180,
+                                 refresh_hours=0,nankai_area=0,target_city='',offerjack_pages=1,
+                                 detail_timeout=1,detail_retries=0,detail_failure_limit=3)
+            error_404 = urllib.error.HTTPError('https://example.com', 404, 'Not Found', {}, None)
+            with patch.object(c,'sdei_list',return_value=(items,1)), \
+                 patch.object(c,'fetch',side_effect=error_404):
+                self.assertEqual(c.run(args),2)
+            snapshot=json.loads((Path(temp)/'jobs.json').read_text(encoding='utf8'))
+            self.assertEqual(len(snapshot['jobs']),8)
+            status=snapshot['sources'][0]
+            self.assertEqual(status.get('detail_skipped', 0), 0)
+            self.assertFalse(any('单源熔断' in error['reason'] for error in status.get('errors', [])))
 
     def test_public_supplement_preserves_application_fragment_and_provenance(self):
         payload=(ROOT/'tests/fixtures/offerjack-sample.json').read_text(encoding='utf8')

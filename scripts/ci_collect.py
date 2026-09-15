@@ -553,13 +553,17 @@ def collect(args):
         deep_scan=is_deep_scan
     )
     schools_with_new_announcements = set()
-    def make_idle_source_status(defn, st, at, cov, succ=None, errs=None, **extra):
-        base = dict(defn, status=st, last_attempt_at=at, last_success_at=succ,
+    def make_idle_source_status(definition, status, last_attempt_at, coverage,
+                                last_success_at=None, errors=None, **extra):
+        base = dict(definition, status=status, last_attempt_at=last_attempt_at,
+                    last_success_at=last_success_at,
                     pages=0, discovered=0, parsed=0, cached=0, probed=0,
                     detail_attempted=0, detail_failed=0, detail_skipped=0,
-                    errors=errs if errs is not None else [], coverage=cov)
+                    errors=errors if errors is not None else [], coverage=coverage)
         base.update(extra)
         return base
+
+    is_single_explicit_source = bool(len(selected) == 1)
 
     for definition in definitions:
         identifier = definition['id']
@@ -643,7 +647,7 @@ def collect(args):
                 definition, status='blocked' if is_host_blocked else 'partial',
                 last_attempt_at=now, coverage=reason,
                 last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
-                errs=[{'url': definition['url'], 'reason': reason}]
+                errors=[{'url': definition['url'], 'reason': reason}]
             )
             if is_host_blocked:
                 status['blocked_until'] = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')

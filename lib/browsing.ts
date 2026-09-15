@@ -12,7 +12,7 @@ export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: V
   const fields = { ...(value.filters as Record<string, unknown>) };
   const enums = {
     type: ['全部', '校招', '社招'],
-    sector: ['全部', '企业 / 其他', '银行', '国企', '事业单位', '公务员'],
+    sector: ['全部', '企业 / 其他', '银行', '保险', '国企', '事业单位', '公务员'],
     direction: ['全部', '财务 / 经济', '管理 / 职能', '技术 / 研发', '市场 / 销售'],
     locationScope: ['exact', 'possible', 'unknown'],
     view: ['all', 'saved', 'applied', 'hidden'],

@@ -103,6 +103,7 @@ jobs:
           - pack: universities-a
           - pack: universities-b
           - pack: finance
+          - pack: large-enterprises
           - pack: public-leads
     steps:
       - name: Checkout repository
@@ -188,7 +189,7 @@ jobs:
             --public-dir public \
             --shards-dir data/shards \
             --days 30 \
-            --expected-shards "regional-official,universities-a,universities-b,finance,public-leads"
+            --expected-shards "regional-official,universities-a,universities-b,finance,large-enterprises,public-leads"
 
       - name: Save Collector State
         if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}

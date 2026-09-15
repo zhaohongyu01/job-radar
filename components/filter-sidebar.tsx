@@ -160,6 +160,7 @@ export function FilterSidebar({
           '全部',
           '企业 / 其他',
           '银行',
+          '保险',
           '国企',
           '事业单位',
           '公务员',

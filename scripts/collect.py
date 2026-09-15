@@ -65,8 +65,22 @@ SOURCES = [
     {'id': 'nankai', 'name': '南开大学就业网', 'url': 'https://career.nankai.edu.cn/correcruit/index.html'},
     {'id': 'jinan', 'name': '济南市政府 · 求职招聘', 'url': 'https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/index.html'},
     {'id': 'sdu', 'name': '山东大学就业信息网', 'url': 'https://jobcareer.sdu.edu.cn/eweb/jygl/index.so?modcode=null&subsyscode=zpfw&type=ssoSearchZxzp&xxlb=5100'},
-    {'id': 'hrss', 'name': '济南市人社局 · 事业单位招聘', 'url': 'https://jnhrss.jinan.gov.cn/col/col18625/index.html'},
-    {'id': 'gzw', 'name': '济南市国资委 · 国企招聘', 'url': 'https://jngzw.jinan.gov.cn/col/col23870/index.html'},
+    {'id': 'hrss', 'name': '济南市人社局 · 事业单位招聘',
+     'url': 'https://jnhrss.jinan.gov.cn/col/col18625/index.html', 'adapter': 'jinan_cms',
+     'cms_web_id': '16', 'cms_page_id': '18625', 'cms_tag_id': '当前栏目标题',
+     'cms_tpl_set_id': 'MAMvqpH003gztRDn5troz', 'allow_empty_pages': True,
+     'exclude_title_re': r'拟聘|拟录用|录用名单|名单公示|结果公示|体检通知|递补|资格复审|面试|笔试|成绩|考察'},
+    {'id': 'jinan-employment', 'name': '济南人社 · 公共就业招聘',
+     'url': 'https://jnhrss.jinan.gov.cn/col/col18309/index.html', 'adapter': 'jinan_cms',
+     'cms_web_id': '16', 'cms_page_id': '18309', 'cms_tag_id': '当前栏目标题',
+     'cms_tpl_set_id': 'MAMvqpH003gztRDn5troz', 'allow_empty_pages': True,
+     'include_title_re': r'招聘|招募|岗位|就业大集|求职',
+     'exclude_title_re': r'拟聘|拟录用|录用名单|名单公示|结果公示|体检通知|递补|资格复审|面试|笔试|成绩|考察|圆满举办|成功举办|活动回顾'},
+    {'id': 'gzw', 'name': '济南市国资委 · 国企招聘',
+     'url': 'https://jngzw.jinan.gov.cn/col/col23870/index.html', 'adapter': 'jinan_cms',
+     'cms_web_id': '37', 'cms_page_id': '23870', 'cms_tag_id': '信息标题',
+     'cms_tpl_set_id': 'qRnIbtU5GwoFGC9hjemFn', 'allow_empty_pages': True,
+     'exclude_title_re': r'拟聘|拟录用|录用名单|名单公示|结果公示|体检通知|递补|资格复审|面试|笔试|成绩|考察'},
 ]
 SDEI_SCHOOLS = [
     ('jobsdufe', '山东财经大学'), ('ujn', '济南大学'), ('sdut', '山东理工大学'), ('qlu', '齐鲁工业大学'),
@@ -107,6 +121,41 @@ SOURCES.extend([
      'institution': '中国邮政储蓄银行', 'bank_type': 'psbc', 'default_type': '社招',
      'scope': '全国', 'recruitment_types': ['社招'], 'sectors': ['银行 / 金融'],
      'trust': '官方原始来源', 'source_family': '银行官方招聘'},
+    {'id': 'taiping-campus', 'name': '中国太平保险集团 · 校园招聘',
+     'url': 'https://cntp.zhiye.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': '14bf3434-2af8-4708-941b-00db329d9a17', 'business_type': '2',
+     'institution': '中国太平保险集团', 'default_type': '校招', 'pack': 'finance',
+     'scope': '全国', 'recruitment_types': ['校招'], 'sectors': ['保险'],
+     'trust': '官方招聘平台', 'source_family': '保险官方招聘'},
+    {'id': 'taiping-social', 'name': '中国太平保险集团 · 社会招聘',
+     'url': 'https://cntp.zhiye.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': '14bf3434-2af8-4708-941b-00db329d9a17', 'business_type': '1',
+     'institution': '中国太平保险集团', 'default_type': '社招', 'pack': 'finance',
+     'scope': '全国', 'recruitment_types': ['社招'], 'sectors': ['保险'],
+     'trust': '官方招聘平台', 'source_family': '保险官方招聘'},
+    {'id': 'haier-campus', 'name': '海尔集团 · 校园招聘',
+     'url': 'https://maker.haier.net/client/campus/activityindex.html', 'adapter': 'haier_campus',
+     'activity_ids': ['68', '69', '71', '70', '67'], 'institution': '海尔集团',
+     'default_type': '校招', 'pack': 'large-enterprises', 'scope': '全国',
+     'recruitment_types': ['校招'], 'sectors': ['企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'haier-social', 'name': '海尔集团 · 社会招聘',
+     'url': 'https://maker.haier.net/client/job/index', 'adapter': 'haier_jobs',
+     'institution': '海尔集团', 'default_type': '社招', 'pack': 'large-enterprises',
+     'scope': '全国', 'recruitment_types': ['社招'], 'sectors': ['企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'hisense-campus', 'name': '海信集团 · 校园招聘',
+     'url': 'https://jobs.hisense.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': '05f0dd33-82e6-4de1-b950-3d142c9833a1', 'business_type': '2',
+     'institution': '海信集团', 'default_type': '校招', 'pack': 'large-enterprises',
+     'scope': '全国', 'recruitment_types': ['校招'], 'sectors': ['企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'hisense-social', 'name': '海信集团 · 社会招聘',
+     'url': 'https://jobs.hisense.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': '05f0dd33-82e6-4de1-b950-3d142c9833a1', 'business_type': '1',
+     'institution': '海信集团', 'default_type': '社招', 'pack': 'large-enterprises',
+     'scope': '全国', 'recruitment_types': ['社招'], 'sectors': ['企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
 ])
 # Keep the source registry self-describing.  The UI can show these fields and
 # future city source packs can select them without changing the collector's
@@ -127,10 +176,11 @@ _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 _university_ids = ['nankai', 'sdu', 'upc'] + _sdei_source_ids
 _university_midpoint = (len(_university_ids) + 1) // 2
 SOURCE_PACKS = {
-    'regional-official': ['jinan', 'hrss', 'gzw', 'qdhrss', 'sdei-news'],
+    'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
     'universities-a': _university_ids[:_university_midpoint],
     'universities-b': _university_ids[_university_midpoint:],
-    'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank'],
+    'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
+    'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
     'public-leads': ['wondercv', 'offerjack'],
 }
 _source_ids = {s['id'] for s in SOURCES}
@@ -304,6 +354,41 @@ def fetch(url, form=None, timeout=18, retries=1):
                 raise
 
 
+def fetch_json_post(url, payload, timeout=18, retries=1, referer=''):
+    """POST one bounded JSON request to a public recruitment API."""
+    timeout = max(1, float(timeout))
+    retries = max(0, int(retries))
+    raw_payload = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    trace_id = hashlib.sha256(f'{url}:{time.time_ns()}'.encode()).hexdigest()[:32]
+    for attempt in range(retries + 1):
+        try:
+            time.sleep(0.3)
+            origin = urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], '', '', ''))
+            req = urllib.request.Request(
+                url,
+                data=raw_payload,
+                headers={
+                    'User-Agent': 'JobOpportunityReader/0.1',
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'xmlhttprequest',
+                    'EagleEye-TraceID': trace_id,
+                    'Origin': origin,
+                    **({'Referer': referer} if referer else {}),
+                },
+            )
+            with OPENER.open(req, timeout=timeout) as response:
+                raw = response.read(3_000_001)
+            if len(raw) > 3_000_000:
+                raise ValueError('response exceeds size limit')
+            return json.loads(raw.decode('utf-8'))
+        except Exception:
+            if attempt < retries:
+                time.sleep(1)
+            else:
+                raise
+
+
 def fetch_bytes(url, max_size=3_500_000, timeout=6):
     """Safely fetch raw binary content for Excel/PDF attachments with strict timeout and size limits."""
     try:
@@ -364,6 +449,35 @@ def gov_list(html, base):
     count = int(pagination[0].attrs.get('count','0')) if pagination else 0
     rows = int(pagination[0].attrs.get('rows','15')) if pagination else 15
     return items, max(1,(count+rows-1)//rows)
+
+
+def jinan_cms_list(source, page, page_size=15):
+    """Read Jinan government columns rendered by the AuthorizedRead CMS API."""
+    endpoint = urllib.parse.urljoin(
+        source['url'], '/api-gateway/jpaas-publish-server/front/page/build/unit'
+    )
+    query = {
+        'parseType': 'bulidstatic',
+        'webId': source['cms_web_id'],
+        'tplSetId': source['cms_tpl_set_id'],
+        'pageType': 'column',
+        'tagId': source['cms_tag_id'],
+        'editType': 'null',
+        'pageId': source['cms_page_id'],
+        'paramJson': json.dumps({'pageNo': page, 'pageSize': page_size}, ensure_ascii=False),
+    }
+    payload = json.loads(fetch(endpoint + '?' + urllib.parse.urlencode(query)))
+    html = (payload.get('data') or {}).get('html')
+    if not payload.get('success') or not isinstance(html, str):
+        raise ValueError('Jinan government recruitment list API returned no HTML')
+    items, pages = gov_list(html, source['url'])
+    include_pattern = source.get('include_title_re')
+    exclude_pattern = source.get('exclude_title_re')
+    if include_pattern:
+        items = [item for item in items if re.search(include_pattern, item['title'])]
+    if exclude_pattern:
+        items = [item for item in items if not re.search(exclude_pattern, item['title'])]
+    return items, pages
 
 
 def sdu_list(html, base):
@@ -499,6 +613,179 @@ def official_bank_page_url(source, page):
     if page <= 1:
         return source['url']
     return urllib.parse.urljoin(source['url'], f'index_{page - 1}.html')
+
+
+def inline_detail(values, sections=()):
+    parts = [
+        '<p>' + html_lib.escape(f'{label}：{value}') + '</p>'
+        for label, value in values
+        if value not in (None, '', [])
+    ]
+    for title, content in sections:
+        if content:
+            parts.append('<p>' + html_lib.escape(f'{title}：{content}') + '</p>')
+    return '<div id="zoom">' + ''.join(parts) + '</div>'
+
+
+def zhiye_jobs_list(source, page, page_size=500):
+    """Read public jobs from the official Beisen/Zhiye recruitment portal API."""
+    origin = urllib.parse.urlunsplit((*urllib.parse.urlsplit(source['url'])[:2], '', '', ''))
+    endpoint = origin + '/api/Jobad/GetJobAdPageList'
+    display_fields = [
+        'Category', 'Kind', 'LocId', 'DetailAddress', 'Org', 'HeadCount',
+        'Station', 'EndTime', 'PostDate', 'Salary', 'Degree',
+        'YearsOfWorking', 'ClassificationOne', 'ClassificationTwo',
+    ]
+    payload = fetch_json_post(
+        endpoint,
+        {
+            'Category': [source['business_type']],
+            'PageIndex': page - 1,
+            'PageSize': page_size,
+            'KeyWords': '',
+            'SpecialType': 0,
+            'PortalId': source['portal_id'],
+            'DisplayFields': display_fields,
+        },
+        referer=source['url'],
+    )
+    rows = payload.get('Data')
+    if payload.get('Code') != 200 or not isinstance(rows, list):
+        raise ValueError('official Zhiye recruitment API returned invalid data')
+    items = []
+    route = 'campus' if source['business_type'] == '2' else 'social'
+    for row in rows:
+        job_id = row.get('JobAdId')
+        title = clean(str(row.get('JobAdName') or ''))
+        if not job_id or not title or row.get('Status') == 0:
+            continue
+        detail_url = origin + f'/{route}/detail?jobAdId={job_id}'
+        locations = '、'.join(clean(str(value)) for value in row.get('LocNames') or [] if value)
+        deadline_value = str(row.get('EndTime') or '')[:10]
+        if (not re.fullmatch(r'20\d{2}-\d{2}-\d{2}', deadline_value) or
+                int(deadline_value[:4]) >= 2100):
+            deadline_value = ''
+        published = str(row.get('PostDate') or row.get('ChangeDate') or '')[:10]
+        if not re.fullmatch(r'20\d{2}-\d{2}-\d{2}', published):
+            published = None
+        company = clean(str(row.get('Org') or row.get('ClassificationTwo') or source['institution']))
+        structured = dict(row)
+        structured['companyName'] = company
+        values = [
+            ('招聘单位', company),
+            ('岗位名称', title),
+            ('岗位类别', row.get('ClassificationOne') or row.get('Category')),
+            ('工作地点', locations or row.get('DetailAddress')),
+            ('学历要求', row.get('Degree')),
+            ('工作经验', row.get('YearsOfWorking')),
+            ('薪资', row.get('Salary')),
+            ('报名截止时间', deadline_value),
+        ]
+        items.append({
+            'identity': f"zhiye:{source['id']}:{job_id}",
+            'url': detail_url,
+            'application_url': detail_url,
+            'title': title,
+            'company': company,
+            'published_at': published,
+            'inline_html': inline_detail(values, [('岗位职责', row.get('Duty')), ('任职要求', row.get('Require'))]),
+            'structured': structured,
+            'kind': '具体岗位',
+            'is_active_listing': True,
+        })
+    count = int(payload.get('Count') or payload.get('Total') or len(rows))
+    return items, max(1, (count + page_size - 1) // page_size)
+
+
+def haier_jobs_list(page, page_size=500):
+    endpoint = 'https://maker.haier.net/client/job/searchdata.html'
+    url = endpoint + '?' + urllib.parse.urlencode({'page': page, 'pagesize': page_size})
+    payload = json.loads(fetch(url))
+    data = payload.get('data') or {}
+    rows = data.get('list')
+    if payload.get('status') != 1 or not isinstance(rows, list):
+        raise ValueError('Haier social recruitment API returned invalid data')
+    items = []
+    for row in rows:
+        job_id = row.get('id')
+        title = clean(str(row.get('job_name') or row.get('jobname') or ''))
+        if not job_id or not title:
+            continue
+        detail_url = f'https://maker.haier.net/client/job/detail/id/{job_id}/recommend_record/1'
+        company = '海尔集团'
+        structured = dict(row)
+        structured['companyName'] = company
+        values = [
+            ('招聘单位', company),
+            ('岗位名称', title),
+            ('岗位类别', row.get('func_desc')),
+            ('业务部门', row.get('xwinfo') or row.get('bu_name')),
+            ('工作地点', row.get('location')),
+            ('学历要求', row.get('education_required_label')),
+            ('工作经验', row.get('work_experience_label')),
+            ('薪资', row.get('salary_label')),
+        ]
+        items.append({
+            'identity': f'haier-social:{job_id}',
+            'url': detail_url,
+            'application_url': detail_url,
+            'title': title,
+            'company': company,
+            'published_at': str(row.get('update_time') or '')[:10] or None,
+            'inline_html': inline_detail(values),
+            'structured': structured,
+            'kind': '具体岗位',
+            'is_active_listing': True,
+        })
+    count = int(data.get('count') or len(rows))
+    return items, max(1, (count + page_size - 1) // page_size)
+
+
+def haier_campus_list(source, page, page_size=500):
+    endpoint = 'https://maker.haier.net/client/campus/getactivityresearchlist.html'
+    items = []
+    total_pages = 1
+    for activity_id in source.get('activity_ids') or []:
+        payload = json.loads(fetch(endpoint, form={
+            'from': 'jituan', 'page': page, 'pagesize': page_size, 'aid': activity_id,
+        }))
+        data = payload.get('data') or {}
+        rows = data.get('list')
+        if payload.get('status') != 1 or not isinstance(rows, list):
+            raise ValueError(f'Haier campus recruitment API returned invalid data for activity {activity_id}')
+        count = int(data.get('count') or len(rows))
+        total_pages = max(total_pages, (count + page_size - 1) // page_size)
+        activity_name = clean(str((data.get('activity') or {}).get('name') or '海尔集团校园招聘'))
+        for row in rows:
+            job_id = row.get('id')
+            title = clean(str(row.get('name') or ''))
+            detail_url = safe_url(row.get('click_url') or '', source['url'])
+            if not job_id or not title or not detail_url:
+                continue
+            company = '海尔集团'
+            structured = dict(row)
+            structured['companyName'] = company
+            values = [
+                ('招聘单位', company),
+                ('招聘项目', activity_name),
+                ('岗位名称', title),
+                ('岗位类别', row.get('fun_name')),
+                ('业务部门', row.get('department')),
+                ('工作地点', row.get('addr')),
+            ]
+            items.append({
+                'identity': f'haier-campus:{activity_id}:{job_id}',
+                'url': detail_url,
+                'application_url': detail_url,
+                'title': title,
+                'company': company,
+                'published_at': None,
+                'inline_html': inline_detail(values),
+                'structured': structured,
+                'kind': '具体岗位',
+                'is_active_listing': True,
+            })
+    return items, max(1, total_pages)
 
 
 def wonder_list(html, base):
@@ -803,6 +1090,13 @@ def parse_detail(html, item, source):
         title=item['title']
         company=structured.get('dwmc') or item.get('company') or ''
         published=item.get('published_at')
+    elif source.get('adapter')=='jinan_cms':
+        contents=(root.find(id='zoom') or root.find(cls='TRS_Editor') or
+                  root.find(cls='article') or root.find(cls='content') or root.find('body'))
+        body=contents[0] if contents else root
+        title=metas.get('articletitle') or item['title']
+        company=item.get('company') or ''
+        published=(metas.get('pubdate') or item.get('published_at') or '')[:10] or None
     elif source.get('adapter')=='qdhrss':
         contents=root.find(cls='wencon') or root.find(cls='article') or root.find(id='zoom')
         body=contents[0] if contents else root
@@ -848,7 +1142,7 @@ def parse_detail(html, item, source):
         # A list such as 2026/2027届 explicitly names both eligible cohorts.
         structured_years=[y for y in re.findall(r'20\d{2}',structured.get('graduationYear') or '') if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
         years=sorted(set(years+structured_years))
-    sectors=[label for label,pattern in [('银行',r'银行'),('国企',r'国有企业|国有独资|国有控股|央企|国企'),('事业单位',r'事业单位'),('公务员',r'公务员')] if re.search(pattern,combined)] or ['企业 / 其他']
+    sectors=[label for label,pattern in [('银行',r'银行'),('保险',r'保险'),('国企',r'国有企业|国有独资|国有控股|央企|国企'),('事业单位',r'事业单位'),('公务员',r'公务员')] if re.search(pattern,combined)] or list(source.get('sectors') or ['企业 / 其他'])
     # City evidence comes from job-location fields/sections/tables, never a headquarters paragraph.
     location_evidence=[]
     if fields.get('工作地域'): location_evidence.append(fields['工作地域'])
@@ -890,6 +1184,8 @@ def parse_detail(html, item, source):
                 application_url=website
         elif item.get('application_url'):
             application_url=item['application_url']
+    if source.get('adapter') in {'zhiye_jobs', 'haier_jobs', 'haier_campus'} and item.get('application_url'):
+        application_url=safe_url(item['application_url'],item['url'],True)
     links=[]
     attachments=[]
     for node in body.find('img'):
@@ -949,7 +1245,7 @@ def parse_detail(html, item, source):
             'sectors':sectors,'directions':directions,'cities':cities,'possible_cities':possible,
             'location_evidence':location_evidence[:12],'province_possible':'山东' in combined,
             'domestic_status':location_status,
-            'education':fields.get('学历要求') or structured.get('degreereq') or structured.get('graduationYear') or '未明确 / 见原公告',
+            'education':fields.get('学历要求') or structured.get('degreereq') or structured.get('graduationYear') or structured.get('Degree') or structured.get('education_required_label') or '未明确 / 见原公告',
             'deadline':expires,'deadline_evidence':expires_text,'deadline_precision':precision,
             'application_url':application_url,'emails':emails,'attachments':attachments,'links':links[:20],
             'qr_attachment':bool(re.search(r'扫码|二维码',text)),
@@ -1687,11 +1983,13 @@ def run(args):
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
         status=dict(source,last_attempt_at=now,last_success_at=previous['sources'].get(source['id'],{}).get('last_success_at'),pages=0,discovered=0,parsed=0,cached=0,probed=0,detail_attempted=0,detail_failed=0,detail_skipped=0,errors=[],status='ok',coverage='近期分页，非全量历史')
         try:
-            first=fetch(source['url']) if source.get('adapter') not in {'sdei','sdei_news','offerjack','upc'} else ''
+            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus'}
+            first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
             items=[]
             is_offerjack=source.get('adapter')=='offerjack'
+            is_active_listing_source=source.get('adapter') in {'zhiye_jobs','haier_jobs','haier_campus'}
             offerjack_cities=([args.target_city] if args.target_city else ['']+CITIES) if is_offerjack else []
             offerjack_query_limit=(getattr(args,'offerjack_pages',0) or 1000) if is_offerjack else 0
             page_budget=offerjack_query_limit*len(offerjack_cities) if is_offerjack else args.pages
@@ -1723,10 +2021,18 @@ def run(args):
                         found,total=sdei_news_list(page)
                     elif source.get('adapter')=='upc':
                         found,total=upc_list(page)
+                    elif source.get('adapter')=='jinan_cms':
+                        found,total=jinan_cms_list(source,page)
                     elif source.get('adapter')=='official_bank':
                         page_url=official_bank_page_url(source,page)
                         html=first if page==1 else fetch(page_url)
                         found,total=official_bank_list(html,source['url'],source)
+                    elif source.get('adapter')=='zhiye_jobs':
+                        found,total=zhiye_jobs_list(source,page)
+                    elif source.get('adapter')=='haier_jobs':
+                        found,total=haier_jobs_list(page)
+                    elif source.get('adapter')=='haier_campus':
+                        found,total=haier_campus_list(source,page)
                     elif source.get('adapter')=='qdhrss':
                         page_url=source['url'] if page==1 else urllib.parse.urljoin(source['url'],f'index_{page-1}.shtml')
                         html=first if page==1 else fetch(page_url)
@@ -1747,7 +2053,9 @@ def run(args):
                         html=json.loads(fetch(urllib.parse.urljoin(source['url'],endpoint)+'?'+urllib.parse.urlencode(q)))['data']['html']
                         found,total=gov_list(html,source['url'])
                     status['pages']+=1
-                    if (page_number if is_offerjack else page)==1 and not found and total!=0: raise ValueError('no announcement links; parser or source may have changed')
+                    if ((page_number if is_offerjack else page)==1 and not found and total!=0 and
+                            not source.get('allow_empty_pages')):
+                        raise ValueError('no announcement links; parser or source may have changed')
                     repeated=bool(found) and all(i.get('identity',i['url']) in known for i in found)
                     if repeated and not is_offerjack: raise ValueError('pagination repeated; coverage incomplete')
                 except Exception as exc:
@@ -1758,7 +2066,8 @@ def run(args):
                 for item in found:
                     if item.get('identity',item['url']) not in known:
                         known.add(item.get('identity',item['url']))
-                        if not item['published_at'] or item['published_at']>=cutoff: items.append(item)
+                        if item.get('is_active_listing') or not item['published_at'] or item['published_at']>=cutoff:
+                            items.append(item)
                 if is_offerjack:
                     if offerjack_page>=min(total,offerjack_query_limit):
                         if total>offerjack_query_limit:
@@ -1775,13 +2084,17 @@ def run(args):
                         break
                     continue
                 if page>=total:
-                    status['coverage']='已读至来源列表末页（保留所选时间范围）'
+                    status['coverage']=('已读取官网当前全部在架岗位' if is_active_listing_source else
+                                        '已读至来源列表末页（保留所选时间范围）')
                     break
-                if found and all(i['published_at'] and i['published_at']<cutoff for i in found):
+                if (found and not any(i.get('is_active_listing') for i in found) and
+                        all(i['published_at'] and i['published_at']<cutoff for i in found)):
                     status['coverage']=f'已读至 {args.days} 天前；更早公告未读取'
                     break
             else:
-                status['coverage']=f'最近 {page_budget} 页；仍有更早公告未读取'
+                status['coverage']=(f'已读取前 {page_budget} 页；官网仍有在架岗位未读取'
+                                    if is_active_listing_source else
+                                    f'最近 {page_budget} 页；仍有更早公告未读取')
             if is_offerjack and offerjack_limited:
                 status['coverage']=f'已读取 {status["pages"]} 个公开列表页；部分查询仍有未读取的后续页（接口或分页预算限制）'
                 if not status['errors']:

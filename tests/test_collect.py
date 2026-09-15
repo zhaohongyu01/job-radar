@@ -16,6 +16,10 @@ class CollectionTests(unittest.TestCase):
         packed = {source_id for pack in c.SOURCE_PACKS.values() for source_id in pack}
         self.assertEqual(packed, {source['id'] for source in c.SOURCES})
         self.assertIn('boc-recruitment', c.source_pack_ids('finance'))
+        self.assertIn('jinan-employment', c.source_pack_ids('regional-official'))
+        self.assertIn('taiping-campus', c.source_pack_ids('finance'))
+        self.assertIn('haier-social', c.source_pack_ids('large-enterprises'))
+        self.assertIn('hisense-campus', c.source_pack_ids('large-enterprises'))
         self.assertGreaterEqual(len(c.source_pack_ids('finance')), 1)
         with self.assertRaisesRegex(ValueError, 'unknown source pack'):
             c.source_pack_ids('missing-pack')
@@ -194,6 +198,96 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(job['cities'],['济南'])
         self.assertEqual(job['application_url'],'https://example.com/apply')
 
+    def test_jinan_cms_adapter_reads_dynamic_government_list(self):
+        source=next(s for s in c.SOURCES if s['id']=='hrss')
+        fragment='''<div class="page-content"><li>
+          <a title="济南市事业单位2026年公开招聘工作人员公告 2026年09月14日"
+             href="https://example.gov.cn/job/1">招聘公告...</a>
+          <span>[2026-09-14]</span></li></div>
+          <div class="pagination" rows="15" count="31"></div>'''
+        payload=json.dumps({'success':True,'data':{'html':fragment}},ensure_ascii=False)
+        with patch.object(c,'fetch',return_value=payload) as mocked:
+            items,pages=c.jinan_cms_list(source,2)
+        self.assertEqual(pages,3)
+        self.assertEqual(items[0]['title'],'济南市事业单位2026年公开招聘工作人员公告')
+        self.assertEqual(items[0]['published_at'],'2026-09-14')
+        self.assertIn('pageNo%22%3A+2',mocked.call_args.args[0])
+
+    def test_jinan_employment_feed_keeps_jobs_and_filters_result_notices(self):
+        source=next(s for s in c.SOURCES if s['id']=='jinan-employment')
+        fragment='''<div class="page-content"><ul>
+          <li><a title="2026年济南市专场网络招聘会 2026年09月14日" href="/job/1">招聘会</a><span>[2026-09-14]</span></li>
+          <li><a title="某单位公开招聘拟聘人员公示 2026年09月13日" href="/job/2">公示</a><span>[2026-09-13]</span></li>
+          <li><a title="全市就业工作会议召开 2026年09月12日" href="/news/3">工作动态</a><span>[2026-09-12]</span></li>
+        </ul></div><div class="pagination" rows="15" count="3"></div>'''
+        payload=json.dumps({'success':True,'data':{'html':fragment}},ensure_ascii=False)
+        with patch.object(c,'fetch',return_value=payload):
+            items,pages=c.jinan_cms_list(source,1)
+        self.assertEqual(pages,1)
+        self.assertEqual([item['title'] for item in items],['2026年济南市专场网络招聘会'])
+
+    def test_zhiye_official_jobs_preserve_location_requirements_and_apply_url(self):
+        source=next(s for s in c.SOURCES if s['id']=='taiping-campus')
+        payload={
+            'Code':200,'Count':51,'Data':[{
+                'JobAdId':561286063,'JobAdName':'2027届财务管理管培生','Status':1,
+                'Org':'太平人寿山东分公司','Category':'校园招聘','LocNames':['山东省','济南市'],
+                'PostDate':'2026-09-10T16:52:27','EndTime':'2026-10-31T23:59:59',
+                'Degree':'本科','Salary':'面议','ClassificationOne':'财务管理类',
+                'ClassificationTwo':'太平人寿山东分公司','Duty':'负责预算与财务分析。',
+                'Require':'经济、金融、会计相关专业。',
+            },{
+                'JobAdId':561286064,'JobAdName':'长期招聘岗位','Status':1,
+                'Org':'太平人寿山东分公司','LocNames':['山东省','济南市'],
+                'PostDate':'2026-08-01T10:00:00','EndTime':'2222-02-02T00:00:00',
+            }]
+        }
+        with patch.object(c,'fetch_json_post',return_value=payload) as mocked:
+            items,pages=c.zhiye_jobs_list(source,1,50)
+        self.assertEqual(pages,2)
+        self.assertEqual(mocked.call_args.args[1]['PageIndex'],0)
+        job=c.parse_detail(items[0]['inline_html'],items[0],source)
+        self.assertEqual(job['company'],'太平人寿山东分公司')
+        self.assertEqual(job['cities'],['济南'])
+        self.assertEqual(job['education'],'本科')
+        self.assertEqual(job['graduation_years'],['2027'])
+        self.assertIn('保险',job['sectors'])
+        self.assertEqual(job['deadline'],'2026-10-31T23:59:59+08:00')
+        self.assertIn('/campus/detail?jobAdId=561286063',job['application_url'])
+        sentinel_job=c.parse_detail(items[1]['inline_html'],items[1],source)
+        self.assertIsNone(sentinel_job['deadline'])
+
+    def test_haier_social_and_campus_public_apis_create_searchable_jobs(self):
+        social_payload=json.dumps({'status':1,'data':{'count':101,'list':[{
+            'id':'10231020','job_name':'财务分析专员','update_time':'2026-09-14 18:23:56',
+            'location':'山东省-济南市','func_desc':'财务类','xwinfo':'海尔智家财务平台',
+            'education_required_label':'本科及以上','work_experience_label':'3年以上',
+            'salary_label':'薪资面议',
+        }]}},ensure_ascii=False)
+        with patch.object(c,'fetch',return_value=social_payload):
+            social_items,social_pages=c.haier_jobs_list(1,100)
+        self.assertEqual(social_pages,2)
+        social_source=next(s for s in c.SOURCES if s['id']=='haier-social')
+        social_job=c.parse_detail(social_items[0]['inline_html'],social_items[0],social_source)
+        self.assertEqual(social_job['cities'],['济南'])
+        self.assertIn('社招',social_job['types'])
+        self.assertEqual(social_job['education'],'本科及以上')
+
+        campus_source=dict(next(s for s in c.SOURCES if s['id']=='haier-campus'),activity_ids=['68'])
+        campus_payload=json.dumps({'status':1,'data':{'count':1,
+            'activity':{'name':'海尔集团2027校园招聘'},'list':[{
+                'id':'59','name':'人力资源管理','fun_name':'职能类',
+                'department':'海尔智家','addr':'青岛市',
+                'click_url':'/client/campus/deliverfirst/id/68/fid/12/rid/59.html',
+            }]}},ensure_ascii=False)
+        with patch.object(c,'fetch',return_value=campus_payload):
+            campus_items,campus_pages=c.haier_campus_list(campus_source,1)
+        self.assertEqual(campus_pages,1)
+        campus_job=c.parse_detail(campus_items[0]['inline_html'],campus_items[0],campus_source)
+        self.assertEqual(campus_job['cities'],['青岛'])
+        self.assertEqual(campus_job['graduation_years'],['2027'])
+        self.assertIn('校招',campus_job['types'])
+
     def test_old_only_source_is_successful_inside_recent_window(self):
         source=next(s for s in c.SOURCES if s['id']=='psbc-social')
         html='''<ul><li><span>2020-01-01</span>
@@ -205,6 +299,24 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(c.run(args),0)
             state=json.loads((Path(temp)/'state.json').read_text(encoding='utf8'))
             self.assertEqual(state['sources'][source['id']]['status'],'ok')
+
+    def test_active_enterprise_listing_is_retained_outside_history_window(self):
+        source=next(s for s in c.SOURCES if s['id']=='haier-social')
+        item={
+            'identity':'haier-social:old-active','url':'https://maker.haier.net/client/job/detail/id/old-active',
+            'application_url':'https://maker.haier.net/client/job/detail/id/old-active',
+            'title':'财务分析专员','company':'海尔集团','published_at':'2025-01-01',
+            'inline_html':'<div id="zoom"><p>岗位名称：财务分析专员</p><p>工作地点：济南市</p></div>',
+            'structured':{'companyName':'海尔集团'},'kind':'具体岗位','is_active_listing':True,
+        }
+        with TemporaryDirectory() as temp, patch.object(c,'haier_jobs_list',return_value=([item],1)):
+            args=SimpleNamespace(data_dir=temp,public_dir=temp,sources=source['id'],pages=1,days=30,
+                                 refresh_hours=0,nankai_area=0,target_city='',offerjack_pages=1,
+                                 probe_budget=0,detail_timeout=1,detail_retries=0,detail_failure_limit=2)
+            self.assertEqual(c.run(args),0)
+            state=json.loads((Path(temp)/'state.json').read_text(encoding='utf8'))
+            self.assertEqual(len(state['jobs']),1)
+            self.assertEqual(next(iter(state['jobs'].values()))['cities'],['济南'])
 
     def test_announcement_api_image_and_list_date_survive(self):
         source=next(s for s in c.SOURCES if s['id']=='jobsdufe-announcements')
@@ -252,7 +364,8 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(job['graduation_years'],['2027'])
 
     def test_official_list_templates_keep_full_titles_and_external_links(self):
-        for name,source in [('hrss',c.SOURCES[3]),('gzw',c.SOURCES[4])]:
+        for name in ['hrss','gzw']:
+            source=next(s for s in c.SOURCES if s['id']==name)
             html=(ROOT/f'tests/fixtures/{name}-list.html').read_text(encoding='utf-8')
             items,_=c.gov_list(html,source['url'])
             self.assertGreater(len(items),0)

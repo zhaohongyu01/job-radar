@@ -35,7 +35,7 @@ void test('legacy records and folded sources retain expected reading state', () 
   assert.equal(isUnread(job, mergePersonal(existing, validatePersonal({ [job.id]: { readAt: null } }))), true);
 });
 void test('browsing preferences restore all filters without letting malformed fields through', () => {
-  const filters = { ...defaultFilters, city: '青岛', type: '社招', query: '审计', onlyUnread: true, salary: '10K以上', sort: 'deadline_asc' as const };
+  const filters = { ...defaultFilters, city: '青岛', type: '社招', sector: '保险', query: '审计', onlyUnread: true, salary: '10K以上', sort: 'deadline_asc' as const };
   assert.deepEqual(restoreBrowsing({ filters, viewMode: 'table' }), { filters, viewMode: 'table', groupCompanies: false });
   assert.equal(restoreBrowsing({ groupCompanies: true }).groupCompanies, true);
   assert.deepEqual(restoreBrowsing(null).filters, defaultFilters);

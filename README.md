@@ -10,7 +10,7 @@ python scripts/collect.py --pages 100 --days 180
 npm run dev
 ```
 
-采集器额外接入山东省大学生就业服务平台“招聘速递”省级汇总，以及中国银行、邮储银行的官方校招/社招公告页。
+采集器额外接入山东省大学生就业服务平台“招聘速递”省级汇总，中国银行、邮储银行、中国太平保险的官方校招/社招页面，以及海尔、海信的公开岗位接口。济南市人社局的事业单位招聘、公共就业招聘和济南市国资委招聘专栏通过其公开 CMS 接口读取，不依赖浏览器执行脚本；结果公示、面试、体检等已经无法投递的通知会在列表阶段过滤。
 
 采集器使用 Python 标准库。普通来源默认最多 100 页、120 天，可用 `--pages 1..500 --days 1..365` 调整。OfferJack 公开接口固定每页 20 条，未登录时只能读取第一页；默认会轮询全部配置城市各自的公开首屏，避免只拿到一个城市的 20 条。可用 `--offerjack-pages 0..1000` 设置每个查询的分页预算（0 表示一直尝试到接口限制）；接口要求登录的后续页会明确标记为部分覆盖，不尝试绕过认证。来源面板区分读至末页、达到日期边界和页数预算，不能把预算内成功当作全历史覆盖。每个来源最多两个详情并发请求；独立网络请求超时重试一次。双栈网络优先 IPv4，仍保留 IPv6 回退和完整 TLS 校验。
 
@@ -49,7 +49,7 @@ npx wrangler deploy --config dist/server/wrangler.json
 
 本机 Wrangler 已有 Cloudflare 授权；其他电脑需要先运行 `npx wrangler login`。只重新整理已采集内容时，先运行 `python scripts/export_snapshot.py`，该操作不会伪造新的采集时间。数据和程序一起发布，刷新网页只重新读取快照。
 
-GitHub Actions 的 `.github/workflows/daily-collect.yml` 每天北京时间 06:30、18:30，或推送 main、手动触发时运行 Python 采集器并部署 Cloudflare。采集阶段按区域官方、高校、银行金融、公开线索拆成 5 个分片，最多 4 个分片并行；全部完成后再合并岗位状态、生成快照并部署。需要在仓库 Actions Secrets 中配置 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`。Worker 本身只提供网页和数据快照，采集由 GitHub 执行。
+GitHub Actions 的 `.github/workflows/daily-collect.yml` 每天北京时间 06:30、18:30，或推送 main、手动触发时运行 Python 采集器并部署 Cloudflare。采集阶段按区域官方、高校、银行保险、大型企业、公开线索拆成 6 个分片，最多 4 个分片并行；全部完成后再合并岗位状态、生成快照并部署。需要在仓库 Actions Secrets 中配置 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`。Worker 本身只提供网页和数据快照，采集由 GitHub 执行。
 
 新增来源时需要把它加入 `scripts/collect.py` 的 `SOURCE_PACKS`；测试会检查每个来源都属于且只属于一个分片，避免扩容后静默漏采。
 

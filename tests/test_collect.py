@@ -1165,7 +1165,7 @@ class CollectionTests(unittest.TestCase):
         import collector_runtime as cr
         err_403 = urllib.error.HTTPError('https://school.gxjy.sdei.edu.cn', 403, 'Forbidden', {}, None)
         err_420 = urllib.error.HTTPError('https://jnhrss.jinan.gov.cn', 420, 'Enhance Your Calm', {}, None)
-        
+
         # 403 and 420 should never be retried immediately
         self.assertIsNone(cr.retry_delay(err_403, 0))
         self.assertIsNone(cr.retry_delay(err_420, 0))
@@ -1178,6 +1178,60 @@ class CollectionTests(unittest.TestCase):
         # Clean up paused host
         with cr._lock:
             cr._paused.pop('school.gxjy.sdei.edu.cn', None)
+
+    def test_connect_ipv4_first_orders_ipv4_before_ipv6(self):
+        # Verify socket.getaddrinfo sorting orders AF_INET before AF_INET6
+        mock_candidates = [
+            (c.socket.AF_INET6, c.socket.SOCK_STREAM, 6, '', ('::1', 80, 0, 0)),
+            (c.socket.AF_INET, c.socket.SOCK_STREAM, 6, '', ('127.0.0.1', 80)),
+        ]
+        connected_addrs = []
+        class MockSocket:
+            def __init__(self, family, kind, proto):
+                self.family = family
+            def settimeout(self, t): pass
+            def connect(self, addr):
+                connected_addrs.append((self.family, addr))
+            def close(self): pass
+
+        with patch('socket.getaddrinfo', return_value=mock_candidates), \
+             patch('socket.socket', side_effect=MockSocket):
+            sock = c.connect_ipv4_first(('example.com', 80))
+            self.assertEqual(connected_addrs[0][0], c.socket.AF_INET)
+
+    def test_prior_blocked_until_cooling_honored_without_fetch(self):
+        source = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        future_blocked = (c.dt.datetime.now(c.TZ) + c.dt.timedelta(hours=2)).isoformat(timespec='seconds')
+        with TemporaryDirectory() as temp:
+            state = {
+                'jobs': {},
+                'sources': {
+                    source['id']: {
+                        'id': source['id'],
+                        'status': 'blocked',
+                        'blocked_until': future_blocked,
+                        'total_items': 25,
+                    }
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=source['id'], pages=5, days=180,
+                refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+            fetch_mock = patch.object(c, 'fetch', side_effect=AssertionError('Network fetch should not occur'))
+            with fetch_mock:
+                res = c.run(args)
+            self.assertEqual(res, 0)
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertEqual(new_state['sources'][source['id']]['status'], 'blocked')
+            self.assertEqual(new_state['sources'][source['id']]['blocked_until'], future_blocked)
+            self.assertEqual(new_state['sources'][source['id']]['total_items'], 25)
 
     def test_safe_early_exit_on_chronological_feed(self):
         source = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
@@ -1212,28 +1266,139 @@ class CollectionTests(unittest.TestCase):
             }
             state_path = Path(temp) / 'state.json'
             state_path.write_text(json.dumps(state), encoding='utf-8')
-            
+
             args = SimpleNamespace(
                 data_dir=temp, public_dir=temp, sources=source['id'], pages=5, days=180,
                 refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
                 detail_timeout=1, detail_retries=0, detail_failure_limit=3,
                 deep_scan=False, force_positions=False, sdei_group=None
             )
-            
+
             fetch_called_pages = []
             def fake_sdei_list(src, page):
                 fetch_called_pages.append(page)
-                return [item], 5
+                return [item], 10
 
             with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
                 res = c.run(args)
-            
+
             self.assertEqual(res, 0)
             # Only page 1 should have been fetched thanks to safe early exit!
             self.assertEqual(fetch_called_pages, [1])
             new_state = json.loads(state_path.read_text(encoding='utf-8'))
             self.assertTrue(new_state['sources'][source['id']].get('early_exit'))
+            self.assertEqual(new_state['sources'][source['id']].get('total_items'), 10)
+
+    def test_safe_early_exit_bypassed_when_total_increased(self):
+        source = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        stamp = '2026-09-10'
+        item1 = {
+            'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1001',
+            'title': '测试公告已在库中',
+            'published_at': stamp,
+            'inline_html': '<div id="zoom">测试内容</div>',
+        }
+        item_job_id = c.item_id(item1)
+        with TemporaryDirectory() as temp:
+            state = {
+                'jobs': {
+                    item_job_id: {
+                        'id': item_job_id,
+                        'source_id': source['id'],
+                        'published_at': stamp,
+                        'url': item1['url'],
+                    }
+                },
+                'sources': {
+                    source['id']: {
+                        'id': source['id'],
+                        'status': 'ok',
+                        'total_items': 10,
+                    }
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=source['id'], pages=2, days=180,
+                refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+
+            item2 = {
+                'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1002',
+                'title': '测试新公告第2页',
+                'published_at': stamp,
+                'inline_html': '<div id="zoom">测试内容2</div>',
+            }
+            fetch_called_pages = []
+            def fake_sdei_list(src, page):
+                fetch_called_pages.append(page)
+                # Upstream reports total=12 (increased from 10!)
+                return ([item1] if page == 1 else [item2]), 12
+
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            # Should have fetched page 2 because total increased!
+            self.assertEqual(fetch_called_pages, [1, 2])
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertFalse(new_state['sources'][source['id']].get('early_exit', False))
+
+    def test_sdei_positions_deferred_when_announcements_have_no_new_items(self):
+        source_ann = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        source_pos = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-positions')
+        stamp = '2026-09-10'
+        item = {
+            'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1001',
+            'title': '测试公告已在库中',
+            'published_at': stamp,
+            'inline_html': '<div id="zoom">测试内容</div>',
+        }
+        item_job_id = c.item_id(item)
+        parsed_job = c.parse_detail(item['inline_html'], item, source_ann)
+
+        with TemporaryDirectory() as temp:
+            state = {
+                'jobs': {
+                    item_job_id: dict(parsed_job, id=item_job_id, source_id=source_ann['id'], published_at=stamp)
+                },
+                'sources': {
+                    source_ann['id']: {'id': source_ann['id'], 'status': 'ok', 'total_items': 10},
+                    source_pos['id']: {'id': source_pos['id'], 'status': 'ok', 'total_items': 5},
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=f"{source_ann['id']},{source_pos['id']}",
+                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+
+            positions_called = []
+            def fake_sdei_list(src, page):
+                if src['channel'] == 'positions':
+                    positions_called.append(True)
+                return [item], 10
+
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            self.assertEqual(len(positions_called), 0)
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertEqual(new_state['sources'][source_pos['id']]['status'], 'deferred')
+            self.assertEqual(new_state['sources'][source_pos['id']]['total_items'], 5)
 
 
 if __name__=='__main__': unittest.main()
-

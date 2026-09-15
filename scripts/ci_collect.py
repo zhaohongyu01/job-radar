@@ -562,6 +562,27 @@ def collect(args):
                  'sources':{identifier:baseline['sources'][identifier]} if identifier in baseline['sources'] else {},
                  'pending':{identifier:baseline.get('pending', {}).get(identifier, [])},
                  'last_run_at':baseline['last_run_at']}
+        prior_source = prior.get('sources', {}).get(identifier, {})
+        prior_blocked = prior_source.get('blocked_until')
+        if prior_blocked:
+            try:
+                if dt.datetime.fromisoformat(prior_blocked) > dt.datetime.now(TZ):
+                    now = dt.datetime.now(TZ).isoformat(timespec='seconds')
+                    status = dict(definition, status='blocked', last_attempt_at=now, parsed=0, cached=0,
+                                  blocked_until=prior_blocked,
+                                  last_success_at=prior_source.get('last_success_at'),
+                                  coverage=f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录')
+                    if 'total_items' in prior_source:
+                        status['total_items'] = prior_source['total_items']
+                    result = dict(prior, sources={identifier: status}, last_run_at=now)
+                    combine_states(result)
+                    state['sources'][identifier] = status
+                    atomic_json(args.data_dir / 'state.json', state)
+                    write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
+                                 state, source_filter=selected, pack_name=source_pack, emit_summary=False)
+                    continue
+            except Exception:
+                pass
         if definition.get('adapter') == 'sdei' and not is_single_explicit_source:
             school = definition['school']
             channel = definition['channel']
@@ -570,6 +591,10 @@ def collect(args):
                 status = dict(definition, status='deferred', last_attempt_at=now, parsed=0, cached=0,
                               last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
                               coverage=f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据')
+                if 'total_items' in prior_source:
+                    status['total_items'] = prior_source['total_items']
+                if 'blocked_until' in prior_source:
+                    status['blocked_until'] = prior_source['blocked_until']
                 result = dict(prior, sources={identifier: status}, last_run_at=now)
                 combine_states(result)
                 state['sources'][identifier] = status
@@ -580,12 +605,16 @@ def collect(args):
             if channel == 'positions' and not is_deep_scan and not getattr(args, 'force_positions', False):
                 announcements_id = f'{school}-announcements'
                 ann_status = state['sources'].get(announcements_id, {})
-                has_activity = (ann_status.get('parsed', 0) > 0 or school in schools_with_new_announcements)
+                has_activity = (school in schools_with_new_announcements or ann_status.get('has_new_announcements', False))
                 if not has_activity:
                     now = dt.datetime.now(TZ).isoformat(timespec='seconds')
                     status = dict(definition, status='deferred', last_attempt_at=now, parsed=0, cached=0,
                                   last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
                                   coverage='具体岗位按需联动：本轮对应招聘公告无新增或变更，暂缓查询具体岗位')
+                    if 'total_items' in prior_source:
+                        status['total_items'] = prior_source['total_items']
+                    if 'blocked_until' in prior_source:
+                        status['blocked_until'] = prior_source['blocked_until']
                     result = dict(prior, sources={identifier: status}, last_run_at=now)
                     combine_states(result)
                     state['sources'][identifier] = status
@@ -608,10 +637,19 @@ def collect(args):
             result = run_source(definition, prior, args, budget)
         combine_states(result)
         status = result['sources'][identifier]
-        if definition.get('adapter') == 'sdei' and definition.get('channel') == 'announcements' and status.get('parsed', 0) > 0:
+        has_new_or_changed = any(
+            v.get('source_id') == identifier and (
+                k not in baseline['jobs'] or
+                v.get('content_fingerprint') != baseline['jobs'][k].get('content_fingerprint')
+            )
+            for k, v in result['jobs'].items()
+        )
+        if definition.get('adapter') == 'sdei' and definition.get('channel') == 'announcements' and has_new_or_changed:
             schools_with_new_announcements.add(definition['school'])
         if any(re.search(r'HTTP Error (?:403|420|429)|host paused', issue.get('reason','')) for issue in status.get('errors', [])):
             host_rejections.setdefault(host,set()).add(definition.get('school') or identifier)
+        if status.get('total_items') is None and 'total_items' in prior_source:
+            status['total_items'] = prior_source['total_items']
         state['jobs'].update({k:v for k,v in result['jobs'].items() if v != baseline['jobs'].get(k)})
         state['sources'].update(result['sources'])
         state['pending'].update(result.get('pending', {}))

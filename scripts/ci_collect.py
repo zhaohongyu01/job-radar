@@ -573,7 +573,6 @@ def collect(args):
     )
     schools_with_new_announcements = set()
     host_blocked_until: dict[str, str] = {}
-    probed_hosts: dict[str, bool] = {}
     for s_id, s_info in baseline.get('sources', {}).items():
         b_until = s_info.get('blocked_until')
         if b_until:
@@ -613,30 +612,24 @@ def collect(args):
         if prior_blocked:
             try:
                 if dt.datetime.fromisoformat(prior_blocked) > dt.datetime.now(TZ):
-                    if host not in probed_hosts:
-                        probed_hosts[host] = collector.probe_host(definition['url'])
-                    if probed_hosts[host]:
-                        host_blocked_until.pop(host, None)
-                        prior_blocked = None
-                    else:
-                        now = dt.datetime.now(TZ).isoformat(timespec='seconds')
-                        status = make_idle_source_status(
-                            definition, status='blocked', last_attempt_at=now,
-                            coverage=f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录',
-                            last_success_at=prior_source.get('last_success_at'),
-                            blocked_until=prior_blocked
-                        )
-                        if 'total_items' in prior_source:
-                            status['total_items'] = prior_source['total_items']
-                        if 'list_complete' in prior_source:
-                            status['list_complete'] = prior_source['list_complete']
-                        result = dict(prior, sources={identifier: status}, last_run_at=now)
-                        combine_states(result)
-                        state['sources'][identifier] = status
-                        atomic_json(args.data_dir / 'state.json', state)
-                        write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
-                                     state, source_filter=selected, pack_name=source_pack, emit_summary=False)
-                        continue
+                    now = dt.datetime.now(TZ).isoformat(timespec='seconds')
+                    status = make_idle_source_status(
+                        definition, status='blocked', last_attempt_at=now,
+                        coverage=f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录',
+                        last_success_at=prior_source.get('last_success_at'),
+                        blocked_until=prior_blocked
+                    )
+                    if 'total_items' in prior_source:
+                        status['total_items'] = prior_source['total_items']
+                    if 'list_complete' in prior_source:
+                        status['list_complete'] = prior_source['list_complete']
+                    result = dict(prior, sources={identifier: status}, last_run_at=now)
+                    combine_states(result)
+                    state['sources'][identifier] = status
+                    atomic_json(args.data_dir / 'state.json', state)
+                    write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
+                                 state, source_filter=selected, pack_name=source_pack, emit_summary=False)
+                    continue
             except Exception:
                 pass
         if definition.get('adapter') == 'sdei' and not is_single_explicit_source:

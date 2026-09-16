@@ -152,67 +152,6 @@ class SharedPacingTests(unittest.TestCase):
             self.assertIn('HostPaused', result.stderr)
 
 
-class RecoveryProbeTests(unittest.TestCase):
-    def test_probe_host_unblocks_cooling_host_on_200(self):
-        source = next(s for s in c.SOURCES if s['id'] == 'ujn-announcements')
-        future_blocked = (c.dt.datetime.now(c.TZ) + c.dt.timedelta(hours=2)).isoformat(timespec='seconds')
-        item = {'url': 'https://example.test/1', 'title': 'Job 1',
-                'published_at': c.dt.datetime.now(c.TZ).date().isoformat(),
-                'inline_html': '<div id="zoom">Job 1</div>'}
-        with TemporaryDirectory() as tmp:
-            state = {
-                'jobs': {},
-                'sources': {
-                    source['id']: {'id': source['id'], 'status': 'blocked', 'blocked_until': future_blocked}
-                },
-                'last_run_at': '2026-09-10T12:00:00+08:00',
-                'pending': {}
-            }
-            state_path = Path(tmp) / 'state.json'
-            state_path.write_text(json.dumps(state), encoding='utf-8')
-            args = SimpleNamespace(
-                data_dir=tmp, public_dir=tmp, sources=source['id'],
-                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
-                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
-                deep_scan=False, force_positions=False, sdei_group=None
-            )
-            sdei_called = []
-            with patch.object(c, 'probe_host', return_value=True), \
-                 patch.object(c, 'sdei_list', side_effect=lambda s, p: (sdei_called.append(s['id']), ([item], 1))[1]):
-                res = c.run(args)
-            self.assertEqual(res, 0)
-            self.assertEqual(len(sdei_called), 1)
-
-    def test_probe_host_maintains_block_on_failure(self):
-        source = next(s for s in c.SOURCES if s['id'] == 'ujn-announcements')
-        future_blocked = (c.dt.datetime.now(c.TZ) + c.dt.timedelta(hours=2)).isoformat(timespec='seconds')
-        with TemporaryDirectory() as tmp:
-            state = {
-                'jobs': {},
-                'sources': {
-                    source['id']: {'id': source['id'], 'status': 'blocked', 'blocked_until': future_blocked}
-                },
-                'last_run_at': '2026-09-10T12:00:00+08:00',
-                'pending': {}
-            }
-            state_path = Path(tmp) / 'state.json'
-            state_path.write_text(json.dumps(state), encoding='utf-8')
-            args = SimpleNamespace(
-                data_dir=tmp, public_dir=tmp, sources=source['id'],
-                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
-                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
-                deep_scan=False, force_positions=False, sdei_group=None
-            )
-            sdei_called = []
-            with patch.object(c, 'probe_host', return_value=False), \
-                 patch.object(c, 'sdei_list', side_effect=lambda s, p: (sdei_called.append(s['id']), ([{}], 1))[1]):
-                res = c.run(args)
-            self.assertEqual(res, 0)
-            self.assertEqual(len(sdei_called), 0)
-            new_state = json.loads(state_path.read_text(encoding='utf-8'))
-            self.assertEqual(new_state['sources'][source['id']]['status'], 'blocked')
-
-
 if __name__ == '__main__':
     unittest.main()
 

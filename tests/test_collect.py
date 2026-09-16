@@ -9,6 +9,9 @@ from types import SimpleNamespace
 import urllib.error
 
 ROOT=Path(__file__).resolve().parents[1]
+import sys
+if str(ROOT / 'scripts') not in sys.path:
+    sys.path.insert(0, str(ROOT / 'scripts'))
 spec=importlib.util.spec_from_file_location('collect',ROOT/'scripts/collect.py')
 c=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)

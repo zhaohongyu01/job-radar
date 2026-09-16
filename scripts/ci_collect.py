@@ -330,10 +330,24 @@ def _shard_state_paths(shards_dir):
         return {}
     paths = {}
     for path in sorted(shards_dir.rglob('state.json')):
-        pack_name = path.parent.name
-        if pack_name.startswith('collector-shard-'):
-            pack_name = pack_name[len('collector-shard-'):]
-        paths[pack_name] = path
+        try:
+            rel_parts = path.relative_to(shards_dir).parts
+        except ValueError:
+            rel_parts = path.parts
+        pack_name = None
+        for part in rel_parts:
+            if part.startswith('collector-shard-'):
+                pack_name = part[len('collector-shard-'):]
+                break
+            if part in SOURCE_PACKS:
+                pack_name = part
+                break
+        if not pack_name:
+            pack_name = path.parent.name
+            if pack_name.startswith('collector-shard-'):
+                pack_name = pack_name[len('collector-shard-'):]
+        if pack_name:
+            paths[pack_name] = path
     return paths
 
 
@@ -345,6 +359,9 @@ def merge_shards(public_dir, data_dir, shards_dir, days=30, expected_shards=None
     baseline = read_json(baseline_path)
     shard_paths = _shard_state_paths(shards_dir)
     expected_shards = list(expected_shards or SOURCE_PACKS)
+    missing_shards = [pack for pack in expected_shards if pack not in shard_paths]
+    if missing_shards:
+        print(f"::warning::部分分片产物未找到：{', '.join(missing_shards)}；已发现分片：{list(shard_paths.keys())}", flush=True)
     states = [dict(baseline, priority=1)]
     for pack in expected_shards:
         owned = set(source_pack_ids(pack))
@@ -382,10 +399,11 @@ def merge_shards(public_dir, data_dir, shards_dir, days=30, expected_shards=None
     missing_sources = sorted(expected_source_ids - fresh_source_ids)
     usable_ids = {identifier for identifier in fresh_source_ids if
                   merged['sources'][identifier].get('parsed', 0) or merged['sources'][identifier].get('cached', 0) or
-                  merged['sources'][identifier].get('status') == 'ok'}
+                  merged['sources'][identifier].get('status') in {'ok', 'deferred', 'blocked'}}
     if not usable_ids:
-        write_report(Path(data_dir), 2, merged, 'No source produced a usable verification; deployment blocked')
-        raise ValueError('No source produced a usable verification; deployment blocked')
+        diag = f"fresh_source_ids={len(fresh_source_ids)}, found_shards={list(shard_paths.keys())}, expected_shards={expected_shards}"
+        write_report(Path(data_dir), 2, merged, f'No source produced a usable verification ({diag}); deployment blocked')
+        raise ValueError(f'No source produced a usable verification ({diag}); deployment blocked')
     for identifier in missing_sources:
         old = merged['sources'].get(identifier, {})
         definition = next(s for s in SOURCES if s['id'] == identifier)

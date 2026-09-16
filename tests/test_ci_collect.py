@@ -63,6 +63,37 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(all(source_id in merged['sources'] for source_id in c.source_pack_ids('finance')))
             self.assertTrue((data / 'ci-report.json').exists())
 
+    def test_merge_shards_handles_nested_data_directory_artifact(self):
+        """GitHub Actions v4 downloads artifact with preserved relative directory: collector-shard-pack/data/state.json"""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            public, data, shards = root / 'public', root / 'data', root / 'shards'
+            public.mkdir()
+            data.mkdir()
+            baseline = fixture()
+            c.export_snapshot(baseline, public)
+            ci.atomic_json(data / 'state.json', baseline)
+            stamp = '2026-09-14T12:00:00+08:00'
+            shard = json.loads(json.dumps(baseline))
+            shard['last_run_at'] = stamp
+            for source_id in c.source_pack_ids('finance'):
+                shard['sources'][source_id] = {
+                    'id': source_id, 'name': source_id, 'status': 'ok',
+                    'last_attempt_at': stamp, 'last_success_at': stamp,
+                    'parsed': 0, 'cached': 1, 'errors': [],
+                }
+            # Note the nested 'data' directory created by GitHub download-artifact v4:
+            shard_data_dir = shards / 'collector-shard-finance' / 'data'
+            shard_data_dir.mkdir(parents=True)
+            ci.atomic_json(shard_data_dir / 'state.json', shard)
+
+            result = ci.merge_shards(public, data, shards, days=30, expected_shards=['finance'])
+            self.assertEqual(result, 0)
+            merged = ci.read_json(data / 'state.json')
+            self.assertEqual(set(baseline['jobs']), set(merged['jobs']))
+            self.assertTrue(all(source_id in merged['sources'] for source_id in c.source_pack_ids('finance')))
+
+
     def test_cold_start_recovers_full_details_reposts_and_history(self):
         with TemporaryDirectory() as tmp:
             public, data = Path(tmp) / 'public', Path(tmp) / 'data'

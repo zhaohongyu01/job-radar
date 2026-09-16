@@ -33,8 +33,8 @@ def read_json(path):
 
 
 @bounded_request
-def download_json(url, timeout=20, retries=2):
-    request = urllib.request.Request(url, headers={'User-Agent': 'JobRadar-CI/1.0', 'Cache-Control': 'no-cache'})
+def download_json(url, timeout=40, retries=2):
+    request = urllib.request.Request(url, headers={'User-Agent': collector.DEFAULT_USER_AGENT, 'Cache-Control': 'no-cache'})
     for attempt in range(retries + 1):
         try:
             with urllib.request.urlopen(request, timeout=remaining(timeout)) as response:
@@ -255,7 +255,7 @@ def validate_result(code, state, snapshot, baseline_ids, started):
         raise ValueError('Historical records are missing; deployment blocked')
     attempted = [s for s in state['sources'].values()
                  if dt.datetime.fromisoformat(s['last_attempt_at']) >= started]
-    usable = [s for s in attempted if s.get('parsed', 0) or s.get('cached', 0) or s.get('status') in {'ok', 'deferred', 'blocked'}]
+    usable = [s for s in attempted if s.get('parsed', 0) or s.get('cached', 0) or s.get('status') in {'ok', 'deferred'}]
     if not usable:
         raise ValueError('No source produced a usable verification; deployment blocked')
     return attempted
@@ -399,7 +399,7 @@ def merge_shards(public_dir, data_dir, shards_dir, days=30, expected_shards=None
     missing_sources = sorted(expected_source_ids - fresh_source_ids)
     usable_ids = {identifier for identifier in fresh_source_ids if
                   merged['sources'][identifier].get('parsed', 0) or merged['sources'][identifier].get('cached', 0) or
-                  merged['sources'][identifier].get('status') in {'ok', 'deferred', 'blocked'}}
+                  merged['sources'][identifier].get('status') == 'ok'}
     if not usable_ids:
         diag = f"fresh_source_ids={len(fresh_source_ids)}, found_shards={list(shard_paths.keys())}, expected_shards={expected_shards}"
         write_report(Path(data_dir), 2, merged, f'No source produced a usable verification ({diag}); deployment blocked')
@@ -573,6 +573,7 @@ def collect(args):
     )
     schools_with_new_announcements = set()
     host_blocked_until: dict[str, str] = {}
+    probed_hosts: dict[str, bool] = {}
     for s_id, s_info in baseline.get('sources', {}).items():
         b_until = s_info.get('blocked_until')
         if b_until:
@@ -612,24 +613,30 @@ def collect(args):
         if prior_blocked:
             try:
                 if dt.datetime.fromisoformat(prior_blocked) > dt.datetime.now(TZ):
-                    now = dt.datetime.now(TZ).isoformat(timespec='seconds')
-                    status = make_idle_source_status(
-                        definition, status='blocked', last_attempt_at=now,
-                        coverage=f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录',
-                        last_success_at=prior_source.get('last_success_at'),
-                        blocked_until=prior_blocked
-                    )
-                    if 'total_items' in prior_source:
-                        status['total_items'] = prior_source['total_items']
-                    if 'list_complete' in prior_source:
-                        status['list_complete'] = prior_source['list_complete']
-                    result = dict(prior, sources={identifier: status}, last_run_at=now)
-                    combine_states(result)
-                    state['sources'][identifier] = status
-                    atomic_json(args.data_dir / 'state.json', state)
-                    write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
-                                 state, source_filter=selected, pack_name=source_pack, emit_summary=False)
-                    continue
+                    if host not in probed_hosts:
+                        probed_hosts[host] = collector.probe_host(definition['url'])
+                    if probed_hosts[host]:
+                        host_blocked_until.pop(host, None)
+                        prior_blocked = None
+                    else:
+                        now = dt.datetime.now(TZ).isoformat(timespec='seconds')
+                        status = make_idle_source_status(
+                            definition, status='blocked', last_attempt_at=now,
+                            coverage=f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录',
+                            last_success_at=prior_source.get('last_success_at'),
+                            blocked_until=prior_blocked
+                        )
+                        if 'total_items' in prior_source:
+                            status['total_items'] = prior_source['total_items']
+                        if 'list_complete' in prior_source:
+                            status['list_complete'] = prior_source['list_complete']
+                        result = dict(prior, sources={identifier: status}, last_run_at=now)
+                        combine_states(result)
+                        state['sources'][identifier] = status
+                        atomic_json(args.data_dir / 'state.json', state)
+                        write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
+                                     state, source_filter=selected, pack_name=source_pack, emit_summary=False)
+                        continue
             except Exception:
                 pass
         if definition.get('adapter') == 'sdei' and not is_single_explicit_source:
@@ -725,7 +732,7 @@ def collect(args):
         )
         if definition.get('adapter') == 'sdei' and definition.get('channel') == 'announcements' and has_new_or_changed:
             schools_with_new_announcements.add(definition['school'])
-        if any(re.search(r'HTTP Error (?:403|420|429)|host paused', issue.get('reason','')) for issue in status.get('errors', [])):
+        if any(re.search(r'HTTP Error (?:403|420|429)', issue.get('reason','')) for issue in status.get('errors', [])):
             host_rejections.setdefault(host,set()).add(definition.get('school') or identifier)
         if status.get('total_items') is None and 'total_items' in prior_source:
             status['total_items'] = prior_source['total_items']

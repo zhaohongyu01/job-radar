@@ -49,8 +49,8 @@ def shared_slot(host, interval=0, pause_seconds=0):
         else:
             if paused_until > now:
                 raise HostPaused('host paused after HTTP 403/420/429: ' + host)
-            delay = max(0, next_at - now)
-            if remaining(delay) < delay:
+            delay = max(0.0, next_at - now)
+            if delay > 0 and remaining(delay) < delay:
                 raise TimeoutError('request budget exhausted while rate limiting')
             next_at = now + delay + interval
         db.execute('INSERT OR REPLACE INTO hosts VALUES (?, ?, ?)', (host, next_at, paused_until))
@@ -84,10 +84,10 @@ def remaining(timeout):
     deadline = getattr(_local, 'deadline', None)
     if deadline is None:
         return timeout
-    value = min(timeout, deadline - time.monotonic())
-    if value <= 0:
+    left = deadline - time.monotonic()
+    if left <= 0:
         raise TimeoutError('request total time budget exhausted')
-    return value
+    return max(0.0, min(timeout, left))
 
 
 def pace(url):
@@ -96,7 +96,6 @@ def pace(url):
         if _paused.get(host, 0) > time.monotonic():
             raise HostPaused('host paused after HTTP 403/420/429: ' + host)
         now = time.monotonic()
-        delay = max(0, _next_request.get(host, 0) - now)
         # SDEI shared school platform runs on a dedicated slow channel with jitter.
         if host == 'school.gxjy.sdei.edu.cn':
             interval = random.uniform(3.0, 4.5)
@@ -107,8 +106,9 @@ def pace(url):
         if _shared_path:
             delay = shared_slot(host, interval=interval)
         else:
+            delay = max(0.0, _next_request.get(host, 0) - now)
             _next_request[host] = now + delay + interval
-    if delay:
+    if delay > 0:
         if remaining(delay) < delay:
             raise TimeoutError('request budget exhausted while rate limiting')
         time.sleep(delay)

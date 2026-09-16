@@ -328,6 +328,16 @@ DEFAULT_HEADERS = {
 }
 
 
+def probe_host(url):
+    """Single lightweight probe to check if a cooling host is back to 200 OK."""
+    try:
+        req = urllib.request.Request(url, headers=DEFAULT_HEADERS)
+        with OPENER.open(req, timeout=5) as response:
+            return getattr(response, 'status', 200) == 200
+    except Exception:
+        return False
+
+
 def clean(value):
     return '\n'.join(re.sub(r'\s+', ' ', s).strip() for s in value.splitlines() if s.strip())
 
@@ -568,8 +578,6 @@ def warm_sdei_session(school):
             )
             with OPENER.open(req, timeout=timeout) as r:
                 _ = collector_runtime.bounded_read(r, max_size=100_000, timeout=timeout)
-    except urllib.error.HTTPError as exc:
-        collector_runtime.pause_on_rejection(portal_url, exc)
     except Exception:
         pass
 
@@ -2169,6 +2177,7 @@ def run(args):
     )
     schools_with_new_announcements = set()
     host_blocked_until: dict[str, str] = {}
+    probed_hosts: dict[str, bool] = {}
     for s_id, s_info in previous.get('sources', {}).items():
         b_until = s_info.get('blocked_until')
         if b_until:
@@ -2200,14 +2209,20 @@ def run(args):
             try:
                 blocked_dt = dt.datetime.fromisoformat(prior_blocked)
                 if blocked_dt > dt.datetime.now(TZ):
-                    status['status'] = 'blocked'
-                    status['blocked_until'] = prior_blocked
-                    status['coverage'] = f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录'
-                    if 'total_items' in prior_source:
-                        status['total_items'] = prior_source['total_items']
-                    sources[source['id']] = status
-                    print(source['id'], 'blocked (cooling down until', prior_blocked[:19] + ')', flush=True)
-                    continue
+                    if host not in probed_hosts:
+                        probed_hosts[host] = probe_host(source['url'])
+                    if probed_hosts[host]:
+                        host_blocked_until.pop(host, None)
+                        prior_blocked = None
+                    else:
+                        status['status'] = 'blocked'
+                        status['blocked_until'] = prior_blocked
+                        status['coverage'] = f'上游安全策略拦截(HTTP 403/420)；持续冷却至 {prior_blocked[:19]}，保留历史记录'
+                        if 'total_items' in prior_source:
+                            status['total_items'] = prior_source['total_items']
+                        sources[source['id']] = status
+                        print(source['id'], 'blocked (cooling down until', prior_blocked[:19] + ')', flush=True)
+                        continue
             except Exception:
                 pass
         if source.get('adapter') == 'sdei':

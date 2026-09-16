@@ -103,15 +103,17 @@ class ResumeTests(unittest.TestCase):
 
 class SharedPacingTests(unittest.TestCase):
     def command(self, database, action):
-        code = ('import sys,time,urllib.error; sys.path.insert(0,sys.argv[1]); '
-                'import collector_runtime as r; r.configure_shared_pacing(sys.argv[2]); '
-                'r.random.uniform=lambda a,b: 0; ' + action)
+        code = ('import sys,time,urllib.error\n'
+                'sys.path.insert(0,sys.argv[1])\n'
+                'import collector_runtime as r\n'
+                'r.configure_shared_pacing(sys.argv[2])\n'
+                'r.random.uniform=lambda a,b: 0\n' + action)
         return [sys.executable, '-c', code, str(ROOT / 'scripts'), str(database)]
 
     def test_separate_workers_share_request_slots(self):
         with TemporaryDirectory() as tmp:
             database = Path(tmp) / 'rate.sqlite'
-            command = self.command(database, "r.pace('https://example.test/a'); print(time.time())")
+            command = self.command(database, "r.pace('https://example.test/a')\nprint(time.time())")
             # Run overlapping processes to exercise the transaction, not merely
             # a single interpreter's module globals.
             processes = [subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -125,6 +127,19 @@ class SharedPacingTests(unittest.TestCase):
             self.assertGreaterEqual(stamps[1] - stamps[0], 0.25)
             self.assertGreaterEqual(stamps[2] - stamps[1], 0.25)
 
+    def test_first_request_with_shared_pacing_does_not_exhaust_budget(self):
+        with TemporaryDirectory() as tmp:
+            database = Path(tmp) / 'rate.sqlite'
+            code = "with r.request_budget(10):\n    r.pace('https://example.test/new')\n    print('success')"
+            res = subprocess.run(self.command(database, code), capture_output=True, text=True, timeout=15)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertIn('success', res.stdout)
+
+    def test_remaining_zero_with_active_budget_returns_zero(self):
+        import collector_runtime as r
+        with r.request_budget(10):
+            self.assertEqual(r.remaining(0), 0.0)
+
     def test_rejection_is_shared_with_next_process(self):
         with TemporaryDirectory() as tmp:
             database = Path(tmp) / 'rate.sqlite'
@@ -137,5 +152,67 @@ class SharedPacingTests(unittest.TestCase):
             self.assertIn('HostPaused', result.stderr)
 
 
+class RecoveryProbeTests(unittest.TestCase):
+    def test_probe_host_unblocks_cooling_host_on_200(self):
+        source = next(s for s in c.SOURCES if s['id'] == 'ujn-announcements')
+        future_blocked = (c.dt.datetime.now(c.TZ) + c.dt.timedelta(hours=2)).isoformat(timespec='seconds')
+        item = {'url': 'https://example.test/1', 'title': 'Job 1',
+                'published_at': c.dt.datetime.now(c.TZ).date().isoformat(),
+                'inline_html': '<div id="zoom">Job 1</div>'}
+        with TemporaryDirectory() as tmp:
+            state = {
+                'jobs': {},
+                'sources': {
+                    source['id']: {'id': source['id'], 'status': 'blocked', 'blocked_until': future_blocked}
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(tmp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+            args = SimpleNamespace(
+                data_dir=tmp, public_dir=tmp, sources=source['id'],
+                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+            sdei_called = []
+            with patch.object(c, 'probe_host', return_value=True), \
+                 patch.object(c, 'sdei_list', side_effect=lambda s, p: (sdei_called.append(s['id']), ([item], 1))[1]):
+                res = c.run(args)
+            self.assertEqual(res, 0)
+            self.assertEqual(len(sdei_called), 1)
+
+    def test_probe_host_maintains_block_on_failure(self):
+        source = next(s for s in c.SOURCES if s['id'] == 'ujn-announcements')
+        future_blocked = (c.dt.datetime.now(c.TZ) + c.dt.timedelta(hours=2)).isoformat(timespec='seconds')
+        with TemporaryDirectory() as tmp:
+            state = {
+                'jobs': {},
+                'sources': {
+                    source['id']: {'id': source['id'], 'status': 'blocked', 'blocked_until': future_blocked}
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(tmp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+            args = SimpleNamespace(
+                data_dir=tmp, public_dir=tmp, sources=source['id'],
+                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+            sdei_called = []
+            with patch.object(c, 'probe_host', return_value=False), \
+                 patch.object(c, 'sdei_list', side_effect=lambda s, p: (sdei_called.append(s['id']), ([{}], 1))[1]):
+                res = c.run(args)
+            self.assertEqual(res, 0)
+            self.assertEqual(len(sdei_called), 0)
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertEqual(new_state['sources'][source['id']]['status'], 'blocked')
+
+
 if __name__ == '__main__':
     unittest.main()
+

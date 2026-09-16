@@ -57,7 +57,9 @@ jobs:
             const runPath = (run.path || '').split('@')[0];
             const isPathValid = !runPath || runPath.endsWith('daily-collect.yml');
             const isNameValid = !run.name || run.name === 'Daily Job Radar Pipeline';
-            if (run.status !== 'in_progress' || run.head_sha !== e.SOURCE_SHA ||
+            const activeStatuses = ['in_progress', 'queued', 'waiting', 'pending', 'requested'];
+            if (!activeStatuses.includes(run.status) || run.conclusion ||
+                run.head_sha !== e.SOURCE_SHA ||
                 run.run_attempt !== Number(e.PARENT_ATTEMPT) ||
                 !isPathValid || !isNameValid) {
               throw new Error(`Parent run validation failed: status=${run.status}, sha=${run.head_sha}, attempt=${run.run_attempt}, path=${run.path}, name=${run.name}`);

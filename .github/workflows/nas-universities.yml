@@ -22,7 +22,7 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 concurrency:
   group: nas-universities-${{ inputs.request_id }}
@@ -53,10 +53,14 @@ jobs:
             }
             const {data: run} = await github.rest.actions.getWorkflowRun({
               ...context.repo, run_id: Number(e.PARENT_ID)});
+            core.info(`Parent run: status=${run.status}, sha=${run.head_sha}, attempt=${run.run_attempt}, path=${run.path}, name=${run.name}`);
+            const runPath = (run.path || '').split('@')[0];
+            const isPathValid = !runPath || runPath.endsWith('daily-collect.yml');
+            const isNameValid = !run.name || run.name === 'Daily Job Radar Pipeline';
             if (run.status !== 'in_progress' || run.head_sha !== e.SOURCE_SHA ||
                 run.run_attempt !== Number(e.PARENT_ATTEMPT) ||
-                run.path !== '.github/workflows/daily-collect.yml') {
-              throw new Error('Parent run is no longer current');
+                !isPathValid || !isNameValid) {
+              throw new Error(`Parent run validation failed: status=${run.status}, sha=${run.head_sha}, attempt=${run.run_attempt}, path=${run.path}, name=${run.name}`);
             }
 
       - name: Checkout exact parent revision
@@ -69,7 +73,7 @@ jobs:
         run: |
           python -c "import sys; assert sys.version_info[:2] == (3, 12)"
           python -m venv .nas-venv
-          .nas-venv/bin/python -m pip install -r requirements.txt
+          .nas-venv/bin/python -m pip install -i https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple -r requirements.txt
 
       - name: Download exact parent baseline
         uses: actions/download-artifact@v4

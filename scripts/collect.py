@@ -570,6 +570,12 @@ def warm_sdei_session(school):
             )
             with OPENER.open(req, timeout=timeout) as r:
                 _ = collector_runtime.bounded_read(r, max_size=100_000, timeout=timeout)
+    except urllib.error.HTTPError as error:
+        if error.code in {403, 420, 429}:
+            collector_runtime.pause_on_rejection(portal_url, error)
+            raise
+    except collector_runtime.HostPaused:
+        raise
     except Exception:
         pass
 
@@ -2721,13 +2727,19 @@ def run(args):
             queues[source['id']] = list(queued_by_url.values())
         except Exception as e:
             err_str = str(e)
-            is_blocked = ('403' in err_str or '420' in err_str or
+            is_blocked = (isinstance(e, collector_runtime.HostPaused) or
+                          getattr(e, 'code', None) in {403, 420, 429} or
+                          '403' in err_str or '420' in err_str or
                           'host paused' in err_str.lower() or 'forbidden' in err_str.lower())
             if is_blocked:
                 status['status'] = 'blocked'
-                blocked_until = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
+                cooldown = max(4 * 3600, getattr(e, 'retry_after_seconds', 0))
+                if getattr(e, 'code', None) == 429:
+                    cooldown = max(cooldown, collector_runtime.retry_delay(e, 0) or 0)
+                # Round up so persistence cannot shorten Retry-After by a fraction.
+                blocked_until = (dt.datetime.now(TZ) + dt.timedelta(seconds=cooldown + 1)).isoformat(timespec='seconds')
                 status['blocked_until'] = blocked_until
-                status['coverage'] = f'上游安全策略拦截(HTTP 403/420)；进入冷却至 {blocked_until[:19]}，保留历史记录'
+                status['coverage'] = f'上游安全策略拦截(HTTP 403/420/429)；进入冷却至 {blocked_until[:19]}，保留历史记录'
                 if host not in host_blocked_until or blocked_until > host_blocked_until[host]:
                     host_blocked_until[host] = blocked_until
             else:

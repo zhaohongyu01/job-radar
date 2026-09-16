@@ -1,3 +1,4 @@
+import contextlib
 import datetime as dt
 import hashlib
 import io
@@ -31,6 +32,11 @@ class Response(io.BytesIO):
 
 @patch.dict(c.os.environ, {'GITHUB_STEP_SUMMARY':''})
 class ReliabilityTests(unittest.TestCase):
+    def setUp(self):
+        self.output = io.StringIO()
+        self.enterContext(contextlib.redirect_stdout(self.output))
+        self.enterContext(contextlib.redirect_stderr(self.output))
+
     def test_sdu_query_and_legacy_ids_survive_repair_refresh_and_restore(self):
         items, _ = c.sdu_list((ROOT/'tests/fixtures/sdu-list.html').read_text(encoding='utf-8'),
                              next(s['url'] for s in c.SOURCES if s['id']=='sdu'))
@@ -143,6 +149,8 @@ class ReliabilityTests(unittest.TestCase):
                 ci.prepare(public,data,'https://example.com')
             self.assertEqual(set(ci.read_json(data/'state.json')['jobs']),set(state['jobs']))
             self.assertFalse(ci.read_json(data/'ci-baseline.json')['live_verified'])
+            self.assertIn('::warning::', self.output.getvalue())
+            self.assertIn('outage', self.output.getvalue())
 
     def test_prepare_corrupt_cache_falls_back_to_checked_in_snapshot(self):
         with TemporaryDirectory() as temp:
@@ -152,6 +160,8 @@ class ReliabilityTests(unittest.TestCase):
             data.mkdir(parents=True)
             (data/'state.json').write_text('{"jobs":', encoding='utf-8')
             ci.prepare(public, data, '')
+            self.assertIn('::warning::', self.output.getvalue())
+            self.assertIn('Expecting value', self.output.getvalue())
             restored = ci.read_json(data/'state.json')
             self.assertEqual(set(restored['jobs']), set(state['jobs']))
             self.assertTrue(ci.read_json(data/'ci-baseline.json')['live_verified'])
@@ -192,6 +202,8 @@ class ReliabilityTests(unittest.TestCase):
             with patch.dict(c.os.environ,{'JOB_RADAR_SCHEDULE_ENABLED':'true'}):
                 ci.merge_shards(public,data,shards,expected_shards=['finance','large-enterprises'])
             result = ci.read_json(data/'state.json')
+            self.assertIn('::warning::', self.output.getvalue())
+            self.assertIn('large-enterprises', self.output.getvalue())
             self.assertEqual(set(result['jobs']),set(before['jobs']))
             self.assertTrue(ci.read_json(public/'jobs.json')['schedule_enabled'])
             self.assertTrue(all(result['sources'][key]['status']=='failed' for key in c.source_pack_ids('large-enterprises')))
@@ -203,6 +215,20 @@ class ReliabilityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'No source'):
                 ci.merge_shards(public,data,shards,expected_shards=['finance'])
             self.assertEqual((public/'jobs.json').read_bytes(),old)
+
+    def test_only_failed_blocked_or_deferred_cannot_publish(self):
+        for status in ('failed', 'blocked', 'deferred'):
+            with self.subTest(status=status), TemporaryDirectory() as temp:
+                public, data, shards, _ = self.create_shard(Path(temp))
+                path = shards/'collector-shard-finance/state.json'
+                state = ci.read_json(path)
+                for source in state['sources'].values():
+                    source['status'] = status
+                ci.atomic_json(path, state)
+                before = (public/'jobs.json').read_bytes()
+                with self.assertRaisesRegex(ValueError, 'No source'):
+                    ci.merge_shards(public, data, shards, expected_shards=['finance'])
+                self.assertEqual((public/'jobs.json').read_bytes(), before)
 
     def test_still_unreachable_live_baseline_cannot_be_overwritten(self):
         with TemporaryDirectory() as temp:

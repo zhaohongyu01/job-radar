@@ -16,7 +16,9 @@ import urllib.parse
 
 
 class HostPaused(OSError):
-    pass
+    def __init__(self, message, retry_after_seconds=0):
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 _local = threading.local()
@@ -48,7 +50,7 @@ def shared_slot(host, interval=0, pause_seconds=0):
             paused_until = max(paused_until, now + pause_seconds)
         else:
             if paused_until > now:
-                raise HostPaused('host paused after HTTP 403/420/429: ' + host)
+                raise HostPaused('host paused after HTTP 403/420/429: ' + host, paused_until - now)
             delay = max(0.0, next_at - now)
             if delay > 0 and remaining(delay) < delay:
                 raise TimeoutError('request budget exhausted while rate limiting')
@@ -94,7 +96,8 @@ def pace(url):
     host = urllib.parse.urlsplit(url).netloc
     with _lock:
         if _paused.get(host, 0) > time.monotonic():
-            raise HostPaused('host paused after HTTP 403/420/429: ' + host)
+            raise HostPaused('host paused after HTTP 403/420/429: ' + host,
+                             _paused[host] - time.monotonic())
         now = time.monotonic()
         # SDEI shared school platform runs on a dedicated slow channel with jitter.
         if host == 'school.gxjy.sdei.edu.cn':

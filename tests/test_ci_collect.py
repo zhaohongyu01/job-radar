@@ -1,3 +1,5 @@
+import contextlib
+import io
 import datetime as dt
 import importlib.util
 import json
@@ -30,6 +32,9 @@ def fixture():
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
+        self.output = io.StringIO()
+        self.enterContext(contextlib.redirect_stdout(self.output))
+        self.enterContext(contextlib.redirect_stderr(self.output))
         summary_patch = patch.dict(c.os.environ, {'GITHUB_STEP_SUMMARY':''})
         summary_patch.start()
         self.addCleanup(summary_patch.stop)

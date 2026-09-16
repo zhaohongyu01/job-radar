@@ -140,6 +140,19 @@ class SharedPacingTests(unittest.TestCase):
         with r.request_budget(10):
             self.assertEqual(r.remaining(0), 0.0)
 
+    def test_long_retry_after_is_shared_with_next_process(self):
+        with TemporaryDirectory() as tmp:
+            database = Path(tmp) / 'rate.sqlite'
+            result = subprocess.run(self.command(database,
+                "r.pause_on_rejection('https://example.test/a', urllib.error.HTTPError('x',429,'Limited',{'Retry-After':'21600'},None))"),
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            result = subprocess.run(self.command(database,
+                "try:\n    r.pace('https://example.test/a')\nexcept r.HostPaused as e:\n    print(e.retry_after_seconds)"),
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertGreater(float(result.stdout.strip()), 21500)
+
     def test_rejection_is_shared_with_next_process(self):
         with TemporaryDirectory() as tmp:
             database = Path(tmp) / 'rate.sqlite'
@@ -154,4 +167,3 @@ class SharedPacingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

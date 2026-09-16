@@ -163,7 +163,7 @@ class CollectionTests(unittest.TestCase):
     def test_public_position_api_preserves_role_location_and_deadline(self):
         source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')
         payload=(ROOT/'tests/fixtures/jobsdufe-jobs-sample.json').read_text(encoding='utf8')
-        with patch.object(c,'fetch',return_value=payload):
+        with patch.object(c,'fetch',return_value=payload), patch.object(c, 'warm_sdei_session'):
             items,total=c.sdei_list(source,1)
         self.assertEqual(total,22)
         job=c.parse_detail(items[0]['inline_html'],items[0],source)
@@ -347,7 +347,7 @@ class CollectionTests(unittest.TestCase):
     def test_announcement_api_image_and_list_date_survive(self):
         source=next(s for s in c.SOURCES if s['id']=='jobsdufe-announcements')
         payload=(ROOT/'tests/fixtures/sdufe-list-sample.json').read_text(encoding='utf8')
-        with patch.object(c,'fetch',return_value=payload):
+        with patch.object(c,'fetch',return_value=payload), patch.object(c, 'warm_sdei_session'):
             items,_=c.sdei_list(source,1)
         job=c.parse_detail(items[0]['inline_html'],items[0],source)
         self.assertEqual(job['published_at'],'2026-09-09')

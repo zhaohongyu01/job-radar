@@ -1,3 +1,4 @@
+import datetime as dt
 import importlib.util
 import unittest
 from unittest.mock import patch
@@ -1362,17 +1363,20 @@ class CollectionTests(unittest.TestCase):
         }
         item_job_id = c.item_id(item)
         parsed_job = c.parse_detail(item['inline_html'], item, source_ann)
+        fp = c.compute_job_fingerprint(parsed_job)
+        now_str = dt.datetime.now(c.TZ).isoformat(timespec='seconds')
 
         with TemporaryDirectory() as temp:
             state = {
                 'jobs': {
-                    item_job_id: dict(parsed_job, id=item_job_id, source_id=source_ann['id'], published_at=stamp)
+                    item_job_id: dict(parsed_job, id=item_job_id, source_id=source_ann['id'],
+                                      published_at=stamp, content_fingerprint=fp)
                 },
                 'sources': {
-                    source_ann['id']: {'id': source_ann['id'], 'status': 'ok', 'total_items': 10},
-                    source_pos['id']: {'id': source_pos['id'], 'status': 'ok', 'total_items': 5},
+                    source_ann['id']: {'id': source_ann['id'], 'status': 'ok', 'total_items': 10, 'last_success_at': now_str},
+                    source_pos['id']: {'id': source_pos['id'], 'status': 'ok', 'total_items': 5, 'last_success_at': now_str},
                 },
-                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'last_run_at': now_str,
                 'pending': {}
             }
             state_path = Path(temp) / 'state.json'
@@ -1399,6 +1403,146 @@ class CollectionTests(unittest.TestCase):
             new_state = json.loads(state_path.read_text(encoding='utf-8'))
             self.assertEqual(new_state['sources'][source_pos['id']]['status'], 'deferred')
             self.assertEqual(new_state['sources'][source_pos['id']]['total_items'], 5)
+
+    def test_sdei_positions_runs_when_stale_even_if_announcements_unchanged(self):
+        source_ann = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        source_pos = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-positions')
+        stamp = '2026-09-10'
+        item = {
+            'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1001',
+            'title': '测试公告已在库中',
+            'published_at': stamp,
+            'inline_html': '<div id="zoom">测试内容</div>',
+        }
+        item_job_id = c.item_id(item)
+        parsed_job = c.parse_detail(item['inline_html'], item, source_ann)
+        fp = c.compute_job_fingerprint(parsed_job)
+        now = dt.datetime.now(c.TZ)
+        now_str = now.isoformat(timespec='seconds')
+        stale_str = (now - dt.timedelta(days=5)).isoformat(timespec='seconds')
+
+        with TemporaryDirectory() as temp:
+            state = {
+                'jobs': {
+                    item_job_id: dict(parsed_job, id=item_job_id, source_id=source_ann['id'],
+                                      published_at=stamp, content_fingerprint=fp)
+                },
+                'sources': {
+                    source_ann['id']: {'id': source_ann['id'], 'status': 'ok', 'total_items': 10, 'last_success_at': now_str},
+                    source_pos['id']: {'id': source_pos['id'], 'status': 'ok', 'total_items': 5, 'last_success_at': stale_str},
+                },
+                'last_run_at': now_str,
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=f"{source_ann['id']},{source_pos['id']}",
+                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+
+            positions_called = []
+            def fake_sdei_list(src, page):
+                if src['channel'] == 'positions':
+                    positions_called.append(True)
+                return [item], 10
+
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            self.assertEqual(len(positions_called), 1)
+
+    def test_warm_sdei_session_calls_runtime_pace_without_name_error(self):
+        c._sdei_sessions.clear()
+        with patch.object(c.collector_runtime, 'pace') as mock_pace, \
+             patch.object(c.OPENER, 'open') as mock_open:
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.read.return_value = b'<html></html>'
+            mock_open.return_value.__enter__.return_value = mock_resp
+
+            c.warm_sdei_session('ujn')
+            mock_pace.assert_called_once()
+
+    def test_early_exit_prohibited_when_previous_run_partial(self):
+        source = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        stamp = '2026-09-10'
+        item1 = {'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1001', 'title': '公告1',
+                 'published_at': stamp, 'inline_html': '<div id="zoom">内容1</div>'}
+        item2 = {'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1002', 'title': '公告2',
+                 'published_at': stamp, 'inline_html': '<div id="zoom">内容2</div>'}
+
+        with TemporaryDirectory() as temp:
+            state = {
+                'jobs': {
+                    c.item_id(item1): {'id': c.item_id(item1), 'source_id': source['id'], 'published_at': stamp}
+                },
+                'sources': {
+                    # Previous status was partial!
+                    source['id']: {'id': source['id'], 'status': 'partial', 'total_items': 2}
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=source['id'],
+                pages=2, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+
+            fetch_called_pages = []
+            def fake_sdei_list(src, page):
+                fetch_called_pages.append(page)
+                return ([item1] if page == 1 else [item2]), 2
+
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            # Should have fetched page 2 because previous run was partial!
+            self.assertEqual(fetch_called_pages, [1, 2])
+
+    def test_shared_host_cooling_blocks_subsequent_sources(self):
+        source1 = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        source2 = next(s for s in c.SOURCES if s['id'] == 'ujn-announcements')
+        future_blocked = (dt.datetime.now(c.TZ) + dt.timedelta(hours=2)).isoformat(timespec='seconds')
+
+        with TemporaryDirectory() as temp:
+            state = {
+                'jobs': {},
+                'sources': {
+                    source1['id']: {'id': source1['id'], 'status': 'blocked', 'blocked_until': future_blocked}
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=f"{source1['id']},{source2['id']}",
+                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+
+            sdei_called = []
+            with patch.object(c, 'sdei_list', side_effect=lambda s, p: (sdei_called.append(s['id']), ([{}], 1))[1]):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            self.assertEqual(len(sdei_called), 0)
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            # Both sources should be blocked due to shared host cooling!
+            self.assertEqual(new_state['sources'][source1['id']]['status'], 'blocked')
+            self.assertEqual(new_state['sources'][source2['id']]['status'], 'blocked')
 
 
 if __name__=='__main__': unittest.main()

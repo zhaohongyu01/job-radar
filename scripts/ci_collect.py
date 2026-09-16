@@ -553,6 +553,16 @@ def collect(args):
         deep_scan=is_deep_scan
     )
     schools_with_new_announcements = set()
+    host_blocked_until: dict[str, str] = {}
+    for s_id, s_info in baseline.get('sources', {}).items():
+        b_until = s_info.get('blocked_until')
+        if b_until:
+            s_def = next((s for s in SOURCES if s['id'] == s_id), None)
+            if s_def:
+                s_host = urllib.parse.urlsplit(s_def['url']).netloc
+                if s_host not in host_blocked_until or b_until > host_blocked_until[s_host]:
+                    host_blocked_until[s_host] = b_until
+
     def make_idle_source_status(definition, status, last_attempt_at, coverage,
                                 last_success_at=None, errors=None, **extra):
         base = dict(definition, status=status, last_attempt_at=last_attempt_at,
@@ -574,7 +584,7 @@ def collect(args):
                  'pending':{identifier:baseline.get('pending', {}).get(identifier, [])},
                  'last_run_at':baseline['last_run_at']}
         prior_source = prior.get('sources', {}).get(identifier, {})
-        prior_blocked = prior_source.get('blocked_until')
+        prior_blocked = prior_source.get('blocked_until') or host_blocked_until.get(host)
         if prior_blocked:
             try:
                 if dt.datetime.fromisoformat(prior_blocked) > dt.datetime.now(TZ):
@@ -621,11 +631,18 @@ def collect(args):
                 announcements_id = f'{school}-announcements'
                 ann_status = state['sources'].get(announcements_id, {})
                 has_activity = (school in schools_with_new_announcements or ann_status.get('has_new_announcements', False))
-                if not has_activity:
+                last_succ = prior_source.get('last_success_at')
+                is_stale = True
+                if last_succ and prior_source.get('status') in {'ok', 'deferred'} and not prior_source.get('errors'):
+                    try:
+                        is_stale = (dt.datetime.now(TZ) - dt.datetime.fromisoformat(last_succ)).total_seconds() > 72 * 3600
+                    except Exception:
+                        is_stale = True
+                if not (has_activity or is_stale):
                     now = dt.datetime.now(TZ).isoformat(timespec='seconds')
                     status = make_idle_source_status(
                         definition, status='deferred', last_attempt_at=now,
-                        coverage='具体岗位按需联动：本轮对应招聘公告无新增或变更，暂缓查询具体岗位',
+                        coverage='具体岗位按需联动：本轮对应招聘公告无新增或变更且数据新鲜，暂缓查询具体岗位',
                         last_success_at=prior['sources'].get(identifier, {}).get('last_success_at')
                     )
                     if 'total_items' in prior_source:
@@ -651,11 +668,15 @@ def collect(args):
             )
             if is_host_blocked:
                 status['blocked_until'] = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
+                host_blocked_until[host] = status['blocked_until']
             result = dict(prior, sources={identifier:status}, last_run_at=now)
         else:
             result = run_source(definition, prior, args, budget)
         combine_states(result)
         status = result['sources'][identifier]
+        if status.get('blocked_until'):
+            if host not in host_blocked_until or status['blocked_until'] > host_blocked_until[host]:
+                host_blocked_until[host] = status['blocked_until']
         has_new_or_changed = any(
             v.get('source_id') == identifier and (
                 k not in baseline['jobs'] or

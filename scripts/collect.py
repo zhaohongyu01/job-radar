@@ -20,6 +20,7 @@ import socket
 import time
 import urllib.parse
 import urllib.request
+import collector_runtime
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -2158,6 +2159,16 @@ def run(args):
         deep_scan=is_deep_scan
     )
     schools_with_new_announcements = set()
+    host_blocked_until: dict[str, str] = {}
+    for s_id, s_info in previous.get('sources', {}).items():
+        b_until = s_info.get('blocked_until')
+        if b_until:
+            s_def = next((s for s in SOURCES if s['id'] == s_id), None)
+            if s_def:
+                s_host = urllib.parse.urlsplit(s_def['url']).netloc
+                if s_host not in host_blocked_until or b_until > host_blocked_until[s_host]:
+                    host_blocked_until[s_host] = b_until
+
     for source in SOURCES:
         if source_filter and source['id'] not in source_filter: continue
         source=dict(source)
@@ -2170,7 +2181,8 @@ def run(args):
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
         prior_source = previous.get('sources', {}).get(source['id'], {})
         status=dict(source,last_attempt_at=now,last_success_at=prior_source.get('last_success_at'),pages=0,discovered=0,parsed=0,cached=0,probed=0,detail_attempted=0,detail_failed=0,detail_skipped=0,errors=[],status='ok',coverage='近期分页，非全量历史')
-        prior_blocked = prior_source.get('blocked_until')
+        host = urllib.parse.urlsplit(source['url']).netloc
+        prior_blocked = prior_source.get('blocked_until') or host_blocked_until.get(host)
         if prior_blocked:
             try:
                 blocked_dt = dt.datetime.fromisoformat(prior_blocked)
@@ -2204,9 +2216,16 @@ def run(args):
                     announcements_id = f'{school}-announcements'
                     ann_status = sources.get(announcements_id, {})
                     has_activity = (school in schools_with_new_announcements or ann_status.get('has_new_announcements', False))
-                    if not has_activity:
+                    last_succ = prior_source.get('last_success_at')
+                    is_stale = True
+                    if last_succ and prior_source.get('status') in {'ok', 'deferred'} and not prior_source.get('errors'):
+                        try:
+                            is_stale = (dt.datetime.now(TZ) - dt.datetime.fromisoformat(last_succ)).total_seconds() > 72 * 3600
+                        except Exception:
+                            is_stale = True
+                    if not (has_activity or is_stale):
                         status['status'] = 'deferred'
-                        status['coverage'] = '具体岗位按需联动：本轮对应招聘公告无新增或变更，暂缓查询具体岗位'
+                        status['coverage'] = '具体岗位按需联动：本轮对应招聘公告无新增或变更且数据新鲜，暂缓查询具体岗位'
                         if 'total_items' in prior_source:
                             status['total_items'] = prior_source['total_items']
                         if 'blocked_until' in prior_source:
@@ -2304,9 +2323,11 @@ def run(args):
                             items.append(item)
                 # Safe early exit for reverse-chronological feeds when all items already exist
                 is_chrono_feed = source.get('adapter') in {'sdei', 'sdei_news', 'jinan_cms', 'qdhrss'}
-                if is_chrono_feed and not is_deep_scan and found and page == 1:
+                prev_ok = prior_source.get('status') == 'ok' and not prior_source.get('errors')
+                no_pending = not previous.get('pending', {}).get(source['id'])
+                if is_chrono_feed and not is_deep_scan and found and page == 1 and prev_ok and no_pending:
                     source_known = [j for j in previous['jobs'].values() if j.get('source_id') == source['id']]
-                    prev_total = previous.get('sources', {}).get(source['id'], {}).get('total_items')
+                    prev_total = prior_source.get('total_items')
                     if prev_total is not None and source_known:
                         all_found_exist = all(item_id(i) in previous['jobs'] for i in found)
                         max_known_date = max((j.get('published_at') or '') for j in source_known)
@@ -2508,8 +2529,14 @@ def run(args):
                     queued_by_url.pop(item['url'], None)
                     status['parsed']+=1
                     old_job = previous['jobs'].get(job['id'])
-                    if not old_job or job.get('content_fingerprint') != old_job.get('content_fingerprint'):
+                    job_fp = compute_job_fingerprint(job)
+                    job['content_fingerprint'] = job_fp
+                    if not old_job:
                         status['has_new_announcements'] = True
+                    else:
+                        old_fp = old_job.get('content_fingerprint') or compute_job_fingerprint(old_job)
+                        if job_fp != old_fp:
+                            status['has_new_announcements'] = True
                     return True, False
                 except Exception as error:
                     should_count = record_detail_failure(item, error)
@@ -2623,6 +2650,8 @@ def run(args):
                 blocked_until = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
                 status['blocked_until'] = blocked_until
                 status['coverage'] = f'上游安全策略拦截(HTTP 403/420)；进入冷却至 {blocked_until[:19]}，保留历史记录'
+                if host not in host_blocked_until or blocked_until > host_blocked_until[host]:
+                    host_blocked_until[host] = blocked_until
             else:
                 status['status'] = 'failed'
                 status['coverage'] = f'采集器错误：{err_str[:120]}'

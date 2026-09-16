@@ -346,6 +346,67 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(len(report['sources']), 1)
             self.assertEqual(report['sources'][0]['id'], 's1')
 
+    def test_ci_collect_shared_host_cooling(self):
+        with TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            blocked_time = (dt.datetime.now(c.TZ) + dt.timedelta(hours=2)).isoformat(timespec='seconds')
+            baseline = {
+                'jobs': {},
+                'sources': {
+                    'jobsdufe-announcements': {'id': 'jobsdufe-announcements', 'status': 'blocked', 'blocked_until': blocked_time}
+                },
+                'pending': {},
+                'last_run_at': '2026-09-14T12:00:00+08:00'
+            }
+            ci.atomic_json(data / 'state.json', baseline)
+            args = SimpleNamespace(
+                data_dir=data, sources='ujn-announcements', source_pack='',
+                pages=1, days=30, refresh_hours=24, shard_budget=100, source_budget=10
+            )
+            with patch.object(ci, 'run_source') as mock_run:
+                ci.collect(args)
+                mock_run.assert_not_called()
+            state = ci.read_json(data / 'state.json')
+            self.assertEqual(state['sources']['ujn-announcements']['status'], 'blocked')
+            self.assertEqual(state['sources']['ujn-announcements']['blocked_until'], blocked_time)
+
+    def test_ci_collect_positions_fallback_when_stale(self):
+        with TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            now = dt.datetime.now(c.TZ)
+            recent_time = now.isoformat(timespec='seconds')
+            stale_time = (now - dt.timedelta(days=5)).isoformat(timespec='seconds')
+            baseline = {
+                'jobs': {},
+                'sources': {
+                    'jobsdufe-announcements': {'id': 'jobsdufe-announcements', 'status': 'ok', 'last_success_at': recent_time},
+                    'jobsdufe-positions': {'id': 'jobsdufe-positions', 'status': 'ok', 'last_success_at': stale_time}
+                },
+                'pending': {},
+                'last_run_at': recent_time
+            }
+            ci.atomic_json(data / 'state.json', baseline)
+            args = SimpleNamespace(
+                data_dir=data, sources='jobsdufe-announcements,jobsdufe-positions', source_pack='',
+                pages=1, days=30, refresh_hours=24, shard_budget=100, source_budget=10,
+                deep_scan=False, force_positions=False
+            )
+            run_called = []
+            def fake_run_source(defn, prior, a, budget):
+                run_called.append(defn['id'])
+                return {'jobs': {}, 'sources': {defn['id']: {'id': defn['id'], 'name': defn['name'], 'status': 'ok', 'last_success_at': recent_time,
+                                                             'last_attempt_at': recent_time, 'pages': 1, 'discovered': 0,
+                                                             'parsed': 0, 'cached': 0, 'probed': 0, 'detail_attempted': 0,
+                                                             'detail_failed': 0, 'detail_skipped': 0, 'errors': [],
+                                                             'coverage': 'ok'}},
+                        'pending': {}, 'last_run_at': recent_time}
+            with patch.object(ci, 'run_source', side_effect=fake_run_source), \
+                 patch.object(c, 'get_active_sdei_schools', return_value=({'jobsdufe'}, 1)):
+                ci.collect(args)
+            # jobsdufe-positions should have been called because its last_success_at is stale (>72h)
+            self.assertIn('jobsdufe-positions', run_called)
+
 
 if __name__ == '__main__':
     unittest.main()
+

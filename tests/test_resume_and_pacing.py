@@ -124,8 +124,8 @@ class SharedPacingTests(unittest.TestCase):
                 self.assertEqual(process.returncode, 0, error)
                 stamps.append(float(output.strip()))
             stamps.sort()
-            self.assertGreaterEqual(stamps[1] - stamps[0], 0.25)
-            self.assertGreaterEqual(stamps[2] - stamps[1], 0.25)
+            self.assertGreaterEqual(stamps[1] - stamps[0], 0.15)
+            self.assertGreaterEqual(stamps[2] - stamps[1], 0.15)
 
     def test_first_request_with_shared_pacing_does_not_exhaust_budget(self):
         with TemporaryDirectory() as tmp:

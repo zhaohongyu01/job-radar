@@ -28,8 +28,10 @@ class GitHub:
             raise ValueError('Invalid repository')
         self.base = 'https://api.github.com/repos/' + repository
         self.token = token
+        self.operation = '初始化'
 
     def request(self, path, method='GET', payload=None):
+        self.operation = f'{method} {path.split("?")[0]}'
         request = urllib.request.Request(self.base + path,
             data=json.dumps(payload).encode() if payload is not None else None,
             method=method, headers={'Authorization': 'Bearer ' + self.token,
@@ -52,6 +54,7 @@ class GitHub:
             if urllib.parse.urlsplit(location).scheme != 'https':
                 raise ValueError('Invalid artifact redirect')
             # Signed storage URL gets NO GitHub token.
+            self.operation = '下载 NAS 结果文件'
             with urllib.request.urlopen(location, timeout=30) as response:
                 data = response.read(MAX_ARCHIVE + 1)
             if len(data) > MAX_ARCHIVE:
@@ -86,7 +89,8 @@ def unpack_state(data, output):
 
 
 def handoff(api, ref, sha, parent_id, attempt, queue_seconds=90, run_seconds=1100,
-            now=time.monotonic, sleep=time.sleep):
+            now=time.monotonic, sleep=time.sleep, diagnostic=None):
+    diagnostic = diagnostic if diagnostic is not None else {}
     request_id = f'{parent_id}-{attempt}'
     title = f'NAS universities-b {request_id}'
     workflow_path = f'/actions/workflows/{WORKFLOW}'
@@ -107,6 +111,8 @@ def handoff(api, ref, sha, parent_id, attempt, queue_seconds=90, run_seconds=110
                     raise ValueError('Ambiguous NAS run; no result accepted')
                 if matches:
                     child_id = matches[0]['id']
+                    diagnostic['child_id'] = child_id
+                    print(f'NAS 子任务已创建：run {child_id}')
             if child_id is not None:
                 run = api.request(f'/actions/runs/{child_id}')
                 if run['status'] == 'completed':
@@ -115,6 +121,7 @@ def handoff(api, ref, sha, parent_id, attempt, queue_seconds=90, run_seconds=110
                     matches = [a for a in artifacts if a['name'] == ARTIFACT and not a.get('expired')]
                     if len(matches) == 1:
                         return api.download(matches[0]['id'])
+                    diagnostic['reason'] = 'NAS 子任务已结束，但没有唯一的有效采集产物；请检查子任务日志。'
                     return None
                 if active_at is None:
                     # A workflow may say in_progress while its self-hosted job
@@ -123,10 +130,16 @@ def handoff(api, ref, sha, parent_id, attempt, queue_seconds=90, run_seconds=110
                     if any(j.get('status') == 'in_progress' and j.get('runner_name') for j in jobs):
                         active_at = now()
             if active_at is None and now() - started >= queue_seconds:
+                diagnostic['reason'] = ('等待 NAS 接单超时；请检查 Runner 是否在线及标签是否匹配。'
+                                        if child_id else '派发请求已接受，但未找到对应子任务。')
                 return None
             if now() - started >= queue_seconds + run_seconds or (active_at is not None and now() - active_at >= run_seconds):
+                diagnostic['reason'] = 'NAS 已接单，但执行超过等待期限；请检查子任务日志。'
                 return None
             sleep(10)
+    except urllib.error.HTTPError as error:
+        error.nas_operation = getattr(api, 'operation', 'GitHub API')
+        raise
     finally:
         if child_id is not None and not complete:
             try:
@@ -142,21 +155,33 @@ def main():
     if (args.output / 'state.json').exists():
         raise ValueError('NAS handoff output must not contain a baseline or old state')
     api = GitHub(os.environ['GITHUB_REPOSITORY'], os.environ['GH_TOKEN'])
+    diagnostic = {}
     try:
         archive = handoff(api, os.environ['GITHUB_REF_NAME'], os.environ['GITHUB_SHA'],
-                          os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT'])
+                          os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT'], diagnostic=diagnostic)
         if archive is not None:
             unpack_state(archive, args.output)
             print('NAS 高校分片已返回，等待主流程完整性核验。')
             return
     except (OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
         # Never print exception URLs: a storage redirect can contain a signature.
-        print(f'::warning::NAS 分片交接失败（{type(error).__name__}），保留历史数据。')
-    print('::warning::NAS 未及时返回可用分片；其他来源继续，高校历史记录保留。')
+        if isinstance(error, urllib.error.HTTPError):
+            operation = getattr(error, 'nas_operation', api.operation)
+            diagnostic['reason'] = f'NAS 交接接口失败：{operation}，HTTP {error.code}。'
+            if error.code in (404, 422):
+                diagnostic['reason'] += ' 请检查 nas-universities.yml 是否有效并已推送到默认分支。'
+            elif error.code in (401, 403):
+                diagnostic['reason'] += ' 请检查工作流令牌权限与仓库 Actions 策略。'
+        else:
+            diagnostic['reason'] = f'NAS 交接失败（{type(error).__name__}）；请检查连接及子任务产物。'
+    reason = diagnostic.get('reason', 'NAS 未返回可用分片。')
+    print(f'::warning::{reason} 本轮保留高校历史记录；其他分片继续。')
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
         with open(summary, 'a', encoding='utf-8') as file:
-            file.write('## NAS 高校采集\n未及时取得 NAS 结果，本轮保留高校历史记录；其他分片继续。\n')
+            file.write(f'## NAS 高校采集\n{reason}\n\n本轮保留高校历史记录；其他分片继续。\n')
+            if diagnostic.get('child_id'):
+                file.write(f"\n[查看 NAS 子任务](https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{diagnostic['child_id']})\n")
 
 
 if __name__ == '__main__':

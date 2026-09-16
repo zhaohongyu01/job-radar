@@ -84,8 +84,9 @@ jobs:
         env:
           JOB_RADAR_SCHEDULE_ENABLED: 'true'
           NO_PROXY: '*'
-          no_proxy: '*'
         run: |
+          # Actions env keys are case-insensitive; set the lowercase alias in shell.
+          export no_proxy="$NO_PROXY"
           .nas-venv/bin/python scripts/ci_collect.py collect \
             --source-pack universities-b --data-dir data --public-dir public \
             --pages 5 --days 30 --refresh-hours 72 \

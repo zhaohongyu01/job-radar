@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+import urllib.error
 from unittest.mock import patch
 import zipfile
 
@@ -51,6 +52,40 @@ class FakeGitHub:
 
 
 class NasDispatchTests(unittest.TestCase):
+    def test_http_failure_reports_status_without_credentials_or_false_timeout(self):
+        with TemporaryDirectory() as tmp:
+            summary = Path(tmp) / 'summary.md'
+            output = io.StringIO()
+            error = urllib.error.HTTPError('https://storage.invalid/?signature=SECRET', 422,
+                                          'SECRET', {}, None)
+            error.nas_operation = 'POST /actions/workflows/nas-universities.yml/dispatches'
+            env = {'GITHUB_REPOSITORY': 'owner/repo', 'GH_TOKEN': 'TOKEN',
+                   'GITHUB_REF_NAME': 'main', 'GITHUB_SHA': 'a'*40,
+                   'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1',
+                   'GITHUB_STEP_SUMMARY': str(summary)}
+            with patch.dict(nas.os.environ, env), patch.object(sys, 'argv', ['nas_dispatch', '--output', tmp]), \
+                    patch.object(nas, 'handoff', side_effect=error), contextlib.redirect_stdout(output):
+                nas.main()
+            for text in (output.getvalue(), summary.read_text(encoding='utf-8')):
+                self.assertIn('HTTP 422', text)
+                self.assertIn('dispatches', text)
+                self.assertNotIn('SECRET', text)
+                self.assertNotIn('TOKEN', text)
+                self.assertNotIn('未及时', text)
+            self.assertFalse((Path(tmp)/'state.json').exists())
+
+    def test_missing_artifact_and_offline_have_distinct_diagnostics(self):
+        for mode, message in [('missing', '没有唯一的有效采集产物'), ('offline', '等待 NAS 接单超时')]:
+            clock = Clock()
+            diagnostic = {}
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = nas.handoff(FakeGitHub(clock, mode), 'main', 'a'*40, '123', '1',
+                    queue_seconds=30, run_seconds=60, now=clock.now, sleep=clock.sleep,
+                    diagnostic=diagnostic)
+            self.assertIsNone(result)
+            self.assertIn(message, diagnostic['reason'])
+            self.assertEqual(diagnostic['child_id'], 42)
+
     def test_nas_delta_uses_existing_merge_guards(self):
         import ci_collect as ci
         import collect as collector

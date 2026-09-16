@@ -5,6 +5,8 @@ import contextlib
 import email.utils
 import functools
 import inspect
+import os
+import sqlite3
 import random
 import socket
 import threading
@@ -21,6 +23,38 @@ _local = threading.local()
 _lock = threading.Lock()
 _next_request = {}
 _paused = {}
+_shared_path = None
+
+
+def configure_shared_pacing(path):
+    """Use one SQLite scheduler for all source workers in this shard."""
+    global _shared_path
+    _shared_path = os.fspath(path) if path else None
+    if _shared_path:
+        with sqlite3.connect(_shared_path, timeout=5) as db:
+            db.execute('CREATE TABLE IF NOT EXISTS hosts '
+                       '(host TEXT PRIMARY KEY, next_request REAL NOT NULL, paused_until REAL NOT NULL)')
+
+
+def shared_slot(host, interval=0, pause_seconds=0):
+    # BEGIN IMMEDIATE serializes reservations across processes. SQLite releases
+    # its lock even if a worker is killed by the source wall-clock budget.
+    with sqlite3.connect(_shared_path, timeout=remaining(5)) as db:
+        db.execute('BEGIN IMMEDIATE')
+        now = time.time()
+        row = db.execute('SELECT next_request, paused_until FROM hosts WHERE host=?', (host,)).fetchone()
+        next_at, paused_until = row or (0, 0)
+        if pause_seconds:
+            paused_until = max(paused_until, now + pause_seconds)
+        else:
+            if paused_until > now:
+                raise HostPaused('host paused after HTTP 403/420/429: ' + host)
+            delay = max(0, next_at - now)
+            if remaining(delay) < delay:
+                raise TimeoutError('request budget exhausted while rate limiting')
+            next_at = now + delay + interval
+        db.execute('INSERT OR REPLACE INTO hosts VALUES (?, ?, ?)', (host, next_at, paused_until))
+    return 0 if pause_seconds else delay
 
 
 def bounded_request(function):
@@ -70,7 +104,10 @@ def pace(url):
             interval = random.uniform(1.8, 2.8)
         else:
             interval = 0.3 + random.uniform(0, 0.2)
-        _next_request[host] = now + delay + interval
+        if _shared_path:
+            delay = shared_slot(host, interval=interval)
+        else:
+            _next_request[host] = now + delay + interval
     if delay:
         if remaining(delay) < delay:
             raise TimeoutError('request budget exhausted while rate limiting')
@@ -107,6 +144,8 @@ def pause_on_rejection(url, error):
             delay = 300  # 5-minute cooldown for 420
         with _lock:
             _paused[urllib.parse.urlsplit(url).netloc] = time.monotonic() + max(60, delay)
+            if _shared_path:
+                shared_slot(urllib.parse.urlsplit(url).netloc, pause_seconds=max(60, delay))
 
 
 def retry_request(url, error, attempt, retries):

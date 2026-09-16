@@ -519,6 +519,7 @@ def run_source(definition, prior, args, budget):
                    '--detail-timeout', str(getattr(args,'detail_timeout',8)),
                    '--detail-retries', str(getattr(args,'detail_retries',1)),
                    '--detail-failure-limit', str(getattr(args,'detail_failure_limit',6))]
+        command.extend(['--rate-state', str((args.data_dir / 'host-pacing.sqlite').resolve())])
         if getattr(args, 'deep_scan', False):
             command.append('--deep-scan')
         if getattr(args, 'sdei_group', None) is not None:
@@ -571,6 +572,10 @@ def collect(args):
                     detail_attempted=0, detail_failed=0, detail_skipped=0,
                     errors=errors if errors is not None else [], coverage=coverage)
         base.update(extra)
+        for field in collector.PAGINATION_FIELDS:
+            prior_status = baseline.get('sources', {}).get(definition['id'], {})
+            if field in prior_status:
+                base[field] = prior_status[field]
         return base
 
     is_single_explicit_source = bool(len(selected) == 1)
@@ -617,6 +622,7 @@ def collect(args):
                 pos_prior = baseline.get('sources', {}).get(pos_id, {})
                 pos_last_succ = pos_prior.get('last_success_at')
                 pos_needs_catchup = (
+                    pos_prior.get('list_complete') is False or
                     pos_prior.get('status') in {'failed', 'partial'} or
                     bool(pos_prior.get('errors')) or
                     not pos_last_succ or
@@ -648,7 +654,7 @@ def collect(args):
                 has_activity = (school in schools_with_new_announcements or ann_status.get('has_new_announcements', False))
                 last_succ = prior_source.get('last_success_at')
                 is_stale = True
-                if last_succ and prior_source.get('status') in {'ok', 'deferred'} and not prior_source.get('errors'):
+                if last_succ and prior_source.get('status') in {'ok', 'deferred'} and not prior_source.get('errors') and prior_source.get('list_complete') is not False:
                     try:
                         is_stale = (dt.datetime.now(TZ) - dt.datetime.fromisoformat(last_succ)).total_seconds() > 72 * 3600
                     except Exception:

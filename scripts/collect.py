@@ -2131,9 +2131,13 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     return snapshot
 
 
+PAGINATION_FIELDS = ('resume_page', 'list_complete', 'total_items', 'early_exit_safe')
+
+
 def run(args):
     data_dir=Path(getattr(args,'data_dir','') or (ROOT/'data')).expanduser()
     data_dir.mkdir(parents=True,exist_ok=True)
+    collector_runtime.configure_shared_pacing(getattr(args, 'rate_state', None))
     public_dir=Path(getattr(args,'public_dir','') or (ROOT/'public')).expanduser()
     public_dir.mkdir(parents=True,exist_ok=True)
     path=data_dir/'state.json'
@@ -2186,6 +2190,9 @@ def run(args):
             source['url']=f'https://career.nankai.edu.cn/correcruit/index/sel_area/{args.nankai_area}.html'
         prior_source = previous.get('sources', {}).get(source['id'], {})
         status=dict(source,last_attempt_at=now,last_success_at=prior_source.get('last_success_at'),pages=0,discovered=0,parsed=0,cached=0,probed=0,detail_attempted=0,detail_failed=0,detail_skipped=0,errors=[],status='ok',coverage='近期分页，非全量历史')
+        for field in PAGINATION_FIELDS:
+            if field in prior_source:
+                status[field] = prior_source[field]
         host = urllib.parse.urlsplit(source['url']).netloc
         candidate_blocks = [t for t in (prior_source.get('blocked_until'), host_blocked_until.get(host)) if t]
         prior_blocked = max(candidate_blocks) if candidate_blocks else None
@@ -2213,6 +2220,7 @@ def run(args):
                     pos_prior = previous.get('sources', {}).get(pos_id, {})
                     pos_last_succ = pos_prior.get('last_success_at')
                     pos_needs_catchup = (
+                        pos_prior.get('list_complete') is False or
                         pos_prior.get('status') in {'failed', 'partial'} or
                         bool(pos_prior.get('errors')) or
                         not pos_last_succ or
@@ -2234,7 +2242,7 @@ def run(args):
                     has_activity = (school in schools_with_new_announcements or ann_status.get('has_new_announcements', False))
                     last_succ = prior_source.get('last_success_at')
                     is_stale = True
-                    if last_succ and prior_source.get('status') in {'ok', 'deferred'} and not prior_source.get('errors'):
+                    if last_succ and prior_source.get('status') in {'ok', 'deferred'} and not prior_source.get('errors') and prior_source.get('list_complete') is not False:
                         try:
                             is_stale = (dt.datetime.now(TZ) - dt.datetime.fromisoformat(last_succ)).total_seconds() > 72 * 3600
                         except Exception:
@@ -2264,7 +2272,23 @@ def run(args):
             offerjack_city_index=0
             offerjack_page=1
             offerjack_limited=False
-            for page in range(1,page_budget+1):
+            # Only independent numbered announcement lists can resume this way.
+            # Live inventories need a complete single-run view for withdrawal
+            # detection; SDU follows opaque next-page links; OfferJack has cities.
+            resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv'}
+                         or source['id'] in {'nankai', 'jinan'})
+            resume_page = max(2, int(prior_source.get('resume_page') or 2)) if resumable else 2
+            resumed_tail = resumable and (resume_page > 2 or
+                (page_budget == 1 and int(prior_source.get('resume_page') or 1) > 1))
+            status['list_complete'] = False
+            for slot in range(1,page_budget+1):
+                page = (1 if slot == 1 and page_budget > 1 else resume_page + slot - 2) if resumable else slot
+                if resumable and page_budget == 1:
+                    page = int(prior_source.get('resume_page') or 1)
+                if resumable:
+                    # Do not overwrite an unfinished backfill cursor while
+                    # refreshing page one, including on a network failure.
+                    status['resume_page'] = resume_page if page == 1 else page
                 try:
                     if is_offerjack:
                         if offerjack_city_index>=len(offerjack_cities):
@@ -2323,7 +2347,7 @@ def run(args):
                     status['pages']+=1
                     if '_total_items' in source:
                         status['total_items'] = source.pop('_total_items')
-                    elif total is not None and 'total_items' not in status:
+                    elif total is not None and status['pages'] == 1:
                         status['total_items'] = total
                     if ((page_number if is_offerjack else page)==1 and not found and total!=0 and
                             not source.get('allow_empty_pages')):
@@ -2340,12 +2364,26 @@ def run(args):
                         known.add(item.get('identity',item['url']))
                         if item.get('is_active_listing') or not item['published_at'] or item['published_at']>=cutoff:
                             items.append(item)
+                if resumable:
+                    if page == 1:
+                        resume_page = min(resume_page, max(2, total))
+                    status['resume_page'] = resume_page if page == 1 and page_budget > 1 else page + 1
+                    # Persist list discoveries before the next request. A hard
+                    # timeout must not advance the cursor and lose these jobs.
+                    backlog = {i['url']: i for i in queues.get(source['id'], [])}
+                    backlog.update({i['url']: i for i in items})
+                    atomic_json(data_dir/'checkpoint.json', {
+                        'run_at':now, 'source':status, 'pending':list(backlog.values()),
+                        'inventory_complete':False, 'inventory_ids':[],
+                    })
                 # Safe early exit for reverse-chronological feeds when all items already exist
                 is_chrono_feed = source.get('adapter') in {'sdei', 'sdei_news', 'jinan_cms', 'qdhrss'}
                 prev_ok = prior_source.get('status') == 'ok' and not prior_source.get('errors')
                 prev_complete = prior_source.get('list_complete') is True
                 no_pending = not previous.get('pending', {}).get(source['id'])
-                if is_chrono_feed and not is_deep_scan and found and page == 1 and prev_ok and prev_complete and no_pending:
+                if (is_chrono_feed and not is_deep_scan and found and page == 1
+                        and prev_ok and prev_complete and no_pending
+                        and prior_source.get('early_exit_safe', True)):
                     source_known = [j for j in previous['jobs'].values() if j.get('source_id') == source['id']]
                     prev_total = prior_source.get('total_items')
                     if prev_total is not None and source_known:
@@ -2394,6 +2432,17 @@ def run(args):
             if status['errors']:
                 list_complete = False
             status['list_complete'] = list_complete
+            if resumable:
+                # A tail reached across multiple runs is not a simultaneous
+                # full scan: new records may have shifted into the middle.
+                # Start another sweep instead of trusting its first page forever.
+                status['early_exit_safe'] = list_complete and not resumed_tail
+                if list_complete:
+                    status['resume_page'] = 1
+                elif page_budget >= 3 and status.get('resume_page', 2) > 2:
+                    # One overlap page reduces misses when fresh posts shift
+                    # older records between page numbers across runs.
+                    status['resume_page'] -= 1
             status['pages_read'] = status['pages']
             if is_offerjack and offerjack_limited:
                 status['coverage']=f'已读取 {status["pages"]} 个公开列表页；部分查询仍有未读取的后续页（接口或分页预算限制）'
@@ -2725,6 +2774,7 @@ def run(args):
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--pages',type=int,default=100)
+    parser.add_argument('--rate-state',default='',help='shared host scheduler SQLite path for CI source workers')
     parser.add_argument('--days',type=int,default=120)
     parser.add_argument('--sources',default='',help='comma-separated source ids; omitted sources retain previous state')
     parser.add_argument('--state-only',action='store_true',help='save raw source results without rebuilding public assets')

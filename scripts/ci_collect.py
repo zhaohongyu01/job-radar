@@ -584,7 +584,8 @@ def collect(args):
                  'pending':{identifier:baseline.get('pending', {}).get(identifier, [])},
                  'last_run_at':baseline['last_run_at']}
         prior_source = prior.get('sources', {}).get(identifier, {})
-        prior_blocked = prior_source.get('blocked_until') or host_blocked_until.get(host)
+        candidates = [t for t in (prior_source.get('blocked_until'), host_blocked_until.get(host)) if t]
+        prior_blocked = max(candidates) if candidates else None
         if prior_blocked:
             try:
                 if dt.datetime.fromisoformat(prior_blocked) > dt.datetime.now(TZ):
@@ -597,6 +598,8 @@ def collect(args):
                     )
                     if 'total_items' in prior_source:
                         status['total_items'] = prior_source['total_items']
+                    if 'list_complete' in prior_source:
+                        status['list_complete'] = prior_source['list_complete']
                     result = dict(prior, sources={identifier: status}, last_run_at=now)
                     combine_states(result)
                     state['sources'][identifier] = status
@@ -610,23 +613,35 @@ def collect(args):
             school = definition['school']
             channel = definition['channel']
             if school not in active_sdei_schools:
-                now = dt.datetime.now(TZ).isoformat(timespec='seconds')
-                status = make_idle_source_status(
-                    definition, status='deferred', last_attempt_at=now,
-                    coverage=f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据',
-                    last_success_at=prior['sources'].get(identifier, {}).get('last_success_at')
+                pos_id = f'{school}-positions'
+                pos_prior = baseline.get('sources', {}).get(pos_id, {})
+                pos_last_succ = pos_prior.get('last_success_at')
+                pos_needs_catchup = (
+                    pos_prior.get('status') in {'failed', 'partial'} or
+                    bool(pos_prior.get('errors')) or
+                    not pos_last_succ or
+                    (dt.datetime.now(TZ) - dt.datetime.fromisoformat(pos_last_succ)).total_seconds() > 96 * 3600
                 )
-                if 'total_items' in prior_source:
-                    status['total_items'] = prior_source['total_items']
-                if 'blocked_until' in prior_source:
-                    status['blocked_until'] = prior_source['blocked_until']
-                result = dict(prior, sources={identifier: status}, last_run_at=now)
-                combine_states(result)
-                state['sources'][identifier] = status
-                atomic_json(args.data_dir / 'state.json', state)
-                write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
-                             state, source_filter=selected, pack_name=source_pack, emit_summary=False)
-                continue
+                if not (channel == 'positions' and pos_needs_catchup):
+                    now = dt.datetime.now(TZ).isoformat(timespec='seconds')
+                    status = make_idle_source_status(
+                        definition, status='deferred', last_attempt_at=now,
+                        coverage=f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据',
+                        last_success_at=prior['sources'].get(identifier, {}).get('last_success_at')
+                    )
+                    if 'total_items' in prior_source:
+                        status['total_items'] = prior_source['total_items']
+                    if 'list_complete' in prior_source:
+                        status['list_complete'] = prior_source['list_complete']
+                    if 'blocked_until' in prior_source:
+                        status['blocked_until'] = prior_source['blocked_until']
+                    result = dict(prior, sources={identifier: status}, last_run_at=now)
+                    combine_states(result)
+                    state['sources'][identifier] = status
+                    atomic_json(args.data_dir / 'state.json', state)
+                    write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
+                                 state, source_filter=selected, pack_name=source_pack, emit_summary=False)
+                    continue
             if channel == 'positions' and not is_deep_scan and not getattr(args, 'force_positions', False):
                 announcements_id = f'{school}-announcements'
                 ann_status = state['sources'].get(announcements_id, {})
@@ -690,6 +705,8 @@ def collect(args):
             host_rejections.setdefault(host,set()).add(definition.get('school') or identifier)
         if status.get('total_items') is None and 'total_items' in prior_source:
             status['total_items'] = prior_source['total_items']
+        if status.get('list_complete') is None and 'list_complete' in prior_source:
+            status['list_complete'] = prior_source['list_complete']
         state['jobs'].update({k:v for k,v in result['jobs'].items() if v != baseline['jobs'].get(k)})
         state['sources'].update(result['sources'])
         state['pending'].update(result.get('pending', {}))

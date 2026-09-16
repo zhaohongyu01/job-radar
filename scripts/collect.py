@@ -479,7 +479,7 @@ def gov_query(html):
     raise ValueError('government list configuration missing')
 
 
-def gov_list(html, base):
+def gov_list(html, base, source=None):
     root = Tree(html).root
     items = []
     for li in root.find('li') + root.find('tr'):
@@ -497,6 +497,8 @@ def gov_list(html, base):
     pagination = root.find(cls='pagination')
     count = int(pagination[0].attrs.get('count','0')) if pagination else 0
     rows = int(pagination[0].attrs.get('rows','15')) if pagination else 15
+    if source is not None and count > 0:
+        source['_total_items'] = count
     return items, max(1,(count+rows-1)//rows)
 
 
@@ -519,7 +521,7 @@ def jinan_cms_list(source, page, page_size=15):
     html = (payload.get('data') or {}).get('html')
     if not payload.get('success') or not isinstance(html, str):
         raise ValueError('Jinan government recruitment list API returned no HTML')
-    items, pages = gov_list(html, source['url'])
+    items, pages = gov_list(html, source['url'], source=source)
     include_pattern = source.get('include_title_re')
     exclude_pattern = source.get('exclude_title_re')
     if include_pattern:
@@ -553,17 +555,19 @@ def warm_sdei_session(school):
     _sdei_sessions.add(school)
     portal_url = f"https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo"
     try:
-        collector_runtime.pace(portal_url)
-        req = urllib.request.Request(
-            portal_url,
-            headers={
-                'User-Agent': DEFAULT_USER_AGENT,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'zh-CN,zh;q=0.9',
-            }
-        )
-        with OPENER.open(req, timeout=10) as r:
-            _ = r.read(100_000)
+        with collector_runtime.request_budget(12):
+            collector_runtime.pace(portal_url)
+            timeout = collector_runtime.remaining(10)
+            req = urllib.request.Request(
+                portal_url,
+                headers={
+                    'User-Agent': DEFAULT_USER_AGENT,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'zh-CN,zh;q=0.9',
+                }
+            )
+            with OPENER.open(req, timeout=timeout) as r:
+                _ = collector_runtime.bounded_read(r, max_size=100_000, timeout=timeout)
     except urllib.error.HTTPError as exc:
         collector_runtime.pause_on_rejection(portal_url, exc)
     except Exception:
@@ -610,6 +614,7 @@ def sdei_list(source, page):
             published = (row.get('checkTime') or row.get('createTime') or '')[:10] or None
         items.append({'url': url, 'title': title, 'published_at': published, 'inline_html': '<div id="zoom">' + body + '</div>',
                       'structured': row, 'kind': '具体岗位' if positions else '招聘公告'})
+    source['_total_items'] = int(payload['total'])
     return items, (int(payload['total']) + 19) // 20
 
 
@@ -2171,7 +2176,7 @@ def run(args):
 
     for source in SOURCES:
         if source_filter and source['id'] not in source_filter: continue
-        source=dict(source)
+        source = {k: v for k, v in source.items() if not k.startswith('_')}
         source_started = time.monotonic()
         now=dt.datetime.now(TZ).isoformat(timespec='seconds')
         inventory_complete = False
@@ -2182,7 +2187,8 @@ def run(args):
         prior_source = previous.get('sources', {}).get(source['id'], {})
         status=dict(source,last_attempt_at=now,last_success_at=prior_source.get('last_success_at'),pages=0,discovered=0,parsed=0,cached=0,probed=0,detail_attempted=0,detail_failed=0,detail_skipped=0,errors=[],status='ok',coverage='近期分页，非全量历史')
         host = urllib.parse.urlsplit(source['url']).netloc
-        prior_blocked = prior_source.get('blocked_until') or host_blocked_until.get(host)
+        candidate_blocks = [t for t in (prior_source.get('blocked_until'), host_blocked_until.get(host)) if t]
+        prior_blocked = max(candidate_blocks) if candidate_blocks else None
         if prior_blocked:
             try:
                 blocked_dt = dt.datetime.fromisoformat(prior_blocked)
@@ -2203,15 +2209,25 @@ def run(args):
             is_single_explicit_source = bool(source_filter and source_filter == {source['id']})
             if not is_single_explicit_source:
                 if school not in active_sdei_schools:
-                    status['status'] = 'deferred'
-                    status['coverage'] = f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据'
-                    if 'total_items' in prior_source:
-                        status['total_items'] = prior_source['total_items']
-                    if 'blocked_until' in prior_source:
-                        status['blocked_until'] = prior_source['blocked_until']
-                    sources[source['id']] = status
-                    print(source['id'], 'deferred 0 0', flush=True)
-                    continue
+                    pos_id = f'{school}-positions'
+                    pos_prior = previous.get('sources', {}).get(pos_id, {})
+                    pos_last_succ = pos_prior.get('last_success_at')
+                    pos_needs_catchup = (
+                        pos_prior.get('status') in {'failed', 'partial'} or
+                        bool(pos_prior.get('errors')) or
+                        not pos_last_succ or
+                        (dt.datetime.now(TZ) - dt.datetime.fromisoformat(pos_last_succ)).total_seconds() > 96 * 3600
+                    )
+                    if not (channel == 'positions' and pos_needs_catchup):
+                        status['status'] = 'deferred'
+                        status['coverage'] = f'高校4组轮转排期本轮休眠（当前活跃：第{sdei_group}组），保留历史数据'
+                        if 'total_items' in prior_source:
+                            status['total_items'] = prior_source['total_items']
+                        if 'blocked_until' in prior_source:
+                            status['blocked_until'] = prior_source['blocked_until']
+                        sources[source['id']] = status
+                        print(source['id'], 'deferred 0 0', flush=True)
+                        continue
                 if channel == 'positions' and not is_deep_scan and not getattr(args, 'force_positions', False):
                     announcements_id = f'{school}-announcements'
                     ann_status = sources.get(announcements_id, {})
@@ -2239,6 +2255,7 @@ def run(args):
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
             items=[]
+            list_complete = False
             is_offerjack=source.get('adapter')=='offerjack'
             is_active_listing_source=source.get('adapter') in {'zhiye_jobs','haier_jobs','haier_campus'}
             offerjack_cities=([args.target_city] if args.target_city else ['']+CITIES) if is_offerjack else []
@@ -2302,9 +2319,11 @@ def run(args):
                     else:
                         q=dict(query,paramJson=json.dumps({'pageNo':page,'pageSize':15}))
                         html=json.loads(fetch(urllib.parse.urljoin(source['url'],endpoint)+'?'+urllib.parse.urlencode(q)))['data']['html']
-                        found,total=gov_list(html,source['url'])
+                        found,total=gov_list(html,source['url'],source=source)
                     status['pages']+=1
-                    if total is not None:
+                    if '_total_items' in source:
+                        status['total_items'] = source.pop('_total_items')
+                    elif total is not None and 'total_items' not in status:
                         status['total_items'] = total
                     if ((page_number if is_offerjack else page)==1 and not found and total!=0 and
                             not source.get('allow_empty_pages')):
@@ -2324,8 +2343,9 @@ def run(args):
                 # Safe early exit for reverse-chronological feeds when all items already exist
                 is_chrono_feed = source.get('adapter') in {'sdei', 'sdei_news', 'jinan_cms', 'qdhrss'}
                 prev_ok = prior_source.get('status') == 'ok' and not prior_source.get('errors')
+                prev_complete = prior_source.get('list_complete') is True
                 no_pending = not previous.get('pending', {}).get(source['id'])
-                if is_chrono_feed and not is_deep_scan and found and page == 1 and prev_ok and no_pending:
+                if is_chrono_feed and not is_deep_scan and found and page == 1 and prev_ok and prev_complete and no_pending:
                     source_known = [j for j in previous['jobs'].values() if j.get('source_id') == source['id']]
                     prev_total = prior_source.get('total_items')
                     if prev_total is not None and source_known:
@@ -2333,10 +2353,12 @@ def run(args):
                         max_known_date = max((j.get('published_at') or '') for j in source_known)
                         max_page_date = max((i.get('published_at') or '') for i in found)
                         not_newer = (max_page_date <= max_known_date) if (max_known_date and max_page_date) else True
-                        total_not_increased = (total <= prev_total)
+                        curr_total = status.get('total_items') if status.get('total_items') is not None else total
+                        total_not_increased = (curr_total <= prev_total)
                         if all_found_exist and not_newer and total_not_increased:
                             status['coverage'] = '首屏公告已全量覆盖且无新发布，安全早停'
                             status['early_exit'] = True
+                            list_complete = True
                             break
                 if is_offerjack:
                     if offerjack_page>=min(total,offerjack_query_limit):
@@ -2355,17 +2377,24 @@ def run(args):
                     continue
                 if page>=total:
                     inventory_complete = True
+                    list_complete = True
                     status['coverage']=('已读取官网当前全部在架岗位' if is_active_listing_source else
                                         '已读至来源列表末页（保留所选时间范围）')
                     break
                 if (found and not any(i.get('is_active_listing') for i in found) and
                         all(i['published_at'] and i['published_at']<cutoff for i in found)):
+                    list_complete = True
                     status['coverage']=f'已读至 {args.days} 天前；更早公告未读取'
                     break
             else:
+                list_complete = False
                 status['coverage']=(f'已读取前 {page_budget} 页；官网仍有在架岗位未读取'
                                     if is_active_listing_source else
                                     f'最近 {page_budget} 页；仍有更早公告未读取')
+            if status['errors']:
+                list_complete = False
+            status['list_complete'] = list_complete
+            status['pages_read'] = status['pages']
             if is_offerjack and offerjack_limited:
                 status['coverage']=f'已读取 {status["pages"]} 个公开列表页；部分查询仍有未读取的后续页（接口或分页预算限制）'
                 if not status['errors']:
@@ -2661,6 +2690,8 @@ def run(args):
             schools_with_new_announcements.add(source['school'])
         if status.get('total_items') is None and 'total_items' in prior_source:
             status['total_items'] = prior_source['total_items']
+        if status.get('list_complete') is None and 'list_complete' in prior_source:
+            status['list_complete'] = prior_source['list_complete']
         status['elapsed_seconds'] = round(time.monotonic() - source_started, 2)
         status['pending_details'] = len(queues.get(source['id'], []))
         status['inventory_complete'] = inventory_complete if is_active_listing_source else None

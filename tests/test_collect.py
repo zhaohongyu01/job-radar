@@ -1260,6 +1260,7 @@ class CollectionTests(unittest.TestCase):
                         'id': source['id'],
                         'status': 'ok',
                         'total_items': 10,
+                        'list_complete': True,
                     }
                 },
                 'last_run_at': '2026-09-10T12:00:00+08:00',
@@ -1315,6 +1316,7 @@ class CollectionTests(unittest.TestCase):
                         'id': source['id'],
                         'status': 'ok',
                         'total_items': 10,
+                        'list_complete': True,
                     }
                 },
                 'last_run_at': '2026-09-10T12:00:00+08:00',
@@ -1543,6 +1545,126 @@ class CollectionTests(unittest.TestCase):
             # Both sources should be blocked due to shared host cooling!
             self.assertEqual(new_state['sources'][source1['id']]['status'], 'blocked')
             self.assertEqual(new_state['sources'][source2['id']]['status'], 'blocked')
+
+    def test_early_exit_prohibited_when_previous_run_incomplete_due_to_page_budget(self):
+        source = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        stamp = '2026-09-10'
+        item1 = {'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1001', 'title': '公告1',
+                 'published_at': stamp, 'inline_html': '<div id="zoom">内容1</div>'}
+        item2 = {'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1002', 'title': '公告2',
+                 'published_at': stamp, 'inline_html': '<div id="zoom">内容2</div>'}
+
+        with TemporaryDirectory() as temp:
+            state = {
+                'jobs': {
+                    c.item_id(item1): {'id': c.item_id(item1), 'source_id': source['id'], 'published_at': stamp}
+                },
+                'sources': {
+                    # Previous status was ok, but list_complete was False (budget stopped early)!
+                    source['id']: {'id': source['id'], 'status': 'ok', 'total_items': 2, 'list_complete': False}
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=source['id'],
+                pages=2, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+
+            fetch_called_pages = []
+            def fake_sdei_list(src, page):
+                fetch_called_pages.append(page)
+                return ([item1] if page == 1 else [item2]), 2
+
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            # Should have fetched page 2 because previous run list_complete was False!
+            self.assertEqual(fetch_called_pages, [1, 2])
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertTrue(new_state['sources'][source['id']]['list_complete'])
+
+    def test_expired_source_cooling_does_not_mask_active_host_cooling(self):
+        source1 = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        source2 = next(s for s in c.SOURCES if s['id'] == 'ujn-announcements')
+        now = dt.datetime.now(c.TZ)
+        expired_blocked = (now - dt.timedelta(hours=2)).isoformat(timespec='seconds')
+        active_blocked = (now + dt.timedelta(hours=2)).isoformat(timespec='seconds')
+
+        with TemporaryDirectory() as temp:
+            state = {
+                'jobs': {},
+                'sources': {
+                    # source1 has an expired blocked_until, but source2 established active host cooling!
+                    source1['id']: {'id': source1['id'], 'status': 'blocked', 'blocked_until': expired_blocked},
+                    source2['id']: {'id': source2['id'], 'status': 'blocked', 'blocked_until': active_blocked},
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=source1['id'],
+                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+
+            sdei_called = []
+            with patch.object(c, 'sdei_list', side_effect=lambda s, p: (sdei_called.append(s['id']), ([{}], 1))[1]):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            self.assertEqual(len(sdei_called), 0)
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertEqual(new_state['sources'][source1['id']]['status'], 'blocked')
+            # The active host blocked_until should have been selected!
+            self.assertEqual(new_state['sources'][source1['id']]['blocked_until'], active_blocked)
+
+    def test_positions_catchup_when_rotation_idle(self):
+        source_pos = next(s for s in c.SOURCES if s['id'] == 'sdnu-positions')
+        with TemporaryDirectory() as temp:
+            now = dt.datetime.now(c.TZ)
+            state = {
+                'jobs': {},
+                'sources': {
+                    # sdnu-positions failed in prior run!
+                    source_pos['id']: {'id': source_pos['id'], 'status': 'failed', 'errors': [{'reason': 'error'}]}
+                },
+                'last_run_at': now.isoformat(timespec='seconds'),
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=source_pos['id'],
+                pages=1, days=180, refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=0  # sdnu is group 1, so group 0 makes it idle!
+            )
+
+            test_item = {
+                'url': 'https://school.gxjy.sdei.edu.cn/school/companyissueinfo/edit1/1',
+                'title': '测试岗位',
+                'published_at': '2026-09-10',
+                'inline_html': '<div id="zoom">测试岗位内容</div>',
+            }
+            positions_called = []
+            with patch.object(c, 'sdei_list', side_effect=lambda s, p: (positions_called.append(True), ([test_item], 1))[1]):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            # Should have run despite being in an idle rotation group because it was failed!
+            self.assertEqual(len(positions_called), 1)
 
 
 if __name__=='__main__': unittest.main()

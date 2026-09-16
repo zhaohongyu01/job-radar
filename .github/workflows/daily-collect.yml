@@ -121,6 +121,9 @@ jobs:
   collect-shards:
     needs: [prepare-baseline]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -148,12 +151,14 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Download Collector Baseline
+        if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         uses: actions/download-artifact@v4
         with:
           name: collector-baseline
           path: data
 
       - name: Run Collector Shard
+        if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         id: collector
         env:
           JOB_RADAR_SCHEDULE_ENABLED: 'true'
@@ -171,6 +176,12 @@ jobs:
             --detail-failure-limit 6 \
             --source-budget 180 \
             --shard-budget 1080
+
+      - name: Collect universities via NAS with bounded wait
+        if: ${{ matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/nas_dispatch.py --output data
 
       - name: Upload Shard State
         if: ${{ always() && hashFiles('data/state.json') != '' }}

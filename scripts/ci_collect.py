@@ -274,17 +274,27 @@ def write_report(data_dir, code, state, error='', source_filter=None, pack_name=
         return
     title = f"## 招聘数据采集（分片：{pack_name}）" if pack_name else "## 招聘数据采集"
     record_label = '本分片变更记录' if state.get('delta_version') else '保留记录'
+    decision = ('分片已保存；是否发布由最终合并核验决定。' if pack_name else
+                '已通过合并核验；部分来源问题见下表。')
+    if pack_name and not any(s.get('parsed', 0) or s.get('cached', 0) or s.get('status') == 'ok' for s in sources):
+        decision = '本分片没有成功核验的来源，历史记录已保留；是否发布由最终合并核验决定。'
     lines = [title, f"{record_label}：{report['records']}；采集器退出码：{code}。",
-             '允许构建发布；部分来源问题见下表。' if not error else '阻止发布：' + error,
+             decision if not error else '阻止发布：' + error,
              '', '| 来源 | 状态 | 列表页 | 解析 | 缓存复用 | 老公告复检 | 详情失败 | 详情跳过 | 待续详情 | 耗时/秒 | 问题数 |', '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|']
     for source in sources:
         name = source['name'].replace('|', ' ')
-        lines.append(f"| {name} | {source['status']} | {source.get('pages', 0)} | {source.get('parsed', 0)} | {source.get('cached', 0)} | {source.get('probed', 0)} | {source.get('detail_failed', 0)} | {source.get('detail_skipped', 0)} | {source.get('pending_details', 0)} | {source.get('elapsed_seconds', 0)} | {len(source.get('errors', []))} |")
+        label = source['status']
+        if label == 'blocked':
+            label = '共享冷却跳过' if not source.get('errors') or source.get('request_diagnostic', {}).get('stage') == 'shared_cooldown' else '请求被拒绝'
+        lines.append(f"| {name} | {label} | {source.get('pages', 0)} | {source.get('parsed', 0)} | {source.get('cached', 0)} | {source.get('probed', 0)} | {source.get('detail_failed', 0)} | {source.get('detail_skipped', 0)} | {source.get('pending_details', 0)} | {source.get('elapsed_seconds', 0)} | {len(source.get('errors', []))} |")
     for source in sources:
         if source.get('errors'):
             lines.extend(['', f"### {source['name']}", source.get('coverage', '')])
             for issue in source['errors'][:3]:
                 lines.append('- ' + issue['reason'].replace('\n', ' '))
+                request = issue.get('request')
+                if request:
+                    lines.append('- 请求诊断：' + json.dumps(request, ensure_ascii=False))
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
         with open(summary, 'a', encoding='utf-8') as handle:

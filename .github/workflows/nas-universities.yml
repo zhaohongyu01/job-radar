@@ -1,0 +1,103 @@
+name: NAS Universities Collector
+run-name: NAS universities-b ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        required: true
+        type: string
+      parent_run_id:
+        required: true
+        type: string
+      parent_attempt:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      expires_at:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nas-universities-${{ inputs.request_id }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    if: ${{ vars.UNIVERSITIES_B_RUNNER == 'nas' && github.event.repository.private }}
+    runs-on: [self-hosted, linux, job-radar-nas]
+    timeout-minutes: 20
+    steps:
+      - name: Validate parent and expiry before checkout
+        uses: actions/github-script@v7
+        env:
+          PARENT_ID: ${{ inputs.parent_run_id }}
+          PARENT_ATTEMPT: ${{ inputs.parent_attempt }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          EXPIRES_AT: ${{ inputs.expires_at }}
+        with:
+          script: |
+            const e = process.env;
+            if (!/^\d+$/.test(e.PARENT_ID) || !/^\d+$/.test(e.PARENT_ATTEMPT) ||
+                !/^[a-f0-9]{40}$/.test(e.SOURCE_SHA) || !/^\d+$/.test(e.EXPIRES_AT) ||
+                e.REQUEST_ID !== `${e.PARENT_ID}-${e.PARENT_ATTEMPT}` ||
+                Date.now() >= Number(e.EXPIRES_AT) * 1000) {
+              throw new Error('Invalid or expired NAS request');
+            }
+            const {data: run} = await github.rest.actions.getWorkflowRun({
+              ...context.repo, run_id: Number(e.PARENT_ID)});
+            if (run.status !== 'in_progress' || run.head_sha !== e.SOURCE_SHA ||
+                run.run_attempt !== Number(e.PARENT_ATTEMPT) ||
+                run.path !== '.github/workflows/daily-collect.yml') {
+              throw new Error('Parent run is no longer current');
+            }
+
+      - name: Checkout exact parent revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Check Python and install collector dependencies
+        run: |
+          python -c "import sys; assert sys.version_info[:2] == (3, 12)"
+          python -m venv .nas-venv
+          .nas-venv/bin/python -m pip install -r requirements.txt
+
+      - name: Download exact parent baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-baseline
+          path: data
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.parent_run_id }}
+
+      - name: Collect universities on NAS
+        id: collect
+        env:
+          JOB_RADAR_SCHEDULE_ENABLED: 'true'
+          NO_PROXY: '*'
+          no_proxy: '*'
+        run: |
+          .nas-venv/bin/python scripts/ci_collect.py collect \
+            --source-pack universities-b --data-dir data --public-dir public \
+            --pages 5 --days 30 --refresh-hours 72 \
+            --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6 \
+            --source-budget 120 --shard-budget 900
+
+      - name: Upload NAS delta
+        if: ${{ always() && steps.collect.outcome != 'skipped' && hashFiles('data/state.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nas-universities-b
+          path: |
+            data/state.json
+            data/ci-report.json
+          retention-days: 2

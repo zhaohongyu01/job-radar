@@ -1,0 +1,36 @@
+services:
+  universities-runner:
+    build:
+      context: .
+      dockerfile: deploy/nas/Dockerfile
+    platform: linux/arm64
+    container_name: job-radar-nas-runner
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 90s
+    mem_limit: 3g
+    cpus: 2
+    environment:
+      TZ: Asia/Shanghai
+      RUNNER_REPOSITORY: https://github.com/zhaohongyu01/job-radar
+      RUNNER_NAME: ugreen-dh4300plus
+    volumes:
+      - runner-state:/home/runner/state
+    secrets:
+      - runner_registration
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+volumes:
+  runner-state:
+
+secrets:
+  runner_registration:
+    file: ./runner-registration.txt

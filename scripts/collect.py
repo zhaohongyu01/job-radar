@@ -356,14 +356,28 @@ def safe_url(value, base, keep_fragment=False):
         return None
 
 
+def request_diagnostic(error, url, stage, method, started):
+    """Only public request metadata: never cookies, headers, query secrets or body."""
+    parts = urllib.parse.urlsplit(url)
+    diagnostic = {'stage': stage, 'url': urllib.parse.urlunsplit(
+        (parts.scheme, parts.hostname or '', parts.path, '', '')),
+        'method': method, 'http_status': getattr(error, 'code', None),
+        'elapsed_seconds': round(time.monotonic() - started, 2)}
+    if isinstance(error, collector_runtime.HostPaused):
+        diagnostic['stage'] = 'shared_cooldown'
+    error.request_diagnostic = diagnostic
+    return diagnostic
+
+
 @bounded_request
-def fetch(url, form=None, timeout=18, retries=1, referer='', extra_headers=None):
+def fetch(url, form=None, timeout=18, retries=1, referer='', extra_headers=None, request_stage='request'):
     # Keep list/API requests tolerant of slow public sites, while allowing
     # detail callers to opt into a shorter budget.  No TLS weakening or login
     # bypass is used here.
     timeout = max(1, float(timeout))
     retries = max(0, int(retries))
     for attempt in range(retries + 1):
+        started = time.monotonic()
         try:
             pace(url)
             headers = dict(DEFAULT_HEADERS)
@@ -400,6 +414,7 @@ def fetch(url, form=None, timeout=18, retries=1, referer='', extra_headers=None)
                     continue
             return raw.decode('utf-8', 'replace')
         except Exception as error:
+            request_diagnostic(error, url, request_stage, 'POST' if form is not None else 'GET', started)
             if not retry_request(url, error, attempt, retries):
                 raise
 
@@ -556,6 +571,7 @@ def warm_sdei_session(school):
         return
     _sdei_sessions.add(school)
     portal_url = f"https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo"
+    started = time.monotonic()
     try:
         with collector_runtime.request_budget(12):
             collector_runtime.pace(portal_url)
@@ -572,9 +588,11 @@ def warm_sdei_session(school):
                 _ = collector_runtime.bounded_read(r, max_size=100_000, timeout=timeout)
     except urllib.error.HTTPError as error:
         if error.code in {403, 420, 429}:
+            request_diagnostic(error, portal_url, 'portal', 'GET', started)
             collector_runtime.pause_on_rejection(portal_url, error)
             raise
-    except collector_runtime.HostPaused:
+    except collector_runtime.HostPaused as error:
+        request_diagnostic(error, portal_url, 'shared_cooldown', 'GET', started)
         raise
     except Exception:
         pass
@@ -592,9 +610,9 @@ def sdei_list(source, page):
         'X-Requested-With': 'XMLHttpRequest',
     }
     payload = json.loads(
-        fetch(url, params, referer=referer, extra_headers=extra_headers)
+        fetch(url, params, referer=referer, extra_headers=extra_headers, request_stage='positions_list')
         if positions else
-        fetch(url + '?' + urllib.parse.urlencode(params), referer=referer, extra_headers=extra_headers)
+        fetch(url + '?' + urllib.parse.urlencode(params), referer=referer, extra_headers=extra_headers, request_stage='announcements_list')
     )
     if not isinstance(payload.get('rows'), list) or 'total' not in payload:
         raise ValueError('public list response missing rows/total')
@@ -2745,7 +2763,11 @@ def run(args):
             else:
                 status['status'] = 'failed'
                 status['coverage'] = f'采集器错误：{err_str[:120]}'
-            status['errors'].append({'url':source['url'],'reason':err_str[:200]})
+            diagnostic = getattr(e, 'request_diagnostic', {})
+            if diagnostic:
+                status['request_diagnostic'] = diagnostic
+            status['errors'].append({'url':diagnostic.get('url', source['url']),
+                                     'reason':err_str[:200], **({'request': diagnostic} if diagnostic else {})})
         sources[source['id']]=status
         if source.get('adapter') == 'sdei' and source.get('channel') == 'announcements' and status.get('has_new_announcements'):
             schools_with_new_announcements.add(source['school'])

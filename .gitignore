@@ -38,5 +38,7 @@ next-env.d.ts
 /work/
 
 /data/
+/runner-registration.txt
+/.nas-venv/
 __pycache__/
 *.tsbuildinfo

@@ -33,6 +33,18 @@ class PositionVerificationTests(unittest.TestCase):
         self.assertEqual(job['detail_verification'], 'verified')
         self.assertIn('2026-12-31', job['deadline'])
 
+    def test_accessible_detail_without_degree_or_location_is_verified(self):
+        # A legitimate accessible position page missing degree or location still verifies and publishes
+        html_without_degree_or_loc = '<h1>职位详情</h1>' + ''.join(
+            f'<div class="info-item"><strong>{key}：</strong><span>{value}</span></div>'
+            for key, value in [('单位名称', '青岛智能软件有限公司'),
+                               ('专业要求', '计算机科学'),
+                               ('职位描述', '2027届开发岗位')])
+        job = c.parse_sdei_position_detail(html_without_degree_or_loc, self.item, self.source)
+        self.assertEqual(job['company'], '青岛智能软件有限公司')
+        self.assertEqual(job['detail_verification'], 'verified')
+        self.assertTrue(c.publishable_job(job))
+
     def test_error_and_login_and_list_pages_are_not_verified(self):
         for body in ['{"msg":null,"code":500}', '<h1>请登录</h1>', '<div id="zoom">列表职责</div>']:
             with self.assertRaises(ValueError):

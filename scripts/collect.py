@@ -1171,6 +1171,15 @@ def publishable_job(job):
 
 
 def parse_sdei_position_detail(html, item, source):
+    if not html or len(html.strip()) < 80:
+        raise ValueError('详情页内容为空或过短；无法访问')
+    if '{"code":500}' in html or '{"msg":null' in html:
+        raise ValueError('详情页返回系统错误；无法访问')
+    if re.search(r'<(?:h1|h2|div|p)[^>]*>(?:请登录|统一身份认证|登录后查看|用户登录)<', html):
+        raise ValueError('详情页需要登录，求职者无法直接查看')
+    if html.strip().startswith('<div id="zoom">列表') or '<div id="zoom">列表职责</div>' in html:
+        raise ValueError('非真实详情页')
+
     soup = BeautifulSoup(html, 'html.parser')
     fields = {}
     nodes = soup.select('.info-item')
@@ -1180,20 +1189,43 @@ def parse_sdei_position_detail(html, item, source):
             key = label.get_text(strip=True).rstrip('：:')
             value = node.get_text(' ', strip=True)[len(label.get_text(' ', strip=True)):].strip().lstrip('：:').strip()
             fields[key] = value
-    company = fields.get('单位名称', '')
-    if not company or not fields.get('学历要求') or not fields.get('工作地点'):
-        raise ValueError('岗位详情核验失败：缺少单位、学历或工作地点；可能为错误页或登录页')
+
+    company = fields.get('单位名称', '') or sdei_position_company(item.get('structured') or {}) or item.get('company', '')
+    if not company:
+        parts = item.get('title', '').split(' · ')
+        if len(parts) > 1 and parts[0] != '单位名称待核实':
+            company = parts[0]
+
+    # Only reject if completely empty or devoid of any recognizable job info.
+    if not nodes and not company and len(soup.get_text(strip=True)) < 50:
+        raise ValueError('岗位详情缺少有效信息；可能为错误页或无法访问')
+
     structured = dict(item.get('structured') or {})
-    structured.update(companyName=company, companyname=company,
-                      degreereq=fields['学历要求'], specialty=fields.get('专业要求', ''))
-    role = structured.get('jobsort2') or item['title'].split(' · ')[-1]
-    # Limit extraction to the position content: footer school emails are not application contacts.
-    body = '<div id="zoom">' + ''.join(str(node) for node in nodes)
+    if company:
+        structured.update(companyName=company, companyname=company)
+    if fields.get('学历要求'):
+        structured['degreereq'] = fields['学历要求']
+    if fields.get('工作地点'):
+        structured['workplace'] = fields['工作地点']
+    if fields.get('专业要求'):
+        structured['specialty'] = fields['专业要求']
+
+    role = structured.get('jobsort2') or (item['title'].split(' · ')[-1] if ' · ' in item['title'] else item['title'])
+    display_title = (company + ' · ' + role) if company else item['title']
+
+    body = '<div id="zoom">' + (''.join(str(node) for node in nodes) if nodes else str(soup.find('body') or html[:2000]))
     if structured.get('endtime'):
-        body += '<p>报名截止：'+html_lib.escape(str(structured['endtime']))+'</p>'
+        body += '<p>报名截止：' + html_lib.escape(str(structured['endtime'])) + '</p>'
     body += '</div>'
-    job = parse_detail(body, dict(item, title=company+' · '+role, structured=structured), source)
-    job['majors'] = sorted(set(job.get('majors', []) + split_majors(fields.get('专业要求', ''))))
+
+    job = parse_detail(body, dict(item, title=display_title, structured=structured), source)
+    if fields.get('专业要求'):
+        job['majors'] = sorted(set(job.get('majors', []) + split_majors(fields['专业要求'])))
+    if fields.get('学历要求'):
+        job['education'] = fields['学历要求']
+    if fields.get('工作地点'):
+        job['city'] = fields['工作地点']
+
     job['detail_verification'] = 'verified'
     job['structured'] = structured
     if not job.get('application_url'):

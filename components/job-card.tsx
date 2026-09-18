@@ -19,6 +19,7 @@ import {
   getDeadlineCountdown,
   getLifecycleStage,
   isExpired,
+  publicationText,
   isUnread,
   locationMatch,
   locationSummary,
@@ -309,7 +310,7 @@ export function JobCard({
             {!!job.duplicate_sources?.length && ` 等 ${job.duplicate_sources.length + 1} 渠道`}
             {' · '}
             {job.date_label || '发布'}{' '}
-            {job.published_at || '日期未明确'}
+            {publicationText(job, now)}
             {job.provenance === '第三方线索' && ' · 未经企业原文复核'}
           </p>
         </div>

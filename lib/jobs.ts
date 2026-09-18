@@ -195,6 +195,16 @@ export const defaultFilters: Filters = {
   changeType: '全部',
   radarFocus: 'none',
 };
+export function publicationDate(job: Job, now = Date.now()): string {
+  const value = job.published_at || '';
+  const today = new Date(now + 8 * 3600000).toISOString().slice(0, 10);
+  return value && Number.isFinite(Date.parse(value)) && value.slice(0, 10) <= today ? value : '';
+}
+
+export function publicationText(job: Job, now = Date.now()): string {
+  return publicationDate(job, now) || (job.published_at ? '日期异常待核实' : '日期未明确');
+}
+
 export function isExpired(job: Job, now = Date.now()) {
   if (job.listing_status === 'withdrawn') return true;
   if (job.deadline) {
@@ -1146,7 +1156,7 @@ export function filterJobs(
         if (Number.isFinite(aTime) && Number.isFinite(bTime)) {
           return (
             aTime - bTime ||
-            (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
+            publicationDate(b, now).localeCompare(publicationDate(a, now)) ||
             a.id.localeCompare(b.id)
           );
         }
@@ -1154,7 +1164,7 @@ export function filterJobs(
           return Number.isFinite(aTime) ? -1 : 1;
         }
         return (
-          (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
+          publicationDate(b, now).localeCompare(publicationDate(a, now)) ||
           a.id.localeCompare(b.id)
         );
       }
@@ -1166,13 +1176,13 @@ export function filterJobs(
         const bSal = bRange ? (Number.isFinite(bRange.max) ? bRange.max : bRange.min) : -1;
         if (aSal !== bSal) return bSal - aSal;
         return (
-          (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
+          publicationDate(b, now).localeCompare(publicationDate(a, now)) ||
           a.id.localeCompare(b.id)
         );
       }
 
       return (
-        (b.published_at ?? '').localeCompare(a.published_at ?? '') ||
+        publicationDate(b, now).localeCompare(publicationDate(a, now)) ||
         a.id.localeCompare(b.id)
       );
     });

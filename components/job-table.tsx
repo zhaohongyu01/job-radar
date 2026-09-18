@@ -1,7 +1,7 @@
 'use client';
 import { Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { externalUrl, getDeadlineCountdown, isExpired, isUnread, locationSummary, personalFor } from '@/lib/jobs';
+import { publicationText, externalUrl, getDeadlineCountdown, isExpired, isUnread, locationSummary, personalFor } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 
 export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadChange, onToggle }: {
@@ -41,7 +41,7 @@ export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadC
             </th>
             <td><div className="table-location" title={locationSummary(job)}>{locationSummary(job)}</div></td>
             <td>
-              {job.published_at || '日期未明确'}
+              {publicationText(job, now)}
               <p className="small muted">
                 {job.date_label || '发布'} · {job.source_name}
                 {!!job.duplicate_sources?.length && (

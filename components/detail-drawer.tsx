@@ -10,7 +10,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl } from '@/lib/jobs';
+import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 import { formatDate, OutLink } from '@/components/job-card';
 
@@ -89,7 +89,7 @@ export function DetailDrawer({
                 {displayJobTitle(selected)}
               </SheetTitle>
               <SheetDescription>
-                {selected.date_label || '发布'} {selected.published_at || '日期未明确'} · 最近读取{' '}
+                {selected.date_label || '发布'} {publicationText(selected)} · 最近读取{' '}
                 {formatDate(selected.last_verified_at, true)}
               </SheetDescription>
             </SheetHeader>

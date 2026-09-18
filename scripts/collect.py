@@ -1106,7 +1106,7 @@ def labelled_lines(text):
 def deadline_candidates(text):
     candidates = []
     for line in labelled_lines(text):
-        if not re.search(r'报名时间|报名截止|投递截止|网申截止|报名日期|招聘截止日期|截止时间',line):
+        if not re.search(r'报名时间|报名截止|报名有效期|投递截止|网申截止|报名日期|招聘截止日期|截止时间',line):
             continue
         dates = list(re.finditer(r'(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})日?(?:\s*(\d{1,2})[:：时](\d{1,2})?分?)?',line[:240]))
         if not dates:
@@ -2758,7 +2758,11 @@ def run(args):
                 incoming.append(fallback)
 
             def record_detail_failure(item, error):
-                if requires_position_detail(item):
+                # Transport failures do not invalidate a previously readable page.
+                # Only an explicit missing page or invalid detail body hides it.
+                invalid_detail = (isinstance(error, ValueError) or
+                                  isinstance(error, urllib.error.HTTPError) and error.code in (404, 410))
+                if requires_position_detail(item) and invalid_detail:
                     old = previous['jobs'].get(item.get('target_id') or item_id(item))
                     if old:
                         hidden = dict(old, detail_verification='failed')

@@ -77,7 +77,7 @@ class PositionVerificationTests(unittest.TestCase):
         job = c.parse_sdei_position_detail(self.html, self.item, self.source)
         jobs, _ = c.merge({}, [job], '2026-09-18T09:00:00+08:00')
         with TemporaryDirectory() as tmp:
-            for flag, count in [('verified', 1), ('failed', 0), (None, 0), ('verified', 1)]:
+            for flag, count in [('verified', 1), ('failed', 0), (None, 1), ('verified', 1)]:
                 jobs[job['id']]['detail_verification'] = flag
                 state = {'jobs': jobs, 'sources': {}, 'last_run_at': '2026-09-18T09:00:00+08:00'}
                 snapshot = c.export_snapshot(state, Path(tmp))
@@ -89,3 +89,9 @@ class PositionVerificationTests(unittest.TestCase):
                 if count:
                     restored = ci.snapshot_state(snapshot, lambda url: json.loads((Path(tmp)/url.lstrip('/')).read_text(encoding='utf-8')))
                     self.assertTrue(c.publishable_job(restored['jobs'][job['id']]))
+
+            # Unconfirmed position with missing company and unverified detail is hidden
+            unconfirmed = dict(jobs[job['id']], company='单位名称待核实', title='单位名称待核实 · 岗位', detail_verification=None)
+            state = {'jobs': {unconfirmed['id']: unconfirmed}, 'sources': {}, 'last_run_at': '2026-09-18T09:00:00+08:00'}
+            snapshot = c.export_snapshot(state, Path(tmp))
+            self.assertEqual(len(snapshot['jobs']), 0)

@@ -1167,17 +1167,25 @@ def refine_facts(job):
 
 
 def requires_position_detail(job):
-    # SDEI positions with confirmed company names from the university API do not
-    # need external HTTP probing against the internal edit1 admin endpoint.
+    # SDEI positions with confirmed company names do not need external
+    # HTTP probing against the internal edit1 admin endpoint.
     if job.get('detail_verification') == 'verified':
         return False
-    if job.get('inline_html') and '单位名称待核实' not in (job.get('title') or ''):
+    if job.get('detail_verification') == 'failed':
+        return True
+    company = (job.get('company') or '').strip()
+    title = (job.get('title') or '').strip()
+    if company and company != '单位名称待核实' and not title.startswith('招聘单位见原页面'):
+        return False
+    if job.get('inline_html') and '单位名称待核实' not in title:
         return False
     url = job.get('source_url') or job.get('url') or ''
     return bool(re.fullmatch(r'https://school\.gxjy\.sdei\.edu\.cn/[^/]+/school/companyissueinfo/edit1/\d+/?', url, flags=re.IGNORECASE))
 
 
 def publishable_job(job):
+    if job.get('detail_verification') == 'failed':
+        return False
     return not requires_position_detail(job) or job.get('detail_verification') == 'verified'
 
 

@@ -1480,7 +1480,8 @@ class CollectionTests(unittest.TestCase):
         with patch.object(c.collector_runtime, 'pace') as mock_pace, \
              patch.object(c.OPENER, 'open') as mock_open:
             mock_resp = unittest.mock.MagicMock()
-            mock_resp.read.return_value = b'<html></html>'
+            mock_resp.read.side_effect = [b'<html></html>', b'']
+            del mock_resp.read1
             mock_open.return_value.__enter__.return_value = mock_resp
 
             c.warm_sdei_session('ujn')

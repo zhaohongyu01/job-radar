@@ -629,6 +629,12 @@ class CollectionTests(unittest.TestCase):
         self.assertIn('青岛', record['cities'])
         self.assertEqual(record['domestic_status'], 'domestic')
 
+        # 6. Public institutions / hospitals / schools in title or company
+        inst_evidence = c.extract_locations_from_text([], "详情见公告", title="山东省济南市疾病预防控制中心2026年招聘公告", company="济南市疾病预防控制中心")
+        self.assertTrue(any('济南' in e for e in inst_evidence))
+        hosp_evidence = c.extract_locations_from_text([], "详情见公告", title="青岛西海岸第二医院2026年招聘公告", company="青岛西海岸第二医院")
+        self.assertTrue(any('青岛' in e for e in hosp_evidence))
+
     def test_supplemental_recruitment_not_merged_and_upc_qdhrss_cleanups(self):
         # 1. Regular campus announcement and supplemental recruitment must NOT be merged
         regular_job = {

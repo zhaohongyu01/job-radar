@@ -14,6 +14,8 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   externalUrl,
+  displayJobTitle,
+  sdeiPositionListUrl,
   getDeadlineCountdown,
   getLifecycleStage,
   isExpired,
@@ -26,7 +28,7 @@ import type { Job, Personal, Filters } from '@/lib/jobs';
 import { HighlightText } from '@/components/highlight-text';
 
 export function extractSalary(job: Job): { cleanTitle: string; salary: string | null } {
-  let cleanTitle = job.title;
+  let cleanTitle = displayJobTitle(job);
   let salary: string | null = null;
   const titleSalaryRegex = /(?:[（(])?(\d+(?:\.\d+)?(?:k|K|万|元)?\s*[-~至–]\s*\d+(?:\.\d+)?(?:k|K|万|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天)?)(?:[)）])?$/;
   const match = cleanTitle.match(titleSalaryRegex);
@@ -312,6 +314,11 @@ export function JobCard({
           </p>
         </div>
         <div className="card-actions">
+          {sdeiPositionListUrl(job.source_url) && (
+            <OutLink url={sdeiPositionListUrl(job.source_url)!} onOpen={() => onRead(job)}>
+              来源岗位列表
+            </OutLink>
+          )}
           <Button variant="ghost" size="sm" onClick={() => onDetail(job)}>
             详情
             <ChevronRight size={14} />

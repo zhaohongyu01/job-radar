@@ -251,7 +251,8 @@ def validate_result(code, state, snapshot, baseline_ids, started):
     if dt.datetime.fromisoformat(state['last_run_at']) < started or snapshot['generated_at'] != state['last_run_at']:
         raise ValueError('Collector did not finish generating a fresh snapshot')
     published = {identifier for job in snapshot['jobs'] for identifier in [job['id'], *job.get('duplicate_ids', [])]}
-    if not set(baseline_ids).issubset(state['jobs']) or published != set(state['jobs']):
+    expected_public = {identifier for identifier, job in state['jobs'].items() if collector.publishable_job(job)}
+    if not set(baseline_ids).issubset(state['jobs']) or published != expected_public:
         raise ValueError('Historical records are missing; deployment blocked')
     attempted = [s for s in state['sources'].values()
                  if dt.datetime.fromisoformat(s['last_attempt_at']) >= started]

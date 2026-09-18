@@ -1214,6 +1214,22 @@ export function validatePersonal(input: unknown): Personal {
   }
   return result;
 }
+export function displayJobTitle(job: Pick<Job, 'title' | 'company'>): string {
+  return job.title.replace(/^招聘单位见原页面(?=\s*·)/, job.company?.trim() || '单位名称待核实');
+}
+
+// Preserve the exact record URL and offer the platform's public list separately.
+export function sdeiPositionListUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || parsed.hostname !== 'school.gxjy.sdei.edu.cn' || parsed.username || parsed.password || parsed.port) return null;
+    const match = parsed.pathname.match(/^\/([a-z0-9_-]+)\/school\/companyissueinfo\/edit1\/\d+\/?$/i);
+    return match ? `https://school.gxjy.sdei.edu.cn/${match[1]}/front/JiuYeInfo?type=zwxx` : null;
+  } catch {
+    return null;
+  }
+}
+
 export function externalUrl(url: string | null | undefined) {
   try {
     const u = new URL(url ?? '');

@@ -10,7 +10,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { generateJobTimeline, getLifecycleStage, isUnread, personalFor } from '@/lib/jobs';
+import { generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 import { formatDate, OutLink } from '@/components/job-card';
 
@@ -86,7 +86,7 @@ export function DetailDrawer({
                 )}
               </div>
               <SheetTitle className="text-xl leading-relaxed pr-6">
-                {selected.title}
+                {displayJobTitle(selected)}
               </SheetTitle>
               <SheetDescription>
                 {selected.date_label || '发布'} {selected.published_at || '日期未明确'} · 最近读取{' '}
@@ -147,6 +147,14 @@ export function DetailDrawer({
               </div>
               <div className="apply-panel">
                 <h3>报名入口</h3>
+                {sdeiPositionListUrl(selected.source_url) && (
+                  <div>
+                    <p className="small muted">若原公告报错或打不开，可进入高校岗位列表，按单位名称或岗位查找。单位名称待核实的记录，请先核对招聘主体和投递方式。</p>
+                    <OutLink url={sdeiPositionListUrl(selected.source_url)!} onOpen={() => onRead(selected)}>
+                      打开来源岗位列表
+                    </OutLink>
+                  </div>
+                )}
                 <OutLink
                   primary
                   url={selected.application_url || selected.source_url}
@@ -202,7 +210,7 @@ export function DetailDrawer({
                           <span className="channel-date">{selected.published_at}</span>
                         )}
                       </div>
-                      <div className="channel-card-title">{selected.title}</div>
+                      <div className="channel-card-title">{displayJobTitle(selected)}</div>
                       <div className="channel-card-actions">
                         <OutLink url={selected.source_url} onOpen={() => onRead(selected)}>
                           查看该渠道原公告

@@ -17,6 +17,20 @@ c=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class CollectionTests(unittest.TestCase):
+    def test_sdei_employer_uses_same_fields_in_title_and_record(self):
+        source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')
+        for company_fields, expected in [({'companyName':'  ', 'unitName':'测试招聘单位'}, '测试招聘单位'),
+                                         ({'companyName':None}, ''),
+                                         ({'companyName':'已恢复的招聘单位'}, '已恢复的招聘单位')]:
+            row={'comid':21395, 'jobsort2':'销售代表', 'areaString':'山东省济南市历城区',
+                 'degreereq':'本科', 'jobdescribe':'负责客户沟通与市场推广', **company_fields}
+            with patch.object(c,'warm_sdei_session'), patch.object(c,'fetch',return_value=json.dumps({'rows':[row],'total':1})):
+                items,_=c.sdei_list(dict(source),1)
+            parsed=c.parse_detail(items[0]['inline_html'],items[0],source)
+            self.assertEqual(parsed['company'],expected)
+            self.assertEqual(parsed['title'],(expected or '单位名称待核实')+' · 销售代表')
+            self.assertEqual(parsed['source_url'],'https://school.gxjy.sdei.edu.cn/jobsdufe/school/companyissueinfo/edit1/21395')
+
     def test_ci_source_packs_cover_every_registered_source(self):
         packed = {source_id for pack in c.SOURCE_PACKS.values() for source_id in pack}
         self.assertEqual(packed, {source['id'] for source in c.SOURCES})

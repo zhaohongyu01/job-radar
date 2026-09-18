@@ -21,6 +21,7 @@ import time
 import urllib.parse
 import urllib.request
 import collector_runtime
+from bs4 import BeautifulSoup
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,14 +31,15 @@ LOCATION_LABEL = r'(?:工作地点|工作城市|岗位地点|工作地域|招聘
 PROVINCES_LIST = '北京 天津 上海 重庆 河北 山西 辽宁 吉林 黑龙江 江苏 浙江 安徽 福建 江西 山东 河南 湖北 湖南 广东 广西 海南 四川 贵州 云南 陕西 甘肃 青海 宁夏 新疆 内蒙古 西藏 香港 澳门 台湾'.split()
 
 try:
-    from parse_positions import extract_all_positions, enrich_job_with_positions, deduplicate_positions
+    from parse_positions import extract_all_positions, enrich_job_with_positions, deduplicate_positions, split_majors
 except ImportError:
     try:
-        from scripts.parse_positions import extract_all_positions, enrich_job_with_positions, deduplicate_positions
+        from scripts.parse_positions import extract_all_positions, enrich_job_with_positions, deduplicate_positions, split_majors
     except ImportError:
         def extract_all_positions(html, **kw): return []
         def enrich_job_with_positions(job, positions): return job
         def deduplicate_positions(positions): return positions
+        def split_majors(text): return []
 
 
 def extract_locations_from_text(evidence, text, title='', company=''):
@@ -598,6 +600,14 @@ def warm_sdei_session(school):
         pass
 
 
+def sdei_position_company(row):
+    for field in ('companyName', 'companyname', 'unitName', 'orgName'):
+        value = row.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ''
+
+
 def sdei_list(source, page):
     base = f"https://school.gxjy.sdei.edu.cn/{source['school']}/"
     warm_sdei_session(source['school'])
@@ -619,8 +629,7 @@ def sdei_list(source, page):
     items = []
     for row in payload['rows']:
         if positions:
-            company = (row.get('companyName') or row.get('companyname') or row.get('unitName') or
-                       row.get('orgName') or '招聘单位见原页面')
+            company = sdei_position_company(row) or '单位名称待核实'
             role = row.get('jobsort2') or row.get('jobName') or '招聘岗位'
             title = str(company) + ' · ' + str(role)
             comid = row.get('comid') or row.get('id')
@@ -1152,6 +1161,50 @@ def refine_facts(job):
     return row
 
 
+def requires_position_detail(job):
+    url = job.get('source_url') or job.get('url') or ''
+    return bool(re.fullmatch(r'https://school\.gxjy\.sdei\.edu\.cn/[^/]+/school/companyissueinfo/edit1/\d+/?', url, flags=re.IGNORECASE))
+
+
+def publishable_job(job):
+    return not requires_position_detail(job) or job.get('detail_verification') == 'verified'
+
+
+def parse_sdei_position_detail(html, item, source):
+    soup = BeautifulSoup(html, 'html.parser')
+    fields = {}
+    nodes = soup.select('.info-item')
+    for node in nodes:
+        label = node.find('strong')
+        if label:
+            key = label.get_text(strip=True).rstrip('：:')
+            value = node.get_text(' ', strip=True)[len(label.get_text(' ', strip=True)):].strip().lstrip('：:').strip()
+            fields[key] = value
+    company = fields.get('单位名称', '')
+    if not company or not fields.get('学历要求') or not fields.get('工作地点'):
+        raise ValueError('岗位详情核验失败：缺少单位、学历或工作地点；可能为错误页或登录页')
+    structured = dict(item.get('structured') or {})
+    structured.update(companyName=company, companyname=company,
+                      degreereq=fields['学历要求'], specialty=fields.get('专业要求', ''))
+    role = structured.get('jobsort2') or item['title'].split(' · ')[-1]
+    # Limit extraction to the position content: footer school emails are not application contacts.
+    body = '<div id="zoom">' + ''.join(str(node) for node in nodes)
+    if structured.get('endtime'):
+        body += '<p>报名截止：'+html_lib.escape(str(structured['endtime']))+'</p>'
+    body += '</div>'
+    job = parse_detail(body, dict(item, title=company+' · '+role, structured=structured), source)
+    job['majors'] = sorted(set(job.get('majors', []) + split_majors(fields.get('专业要求', ''))))
+    job['detail_verification'] = 'verified'
+    job['structured'] = structured
+    if not job.get('application_url'):
+        for link in job.get('links', []):
+            if re.search(r'报名|投递|网申|应聘', link['title']):
+                job['application_url'] = safe_url(link['url'], item['url'], True)
+                if job['application_url']:
+                    break
+    return job
+
+
 def parse_detail(html, item, source):
     root=Tree(html).root
     metas={n.attrs.get('name','').lower():n.attrs.get('content','') for n in root.find('meta')}
@@ -1240,6 +1293,8 @@ def parse_detail(html, item, source):
         body=contents[0]
         title=metas.get('articletitle') or item['title']
         company=structured.get('companyname') or structured.get('companyName') or structured.get('enterpriseName') or ''
+        if source.get('adapter') == 'sdei' and source.get('channel') == 'positions':
+            company = sdei_position_company(structured)
         published=(metas.get('pubdate') or item.get('published_at') or '')[:10] or None
     text=clean(body.text())
     if len(text)<30:
@@ -1856,6 +1911,7 @@ def deduplicate(jobs):
                 'structured': job.get('structured'),
             }
             primary_facts.update({field: job.get(field) for field in LISTING_FIELDS})
+            primary_facts['detail_verification'] = job.get('detail_verification')
             groups[key] = dict(job, duplicate_sources=[], duplicate_ids=[], primary_facts=primary_facts)
         else:
             parent = groups[key]
@@ -1894,6 +1950,7 @@ def deduplicate(jobs):
                 'structured': job.get('structured'),
             }
             duplicate_facts.update({field: job.get(field) for field in LISTING_FIELDS})
+            duplicate_facts['detail_verification'] = job.get('detail_verification')
             if (job.get('listing_checked_at') or '') > (parent.get('listing_checked_at') or ''):
                 parent.update({field: job.get(field) for field in LISTING_FIELDS})
             parent['duplicate_sources'].append({
@@ -2124,7 +2181,8 @@ def schedule_enabled():
 def export_snapshot(state, public_dir, days=180, changes=None):
     """Publish the index last; immutable assets cannot mix across refreshes."""
     jobs=repair_sdu_urls(state['jobs'])
-    public_jobs=sorted(deduplicate([public_record(j) for j in jobs.values()]),
+    eligible = [j for j in jobs.values() if publishable_job(j)]
+    public_jobs=sorted(deduplicate([public_record(j) for j in eligible]),
                        key=lambda j:j.get('published_at') or '',reverse=True)
     assets=public_dir/'job-assets'
     assets.mkdir(parents=True,exist_ok=True)
@@ -2141,15 +2199,16 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     search_url=asset('search',{'jobs':{j['id']:build_search_text(j) for j in public_jobs}})
     snapshot={'schema_version':2,'generated_at':state['last_run_at'],
               'last_success_at':max((j['last_verified_at'] for j in jobs.values()),default=None),
-              'schedule_enabled':schedule_enabled(),'raw_records':len(jobs),
-              'duplicates_merged':len(jobs)-len(public_jobs),'coverage_days':days,'cities':CITIES,
+              'schedule_enabled':schedule_enabled(),'raw_records':len(eligible),
+              'withheld_records':len(jobs)-len(eligible),
+              'duplicates_merged':len(eligible)-len(public_jobs),'coverage_days':days,'cities':CITIES,
               'detail_shards':detail_shards,'search_url':search_url,
               'jobs':[public_summary(j) for j in public_jobs],
               'sources':list(state['sources'].values()),'changes':changes or {}}
     atomic_json(public_dir/'jobs.json',snapshot,pretty=False)
     atomic_json(public_dir/'snapshot-manifest.json', {
         'schema_version': 1, 'generated_at': snapshot['generated_at'],
-        'raw_records': len(jobs),
+        'raw_records': len(eligible),
         'index_sha256': hashlib.sha256((public_dir/'jobs.json').read_bytes()).hexdigest(),
     }, pretty=False)
     return snapshot
@@ -2497,7 +2556,7 @@ def run(args):
             remaining=[]
             for item in items:
                 old=previous['jobs'].get(item_id(item))
-                if 'inline_html' not in item and old and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and old['last_verified_at']>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
+                if ('inline_html' not in item or requires_position_detail(item)) and old and publishable_job(old) and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and old['last_verified_at']>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
                     cached+=1
                 else: remaining.append(item)
             status['cached']=cached
@@ -2560,6 +2619,13 @@ def run(args):
             detail_failure_limit = max(1, int(getattr(args, 'detail_failure_limit', 6) or 6))
 
             def read_detail(item):
+                if requires_position_detail(item):
+                    html = fetch(item['url'], timeout=detail_timeout, retries=detail_retries,
+                                 referer=source['url'], request_stage='position_detail')
+                    res = parse_sdei_position_detail(html, item, source)
+                    if item.get('target_id'):
+                        res['id'] = item['target_id']
+                    return res
                 html = item['inline_html'] if 'inline_html' in item else fetch(
                     item['url'], timeout=detail_timeout, retries=detail_retries
                 )
@@ -2607,6 +2673,12 @@ def run(args):
                 incoming.append(fallback)
 
             def record_detail_failure(item, error):
+                if requires_position_detail(item):
+                    old = previous['jobs'].get(item.get('target_id') or item_id(item))
+                    if old:
+                        hidden = dict(old, detail_verification='failed')
+                        persist_job(hidden, item, verified=False)
+                        incoming.append(hidden)
                 status['detail_failed'] = status.get('detail_failed', 0) + 1
                 reason = str(error)[:200]
                 if item.get('is_probe'):

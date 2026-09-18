@@ -89,7 +89,10 @@ class NasDispatchTests(unittest.TestCase):
     def test_nas_delta_uses_existing_merge_guards(self):
         import ci_collect as ci
         import collect as collector
-        from test_ci_collect import fixture
+        try:
+            from test_ci_collect import fixture
+        except ImportError:
+            from tests.test_ci_collect import fixture
         for generation in ('2026-09-01T12:00:00+08:00', 'wrong-generation'):
             with self.subTest(generation=generation), TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()), patch.dict(collector.os.environ, {'GITHUB_STEP_SUMMARY': ''}):
                 root = Path(tmp)

@@ -58,6 +58,9 @@ def extract_locations_from_text(evidence, text, title='', company=''):
             evidence.append(f'工作地点：{city}（标题/单位明确分支机构）')
         if re.search(rf'[（(]{city}(?:市)?[）)]', name_scope):
             evidence.append(f'工作地点：{city}（标题/单位标注地点）')
+    explicit_cities = [c for c in CITIES if any(c in s for s in evidence if s.startswith('工作地点：') and not s.endswith('（标题/单位明确企事业单位或机构）'))]
+
+    for city in CITIES:
         if re.search(
             rf'(?:^|[（(山东省]{{0,4}}){city}(?:市)?'
             r'[一二三四五六七八九十\u4e00-\u9fa5]{0,10}?'
@@ -69,13 +72,33 @@ def extract_locations_from_text(evidence, text, title='', company=''):
             r'管理委员会|管委会|街道办事处|委员会|局|所|中心|站|队|台|馆|社)',
             name_scope,
         ):
-            evidence.append(f'工作地点：{city}（标题/单位明确企事业单位或机构）')
+            if not explicit_cities:
+                evidence.append(f'工作地点：{city}（标题/单位明确企事业单位或机构）')
+            elif city not in explicit_cities:
+                evidence.append(f'用人单位所在地：{city}（机构隶属地，以正文工作地点为准）')
 
     for province in PROVINCES_LIST:
         if re.search(rf'{province}(?:省)?(?:分行|分公司|分院|管辖行)', name_scope):
             evidence.append(f'工作地点：{province}省各分支机构（标题/单位明确机构）')
 
-    return list(dict.fromkeys(evidence))
+    return filter_institution_locations(list(dict.fromkeys(evidence)))
+
+
+def filter_institution_locations(evidence):
+    explicit = [c for c in CITIES if any(c in s for s in evidence if not s.endswith('（标题/单位明确企事业单位或机构）') and not s.startswith('用人单位所在地：'))]
+    if not explicit:
+        return list(evidence)
+    res = []
+    for s in evidence:
+        if s.endswith('（标题/单位明确企事业单位或机构）'):
+            m = re.match(r'^工作地点：([^\(]+)', s)
+            if m:
+                city = m.group(1).strip()
+                if city not in explicit:
+                    res.append(f'用人单位所在地：{city}（机构隶属地，以正文工作地点为准）')
+                    continue
+        res.append(s)
+    return res
 
 SOURCES = [
     {'id': 'nankai', 'name': '南开大学就业网', 'url': 'https://career.nankai.edu.cn/correcruit/index.html'},
@@ -654,8 +677,6 @@ def sdei_list(source, page):
             published = (row.get('starttime') or row.get('createtime') or '')[:10] or None
             item = {'url': url, 'title': title, 'published_at': published, 'inline_html': '<div id="zoom">' + body + '</div>',
                     'structured': row, 'kind': '具体岗位'}
-            if company and company != '单位名称待核实':
-                item['detail_verification'] = 'verified'
         else:
             title = row['gonggaoTitle']
             url = base + 'jiuye/zhaopingg/detail/' + str(row['gonggaoId'])
@@ -1179,17 +1200,7 @@ def refine_facts(job):
 
 
 def requires_position_detail(job):
-    # SDEI positions with confirmed company names do not need external
-    # HTTP probing against the internal edit1 admin endpoint.
-    if job.get('detail_verification') == 'verified':
-        return False
-    if job.get('detail_verification') == 'failed':
-        return True
-    company = (job.get('company') or '').strip()
-    title = (job.get('title') or '').strip()
-    if company and company != '单位名称待核实' and not title.startswith('招聘单位见原页面'):
-        return False
-    if job.get('inline_html') and '单位名称待核实' not in title:
+    if job.get('kind') and job.get('kind') != '具体岗位':
         return False
     url = job.get('source_url') or job.get('url') or ''
     return bool(re.fullmatch(r'https://school\.gxjy\.sdei\.edu\.cn/[^/]+/school/companyissueinfo/edit1/\d+/?', url, flags=re.IGNORECASE))
@@ -1198,7 +1209,9 @@ def requires_position_detail(job):
 def publishable_job(job):
     if job.get('detail_verification') == 'failed':
         return False
-    return not requires_position_detail(job) or job.get('detail_verification') == 'verified'
+    if requires_position_detail(job):
+        return job.get('detail_verification') == 'verified'
+    return True
 
 
 def parse_sdei_position_detail(html, item, source):
@@ -1214,6 +1227,8 @@ def parse_sdei_position_detail(html, item, source):
     soup = BeautifulSoup(html, 'html.parser')
     fields = {}
     nodes = soup.select('.info-item')
+    if not nodes:
+        raise ValueError('岗位详情缺少有效结构节点(.info-item)；可能为错误页或无法访问')
     for node in nodes:
         label = node.find('strong')
         if label:
@@ -1228,7 +1243,7 @@ def parse_sdei_position_detail(html, item, source):
             company = parts[0]
 
     # Only reject if completely empty or devoid of any recognizable job info.
-    if not nodes and not company and len(soup.get_text(strip=True)) < 50:
+    if not company and len(soup.get_text(strip=True)) < 50:
         raise ValueError('岗位详情缺少有效信息；可能为错误页或无法访问')
 
     structured = dict(item.get('structured') or {})
@@ -1249,7 +1264,8 @@ def parse_sdei_position_detail(html, item, source):
         body += '<p>报名截止：' + html_lib.escape(str(structured['endtime'])) + '</p>'
     body += '</div>'
 
-    job = parse_detail(body, dict(item, title=display_title, structured=structured), source)
+    job = parse_detail(body, dict(item, title=display_title, structured=structured, kind='具体岗位'), source)
+    job['kind'] = '具体岗位'
     if fields.get('专业要求'):
         job['majors'] = sorted(set(job.get('majors', []) + split_majors(fields['专业要求'])))
     if fields.get('学历要求'):
@@ -1392,6 +1408,7 @@ def parse_detail(html, item, source):
                 cells=row.find('td')
                 for i in indexes:
                     if i<len(cells): location_evidence.append(clean(cells[i].text()))
+    location_evidence = filter_institution_locations(location_evidence)
     cities=[city for city in CITIES if any(city in s for s in location_evidence if not s.startswith('用人单位所在地：'))]
     # Province platform supplies a standard administrative code even for district-only labels.
     code=str(structured.get('workplace2') or '')
@@ -2176,6 +2193,7 @@ def public_record(job):
                     continue
             sanitized_evidence.append(ev)
         evidence = sanitized_evidence
+    evidence = filter_institution_locations(evidence)
     row['location_evidence']=list(dict.fromkeys(evidence))
     row['cities']=[city for city in CITIES if any(city in s for s in evidence if not s.startswith('用人单位所在地：'))]
     row['domestic_status']=domestic_status(row['location_evidence'],row['cities'])
@@ -2724,6 +2742,8 @@ def run(args):
                 return res
             def add_list_fallback(item):
                 """Keep a new list discovery visible when its detail is unavailable."""
+                if requires_position_detail(item):
+                    return
                 identifier=item_id(item)
                 if identifier in previous['jobs']:
                     return

@@ -103,6 +103,8 @@ def snapshot_state(snapshot, load_asset):
             rows.append(restored)
         for item in rows:
             row = {k: v for k, v in item.items() if k not in {'duplicate_ids', 'duplicate_sources', 'primary_facts'}}
+            if collector.requires_position_detail(row) and not row.get('detail_verification'):
+                row['detail_verification'] = 'verified'
             if row['id'] in jobs:
                 raise ValueError('Published identities overlap')
             facts = {k: v for k, v in row.items() if k not in HISTORY_FIELDS}

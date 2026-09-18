@@ -30,18 +30,28 @@ class GitHub:
         self.token = token
         self.operation = '初始化'
 
-    def request(self, path, method='GET', payload=None):
+    def request(self, path, method='GET', payload=None, retries=2):
         self.operation = f'{method} {path.split("?")[0]}'
         request = urllib.request.Request(self.base + path,
             data=json.dumps(payload).encode() if payload is not None else None,
             method=method, headers={'Authorization': 'Bearer ' + self.token,
                 'Accept': 'application/vnd.github+json', 'User-Agent': 'JobRadar-NAS',
                 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
-        with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
-            data = response.read(MAX_ARCHIVE + 1)
-        if len(data) > MAX_ARCHIVE:
-            raise ValueError('GitHub response too large')
-        return json.loads(data) if data else {}
+        for attempt in range(retries + 1):
+            try:
+                with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
+                    data = response.read(MAX_ARCHIVE + 1)
+                if len(data) > MAX_ARCHIVE:
+                    raise ValueError('GitHub response too large')
+                return json.loads(data) if data else {}
+            except urllib.error.HTTPError as error:
+                if error.code < 500 or attempt >= retries:
+                    raise
+                time.sleep(2 ** attempt)
+            except (urllib.error.URLError, TimeoutError, OSError) as error:
+                if attempt >= retries:
+                    raise
+                time.sleep(2 ** attempt)
 
     def download(self, artifact_id):
         try:

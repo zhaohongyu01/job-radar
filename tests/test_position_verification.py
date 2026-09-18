@@ -46,7 +46,8 @@ class PositionVerificationTests(unittest.TestCase):
         self.assertTrue(c.publishable_job(job))
 
     def test_error_and_login_and_list_pages_are_not_verified(self):
-        for body in ['{"msg":null,"code":500}', '<h1>请登录</h1>', '<div id="zoom">列表职责</div>']:
+        for body in ['{"msg":null,"code":500}', '<h1>请登录</h1>', '<div id="zoom">列表职责</div>',
+                     '<div><h3>系统维护中</h3><p>请稍后再试</p></div>']:
             with self.assertRaises(ValueError):
                 c.parse_sdei_position_detail(body, self.item, self.source)
 
@@ -77,7 +78,7 @@ class PositionVerificationTests(unittest.TestCase):
         job = c.parse_sdei_position_detail(self.html, self.item, self.source)
         jobs, _ = c.merge({}, [job], '2026-09-18T09:00:00+08:00')
         with TemporaryDirectory() as tmp:
-            for flag, count in [('verified', 1), ('failed', 0), (None, 1), ('verified', 1)]:
+            for flag, count in [('verified', 1), ('failed', 0), (None, 0), ('verified', 1)]:
                 jobs[job['id']]['detail_verification'] = flag
                 state = {'jobs': jobs, 'sources': {}, 'last_run_at': '2026-09-18T09:00:00+08:00'}
                 snapshot = c.export_snapshot(state, Path(tmp))
@@ -89,6 +90,17 @@ class PositionVerificationTests(unittest.TestCase):
                 if count:
                     restored = ci.snapshot_state(snapshot, lambda url: json.loads((Path(tmp)/url.lstrip('/')).read_text(encoding='utf-8')))
                     self.assertTrue(c.publishable_job(restored['jobs'][job['id']]))
+
+            # Legacy baseline position with detail_verification=None restored via snapshot_state gets verified
+            legacy_snapshot = c.export_snapshot({'jobs': {job['id']: dict(jobs[job['id']], detail_verification='verified')}, 'sources': {}, 'last_run_at': '2026-09-18T09:00:00+08:00'}, Path(tmp))
+            # Manually strip detail_verification in detail shard payload to simulate legacy baseline
+            shard_path = Path(tmp) / legacy_snapshot['detail_shards'][job['id'][:2]].lstrip('/')
+            shard_data = json.loads(shard_path.read_text(encoding='utf-8'))
+            shard_data['jobs'][job['id']]['detail_verification'] = None
+            shard_path.write_text(json.dumps(shard_data), encoding='utf-8')
+            restored_legacy = ci.snapshot_state(legacy_snapshot, lambda url: json.loads((Path(tmp)/url.lstrip('/')).read_text(encoding='utf-8')))
+            self.assertEqual(restored_legacy['jobs'][job['id']]['detail_verification'], 'verified')
+            self.assertTrue(c.publishable_job(restored_legacy['jobs'][job['id']]))
 
             # Unconfirmed position with missing company and unverified detail is hidden
             unconfirmed = dict(jobs[job['id']], company='单位名称待核实', title='单位名称待核实 · 岗位', detail_verification=None)

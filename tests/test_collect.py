@@ -635,6 +635,23 @@ class CollectionTests(unittest.TestCase):
         hosp_evidence = c.extract_locations_from_text([], "详情见公告", title="青岛西海岸第二医院2026年招聘公告", company="青岛西海岸第二医院")
         self.assertTrue(any('青岛' in e for e in hosp_evidence))
 
+        # 7. Explicit job work locations take precedence over employer/institution city name
+        override_evidence = c.extract_locations_from_text([], "工作地点：青岛市市南区", title="济南市勘察测绘研究院2026招聘公告", company="济南市勘察测绘研究院")
+        self.assertTrue(any(e.startswith('工作地点：青岛') for e in override_evidence))
+        self.assertTrue(any(e.startswith('用人单位所在地：济南') for e in override_evidence))
+        self.assertFalse(any('工作地点：济南' in e for e in override_evidence))
+        rec = c.public_record({
+            'id': 'test_override',
+            'source_id': 'sdu',
+            'title': '济南市勘察测绘研究院2026招聘公告',
+            'company': '济南市勘察测绘研究院',
+            'body': '工作地点：青岛市市南区',
+            'location_evidence': [],
+            'cities': []
+        })
+        self.assertEqual(rec['cities'], ['青岛'])
+        self.assertNotIn('济南', rec['cities'])
+
     def test_supplemental_recruitment_not_merged_and_upc_qdhrss_cleanups(self):
         # 1. Regular campus announcement and supplemental recruitment must NOT be merged
         regular_job = {

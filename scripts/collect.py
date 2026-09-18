@@ -640,13 +640,18 @@ def sdei_list(source, page):
                       ('任职要求', row.get('workexp')), ('报名截止', row.get('endtime'))]
             body = ''.join('<p>' + html_lib.escape(f'{key}：{value}') + '</p>' for key, value in values if value is not None)
             published = (row.get('starttime') or row.get('createtime') or '')[:10] or None
+            item = {'url': url, 'title': title, 'published_at': published, 'inline_html': '<div id="zoom">' + body + '</div>',
+                    'structured': row, 'kind': '具体岗位'}
+            if company and company != '单位名称待核实':
+                item['detail_verification'] = 'verified'
         else:
             title = row['gonggaoTitle']
             url = base + 'jiuye/zhaopingg/detail/' + str(row['gonggaoId'])
             body = row.get('gonggaoContent') or ''
             published = (row.get('checkTime') or row.get('createTime') or '')[:10] or None
-        items.append({'url': url, 'title': title, 'published_at': published, 'inline_html': '<div id="zoom">' + body + '</div>',
-                      'structured': row, 'kind': '具体岗位' if positions else '招聘公告'})
+            item = {'url': url, 'title': title, 'published_at': published, 'inline_html': '<div id="zoom">' + body + '</div>',
+                    'structured': row, 'kind': '招聘公告'}
+        items.append(item)
     source['_total_items'] = int(payload['total'])
     return items, (int(payload['total']) + 19) // 20
 
@@ -1162,6 +1167,12 @@ def refine_facts(job):
 
 
 def requires_position_detail(job):
+    # SDEI positions with confirmed company names from the university API do not
+    # need external HTTP probing against the internal edit1 admin endpoint.
+    if job.get('detail_verification') == 'verified':
+        return False
+    if job.get('inline_html') and '单位名称待核实' not in (job.get('title') or ''):
+        return False
     url = job.get('source_url') or job.get('url') or ''
     return bool(re.fullmatch(r'https://school\.gxjy\.sdei\.edu\.cn/[^/]+/school/companyissueinfo/edit1/\d+/?', url, flags=re.IGNORECASE))
 
@@ -2668,6 +2679,8 @@ def run(args):
                     res['identity'] = item['identity']
                 if item.get('structured'):
                     res['structured'] = item['structured']
+                if item.get('detail_verification'):
+                    res['detail_verification'] = item['detail_verification']
                 if item.get('is_probe') and item.get('previous_facts'):
                     prev = item['previous_facts']
                     if not res.get('company') and prev.get('company'):

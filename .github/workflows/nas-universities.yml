@@ -33,6 +33,17 @@ jobs:
     if: ${{ vars.UNIVERSITIES_B_RUNNER == 'nas' && github.event.repository.private }}
     runs-on: [self-hosted, linux, job-radar-nas]
     timeout-minutes: 20
+    env:
+      GIT_CONFIG_COUNT: '4'
+      GIT_CONFIG_KEY_0: 'http.version'
+      GIT_CONFIG_VALUE_0: 'HTTP/1.1'
+      GIT_CONFIG_KEY_1: 'http.postBuffer'
+      GIT_CONFIG_VALUE_1: '524288000'
+      GIT_CONFIG_KEY_2: 'http.lowSpeedLimit'
+      GIT_CONFIG_VALUE_2: '1000'
+      GIT_CONFIG_KEY_3: 'http.lowSpeedTime'
+      GIT_CONFIG_VALUE_3: '60'
+      GIT_CONFIG_PARAMETERS: "'http.version=HTTP/1.1' 'http.postBuffer=524288000' 'http.lowSpeedLimit=1000' 'http.lowSpeedTime=60'"
     steps:
       - name: Validate parent and expiry before checkout
         uses: actions/github-script@v7
@@ -65,8 +76,26 @@ jobs:
               throw new Error(`Parent run validation failed: status=${run.status}, sha=${run.head_sha}, attempt=${run.run_attempt}, path=${run.path}, name=${run.name}`);
             }
 
+      - name: Configure Git network resilience for NAS runner
+        run: |
+          git config --global http.version HTTP/1.1
+          git config --global http.postBuffer 524288000
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 60
+
       - name: Checkout exact parent revision
         uses: actions/checkout@v4
+        env:
+          GIT_CONFIG_COUNT: '4'
+          GIT_CONFIG_KEY_0: 'http.version'
+          GIT_CONFIG_VALUE_0: 'HTTP/1.1'
+          GIT_CONFIG_KEY_1: 'http.postBuffer'
+          GIT_CONFIG_VALUE_1: '524288000'
+          GIT_CONFIG_KEY_2: 'http.lowSpeedLimit'
+          GIT_CONFIG_VALUE_2: '1000'
+          GIT_CONFIG_KEY_3: 'http.lowSpeedTime'
+          GIT_CONFIG_VALUE_3: '60'
+          GIT_CONFIG_PARAMETERS: "'http.version=HTTP/1.1' 'http.postBuffer=524288000' 'http.lowSpeedLimit=1000' 'http.lowSpeedTime=60'"
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false

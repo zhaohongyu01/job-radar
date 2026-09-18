@@ -21,5 +21,11 @@ if [ ! -f .runner ]; then
   unset registration
 fi
 
+# Configure Git network resilience for domestic networks (force HTTP/1.1 and buffer).
+git config --global http.version HTTP/1.1 || true
+git config --global http.postBuffer 524288000 || true
+git config --global http.lowSpeedLimit 1000 || true
+git config --global http.lowSpeedTime 60 || true
+
 # Keep runner registration and automatic updates in the dedicated volume.
 exec ./run.sh

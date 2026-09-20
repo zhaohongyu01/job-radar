@@ -581,6 +581,14 @@ def collect(args):
     definitions = [source for source in SOURCES if not selected or source['id'] in selected]
     if not definitions or selected - {source['id'] for source in definitions}:
         raise ValueError('Unknown or empty source selection')
+    # Supplemental talks never displace the existing source order. Rotate
+    # their priority each scheduled half-day to avoid starving later schools.
+    talks = [s for s in definitions if s.get('channel') == 'talks']
+    if talks:
+        clock = dt.datetime.now(TZ)
+        offset = (clock.toordinal() * 2 + clock.hour // 12) % len(talks)
+        definitions = [s for s in definitions if s.get('channel') != 'talks'] + talks[offset:] + talks[:offset]
+    talks_remaining = 120.0
     deadline = time.monotonic() + float(getattr(args, 'shard_budget', 1080))
     state = {'jobs':{}, 'sources':{}, 'pending':{}, 'last_run_at':baseline['last_run_at'],
              'delta_version':1, 'base_generation':baseline['last_run_at'], 'source_pack':source_pack}
@@ -623,6 +631,8 @@ def collect(args):
         identifier = definition['id']
         host = urllib.parse.urlsplit(definition['url']).netloc
         budget = min(float(getattr(args, 'source_budget', 180)), deadline - time.monotonic())
+        if definition.get('channel') == 'talks':
+            budget = min(budget, 30.0, talks_remaining)
         prior = {'jobs':{k:v for k,v in baseline['jobs'].items() if v.get('source_id') == identifier},
                  'sources':{identifier:baseline['sources'][identifier]} if identifier in baseline['sources'] else {},
                  'pending':{identifier:baseline.get('pending', {}).get(identifier, [])},
@@ -691,18 +701,24 @@ def collect(args):
             now = dt.datetime.now(TZ).isoformat(timespec='seconds')
             is_host_blocked = len(host_rejections.get(host, set())) >= 2
             reason = '分片达到软截止；下次继续' if budget <= 1 else '同主机多个订阅被拒绝，暂停本轮请求并保留历史'
+            talks_deferred = definition.get('channel') == 'talks' and talks_remaining <= 1 and not is_host_blocked
+            if talks_deferred:
+                reason = '宣讲会增量采集达到本轮120秒预算；保留历史及续采队列，下轮继续'
             status = make_idle_source_status(
-                definition, status='blocked' if is_host_blocked else 'partial',
+                definition, status='blocked' if is_host_blocked else 'deferred' if talks_deferred else 'partial',
                 last_attempt_at=now, coverage=reason,
                 last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
-                errors=[{'url': definition['url'], 'reason': reason}]
+                errors=[] if talks_deferred else [{'url': definition['url'], 'reason': reason}]
             )
             if is_host_blocked:
                 status['blocked_until'] = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
                 host_blocked_until[host] = status['blocked_until']
             result = dict(prior, sources={identifier:status}, last_run_at=now)
         else:
+            started_source = time.monotonic()
             result = run_source(definition, prior, args, budget)
+            if definition.get('channel') == 'talks':
+                talks_remaining -= time.monotonic() - started_source
         combine_states(result)
         status = result['sources'][identifier]
         if status.get('blocked_until'):

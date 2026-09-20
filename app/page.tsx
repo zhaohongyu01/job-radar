@@ -955,6 +955,14 @@ export default function Home() {
                       <EmptyDescription>
                         当前来源尚未收录符合这些条件的公告，不代表没有招聘。可切换地点范围，或清除岗位方向、学历和关键词限制。
                       </EmptyDescription>
+                      {filters.city !== '全部城市' && locationOptions
+                        .filter((option) => option.scope !== filters.locationScope && option.count > 0)
+                        .map((option) => (
+                          <Button key={option.scope} variant="outline"
+                            onClick={() => { setFilters({ ...filters, locationScope: option.scope }); setPage(1); }}>
+                            另有 {option.count} 条匹配信息：{option.label}，点击查看
+                          </Button>
+                        ))}
                       <Button
                         variant="outline"
                         onClick={() => {

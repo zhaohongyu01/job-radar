@@ -161,6 +161,10 @@ for school, name in SDEI_SCHOOLS:
         SOURCES.append({'id': f'{school}-{channel}', 'name': f'{name} · {label}',
                         'url': f'https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo?type=' + ('zwxx' if channel == 'positions' else 'zpgg'),
                         'adapter': 'sdei', 'school': school, 'channel': channel})
+for school, name in SDEI_SCHOOLS:
+    SOURCES.append({'id': f'{school}-talks', 'name': f'{name} · 宣讲会招聘',
+                    'url': f'https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo?type=xjh',
+                    'adapter': 'sdei', 'school': school, 'channel': 'talks'})
 SOURCES.append({'id': 'upc', 'name': '中国石油大学（华东）就业网', 'url': 'https://career.upc.edu.cn/career/zpxx/zpxx', 'adapter': 'upc'})
 SOURCES.append({'id': 'qdhrss', 'name': '青岛市人社局 · 招聘与引才', 'url': 'https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/', 'adapter': 'qdhrss'})
 SOURCES.append({'id': 'wondercv', 'name': '超级简历 · 公开校招线索', 'url': 'https://www.wondercv.com/xiaozhao/', 'adapter': 'wondercv'})
@@ -647,9 +651,10 @@ def sdei_list(source, page):
     base = f"https://school.gxjy.sdei.edu.cn/{source['school']}/"
     warm_sdei_session(source['school'])
     positions = source['channel'] == 'positions'
+    talks = source['channel'] == 'talks'
     params = {'pageNum': page, 'pageSize': 20}
-    url = base + ('school/companyissueinfo/list1' if positions else 'front/indexZpggList')
-    referer = f"{base}front/JiuYeInfo?type={'zwxx' if positions else 'zpgg'}"
+    url = base + ('school/companyissueinfo/list1' if positions else 'front/indexCarieList' if talks else 'front/indexZpggList')
+    referer = source['url']
     extra_headers = {
         'Accept': 'application/json, text/javascript, */*; q=0.01',
         'X-Requested-With': 'XMLHttpRequest',
@@ -657,7 +662,7 @@ def sdei_list(source, page):
     payload = json.loads(
         fetch(url, params, referer=referer, extra_headers=extra_headers, request_stage='positions_list')
         if positions else
-        fetch(url + '?' + urllib.parse.urlencode(params), referer=referer, extra_headers=extra_headers, request_stage='announcements_list')
+        fetch(url + '?' + urllib.parse.urlencode(params), referer=referer, extra_headers=extra_headers, request_stage='talks_list' if talks else 'announcements_list')
     )
     if not isinstance(payload.get('rows'), list) or 'total' not in payload:
         raise ValueError('public list response missing rows/total')
@@ -677,6 +682,14 @@ def sdei_list(source, page):
             published = (row.get('starttime') or row.get('createtime') or '')[:10] or None
             item = {'url': url, 'title': title, 'published_at': published, 'inline_html': '<div id="zoom">' + body + '</div>',
                     'structured': row, 'kind': '具体岗位'}
+        elif talks:
+            if not row.get('id') or not row.get('fairName'):
+                raise ValueError('talk list missing id/fairName')
+            item = {'url': base + 'school/TblCareerFairReviewRecord/detail/' + urllib.parse.quote(str(row['id']), safe=''),
+                    'title': str(row['fairName']), 'published_at': None,
+                    'structured': row, 'kind': '招聘公告'}
+            # fairDate is the event date, not publication or application expiry.
+            # Always read the detail; the list cannot verify jobs or work cities.
         else:
             title = row['gonggaoTitle']
             url = base + 'jiuye/zhaopingg/detail/' + str(row['gonggaoId'])
@@ -1209,9 +1222,14 @@ def requires_position_detail(job):
 def publishable_job(job):
     if job.get('detail_verification') == 'failed':
         return False
-    if requires_position_detail(job):
+    if requires_verified_detail(job):
         return job.get('detail_verification') == 'verified'
     return True
+
+
+def requires_verified_detail(job):
+    url = job.get('source_url') or job.get('url') or ''
+    return requires_position_detail(job) or '/school/TblCareerFairReviewRecord/detail/' in url
 
 
 def parse_sdei_position_detail(html, item, source):
@@ -1289,7 +1307,30 @@ def parse_detail(html, item, source):
     metas={n.attrs.get('name','').lower():n.attrs.get('content','') for n in root.find('meta')}
     structured=item.get('structured') or {}
     fields={}
-    if source.get('adapter')=='wondercv':
+    if source.get('channel') == 'talks':
+        page_text = clean(root.text())
+        if not re.search(r'宣讲时间|宣讲类别|宣讲学校', page_text):
+            raise ValueError('talk detail missing event information')
+        # Select the recruitment article, excluding school navigation, event
+        # location and gated contacts. Retain its tables and QR images.
+        candidates = [n for n in root.find() if n.tag in {'div', 'article', 'section'}
+                      and re.search(r'招聘对象|招聘岗位|岗位及专业|招聘简章|招聘需求', n.text())
+                      and re.search(r'工作地点|简历投递|投递简历|投递方式|投递邮箱|招聘流程|网申|应聘方式|应聘流程', n.text())]
+        if not candidates:
+            raise ValueError('talk detail missing recruitment content')
+        body = min(candidates, key=lambda n: len(n.text()))
+        title = item['title']
+        match = re.search(r'单位名称\s*[：:]\s*([^\n]+)', page_text)
+        company = re.split(r'联系人\s*[：:]|单位地址\s*[：:]', match[1])[0].strip() if match else ''
+        if not company:
+            for key in ('companyName', 'enterpriseName'):
+                value = structured.get(key)
+                if isinstance(value, str) and value.strip():
+                    company = value.strip()
+                    break
+        published_match = re.search(r'发布日期\s*[：:]\s*(20\d{2}-\d{2}-\d{2})', page_text)
+        published = published_match[1] if published_match else None
+    elif source.get('adapter')=='wondercv':
         titles=root.find(cls='hero-title')
         if not titles: raise ValueError('public recruitment title missing')
         title=clean(titles[0].text())
@@ -1501,6 +1542,23 @@ def parse_detail(html, item, source):
             'application_url':application_url,'emails':emails,'attachments':attachments,'links':links[:20],
             'qr_attachment':bool(re.search(r'扫码|二维码',text)),
             'excerpt':text[:300],'body':text[:18000], 'classification_note':'标签根据公告文字整理；具体岗位资格请核对原文。'})
+    if source.get('channel') == 'talks':
+        raw_job['detail_verification'] = 'verified'
+        raw_job['classification_note'] = '宣讲会中的招聘简章；工作地点按招聘正文提取，宣讲结束不代表网申截止。'
+        # Append event metadata only after extracting recruitment facts. Venue
+        # and event dates must never seed work-city or deadline inference.
+        event_lines = []
+        for label, pattern in (
+            ('宣讲时间', r'宣讲时间\s*[：:]\s*([^\n]+)'),
+            ('宣讲学校', r'宣讲学校\s*[：:]\s*([^\n]+)'),
+            ('举办地点', r'举办地点\s*[：:]\s*([^\n]+)'),
+        ):
+            event_match = re.search(pattern, page_text)
+            if event_match:
+                value = re.split(r'宣讲学校\s*[：:]|举办地点\s*[：:]', event_match[1])[0].strip()
+                event_lines.append(f'{label}：{value}')
+        if event_lines:
+            raw_job['body'] += '\n\n宣讲活动信息：\n' + '\n'.join(event_lines)
     return enrich_job_with_positions(raw_job, positions)
 
 
@@ -2422,6 +2480,8 @@ def run(args):
             offerjack_cities=([args.target_city] if args.target_city else ['']+CITIES) if is_offerjack else []
             offerjack_query_limit=(getattr(args,'offerjack_pages',0) or 1000) if is_offerjack else 0
             page_budget=offerjack_query_limit*len(offerjack_cities) if is_offerjack else args.pages
+            if source.get('channel') == 'talks':
+                page_budget = min(page_budget, 2)
             offerjack_city_index=0
             offerjack_page=1
             offerjack_limited=False
@@ -2569,7 +2629,7 @@ def run(args):
                         'inventory_complete':False, 'inventory_ids':[],
                     })
                 # Safe early exit for reverse-chronological feeds when all items already exist
-                is_chrono_feed = source.get('adapter') in {'sdei', 'sdei_news', 'jinan_cms', 'qdhrss'}
+                is_chrono_feed = source.get('adapter') in {'sdei', 'sdei_news', 'jinan_cms', 'qdhrss'} and source.get('channel') != 'talks'
                 prev_ok = prior_source.get('status') == 'ok' and not prior_source.get('errors')
                 prev_complete = (prior_source.get('list_complete') is True) and is_history_complete
                 no_pending = not previous.get('pending', {}).get(source['id'])
@@ -2719,6 +2779,8 @@ def run(args):
 
             probe_candidates.sort(key=lambda j:j.get('last_verified_at') or '')
             probe_budget=getattr(args,'probe_budget',10)
+            if source.get('channel') == 'talks':
+                probe_budget = min(probe_budget, 1)
             selected_probes=probe_candidates[:probe_budget]
             status['probed']=len(selected_probes)
 
@@ -2789,7 +2851,7 @@ def run(args):
                 return res
             def add_list_fallback(item):
                 """Keep a new list discovery visible when its detail is unavailable."""
-                if requires_position_detail(item):
+                if requires_verified_detail(item):
                     return
                 identifier=item_id(item)
                 if identifier in previous['jobs']:
@@ -2809,7 +2871,7 @@ def run(args):
                 # Only an explicit missing page or invalid detail body hides it.
                 invalid_detail = (isinstance(error, ValueError) or
                                   isinstance(error, urllib.error.HTTPError) and error.code in (404, 410))
-                if requires_position_detail(item) and invalid_detail:
+                if requires_verified_detail(item) and invalid_detail:
                     old = previous['jobs'].get(item.get('target_id') or item_id(item))
                     if old:
                         hidden = dict(old, detail_verification='failed')

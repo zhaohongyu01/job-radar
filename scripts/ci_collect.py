@@ -453,7 +453,12 @@ def merge_shards(public_dir, data_dir, shards_dir, days=30, expected_shards=None
         merged['sources'].get(identifier, {}).get('status') != 'ok'
         for identifier in expected_source_ids
     ) else 0
-    validate_result(code, merged, snapshot, list(baseline.get('jobs', {})), started)
+    try:
+        from coverage_report import build_coverage_report
+    except ImportError:
+        from scripts.coverage_report import build_coverage_report
+    atomic_json(Path(data_dir) / 'coverage-changes.json',
+                build_coverage_report(baseline, merged, snapshot))
     atomic_json(Path(data_dir) / 'published-baseline.json', {
         'generated_at':snapshot['generated_at'],
         'index_sha256':hashlib.sha256((Path(public_dir)/'jobs.json').read_bytes()).hexdigest(),
@@ -546,6 +551,7 @@ def run_source(definition, prior, args, budget):
         command = [sys.executable, '-u', str(ROOT/'scripts/collect.py'), '--data-dir', str(directory),
                    '--public-dir', str(directory/'public'), '--state-only', '--sources', definition['id'],
                    '--pages', str(args.pages), '--days', str(args.days), '--offerjack-pages', '1',
+                   '--history-days', str(getattr(args, 'history_days', 180)),
                    '--refresh-hours', str(args.refresh_hours), '--probe-budget', str(getattr(args,'probe_budget',10)),
                    '--detail-timeout', str(getattr(args,'detail_timeout',8)),
                    '--detail-retries', str(getattr(args,'detail_retries',1)),
@@ -679,35 +685,6 @@ def collect(args):
                     write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
                                  state, source_filter=selected, pack_name=source_pack, emit_summary=False)
                     continue
-            if channel == 'positions' and not is_deep_scan and not getattr(args, 'force_positions', False):
-                announcements_id = f'{school}-announcements'
-                ann_status = state['sources'].get(announcements_id, {})
-                has_activity = (school in schools_with_new_announcements or ann_status.get('has_new_announcements', False))
-                last_succ = prior_source.get('last_success_at')
-                is_stale = True
-                if last_succ and prior_source.get('status') in {'ok', 'deferred'} and not prior_source.get('errors') and prior_source.get('list_complete') is not False:
-                    try:
-                        is_stale = (dt.datetime.now(TZ) - dt.datetime.fromisoformat(last_succ)).total_seconds() > 72 * 3600
-                    except Exception:
-                        is_stale = True
-                if not (has_activity or is_stale):
-                    now = dt.datetime.now(TZ).isoformat(timespec='seconds')
-                    status = make_idle_source_status(
-                        definition, status='deferred', last_attempt_at=now,
-                        coverage='具体岗位按需联动：本轮对应招聘公告无新增或变更且数据新鲜，暂缓查询具体岗位',
-                        last_success_at=prior['sources'].get(identifier, {}).get('last_success_at')
-                    )
-                    if 'total_items' in prior_source:
-                        status['total_items'] = prior_source['total_items']
-                    if 'blocked_until' in prior_source:
-                        status['blocked_until'] = prior_source['blocked_until']
-                    result = dict(prior, sources={identifier: status}, last_run_at=now)
-                    combine_states(result)
-                    state['sources'][identifier] = status
-                    atomic_json(args.data_dir / 'state.json', state)
-                    write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
-                                 state, source_filter=selected, pack_name=source_pack, emit_summary=False)
-                    continue
         if budget <= 1 or len(host_rejections.get(host, set())) >= 2:
             now = dt.datetime.now(TZ).isoformat(timespec='seconds')
             is_host_blocked = len(host_rejections.get(host, set())) >= 2
@@ -764,6 +741,7 @@ if __name__ == '__main__':
     parser.add_argument('--site', default='')
     parser.add_argument('--pages', type=int, default=5)
     parser.add_argument('--days', type=int, default=30)
+    parser.add_argument('--history-days', type=int, choices=range(1,366), default=180, metavar='1..365')
     parser.add_argument('--sources', default='', help='comma-separated source ids for one collection shard')
     parser.add_argument('--source-pack', choices=sorted(SOURCE_PACKS), default='', help='predefined source pack for one collection shard')
     parser.add_argument('--shards-dir', type=Path, default=ROOT / 'data' / 'shards', help='downloaded collector shard artifact directory')

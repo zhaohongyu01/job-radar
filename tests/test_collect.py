@@ -1,3 +1,5 @@
+import contextlib
+import io
 import datetime as dt
 import importlib.util
 import unittest
@@ -1299,7 +1301,7 @@ class CollectionTests(unittest.TestCase):
                     source['id']: {
                         'id': source['id'],
                         'status': 'ok',
-                        'total_items': 10,
+                        'total_items': 1,
                         'list_complete': True,
                     }
                 },
@@ -1319,9 +1321,12 @@ class CollectionTests(unittest.TestCase):
             fetch_called_pages = []
             def fake_sdei_list(src, page):
                 fetch_called_pages.append(page)
-                return [item], 10
+                return [item], 1
 
-            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list), \
+                 patch.object(c, 'fetch', side_effect=AssertionError('unexpected network')), \
+                 patch.object(c, 'fetch_bytes', side_effect=AssertionError('unexpected attachment')), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 res = c.run(args)
 
             self.assertEqual(res, 0)
@@ -1329,6 +1334,69 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(fetch_called_pages, [1])
             new_state = json.loads(state_path.read_text(encoding='utf-8'))
             self.assertTrue(new_state['sources'][source['id']].get('early_exit'))
+            self.assertEqual(len(new_state['jobs']), 1)
+            self.assertEqual(new_state['sources'][source['id']].get('total_items'), 1)
+
+    def test_resumable_feed_continues_when_history_incomplete(self):
+        source = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
+        stamp = '2026-09-10'
+        item = {
+            'url': 'https://school.gxjy.sdei.edu.cn/front/news/detail/1001',
+            'title': '测试公告已在库中',
+            'published_at': stamp,
+            'inline_html': '<div id="zoom">测试内容</div>',
+        }
+        item_job_id = c.item_id(item)
+        with TemporaryDirectory() as temp:
+            # Seed state with this job, but list_complete is False
+            state = {
+                'jobs': {
+                    item_job_id: {
+                        'id': item_job_id,
+                        'source_id': source['id'],
+                        'published_at': stamp,
+                        'url': item['url'],
+                    }
+                },
+                'sources': {
+                    source['id']: {
+                        'id': source['id'],
+                        'status': 'ok',
+                        'total_items': 10,
+                        'list_complete': False,
+                        'resume_page': 2,
+                    }
+                },
+                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'pending': {}
+            }
+            state_path = Path(temp) / 'state.json'
+            state_path.write_text(json.dumps(state), encoding='utf-8')
+
+            args = SimpleNamespace(
+                data_dir=temp, public_dir=temp, sources=source['id'], pages=5, days=180,
+                refresh_hours=0, nankai_area=0, target_city='', offerjack_pages=1,
+                detail_timeout=1, detail_retries=0, detail_failure_limit=3,
+                deep_scan=False, force_positions=False, sdei_group=None
+            )
+
+            fetch_called_pages = []
+            def fake_sdei_list(src, page):
+                fetch_called_pages.append(page)
+                return [dict(item, url=item['url'] if page == 1 else f'https://example.test/{page}')], 10
+
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list), \
+                 patch.object(c, 'fetch', side_effect=AssertionError('unexpected network')), \
+                 patch.object(c, 'fetch_bytes', side_effect=AssertionError('unexpected attachment')), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                res = c.run(args)
+
+            self.assertEqual(res, 0)
+            # Incomplete history must continue bounded historical sweep.
+            self.assertEqual(fetch_called_pages, [1, 2, 3, 4, 5])
+            new_state = json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertFalse(new_state['sources'][source['id']].get('early_exit', False))
+            self.assertEqual(len(new_state['jobs']), 5)
             self.assertEqual(new_state['sources'][source['id']].get('total_items'), 10)
 
     def test_safe_early_exit_bypassed_when_total_increased(self):
@@ -1393,7 +1461,7 @@ class CollectionTests(unittest.TestCase):
             new_state = json.loads(state_path.read_text(encoding='utf-8'))
             self.assertFalse(new_state['sources'][source['id']].get('early_exit', False))
 
-    def test_sdei_positions_deferred_when_announcements_have_no_new_items(self):
+    def test_sdei_positions_checked_when_announcements_have_no_new_items(self):
         source_ann = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')
         source_pos = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-positions')
         stamp = '2026-09-10'
@@ -1437,14 +1505,17 @@ class CollectionTests(unittest.TestCase):
                     positions_called.append(True)
                 return [item], 10
 
-            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list):
+            with patch.object(c, 'sdei_list', side_effect=fake_sdei_list), \
+                 patch.object(c, 'fetch', side_effect=AssertionError('unexpected network')), \
+                 patch.object(c, 'fetch_bytes', side_effect=AssertionError('unexpected attachment')), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 res = c.run(args)
 
             self.assertEqual(res, 0)
-            self.assertEqual(len(positions_called), 0)
+            self.assertEqual(len(positions_called), 1)
             new_state = json.loads(state_path.read_text(encoding='utf-8'))
-            self.assertEqual(new_state['sources'][source_pos['id']]['status'], 'deferred')
-            self.assertEqual(new_state['sources'][source_pos['id']]['total_items'], 5)
+            self.assertEqual(new_state['sources'][source_pos['id']]['status'], 'ok')
+            self.assertEqual(new_state['sources'][source_pos['id']]['total_items'], 10)
 
     def test_sdei_positions_runs_when_stale_even_if_announcements_unchanged(self):
         source_ann = next(s for s in c.SOURCES if s['id'] == 'jobsdufe-announcements')

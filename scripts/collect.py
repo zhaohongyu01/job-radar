@@ -2325,7 +2325,13 @@ def run(args):
         if source_filter and source_filter != pack_source_ids:
             raise ValueError('--sources and --source-pack select different source sets')
         source_filter = pack_source_ids
-    is_deep_scan = bool(getattr(args, 'deep_scan', False) or dt.datetime.now(TZ).weekday() == 6)
+    deep_scan_arg = getattr(args, 'deep_scan', None)
+    if deep_scan_arg is True:
+        is_deep_scan = True
+    elif deep_scan_arg is False:
+        is_deep_scan = False
+    else:
+        is_deep_scan = (dt.datetime.now(TZ).weekday() == 6)
     active_sdei_schools, sdei_group = get_active_sdei_schools(
         now_dt=dt.datetime.now(TZ),
         force_group=getattr(args, 'sdei_group', None),
@@ -2400,27 +2406,6 @@ def run(args):
                         sources[source['id']] = status
                         print(source['id'], 'deferred 0 0', flush=True)
                         continue
-                if channel == 'positions' and not is_deep_scan and not getattr(args, 'force_positions', False):
-                    announcements_id = f'{school}-announcements'
-                    ann_status = sources.get(announcements_id, {})
-                    has_activity = (school in schools_with_new_announcements or ann_status.get('has_new_announcements', False))
-                    last_succ = prior_source.get('last_success_at')
-                    is_stale = True
-                    if last_succ and prior_source.get('status') in {'ok', 'deferred'} and not prior_source.get('errors') and prior_source.get('list_complete') is not False:
-                        try:
-                            is_stale = (dt.datetime.now(TZ) - dt.datetime.fromisoformat(last_succ)).total_seconds() > 72 * 3600
-                        except Exception:
-                            is_stale = True
-                    if not (has_activity or is_stale):
-                        status['status'] = 'deferred'
-                        status['coverage'] = '具体岗位按需联动：本轮对应招聘公告无新增或变更且数据新鲜，暂缓查询具体岗位'
-                        if 'total_items' in prior_source:
-                            status['total_items'] = prior_source['total_items']
-                        if 'blocked_until' in prior_source:
-                            status['blocked_until'] = prior_source['blocked_until']
-                        sources[source['id']] = status
-                        print(source['id'], 'deferred 0 0', flush=True)
-                        continue
         try:
             api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus'}
             first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
@@ -2441,6 +2426,10 @@ def run(args):
             # detection; SDU follows opaque next-page links; OfferJack has cities.
             resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv'}
                          or source['id'] in {'nankai', 'jinan'})
+            # Reuse the bounded page budget for a rolling historical sweep.
+            history_days = max(args.days, getattr(args, 'history_days', 180)) if resumable else args.days
+            cutoff = (dt.datetime.now(TZ) - dt.timedelta(days=history_days)).date().isoformat()
+            status['history_days'] = history_days
             resume_page = max(2, int(prior_source.get('resume_page') or 2)) if resumable else 2
             resumed_tail = resumable and (resume_page > 2 or
                 (page_budget == 1 and int(prior_source.get('resume_page') or 1) > 1))
@@ -2547,6 +2536,7 @@ def run(args):
                 no_pending = not previous.get('pending', {}).get(source['id'])
                 if (is_chrono_feed and not is_deep_scan and found and page == 1
                         and prev_ok and prev_complete and no_pending
+                        and not resumed_tail
                         and prior_source.get('early_exit_safe', True)):
                     source_known = [j for j in previous['jobs'].values() if j.get('source_id') == source['id']]
                     prev_total = prior_source.get('total_items')
@@ -2586,7 +2576,7 @@ def run(args):
                 if (found and not any(i.get('is_active_listing') for i in found) and
                         all(i['published_at'] and i['published_at']<cutoff for i in found)):
                     list_complete = True
-                    status['coverage']=f'已读至 {args.days} 天前；更早公告未读取'
+                    status['coverage']=f'已读至 {history_days} 天前；更早公告未读取'
                     break
             else:
                 list_complete = False
@@ -2971,6 +2961,7 @@ if __name__=='__main__':
     parser.add_argument('--pages',type=int,default=100)
     parser.add_argument('--rate-state',default='',help='shared host scheduler SQLite path for CI source workers')
     parser.add_argument('--days',type=int,default=120)
+    parser.add_argument('--history-days',type=int,choices=range(1,366),default=180,metavar='1..365',help='rolling historical window for resumable sources; same page budget')
     parser.add_argument('--sources',default='',help='comma-separated source ids; omitted sources retain previous state')
     parser.add_argument('--state-only',action='store_true',help='save raw source results without rebuilding public assets')
     parser.add_argument('--source-pack',choices=sorted(SOURCE_PACKS),default='',help='collect one predefined CI source pack')
@@ -2985,8 +2976,8 @@ if __name__=='__main__':
     parser.add_argument('--detail-retries',type=int,default=1,help='number of retries for an individual detail page')
     parser.add_argument('--detail-failure-limit',type=int,default=6,help='open a source circuit after this many consecutive detail failures')
     parser.add_argument('--sdei-group',type=int,default=None,help='override SDEI rotation group index (0..3)')
-    parser.add_argument('--deep-scan',action='store_true',help='bypass safe early exit and scan all rotation groups and positions')
-    parser.add_argument('--force-positions',action='store_true',help='force scanning SDEI position endpoints even if announcements have no updates')
+    parser.add_argument('--deep-scan',dest='deep_scan',default=None,action='store_true',help='bypass safe early exit and scan all rotation groups and positions')
+    parser.add_argument('--force-positions',action='store_true',help='compatibility flag; active schools now scan position lists independently')
     args=parser.parse_args()
     if not 1<=args.pages<=500 or not 1<=args.days<=365: parser.error('pages 1..500; days 1..365')
     if not 0<=args.offerjack_pages<=1000: parser.error('offerjack-pages 0..1000')

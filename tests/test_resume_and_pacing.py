@@ -107,25 +107,42 @@ class SharedPacingTests(unittest.TestCase):
                 'sys.path.insert(0,sys.argv[1])\n'
                 'import collector_runtime as r\n'
                 'r.configure_shared_pacing(sys.argv[2])\n'
+                'def unexpected_sleep(seconds):\n    raise AssertionError("unexpected real wait")\n'
+                'r.time.sleep=unexpected_sleep\n'
                 'r.random.uniform=lambda a,b: 0\n' + action)
         return [sys.executable, '-c', code, str(ROOT / 'scripts'), str(database)]
 
     def test_separate_workers_share_request_slots(self):
         with TemporaryDirectory() as tmp:
             database = Path(tmp) / 'rate.sqlite'
-            command = self.command(database, "r.pace('https://example.test/a')\nprint(time.time())")
+            command = self.command(database,
+                "r.time.time=lambda: 100.0\nprint(r.shared_slot('example.test', interval=0.3))")
             # Run overlapping processes to exercise the transaction, not merely
             # a single interpreter's module globals.
             processes = [subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                          for _ in range(3)]
-            stamps = []
-            for process in processes:
-                output, error = process.communicate(timeout=15)
-                self.assertEqual(process.returncode, 0, error)
-                stamps.append(float(output.strip()))
-            stamps.sort()
-            self.assertGreaterEqual(stamps[1] - stamps[0], 0.15)
-            self.assertGreaterEqual(stamps[2] - stamps[1], 0.15)
+            delays = []
+            try:
+                for process in processes:
+                    output, error = process.communicate(timeout=15)
+                    self.assertEqual(process.returncode, 0, error)
+                    delays.append(float(output.strip()))
+            finally:
+                for process in processes:
+                    if process.poll() is None:
+                        process.kill()
+                    process.communicate(timeout=5)
+            # All workers observe the same logical instant. Exactly one gets
+            # admitted; the others must wait, without reserving future slots.
+            delays.sort()
+            self.assertEqual(delays[0], 0)
+            self.assertAlmostEqual(delays[1], 0.3)
+            self.assertAlmostEqual(delays[2], 0.3)
+            later = subprocess.run(self.command(database,
+                "r.time.time=lambda: 100.3\nprint(r.shared_slot('example.test', interval=0.3))"),
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(later.returncode, 0, later.stderr)
+            self.assertEqual(float(later.stdout.strip()), 0)
 
     def test_first_request_with_shared_pacing_does_not_exhaust_budget(self):
         with TemporaryDirectory() as tmp:
@@ -163,6 +180,85 @@ class SharedPacingTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('HostPaused', result.stderr)
+
+
+class PacingWakeupTests(unittest.TestCase):
+    def setUp(self):
+        import collector_runtime as r
+        self.r = r
+        self.clock = 100.0
+        self.sleeps = []
+        self.enterContext(patch.object(r, 'time', SimpleNamespace(
+            time=lambda: self.clock, monotonic=lambda: self.clock, sleep=self.advance)))
+        self.enterContext(patch.object(r.random, 'uniform', return_value=0))
+        self.enterContext(patch.object(r, '_shared_path', None))
+        self.enterContext(patch.dict(r._next_request, {}, clear=True))
+        self.enterContext(patch.dict(r._paused, {}, clear=True))
+        self.enterContext(patch.object(r._local, 'deadline', None, create=True))
+        self.directory = self.enterContext(TemporaryDirectory())
+
+    def advance(self, seconds):
+        self.sleeps.append(seconds)
+        self.assertLess(len(self.sleeps), 6, 'pacing failed to converge')
+        self.clock += seconds + 0.000001
+
+    def test_delayed_wakeup_rechecks_admission_for_shared_and_local_pacing(self):
+        for shared in (False, True):
+            with self.subTest(shared=shared):
+                self.clock = 100.0
+                self.sleeps.clear()
+                self.r._next_request.clear()
+                self.r.configure_shared_pacing(Path(self.directory)/'delayed.sqlite' if shared else None)
+                self.r.pace('https://example.test/a')
+
+                def delayed_wakeup(seconds):
+                    self.advance(seconds)
+                    if len(self.sleeps) == 1:
+                        self.clock = 101.0  # this worker overslept
+                        # Another worker was admitted before this one resumed.
+                        if shared:
+                            self.assertEqual(self.r.shared_slot('example.test', interval=0.3), 0)
+                        else:
+                            self.r._next_request['example.test'] = self.clock + 0.3
+
+                with patch.object(self.r.time, 'sleep', side_effect=delayed_wakeup):
+                    self.r.pace('https://example.test/b')
+                self.assertEqual(len(self.sleeps), 2)
+                self.assertGreaterEqual(self.clock, 101.3)
+
+    def test_rejection_during_wait_is_rechecked_and_other_host_is_unaffected(self):
+        for shared in (False, True):
+            with self.subTest(shared=shared):
+                self.clock = 100.0
+                self.sleeps.clear()
+                self.r._next_request.clear()
+                self.r._paused.clear()
+                self.r.configure_shared_pacing(Path(self.directory)/'paused.sqlite' if shared else None)
+                self.r.pace('https://example.test/a')
+
+                def reject_during_wait(seconds):
+                    self.advance(seconds)
+                    if shared:
+                        self.r.shared_slot('example.test', pause_seconds=20)
+                    else:
+                        self.r._paused['example.test'] = self.clock + 20
+
+                with patch.object(self.r.time, 'sleep', side_effect=reject_during_wait):
+                    with self.assertRaises(self.r.HostPaused):
+                        self.r.pace('https://example.test/b')
+                    self.r.pace('https://other.test/a')
+                self.assertEqual(len(self.sleeps), 1)
+
+    def test_budget_exhaustion_does_not_sleep_or_reserve_a_future_slot(self):
+        self.r.configure_shared_pacing(Path(self.directory)/'budget.sqlite')
+        with self.r.request_budget(0.1):
+            self.r.pace('https://example.test/a')  # first zero-wait request
+            with self.assertRaises(TimeoutError):
+                self.r.pace('https://example.test/b')
+        self.assertEqual(self.sleeps, [])
+        self.clock = 100.3
+        self.r.pace('https://example.test/c')
+        self.assertEqual(self.sleeps, [])
 
 
 if __name__ == '__main__':

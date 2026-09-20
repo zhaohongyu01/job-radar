@@ -33,15 +33,15 @@ def configure_shared_pacing(path):
     global _shared_path
     _shared_path = os.fspath(path) if path else None
     if _shared_path:
-        with sqlite3.connect(_shared_path, timeout=5) as db:
+        with contextlib.closing(sqlite3.connect(_shared_path, timeout=5)) as db, db:
             db.execute('CREATE TABLE IF NOT EXISTS hosts '
                        '(host TEXT PRIMARY KEY, next_request REAL NOT NULL, paused_until REAL NOT NULL)')
 
 
 def shared_slot(host, interval=0, pause_seconds=0):
-    # BEGIN IMMEDIATE serializes reservations across processes. SQLite releases
+    # BEGIN IMMEDIATE serializes admissions across processes. SQLite releases
     # its lock even if a worker is killed by the source wall-clock budget.
-    with sqlite3.connect(_shared_path, timeout=remaining(5)) as db:
+    with contextlib.closing(sqlite3.connect(_shared_path, timeout=remaining(5))) as db, db:
         db.execute('BEGIN IMMEDIATE')
         now = time.time()
         row = db.execute('SELECT next_request, paused_until FROM hosts WHERE host=?', (host,)).fetchone()
@@ -54,7 +54,11 @@ def shared_slot(host, interval=0, pause_seconds=0):
             delay = max(0.0, next_at - now)
             if delay > 0 and remaining(delay) < delay:
                 raise TimeoutError('request budget exhausted while rate limiting')
-            next_at = now + delay + interval
+            if delay > 0:
+                # Do not reserve a future slot. A delayed sleeper must check
+                # again, including any rejection recorded while it slept.
+                return delay
+            next_at = now + interval
         db.execute('INSERT OR REPLACE INTO hosts VALUES (?, ?, ?)', (host, next_at, paused_until))
     return 0 if pause_seconds else delay
 
@@ -94,24 +98,27 @@ def remaining(timeout):
 
 def pace(url):
     host = urllib.parse.urlsplit(url).netloc
-    with _lock:
-        if _paused.get(host, 0) > time.monotonic():
-            raise HostPaused('host paused after HTTP 403/420/429: ' + host,
-                             _paused[host] - time.monotonic())
-        now = time.monotonic()
-        # SDEI shared school platform runs on a dedicated slow channel with jitter.
-        if host == 'school.gxjy.sdei.edu.cn':
-            interval = random.uniform(3.0, 4.5)
-        elif host.endswith('.gov.cn'):
-            interval = random.uniform(1.8, 2.8)
-        else:
-            interval = 0.3 + random.uniform(0, 0.2)
-        if _shared_path:
-            delay = shared_slot(host, interval=interval)
-        else:
-            delay = max(0.0, _next_request.get(host, 0) - now)
-            _next_request[host] = now + delay + interval
-    if delay > 0:
+    # Choose jitter once per request, not once per contention retry.
+    if host == 'school.gxjy.sdei.edu.cn':
+        interval = random.uniform(3.0, 4.5)
+    elif host.endswith('.gov.cn'):
+        interval = random.uniform(1.8, 2.8)
+    else:
+        interval = 0.3 + random.uniform(0, 0.2)
+    while True:
+        with _lock:
+            now = time.monotonic()
+            if _paused.get(host, 0) > now:
+                raise HostPaused('host paused after HTTP 403/420/429: ' + host,
+                                 _paused[host] - now)
+            if _shared_path:
+                delay = shared_slot(host, interval=interval)
+            else:
+                delay = max(0.0, _next_request.get(host, 0) - now)
+                if delay == 0:
+                    _next_request[host] = now + interval
+        if delay == 0:
+            return
         if remaining(delay) < delay:
             raise TimeoutError('request budget exhausted while rate limiting')
         time.sleep(delay)

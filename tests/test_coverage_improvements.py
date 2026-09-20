@@ -584,6 +584,49 @@ class CoverageImprovements(unittest.TestCase):
         self.assertEqual(events_exp['newly_expired'][0]['id'], 'main')
         self.assertEqual(events_exp['newly_expired'][0]['duplicate_ids'], ['dup1', 'dup2'])
 
+    def test_collect_detail_queue_prioritizes_fresh_and_unverified_jobs(self):
+        with TemporaryDirectory() as tmp:
+            now_iso = c.dt.datetime.now(c.TZ).isoformat()
+            today_iso = c.dt.datetime.now(c.TZ).date().isoformat()
+            items_list = [
+                {'url': 'https://example.test/cached', 'title': '已发布老公告', 'published_at': today_iso},
+                {'url': 'https://example.test/fresh', 'title': '全新未核验公告', 'published_at': today_iso},
+            ]
+            job_cached_id = c.item_id(items_list[0])
+            state = {
+                'jobs': {
+                    job_cached_id: {
+                        'id': job_cached_id, 'source_id': 'jobsdufe-announcements',
+                        'title': '已发布老公告', 'url': 'https://example.test/cached',
+                        'detail_verification': 'verified',
+                        'last_verified_at': (c.dt.datetime.now(c.TZ) - c.dt.timedelta(hours=50)).isoformat(),
+                        'cities': ['济南']
+                    }
+                },
+                'sources': {},
+                'pending': {},
+                'last_run_at': now_iso
+            }
+            c.atomic_json(Path(tmp)/'state.json', state)
+            def listing(source, page):
+                return items_list, 1
+
+            parsed_order = []
+            def fake_fetch(url, *args, **kwargs):
+                parsed_order.append(url)
+                return '<div id="zoom">工作地点：济南\n校园招聘2027届毕业生</div>'
+
+            with patch.object(c, 'sdei_list', side_effect=listing), \
+                 patch.object(c, 'fetch', side_effect=fake_fetch):
+                args = self.args(tmp, sources='jobsdufe-announcements', pages=1)
+                args.refresh_hours = 24
+                c.run(args)
+
+            self.assertEqual(parsed_order, ['https://example.test/fresh', 'https://example.test/cached'])
+            self.assertEqual(parsed_order[0], 'https://example.test/fresh')
+            self.assertEqual(parsed_order[1], 'https://example.test/cached')
+
+
 
 
 

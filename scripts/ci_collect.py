@@ -581,20 +581,31 @@ def collect(args):
     definitions = [source for source in SOURCES if not selected or source['id'] in selected]
     if not definitions or selected - {source['id'] for source in definitions}:
         raise ValueError('Unknown or empty source selection')
-    # Supplemental talks never displace the existing source order. Rotate
-    # their priority each scheduled half-day to avoid starving later schools.
-    talks = [s for s in definitions if s.get('channel') == 'talks']
-    if talks:
-        clock = dt.datetime.now(TZ)
-        offset = (clock.toordinal() * 2 + clock.hour // 12) % len(talks)
-        definitions = [s for s in definitions if s.get('channel') != 'talks'] + talks[offset:] + talks[:offset]
-    talks_remaining = 120.0
+    def source_priority(source):
+        prior = baseline.get('sources', {}).get(source['id'], {})
+        # Skipping a source is not an actual list read. Keep a separate durable
+        # timestamp, including across deferred runs and checkpoint recovery.
+        last_read = prior.get('last_list_read_at') or prior.get('last_success_at') or ''
+        if not prior.get('last_list_read_at') and prior.get('pages', 0):
+            last_read = prior.get('last_attempt_at') or last_read
+        return (last_read, source.get('school') not in collector.CORE_SDEI_SCHOOLS,
+                not bool(baseline.get('pending', {}).get(source['id'])), source['id'])
+
+    # Spend the reserved allowance FIRST so a busy legacy backlog cannot
+    # consume it. Unused allowance automatically remains available below.
+    talks = sorted((s for s in definitions if s.get('channel') == 'talks'), key=source_priority)
+    schools = sorted((s for s in definitions if s.get('adapter') == 'sdei' and s.get('channel') != 'talks'), key=source_priority)
+    others = [s for s in definitions if s.get('adapter') != 'sdei']
+    definitions = talks + others + schools
+    talks_remaining = 180.0
     deadline = time.monotonic() + float(getattr(args, 'shard_budget', 1080))
     state = {'jobs':{}, 'sources':{}, 'pending':{}, 'last_run_at':baseline['last_run_at'],
              'delta_version':1, 'base_generation':baseline['last_run_at'], 'source_pack':source_pack}
     atomic_json(args.data_dir / 'state.json', state)
     host_rejections = {}
-    is_deep_scan = bool(getattr(args, 'deep_scan', False) or dt.datetime.now(TZ).weekday() == 6)
+    # Routine Sunday runs use the same rotation; history continues via cursors.
+    # Only an explicit operator request expands the run to all schools.
+    is_deep_scan = bool(getattr(args, 'deep_scan', False))
     active_sdei_schools, sdei_group = collector.get_active_sdei_schools(
         now_dt=dt.datetime.now(TZ),
         force_group=getattr(args, 'sdei_group', None),
@@ -703,7 +714,7 @@ def collect(args):
             reason = '分片达到软截止；下次继续' if budget <= 1 else '同主机多个订阅被拒绝，暂停本轮请求并保留历史'
             talks_deferred = definition.get('channel') == 'talks' and talks_remaining <= 1 and not is_host_blocked
             if talks_deferred:
-                reason = '宣讲会增量采集达到本轮120秒预算；保留历史及续采队列，下轮继续'
+                reason = '宣讲会增量采集达到本轮180秒预算；保留历史及续采队列，下轮继续'
             status = make_idle_source_status(
                 definition, status='blocked' if is_host_blocked else 'deferred' if talks_deferred else 'partial',
                 last_attempt_at=now, coverage=reason,
@@ -717,6 +728,11 @@ def collect(args):
         else:
             started_source = time.monotonic()
             result = run_source(definition, prior, args, budget)
+            result_status = result['sources'][identifier]
+            if result_status.get('pages', 0) > 0:
+                result_status['last_list_read_at'] = dt.datetime.now(TZ).isoformat(timespec='seconds')
+            elif prior_source.get('last_list_read_at'):
+                result_status['last_list_read_at'] = prior_source['last_list_read_at']
             if definition.get('channel') == 'talks':
                 talks_remaining -= time.monotonic() - started_source
         combine_states(result)

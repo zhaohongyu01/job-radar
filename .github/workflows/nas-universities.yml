@@ -32,7 +32,7 @@ jobs:
   collect:
     if: ${{ vars.UNIVERSITIES_B_RUNNER == 'nas' && github.event.repository.private }}
     runs-on: [self-hosted, linux, job-radar-nas]
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       GIT_CONFIG_COUNT: '4'
       GIT_CONFIG_KEY_0: 'http.version'
@@ -124,9 +124,9 @@ jobs:
           export no_proxy="$NO_PROXY"
           .nas-venv/bin/python scripts/ci_collect.py collect \
             --source-pack universities-b --data-dir data --public-dir public \
-            --pages 5 --days 30 --refresh-hours 72 \
+            --pages 2 --days 30 --refresh-hours 72 --probe-budget 1 \
             --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6 \
-            --source-budget 120 --shard-budget 900
+            --source-budget 120 --shard-budget 1500
 
       - name: Upload NAS delta
         if: ${{ always() && steps.collect.outcome != 'skipped' && hashFiles('data/state.json') != '' }}

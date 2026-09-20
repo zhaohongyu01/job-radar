@@ -442,6 +442,93 @@ class PipelineTests(unittest.TestCase):
             # jobsdufe-positions should have been called because its last_success_at is stale (>72h)
             self.assertIn('jobsdufe-positions', run_called)
 
+    def test_ci_collect_source_priority_and_last_list_read_at(self):
+        with TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            now = dt.datetime.now(c.TZ)
+            past_iso = (now - dt.timedelta(days=2)).isoformat(timespec='seconds')
+            baseline = {
+                'jobs': {},
+                'sources': {
+                    'sdei-news': {'id': 'sdei-news', 'status': 'ok', 'last_list_read_at': past_iso},
+                    'upc': {'id': 'upc', 'status': 'ok'}  # No last_list_read_at, should be prioritized!
+                },
+                'pending': {},
+                'last_run_at': past_iso
+            }
+            ci.atomic_json(data / 'state.json', baseline)
+            args = SimpleNamespace(
+                data_dir=data, sources='sdei-news,upc', source_pack='',
+                pages=1, days=30, refresh_hours=24, shard_budget=100, source_budget=10,
+                deep_scan=False, force_positions=False
+            )
+            order = []
+            def fake_run_source(defn, prior, a, budget):
+                order.append(defn['id'])
+                pages = 1 if defn['id'] == 'upc' else 0
+                return {'jobs': {}, 'sources': {defn['id']: {'id': defn['id'], 'name': defn['name'], 'status': 'ok',
+                                                             'pages': pages, 'errors': []}},
+                        'pending': {}, 'last_run_at': past_iso}
+            with patch.object(ci, 'run_source', side_effect=fake_run_source):
+                ci.collect(args)
+
+            # upc had no last_list_read_at, so it was prioritized over sdei-news
+            self.assertEqual(order, ['upc', 'sdei-news'])
+            state = ci.read_json(data / 'state.json')
+            # upc read pages=1, so last_list_read_at is updated to now
+            self.assertIn('last_list_read_at', state['sources']['upc'])
+            # sdei-news had pages=0, so its last_list_read_at remains past_iso
+            self.assertEqual(state['sources']['sdei-news']['last_list_read_at'], past_iso)
+
+    def test_ci_collect_talks_priority_and_180s_budget_deferral(self):
+        with TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            now = dt.datetime.now(c.TZ).isoformat(timespec='seconds')
+            baseline = {
+                'jobs': {},
+                'sources': {},
+                'pending': {},
+                'last_run_at': now
+            }
+            ci.atomic_json(data / 'state.json', baseline)
+            # 2 talk sources and 1 regular announcement source
+            sources_str = 'jobsdufe-talks,ujn-talks,jobsdufe-announcements'
+            args = SimpleNamespace(
+                data_dir=data, sources=sources_str, source_pack='',
+                pages=1, days=30, refresh_hours=24, shard_budget=1500, source_budget=120,
+                deep_scan=False, force_positions=False
+            )
+            executed = []
+            fake_clock = [1000.0]
+            def fake_time():
+                return fake_clock[0]
+
+            def fake_run_source(defn, prior, a, budget):
+                executed.append(defn['id'])
+                # First talk takes 180s, exhausting the 180s talk budget
+                if defn['id'] == 'jobsdufe-talks':
+                    fake_clock[0] += 180.0
+                return {'jobs': {}, 'sources': {defn['id']: {'id': defn['id'], 'name': defn['name'], 'status': 'ok',
+                                                             'pages': 1, 'errors': []}},
+                        'pending': {}, 'last_run_at': now}
+
+            with patch.object(ci.time, 'monotonic', side_effect=fake_time), \
+                 patch.object(ci, 'run_source', side_effect=fake_run_source):
+                ci.collect(args)
+
+            # jobsdufe-talks runs first.
+            # ujn-talks is deferred because talks_remaining <= 1.
+            # jobsdufe-announcements is a non-talk source, so it runs after talks!
+            self.assertIn('jobsdufe-talks', executed)
+            self.assertNotIn('ujn-talks', executed)
+            self.assertIn('jobsdufe-announcements', executed)
+
+            state = ci.read_json(data / 'state.json')
+            ujn_status = state['sources']['ujn-talks']
+            self.assertEqual(ujn_status['status'], 'deferred')
+            self.assertIn('180秒预算', ujn_status['coverage'])
+            self.assertEqual(ujn_status['errors'], [])
+
 
 if __name__ == '__main__':
     unittest.main()

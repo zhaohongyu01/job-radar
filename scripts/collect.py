@@ -2356,7 +2356,7 @@ def export_snapshot(state, public_dir, days=180, changes=None):
 PAGINATION_FIELDS = (
     'resume_page', 'list_complete', 'total_items', 'early_exit_safe',
     'completed_history_days', 'target_history_days', 'patrol_page',
-    'last_full_scan_at', 'last_patrol_at', 'coverage_warning', 'patrol_turn'
+    'last_full_scan_at', 'last_patrol_at', 'coverage_warning', 'patrol_turn', 'last_list_read_at'
 )
 
 
@@ -2393,7 +2393,7 @@ def run(args):
     elif deep_scan_arg is False:
         is_deep_scan = False
     else:
-        is_deep_scan = (dt.datetime.now(TZ).weekday() == 6)
+        is_deep_scan = False  # history is continued by cursors, not Sunday fan-out
     active_sdei_schools, sdei_group = get_active_sdei_schools(
         now_dt=dt.datetime.now(TZ),
         force_group=getattr(args, 'sdei_group', None),
@@ -2748,6 +2748,12 @@ def run(args):
                     cached+=1
                 else: remaining.append(item)
             status['cached']=cached
+            # Fresh/unverified opportunities precede refreshing already-visible
+            # records. Stable ordering keeps the latest list page first.
+            remaining.sort(key=lambda item: bool(
+                (old := previous['jobs'].get(item_id(item))) and publishable_job(old)
+                and old.get('last_verified_at')
+                and not old.get('classification_note', '').startswith('仅核实')))
             queued_by_url = {item['url']: item for item in remaining}
             queues[source['id']] = list(queued_by_url.values())
             atomic_json(data_dir/'checkpoint.json', {'run_at':now, 'source':status,

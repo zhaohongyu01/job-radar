@@ -98,7 +98,7 @@ def unpack_state(data, output):
         temporary.replace(output / name)
 
 
-def handoff(api, ref, sha, parent_id, attempt, queue_seconds=90, run_seconds=1100,
+def handoff(api, ref, sha, parent_id, attempt, queue_seconds=90, run_seconds=2100,
             now=time.monotonic, sleep=time.sleep, diagnostic=None):
     diagnostic = diagnostic if diagnostic is not None else {}
     request_id = f'{parent_id}-{attempt}'

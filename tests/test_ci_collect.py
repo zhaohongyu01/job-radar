@@ -480,6 +480,69 @@ class PipelineTests(unittest.TestCase):
             # sdei-news had pages=0, so its last_list_read_at remains past_iso
             self.assertEqual(state['sources']['sdei-news']['last_list_read_at'], past_iso)
 
+    def test_failed_list_backoff_preserves_execution_and_read_times(self):
+        with TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            stamp = (dt.datetime.now(c.TZ) - dt.timedelta(days=2)).isoformat(timespec='seconds')
+            ci.atomic_json(data / 'state.json', {
+                'jobs': {}, 'pending': {}, 'last_run_at': stamp,
+                'sources': {'jobsdufe-announcements': {
+                    'id': 'jobsdufe-announcements', 'last_list_read_at': stamp}}})
+            args = SimpleNamespace(data_dir=data, sources='jobsdufe-announcements', source_pack='',
+                pages=1, days=30, refresh_hours=24, shard_budget=100, source_budget=10,
+                deep_scan=False, force_positions=False)
+            def fail(defn, prior, a, budget):
+                return dict(prior, sources={defn['id']: {
+                    **defn, 'status': 'failed', 'pages': 0, 'errors': [{'reason': 'mock timeout'}]}})
+            with patch.object(ci, 'run_source', side_effect=fail) as worker:
+                ci.collect(args)
+                ci.collect(args)
+                failed = ci.read_json(data / 'state.json')['sources']['jobsdufe-announcements']
+                self.assertEqual(failed['consecutive_list_failures'], 2)
+                self.assertGreater(dt.datetime.fromisoformat(failed['source_retry_after']), dt.datetime.now(c.TZ))
+                ci.collect(args)
+                self.assertEqual(worker.call_count, 2)
+            skipped = ci.read_json(data / 'state.json')['sources']['jobsdufe-announcements']
+            self.assertEqual(skipped['status'], 'deferred')
+            self.assertEqual(skipped['last_list_read_at'], stamp)
+            self.assertEqual(skipped['last_execution_at'], failed['last_execution_at'])
+            self.assertEqual(skipped['consecutive_list_failures'], 2)
+
+    def test_failed_source_rotates_behind_unexecuted_sources(self):
+        with TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            now = dt.datetime.now(c.TZ)
+            old_time = (now - dt.timedelta(days=3)).isoformat(timespec='seconds')
+            recent_exec = (now - dt.timedelta(minutes=10)).isoformat(timespec='seconds')
+            mid_read = (now - dt.timedelta(days=1)).isoformat(timespec='seconds')
+            baseline = {
+                'jobs': {},
+                'sources': {
+                    'sdei-news': {
+                        'id': 'sdei-news', 'last_list_read_at': old_time,
+                        'last_execution_at': recent_exec, 'consecutive_list_failures': 1
+                    },
+                    'upc': {
+                        'id': 'upc', 'last_list_read_at': mid_read, 'consecutive_list_failures': 0
+                    }
+                },
+                'pending': {},
+                'last_run_at': recent_exec
+            }
+            ci.atomic_json(data / 'state.json', baseline)
+            args = SimpleNamespace(
+                data_dir=data, sources='sdei-news,upc', source_pack='',
+                pages=1, days=30, refresh_hours=24, shard_budget=100, source_budget=10,
+                deep_scan=False, force_positions=False
+            )
+            order = []
+            def fake_run(defn, prior, a, budget):
+                order.append(defn['id'])
+                return dict(prior, sources={defn['id']: {**defn, 'status': 'ok', 'pages': 1, 'errors': []}})
+            with patch.object(ci, 'run_source', side_effect=fake_run):
+                ci.collect(args)
+            self.assertEqual(order, ['upc', 'sdei-news'])
+
     def test_ci_collect_talks_priority_and_180s_budget_deferral(self):
         with TemporaryDirectory() as tmp:
             data = Path(tmp)
@@ -491,8 +554,8 @@ class PipelineTests(unittest.TestCase):
                 'last_run_at': now
             }
             ci.atomic_json(data / 'state.json', baseline)
-            # 2 talk sources and 1 regular announcement source
-            sources_str = 'jobsdufe-talks,ujn-talks,jobsdufe-announcements'
+            talk_sources = [s for s in ci.SOURCES if s.get('channel') == 'talks'][:7]
+            sources_str = ','.join(s['id'] for s in talk_sources) + ',jobsdufe-announcements'
             args = SimpleNamespace(
                 data_dir=data, sources=sources_str, source_pack='',
                 pages=1, days=30, refresh_hours=24, shard_budget=1500, source_budget=120,
@@ -505,26 +568,29 @@ class PipelineTests(unittest.TestCase):
 
             def fake_run_source(defn, prior, a, budget):
                 executed.append(defn['id'])
-                # First talk takes 180s, exhausting the 180s talk budget
-                if defn['id'] == 'jobsdufe-talks':
-                    fake_clock[0] += 180.0
+                if defn.get('channel') == 'talks':
+                    self.assertEqual(budget, 30.0)
+                    fake_clock[0] += budget
+                else:
+                    self.assertEqual(budget, 120.0)
                 return {'jobs': {}, 'sources': {defn['id']: {'id': defn['id'], 'name': defn['name'], 'status': 'ok',
                                                              'pages': 1, 'errors': []}},
                         'pending': {}, 'last_run_at': now}
 
             with patch.object(ci.time, 'monotonic', side_effect=fake_time), \
+                 patch.object(ci.collector, 'get_active_sdei_schools', return_value=({s['school'] for s in talk_sources}, 0)), \
                  patch.object(ci, 'run_source', side_effect=fake_run_source):
                 ci.collect(args)
 
-            # jobsdufe-talks runs first.
-            # ujn-talks is deferred because talks_remaining <= 1.
-            # jobsdufe-announcements is a non-talk source, so it runs after talks!
-            self.assertIn('jobsdufe-talks', executed)
-            self.assertNotIn('ujn-talks', executed)
-            self.assertIn('jobsdufe-announcements', executed)
+            self.assertEqual(len(executed), 7)
+            self.assertTrue(all(identifier.endswith('-talks') for identifier in executed[:6]))
+            self.assertEqual(executed[-1], 'jobsdufe-announcements')
+            self.assertEqual(fake_clock[0], 1180.0)
 
             state = ci.read_json(data / 'state.json')
-            ujn_status = state['sources']['ujn-talks']
+            skipped = {s['id'] for s in talk_sources} - set(executed)
+            self.assertEqual(len(skipped), 1)
+            ujn_status = state['sources'][skipped.pop()]
             self.assertEqual(ujn_status['status'], 'deferred')
             self.assertIn('180秒预算', ujn_status['coverage'])
             self.assertEqual(ujn_status['errors'], [])

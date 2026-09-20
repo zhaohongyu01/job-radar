@@ -1814,6 +1814,24 @@ def detect_job_events(job, old, now, changed):
     return deduped_timeline, recent_change
 
 
+def inline_announcement_fingerprint(item, source):
+    """Cache only complete SDEI announcement payloads, never position lists.
+
+    Bump the version when announcement parsing rules change. The normal
+    refresh window still forces periodic attachment and parser revalidation.
+    """
+    if source.get('adapter') != 'sdei' or source.get('channel') != 'announcements' or not item.get('inline_html'):
+        return None
+    structured = item.get('structured') or {}
+    facts = {'version': 1, 'source': source['id'], 'url': item['url'],
+             'title': item.get('title'), 'published_at': item.get('published_at'),
+             'html': item['inline_html'],
+             'fields': {key: structured.get(key) for key in (
+                 'companyname', 'companyName', 'enterpriseName', 'degreereq',
+                 'graduationYear', 'Degree', 'education_required_label')}}
+    return hashlib.sha256(json.dumps(facts, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
+
+
 def compute_job_fingerprint(job):
     """Compute content-based fingerprint ignoring volatile metadata, timestamps, and unstructured raw payloads."""
     core = {
@@ -2279,7 +2297,7 @@ def public_summary(job):
     heavy={
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
         'possible_cities','province_possible','details_available','company_original',
-        'positions','primary_facts','structured','identity','fingerprint','content_fingerprint',
+        'positions','primary_facts','structured','identity','fingerprint','content_fingerprint','inline_announcement_fingerprint',
         'probe_attempt_at','listing_missing_count','listing_missing_at',
     }
     row={k:v for k,v in job.items() if k not in heavy}
@@ -2356,7 +2374,8 @@ def export_snapshot(state, public_dir, days=180, changes=None):
 PAGINATION_FIELDS = (
     'resume_page', 'list_complete', 'total_items', 'early_exit_safe',
     'completed_history_days', 'target_history_days', 'patrol_page',
-    'last_full_scan_at', 'last_patrol_at', 'coverage_warning', 'patrol_turn', 'last_list_read_at'
+    'last_full_scan_at', 'last_patrol_at', 'coverage_warning', 'patrol_turn', 'last_list_read_at',
+    'last_execution_at', 'consecutive_list_failures', 'source_retry_after'
 )
 
 
@@ -2744,7 +2763,10 @@ def run(args):
             remaining=[]
             for item in items:
                 old=previous['jobs'].get(item_id(item))
-                if ('inline_html' not in item or requires_position_detail(item)) and old and publishable_job(old) and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and old['last_verified_at']>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
+                inline_fingerprint = inline_announcement_fingerprint(item, source)
+                unchanged_inline = bool(inline_fingerprint and old and
+                    old.get('inline_announcement_fingerprint') == inline_fingerprint)
+                if ('inline_html' not in item or requires_position_detail(item) or unchanged_inline) and old and publishable_job(old) and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and (old.get('last_verified_at') or '')>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
                     cached+=1
                 else: remaining.append(item)
             status['cached']=cached
@@ -2902,6 +2924,9 @@ def run(args):
                 status['detail_attempted'] = status.get('detail_attempted', 0) + 1
                 try:
                     job = future.result()
+                    inline_fingerprint = inline_announcement_fingerprint(item, source)
+                    if inline_fingerprint:
+                        job['inline_announcement_fingerprint'] = inline_fingerprint
                     persist_job(job, item)
                     incoming.append(job)
                     queued_by_url.pop(item['url'], None)

@@ -588,6 +588,8 @@ def collect(args):
         last_read = prior.get('last_list_read_at') or prior.get('last_success_at') or ''
         if not prior.get('last_list_read_at') and prior.get('pages', 0):
             last_read = prior.get('last_attempt_at') or last_read
+        if prior.get('consecutive_list_failures', 0):
+            last_read = max(last_read, prior.get('last_execution_at') or '')
         return (last_read, source.get('school') not in collector.CORE_SDEI_SCHOOLS,
                 not bool(baseline.get('pending', {}).get(source['id'])), source['id'])
 
@@ -708,18 +710,27 @@ def collect(args):
                     write_report(args.data_dir, 0 if all(s.get('status') in {'ok', 'deferred', 'blocked'} for s in state['sources'].values()) else 2,
                                  state, source_filter=selected, pack_name=source_pack, emit_summary=False)
                     continue
-        if budget <= 1 or len(host_rejections.get(host, set())) >= 2:
+        retry_deferred = False
+        try:
+            retry_deferred = bool(prior_source.get('source_retry_after') and
+                dt.datetime.fromisoformat(prior_source['source_retry_after']) > dt.datetime.now(TZ))
+        except (ValueError, TypeError):
+            pass
+        if budget <= 1 or len(host_rejections.get(host, set())) >= 2 or retry_deferred:
             now = dt.datetime.now(TZ).isoformat(timespec='seconds')
             is_host_blocked = len(host_rejections.get(host, set())) >= 2
             reason = '分片达到软截止；下次继续' if budget <= 1 else '同主机多个订阅被拒绝，暂停本轮请求并保留历史'
             talks_deferred = definition.get('channel') == 'talks' and talks_remaining <= 1 and not is_host_blocked
             if talks_deferred:
                 reason = '宣讲会增量采集达到本轮180秒预算；保留历史及续采队列，下轮继续'
+            planned_deferred = talks_deferred or (retry_deferred and not is_host_blocked)
+            if retry_deferred and not is_host_blocked:
+                reason = f"列表连续读取失败，来源退避至 {prior_source['source_retry_after']}；保留历史及待采详情"
             status = make_idle_source_status(
-                definition, status='blocked' if is_host_blocked else 'deferred' if talks_deferred else 'partial',
+                definition, status='blocked' if is_host_blocked else 'deferred' if planned_deferred else 'partial',
                 last_attempt_at=now, coverage=reason,
                 last_success_at=prior['sources'].get(identifier, {}).get('last_success_at'),
-                errors=[] if talks_deferred else [{'url': definition['url'], 'reason': reason}]
+                errors=[] if planned_deferred else [{'url': definition['url'], 'reason': reason}]
             )
             if is_host_blocked:
                 status['blocked_until'] = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
@@ -729,10 +740,20 @@ def collect(args):
             started_source = time.monotonic()
             result = run_source(definition, prior, args, budget)
             result_status = result['sources'][identifier]
+            executed_at = dt.datetime.now(TZ)
+            result_status['last_execution_at'] = executed_at.isoformat(timespec='seconds')
             if result_status.get('pages', 0) > 0:
-                result_status['last_list_read_at'] = dt.datetime.now(TZ).isoformat(timespec='seconds')
+                result_status['last_list_read_at'] = executed_at.isoformat(timespec='seconds')
+                result_status['consecutive_list_failures'] = 0
+                result_status['source_retry_after'] = None
             elif prior_source.get('last_list_read_at'):
                 result_status['last_list_read_at'] = prior_source['last_list_read_at']
+            if not result_status.get('pages', 0) and result_status.get('status') in {'failed', 'partial'}:
+                failures = int(prior_source.get('consecutive_list_failures') or 0) + 1
+                result_status['consecutive_list_failures'] = failures
+                if failures >= 2:
+                    hours = min(12, 2 ** min(failures - 2, 4))
+                    result_status['source_retry_after'] = (executed_at + dt.timedelta(hours=hours)).isoformat(timespec='seconds')
             if definition.get('channel') == 'talks':
                 talks_remaining -= time.monotonic() - started_source
         combine_states(result)

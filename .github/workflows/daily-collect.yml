@@ -148,6 +148,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install Python dependencies
+        if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         run: python -m pip install -r requirements.txt
 
       - name: Download Collector Baseline

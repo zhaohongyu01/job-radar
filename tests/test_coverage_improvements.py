@@ -584,6 +584,71 @@ class CoverageImprovements(unittest.TestCase):
         self.assertEqual(events_exp['newly_expired'][0]['id'], 'main')
         self.assertEqual(events_exp['newly_expired'][0]['duplicate_ids'], ['dup1', 'dup2'])
 
+    def test_inline_cache_reuses_unchanged_without_renewing_verification(self):
+        with TemporaryDirectory() as tmp:
+            item = self.item(1)
+            with patch.object(c, 'sdei_list', return_value=([item], 1)), \
+                 patch.object(c, 'parse_detail', wraps=c.parse_detail) as parser:
+                c.run(self.args(tmp))
+                first = self.read_state(tmp)['jobs'][c.item_id(item)]
+                self.assertIn('inline_announcement_fingerprint', first)
+                parser.reset_mock()
+                c.run(self.args(tmp))
+                self.assertEqual(parser.call_count, 0)
+            second = self.read_state(tmp)
+            self.assertEqual(second['sources']['jobsdufe-announcements']['cached'], 1)
+            self.assertEqual(second['jobs'][first['id']]['last_verified_at'], first['last_verified_at'])
+            self.assertNotIn('inline_announcement_fingerprint', c.public_summary(first))
+
+    def test_inline_cache_reparses_changed_and_expired_payloads(self):
+        for change in ('body', 'title', 'company', 'published_at', 'expired', 'legacy'):
+            with self.subTest(change=change), TemporaryDirectory() as tmp:
+                item = self.item(1)
+                with patch.object(c, 'sdei_list', side_effect=lambda *a: ([item], 1)):
+                    c.run(self.args(tmp))
+                    state = self.read_state(tmp)
+                    old = state['jobs'][c.item_id(item)]
+                    if change == 'body':
+                        item['inline_html'] = '<div id="zoom">校园招聘财务岗位<br>工作地点：青岛<br>报名截止：2027-10-01</div>'
+                    elif change == 'title':
+                        item['title'] = '新增校招公告标题'
+                    elif change == 'company':
+                        item['structured'] = {'companyName': '山东示例科技有限公司'}
+                    elif change == 'published_at':
+                        item['published_at'] = (c.dt.datetime.now(c.TZ)-c.dt.timedelta(days=1)).date().isoformat()
+                    elif change == 'expired':
+                        old['last_verified_at'] = (c.dt.datetime.now(c.TZ)-c.dt.timedelta(hours=73)).isoformat()
+                    else:
+                        old.pop('inline_announcement_fingerprint')
+                    c.atomic_json(Path(tmp)/'state.json', state)
+                    with patch.object(c, 'parse_detail', wraps=c.parse_detail) as parser:
+                        c.run(self.args(tmp))
+                        self.assertEqual(parser.call_count, 1)
+                    updated = self.read_state(tmp)['jobs'][c.item_id(item)]
+                    if change == 'body':
+                        self.assertIn('青岛', updated['cities'])
+                        self.assertTrue(updated['deadline'].startswith('2027-10-01'))
+                    elif change == 'title':
+                        self.assertEqual(updated['title'], '新增校招公告标题')
+                    elif change == 'company':
+                        self.assertEqual(updated['company_original'], '山东示例科技有限公司')
+                    elif change == 'published_at':
+                        self.assertEqual(updated['published_at'], item['published_at'])
+
+    def test_inline_cache_does_not_accept_position_or_talk_list_payloads(self):
+        item = self.item(1)
+        for channel in ('positions', 'talks'):
+            source = {'id': 'jobsdufe-' + channel, 'adapter': 'sdei', 'channel': channel}
+            self.assertIsNone(c.inline_announcement_fingerprint(item, source))
+        for channel, path in (
+            ('positions', 'companyissueinfo/edit1/123'),
+            ('talks', 'TblCareerFairReviewRecord/detail/abc'),
+        ):
+            job = {'source_url': 'https://school.gxjy.sdei.edu.cn/jobsdufe/school/' + path,
+                   'kind': '具体岗位' if channel == 'positions' else '招聘公告',
+                   'inline_announcement_fingerprint': 'not-proof-of-verification'}
+            self.assertFalse(c.publishable_job(job))
+
     def test_collect_detail_queue_prioritizes_fresh_and_unverified_jobs(self):
         with TemporaryDirectory() as tmp:
             now_iso = c.dt.datetime.now(c.TZ).isoformat()
@@ -611,22 +676,22 @@ class CoverageImprovements(unittest.TestCase):
             def listing(source, page):
                 return items_list, 1
 
-            parsed_order = []
+            submitted_order = []
+            class RecordingExecutor(c.ThreadPoolExecutor):
+                def submit(self, fn, item):
+                    submitted_order.append(item['url'])
+                    return super().submit(fn, item)
+
             def fake_fetch(url, *args, **kwargs):
-                parsed_order.append(url)
                 return '<div id="zoom">工作地点：济南\n校园招聘2027届毕业生</div>'
 
             with patch.object(c, 'sdei_list', side_effect=listing), \
+                 patch.object(c, 'ThreadPoolExecutor', RecordingExecutor), \
                  patch.object(c, 'fetch', side_effect=fake_fetch):
                 args = self.args(tmp, sources='jobsdufe-announcements', pages=1)
                 args.refresh_hours = 24
                 c.run(args)
 
-            self.assertEqual(parsed_order, ['https://example.test/fresh', 'https://example.test/cached'])
-            self.assertEqual(parsed_order[0], 'https://example.test/fresh')
-            self.assertEqual(parsed_order[1], 'https://example.test/cached')
-
-
-
+            self.assertEqual(submitted_order, ['https://example.test/fresh', 'https://example.test/cached'])
 
 

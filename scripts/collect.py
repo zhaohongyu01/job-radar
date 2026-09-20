@@ -2295,7 +2295,11 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     return snapshot
 
 
-PAGINATION_FIELDS = ('resume_page', 'list_complete', 'total_items', 'early_exit_safe')
+PAGINATION_FIELDS = (
+    'resume_page', 'list_complete', 'total_items', 'early_exit_safe',
+    'completed_history_days', 'target_history_days', 'patrol_page',
+    'last_full_scan_at', 'last_patrol_at', 'coverage_warning', 'patrol_turn'
+)
 
 
 def run(args):
@@ -2426,21 +2430,48 @@ def run(args):
             # detection; SDU follows opaque next-page links; OfferJack has cities.
             resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv'}
                          or source['id'] in {'nankai', 'jinan'})
-            # Reuse the bounded page budget for a rolling historical sweep.
-            history_days = max(args.days, getattr(args, 'history_days', 180)) if resumable else args.days
-            cutoff = (dt.datetime.now(TZ) - dt.timedelta(days=history_days)).date().isoformat()
-            status['history_days'] = history_days
+            # Target historical window
+            target_history_days = max(args.days, getattr(args, 'history_days', 180)) if resumable else args.days
+            cutoff = (dt.datetime.now(TZ) - dt.timedelta(days=target_history_days)).date().isoformat()
+            status['target_history_days'] = target_history_days
+
+            prior_completed = prior_source.get('completed_history_days')
+            is_history_complete = (prior_completed is not None and int(prior_completed) >= target_history_days)
+            prev_complete = (prior_source.get('list_complete') is True) and is_history_complete
+
+            last_patrol = prior_source.get('last_patrol_at')
+            is_patrol_due = False
+            if is_history_complete:
+                if last_patrol:
+                    try:
+                        is_patrol_due = (dt.datetime.now(TZ) - dt.datetime.fromisoformat(last_patrol)).total_seconds() > 72 * 3600
+                    except Exception:
+                        is_patrol_due = True
+                else:
+                    is_patrol_due = True
+
             resume_page = max(2, int(prior_source.get('resume_page') or 2)) if resumable else 2
-            resumed_tail = resumable and (resume_page > 2 or
+            patrol_page = max(2, int(prior_source.get('patrol_page') or 2))
+            resumed_tail = resumable and not is_history_complete and (resume_page > 2 or
                 (page_budget == 1 and int(prior_source.get('resume_page') or 1) > 1))
+            patrol_turn = bool(prior_source.get('patrol_turn'))
+            deep_patrolled = False
             status['list_complete'] = False
             for slot in range(1,page_budget+1):
-                page = (1 if slot == 1 and page_budget > 1 else resume_page + slot - 2) if resumable else slot
-                if resumable and page_budget == 1:
-                    page = int(prior_source.get('resume_page') or 1)
                 if resumable:
-                    # Do not overwrite an unfinished backfill cursor while
-                    # refreshing page one, including on a network failure.
+                    if slot == 1:
+                        if page_budget > 1:
+                            page = 1
+                        elif not is_history_complete:
+                            page = int(prior_source.get('resume_page') or 1)
+                        else:
+                            page = patrol_page if ((is_patrol_due or is_deep_scan) and patrol_turn) else 1
+                    else:
+                        cursor = resume_page if not is_history_complete else patrol_page
+                        page = cursor + (slot - 2 if page_budget > 1 else 0)
+                else:
+                    page = slot
+                if resumable and not is_history_complete:
                     status['resume_page'] = resume_page if page == 1 else page
                 try:
                     if is_offerjack:
@@ -2498,6 +2529,8 @@ def run(args):
                         html=json.loads(fetch(urllib.parse.urljoin(source['url'],endpoint)+'?'+urllib.parse.urlencode(q)))['data']['html']
                         found,total=gov_list(html,source['url'],source=source)
                     status['pages']+=1
+                    if page > 1:
+                        deep_patrolled = True
                     if '_total_items' in source:
                         status['total_items'] = source.pop('_total_items')
                     elif total is not None and status['pages'] == 1:
@@ -2518,9 +2551,15 @@ def run(args):
                         if item.get('is_active_listing') or not item['published_at'] or item['published_at']>=cutoff:
                             items.append(item)
                 if resumable:
-                    if page == 1:
-                        resume_page = min(resume_page, max(2, total))
-                    status['resume_page'] = resume_page if page == 1 and page_budget > 1 else page + 1
+                    if not is_history_complete:
+                        if page == 1:
+                            resume_page = min(resume_page, max(2, total))
+                        status['resume_page'] = resume_page if page == 1 and page_budget > 1 else page + 1
+                    else:
+                        if page == 1:
+                            patrol_page = min(patrol_page, max(2, total))
+                        if page > 1:
+                            status['patrol_page'] = page + 1
                     # Persist list discoveries before the next request. A hard
                     # timeout must not advance the cursor and lose these jobs.
                     backlog = {i['url']: i for i in queues.get(source['id'], [])}
@@ -2532,9 +2571,9 @@ def run(args):
                 # Safe early exit for reverse-chronological feeds when all items already exist
                 is_chrono_feed = source.get('adapter') in {'sdei', 'sdei_news', 'jinan_cms', 'qdhrss'}
                 prev_ok = prior_source.get('status') == 'ok' and not prior_source.get('errors')
-                prev_complete = prior_source.get('list_complete') is True
+                prev_complete = (prior_source.get('list_complete') is True) and is_history_complete
                 no_pending = not previous.get('pending', {}).get(source['id'])
-                if (is_chrono_feed and not is_deep_scan and found and page == 1
+                if (is_chrono_feed and not is_deep_scan and not is_patrol_due and found and page == 1
                         and prev_ok and prev_complete and no_pending
                         and not resumed_tail
                         and prior_source.get('early_exit_safe', True)):
@@ -2572,11 +2611,23 @@ def run(args):
                     list_complete = True
                     status['coverage']=('已读取官网当前全部在架岗位' if is_active_listing_source else
                                         '已读至来源列表末页（保留所选时间范围）')
+                    if resumable:
+                        status['completed_history_days'] = target_history_days
+                        status['last_full_scan_at'] = now
+                        status['last_patrol_at'] = now
+                        status['resume_page'] = 1
+                        status['patrol_page'] = 2
                     break
                 if (found and not any(i.get('is_active_listing') for i in found) and
                         all(i['published_at'] and i['published_at']<cutoff for i in found)):
                     list_complete = True
-                    status['coverage']=f'已读至 {history_days} 天前；更早公告未读取'
+                    status['coverage']=f'已读至 {target_history_days} 天前；更早公告未读取'
+                    if resumable:
+                        status['completed_history_days'] = target_history_days
+                        status['last_full_scan_at'] = now
+                        status['last_patrol_at'] = now
+                        status['resume_page'] = 1
+                        status['patrol_page'] = 2
                     break
             else:
                 list_complete = False
@@ -2585,18 +2636,24 @@ def run(args):
                                     f'最近 {page_budget} 页；仍有更早公告未读取')
             if status['errors']:
                 list_complete = False
+                if is_patrol_due:
+                    status['coverage_warning'] = '深页巡查已超72小时目标，且本轮因错误未能完全完成'
+            elif is_patrol_due and is_history_complete:
+                if deep_patrolled:
+                    status['last_patrol_at'] = now
+                    if status.get('patrol_page', 2) > total:
+                        status['patrol_page'] = 2
             status['list_complete'] = list_complete
             if resumable:
-                # A tail reached across multiple runs is not a simultaneous
-                # full scan: new records may have shifted into the middle.
-                # Start another sweep instead of trusting its first page forever.
                 status['early_exit_safe'] = list_complete and not resumed_tail
                 if list_complete:
                     status['resume_page'] = 1
-                elif page_budget >= 3 and status.get('resume_page', 2) > 2:
-                    # One overlap page reduces misses when fresh posts shift
-                    # older records between page numbers across runs.
+                elif not is_history_complete and page_budget >= 3 and status.get('resume_page', 2) > 2:
                     status['resume_page'] -= 1
+                if page_budget == 1 and is_history_complete and (is_patrol_due or is_deep_scan):
+                    status['patrol_turn'] = not patrol_turn
+                else:
+                    status['patrol_turn'] = False
             status['pages_read'] = status['pages']
             if is_offerjack and offerjack_limited:
                 status['coverage']=f'已读取 {status["pages"]} 个公开列表页；部分查询仍有未读取的后续页（接口或分页预算限制）'

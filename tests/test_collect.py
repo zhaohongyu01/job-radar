@@ -1288,6 +1288,7 @@ class CollectionTests(unittest.TestCase):
         item_job_id = c.item_id(item)
         with TemporaryDirectory() as temp:
             # Seed state with this job
+            now_iso = c.dt.datetime.now(c.TZ).isoformat()
             state = {
                 'jobs': {
                     item_job_id: {
@@ -1303,9 +1304,12 @@ class CollectionTests(unittest.TestCase):
                         'status': 'ok',
                         'total_items': 1,
                         'list_complete': True,
+                        'completed_history_days': 180,
+                        'last_patrol_at': now_iso,
+                        'last_full_scan_at': now_iso,
                     }
                 },
-                'last_run_at': '2026-09-10T12:00:00+08:00',
+                'last_run_at': now_iso,
                 'pending': {}
             }
             state_path = Path(temp) / 'state.json'

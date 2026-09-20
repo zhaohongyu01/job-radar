@@ -437,6 +437,8 @@ def merge_shards(public_dir, data_dir, shards_dir, days=30, expected_shards=None
     merged['jobs'] = collector.repair_sdu_urls(merged['jobs'])
 
     atomic_json(baseline_path, merged)
+    previous_snapshot_path = Path(public_dir) / 'jobs.json'
+    previous_snapshot = read_json(previous_snapshot_path) if previous_snapshot_path.exists() else None
     snapshot = export_snapshot(
         merged,
         Path(public_dir),
@@ -458,7 +460,7 @@ def merge_shards(public_dir, data_dir, shards_dir, days=30, expected_shards=None
     except ImportError:
         from scripts.coverage_report import build_coverage_report
     atomic_json(Path(data_dir) / 'coverage-changes.json',
-                build_coverage_report(baseline, merged, snapshot))
+                build_coverage_report(baseline, merged, snapshot, previous_snapshot=previous_snapshot))
     atomic_json(Path(data_dir) / 'published-baseline.json', {
         'generated_at':snapshot['generated_at'],
         'index_sha256':hashlib.sha256((Path(public_dir)/'jobs.json').read_bytes()).hexdigest(),

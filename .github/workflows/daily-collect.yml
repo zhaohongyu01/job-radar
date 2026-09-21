@@ -2,17 +2,18 @@ name: Daily Job Radar Pipeline
 
 on:
   schedule:
-    # 每天北京时间早晨 6:30 (UTC 22:30) 自动触发
-    - cron: '30 22 * * *'
-    # 每天北京时间中午 13:00 (UTC 05:00) 自动触发
-    - cron: '0 5 * * *'
-    # 每天北京时间晚上 18:30 (UTC 10:30) 自动触发
-    - cron: '30 10 * * *'
+    # 每天北京时间 16:00 (UTC 08:00) 自动触发
+    - cron: '0 8 * * *'
   workflow_dispatch:
-  # 每次你向 main 分支推送代码时自动构建部署
-  push:
-    branches:
-      - main
+    inputs:
+      include_universities_b:
+        description: '采集高校分片（NAS 离线时取消勾选，保留高校历史记录）'
+        type: boolean
+        default: true
+      deploy_only:
+        description: '仅发布页面，复用线上数据，不启动采集'
+        type: boolean
+        default: false
 
 concurrency:
   group: job-radar-pipeline
@@ -27,6 +28,7 @@ env:
 jobs:
   # Restore one consistent historical baseline before the collection fan-out.
   prepare-baseline:
+    if: ${{ !inputs.deploy_only && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -66,6 +68,7 @@ jobs:
           retention-days: 2
 
   quality:
+    if: ${{ github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -120,27 +123,23 @@ jobs:
   # Four concurrent runners keep wall-clock time bounded without hammering sites.
   collect-shards:
     needs: [prepare-baseline]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' && '["self-hosted","linux","job-radar-nas"]' || '["ubuntu-latest"]') }}
     permissions:
       contents: read
-      actions: write
     timeout-minutes: 45
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix:
-        include:
-          - pack: regional-official
-          - pack: universities-a
-          - pack: universities-b
-          - pack: finance
-          - pack: large-enterprises
-          - pack: public-leads
+        pack: ${{ fromJSON(github.event_name == 'workflow_dispatch' && !inputs.include_universities_b && '["regional-official","universities-a","finance","large-enterprises","public-leads"]' || '["regional-official","universities-a","universities-b","finance","large-enterprises","public-leads"]') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.12
+        if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         uses: actions/setup-python@v5
         with:
           python-version-file: .python-version
@@ -152,7 +151,6 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Download Collector Baseline
-        if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         uses: actions/download-artifact@v4
         with:
           name: collector-baseline
@@ -178,11 +176,24 @@ jobs:
             --source-budget 180 \
             --shard-budget 1080
 
-      - name: Collect universities via NAS with bounded wait
+      - name: Set up NAS Python environment
+        if: ${{ matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' }}
+        run: |
+          python3 -c "import sys; assert sys.version_info >= (3, 12)"
+          python3 -m venv .nas-venv
+          .nas-venv/bin/python -m pip install --retries 2 --timeout 20 -r requirements.txt
+
+      - name: Collect universities on NAS directly
         if: ${{ matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' }}
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/nas_dispatch.py --output data
+          NO_PROXY: '*'
+        run: |
+          export no_proxy="$NO_PROXY"
+          .nas-venv/bin/python scripts/ci_collect.py collect \
+            --source-pack universities-b --data-dir data --public-dir public \
+            --pages 2 --days 30 --refresh-hours 72 --probe-budget 1 \
+            --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6 \
+            --source-budget 120 --shard-budget 1500
 
       - name: Upload Shard State
         if: ${{ always() && hashFiles('data/state.json') != '' }}
@@ -196,7 +207,7 @@ jobs:
 
   merge-and-deploy:
     needs: [prepare-baseline, quality, collect-shards]
-    if: ${{ !cancelled() && needs.prepare-baseline.result == 'success' && needs.quality.result == 'success' }}
+    if: ${{ !cancelled() && (needs.prepare-baseline.result == 'success' || inputs.deploy_only) && needs.quality.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -211,15 +222,18 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install Python dependencies
+        if: ${{ !inputs.deploy_only }}
         run: python -m pip install -r requirements.txt
 
       - name: Download Collector Baseline
+        if: ${{ !inputs.deploy_only }}
         uses: actions/download-artifact@v4
         with:
           name: collector-baseline
           path: data
 
       - name: Download Collector Shards
+        if: ${{ !inputs.deploy_only }}
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -228,6 +242,7 @@ jobs:
           merge-multiple: false
 
       - name: Merge Collector Shards
+        if: ${{ !inputs.deploy_only }}
         id: merge
         run: |
           python scripts/ci_collect.py merge \
@@ -236,6 +251,10 @@ jobs:
             --shards-dir data/shards \
             --days 30 \
             --expected-shards "regional-official,universities-a,universities-b,finance,large-enterprises,public-leads"
+
+      - name: Restore exact live snapshot for page-only deployment
+        if: ${{ inputs.deploy_only }}
+        run: python scripts/download_public.py --site https://sites-project.job-radar.workers.dev --public-dir data/live-public
 
       - name: Save Collector State
         if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}
@@ -265,7 +284,7 @@ jobs:
           path: dist
 
       - name: Attach Validated Data to Application
-        run: python scripts/stage_public.py --public-dir public --dist-dir dist
+        run: python scripts/stage_public.py --public-dir ${{ inputs.deploy_only && 'data/live-public' || 'public' }} --dist-dir dist
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4

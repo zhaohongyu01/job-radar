@@ -1,0 +1,46 @@
+name: Push Checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.py'
+      - '**.ts'
+      - '**.tsx'
+      - '**.js'
+      - '**.json'
+      - '**.css'
+      - 'requirements.txt'
+      - '.python-version'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-radar-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Python syntax without collection
+        run: python -m compileall -q scripts tests
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Typecheck and Lint Frontend
+        run: |
+          npm run lint
+          npx tsc --noEmit
+

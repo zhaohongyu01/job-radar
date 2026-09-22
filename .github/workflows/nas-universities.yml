@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   collect:
-    if: ${{ vars.UNIVERSITIES_B_RUNNER == 'nas' && github.event.repository.private }}
+    if: ${{ vars.UNIVERSITIES_B_RUNNER == 'nas' }}
     runs-on: [self-hosted, linux, job-radar-nas]
     timeout-minutes: 35
     env:

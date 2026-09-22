@@ -101,10 +101,8 @@ jobs:
           persist-credentials: false
 
       - name: Check Python and install collector dependencies
-        run: |
-          python -c "import sys; assert sys.version_info[:2] == (3, 12)"
-          python -m venv .nas-venv
-          .nas-venv/bin/python -m pip install -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt || .nas-venv/bin/python -m pip install -r requirements.txt
+        timeout-minutes: 7
+        run: python3 scripts/prepare_nas_python.py
 
       - name: Download exact parent baseline
         uses: actions/download-artifact@v4
@@ -122,7 +120,7 @@ jobs:
         run: |
           # Actions env keys are case-insensitive; set the lowercase alias in shell.
           export no_proxy="$NO_PROXY"
-          .nas-venv/bin/python scripts/ci_collect.py collect \
+          "$NAS_PYTHON" scripts/ci_collect.py collect \
             --source-pack universities-b --data-dir data --public-dir public \
             --pages 2 --days 30 --refresh-hours 72 --probe-budget 1 \
             --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6 \

@@ -39,6 +39,8 @@ next-env.d.ts
 
 /data/
 /runner-registration.txt
+/deploy/nas-proxy/config.yaml
+/deploy/nas-proxy/providers/
 /.nas-venv/
 __pycache__/
 *.tsbuildinfo

@@ -1,0 +1,30 @@
+services:
+  github-proxy:
+    image: metacubex/mihomo:latest
+    platform: linux/arm64
+    container_name: job-radar-github-proxy
+    restart: unless-stopped
+    command: ["-d", "/root/.config/mihomo"]
+    volumes:
+      - ./config.yaml:/root/.config/mihomo/config.yaml:ro
+      - proxy-state:/root/.config/mihomo/providers
+    networks:
+      runner-network:
+        aliases: [job-radar-proxy]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: '2'
+
+networks:
+  runner-network:
+    external: true
+    name: job-radar-runner_default
+
+volumes:
+  proxy-state:

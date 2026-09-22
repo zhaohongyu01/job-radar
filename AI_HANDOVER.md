@@ -5,6 +5,10 @@
 
 ---
 
+## NAS Python 环境复用（2026-09-22）
+
+主工作流和兼容 NAS 工作流均调用 scripts/prepare_nas_python.py。虚拟环境保存在持久卷 /home/runner/state/python-envs，按 requirements.txt 内容、Python 版本与路径、CPU 架构取哈希；校验固定版本、关键模块导入及 pip check 后才能复用。仅首次、依赖变化或环境损坏时安装，国内镜像直连最多 150 秒，失败再尝试官方源最多 120 秒；脚本总预算 360 秒，步骤上限 7 分钟。失败不写 NAS_PYTHON，不开始采集。不会被仓库 checkout 清理。旧版本缓存暂保留，不自动删除。已做静态检查，定向 mock 测试待用户认可。
+
 ## 2026-09-22：高校基线传输
 
 高校分片使用 `scripts/shard_baseline.py` 从本轮完整 state 生成的专用产物，保留高校 jobs/pending、全体 sources（共享冷却）和原始 last_run_at；独立 SHA256 输出绑定下载内容。下载步骤上限 5 分钟，上传分片 3 分钟。手动 `baseline_diagnostic` 优先于 `deploy_only`，仅准备、下载及验证，不采集或发布。说明见 docs/actions-cost-control.md。本轮新增 tests/test_shard_baseline.py，6 项定向测试通过（裁剪保真、共享冷却、哈希损坏、跨版本拒绝、文件缺失、空高校历史）；Actionlint 通过。未进行 NAS 实际下载验证。

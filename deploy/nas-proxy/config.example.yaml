@@ -1,0 +1,33 @@
+# Copy to config.yaml on NAS only. Never commit your subscription URL.
+mixed-port: 7890
+allow-lan: true
+bind-address: '*'
+mode: rule
+log-level: warning
+ipv6: false
+proxy-providers:
+  subscription:
+    type: http
+    url: 'REPLACE_WITH_YOUR_CLASH_SUBSCRIPTION_URL'
+    path: ./providers/subscription.yaml
+    interval: 86400
+    proxy: DIRECT
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 600
+      timeout: 5000
+proxy-groups:
+  - name: GITHUB
+    type: url-test
+    use: [subscription]
+    url: https://www.gstatic.com/generate_204
+    interval: 600
+    tolerance: 100
+rules:
+  - DOMAIN-SUFFIX,sdei.edu.cn,DIRECT
+  - DOMAIN-SUFFIX,github.com,GITHUB
+  - DOMAIN-SUFFIX,githubusercontent.com,GITHUB
+  - DOMAIN-SUFFIX,githubassets.com,GITHUB
+  - DOMAIN-SUFFIX,blob.core.windows.net,GITHUB
+  - MATCH,DIRECT

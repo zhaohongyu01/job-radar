@@ -222,10 +222,8 @@ jobs:
 
       - name: Set up NAS Python environment
         if: ${{ matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' }}
-        run: |
-          python3 -c "import sys; assert sys.version_info >= (3, 12)"
-          python3 -m venv .nas-venv
-          .nas-venv/bin/python -m pip install --retries 2 --timeout 20 -r requirements.txt
+        timeout-minutes: 7
+        run: python3 scripts/prepare_nas_python.py
 
       - name: Collect universities on NAS directly
         id: nas_collector
@@ -234,7 +232,7 @@ jobs:
           NO_PROXY: '*'
         run: |
           export no_proxy="$NO_PROXY"
-          .nas-venv/bin/python scripts/ci_collect.py collect \
+          "$NAS_PYTHON" scripts/ci_collect.py collect \
             --source-pack universities-b --data-dir data --public-dir public \
             --pages 2 --days 30 --refresh-hours 72 --probe-budget 1 \
             --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6 \

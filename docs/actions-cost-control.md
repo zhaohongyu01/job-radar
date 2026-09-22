@@ -13,7 +13,7 @@
 下载失败或核验失败的分片不会把下载到的基线作为采集结果上传；主流程按现有规则保留该分片历史。没有任何来源成功核验时，仍拒绝发布。
 
 - 推送 main：只运行 `Push Checks`（Python 语法、前端 lint 和类型检查）。文档变更不触发；连续推送取消旧检查。不采集、不部署。
-- `Daily Job Radar Pipeline`：每天北京时间 11:00 采集、验证和发布一次。原有完整发布校验继续保留。
+- `Daily Job Radar Pipeline`：每天北京时间 05:00、14:00 采集、验证和发布。原有完整发布校验继续保留。
 - 手动只发页面：在该工作流的 **Run workflow** 勾选 `deploy_only`。读取线上快照及其全部详情、搜索分片并校验哈希，失败即停止，不使用仓库旧数据兜底。
 - 手动采集：不勾选 `deploy_only`。默认包含高校；NAS 离线时取消 `include_universities_b`，保留高校历史数据。
 - 如本月剩余分钟不足，可把仓库 Actions variable `RUN_SCHEDULED_COLLECTION` 设为字符串 `false`，暂时停止定时运行；手动入口仍可用。恢复时删除变量或改为 `true`。

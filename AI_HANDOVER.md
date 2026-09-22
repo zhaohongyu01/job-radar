@@ -36,7 +36,7 @@
   - **前端**：`Vinext` (基于 Vite 8 的 Next.js 兼容框架) + `React 19` + `TypeScript` + `Tailwind CSS 4` + 自定义设计系统规范。
   - **采集与数据管线**：`Python 3.12`（无头解析、多源抓取、去重归并、分片校验）。
   - **托管与发布**：`Cloudflare Workers`（Sites 静态托管与边缘分发，通过 `wrangler 4.92` 部署）。
-  - **定时流水线**：GitHub Actions（每天北京时间 11:00 自动分片采集、构建与部署）。
+  - **定时流水线**：GitHub Actions（每天北京时间 05:00、14:00 自动分片采集、构建与部署）。
 
 ---
 

@@ -50,7 +50,7 @@ npx wrangler deploy --config dist/server/wrangler.json
 
 本机 Wrangler 已有 Cloudflare 授权；其他电脑需要先运行 `npx wrangler login`。只重新整理已采集内容时，先运行 `python scripts/export_snapshot.py`，该操作不会伪造新的采集时间。数据和程序一起发布，刷新网页只重新读取快照。
 
-GitHub Actions 的 `.github/workflows/daily-collect.yml` 每天北京时间 06:30、18:30，或推送 main、手动触发时采集并部署。6 个分片最多 4 个并行，共享高校平台的订阅集中在同一分片限速。每源独立进程默认最多 180 秒，分片 1080 秒后停止启动新来源，为 25 分钟的 CI 硬超时预留保存时间。前端测试、类型检查、lint 和构建与采集并行；所有质量检查通过后才发布。需要配置 Actions Secrets：`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`。
+GitHub Actions 的 `.github/workflows/daily-collect.yml` 每天北京时间 05:00、14:00，或手动触发时采集并部署。6 个分片最多 4 个并行，共享高校平台的订阅集中在同一分片限速。每源独立进程默认最多 180 秒，分片 1080 秒后停止启动新来源，为 25 分钟的 CI 硬超时预留保存时间。前端测试、类型检查、lint 和构建与采集并行；所有质量检查通过后才发布。需要配置 Actions Secrets：`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`。
 
 新增来源时需要把它加入 `scripts/collect.py` 的 `SOURCE_PACKS`；测试会检查每个来源都属于且只属于一个分片，避免扩容后静默漏采。
 

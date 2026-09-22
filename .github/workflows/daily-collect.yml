@@ -21,7 +21,7 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 env:
   JOB_RADAR_SCHEDULE_ENABLED: 'true'
@@ -35,6 +35,24 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Trigger NAS Universities Pipeline on manual run
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'nas-universities.yml',
+                ref: context.ref,
+              });
+              core.info('Successfully triggered NAS Universities Pipeline');
+            } catch (error) {
+              core.warning(`Failed to trigger NAS Universities Pipeline: ${error.message}`);
+            }
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5

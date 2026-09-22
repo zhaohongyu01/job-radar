@@ -22,7 +22,7 @@ import collect as collector
 from collect import ROOT, TZ, SOURCES, SOURCE_PACKS, atomic_json, export_snapshot, source_pack_ids
 from collector_runtime import bounded_read, bounded_request, remaining, retry_request
 
-ASSET = re.compile(r'^/job-assets/detail-[0-9a-f]{2}-([0-9a-f]{20})\.json$')
+from snapshot_assets import ASSET, hydrate_index
 HISTORY_FIELDS = {'fingerprint', 'first_seen_at', 'updated_at', 'last_verified_at', 'revision',
                   'duplicate_ids', 'duplicate_sources', 'search_text', 'details_available',
                   'timeline', 'recent_change', 'lifecycle_stage'}
@@ -46,7 +46,8 @@ def download_json(url, timeout=40, retries=2):
 
 def snapshot_state(snapshot, load_asset):
     """Recreate every record, including reposts, without inventing a newer read time."""
-    if snapshot.get('schema_version') != 2 or not snapshot.get('jobs') or not snapshot.get('detail_shards'):
+    snapshot = hydrate_index(snapshot, load_asset)
+    if snapshot.get('schema_version') not in (2, 3) or not snapshot.get('jobs') or not snapshot.get('detail_shards'):
         raise ValueError('Published snapshot is empty or unsupported')
     shards = snapshot['detail_shards']
     sources = {source['id']: source for source in snapshot['sources']}
@@ -192,6 +193,7 @@ def prepare(public_dir, data_dir, site):
         if not ASSET.fullmatch(path):
             raise ValueError('Invalid local detail path')
         return read_json(public_dir / path.lstrip('/'))
+    local_snapshot = hydrate_index(local_snapshot, local_asset)
     states = []
     state_path = data_dir / 'state.json'
     raw_state = None
@@ -308,11 +310,19 @@ def write_report(data_dir, code, state, error='', source_filter=None, pack_name=
 
 def _snapshot_checks(snapshot, public_dir):
     """Validate every generated asset before the merge job is allowed to publish."""
+    snapshot = hydrate_index(snapshot, lambda path: read_json(public_dir / path.lstrip('/')))
     snapshot_state(snapshot, lambda path: read_json(public_dir / path.lstrip('/')))
     search_path = snapshot.get('search_url', '')
     if not re.fullmatch(r'/job-assets/search-[0-9a-f]{20}\.json', search_path):
         raise ValueError('Invalid full-text search asset')
-    search = read_json(public_dir / search_path.lstrip('/')).get('jobs', {})
+    search = {}
+    for path in [search_path, *snapshot.get('search_shards', [])]:
+        if not re.fullmatch(r'/job-assets/search-[0-9a-f]{20}\.json', path):
+            raise ValueError('Invalid full-text search shard')
+        rows = read_json(public_dir / path.lstrip('/')).get('jobs', {})
+        if set(search) & set(rows):
+            raise ValueError('Duplicate full-text search identities')
+        search.update(rows)
     if set(search) != {job['id'] for job in snapshot['jobs']} or any(not isinstance(body, str) for body in search.values()):
         raise ValueError('Full-text search index is incomplete')
 

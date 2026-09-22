@@ -143,6 +143,9 @@ export type Snapshot = {
   details_url?: string;
   detail_shards?: Record<string, string>;
   search_url?: string;
+  index_shards?: string[];
+  index_count?: number;
+  search_shards?: string[];
   cities: string[];
   jobs: Job[];
   sources: Source[];

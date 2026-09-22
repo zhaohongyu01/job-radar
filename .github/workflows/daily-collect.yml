@@ -6,6 +6,10 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
+      reuse_run_id:
+        description: '复用已完成采集的运行 ID，仅重新合并发布（不重新采集）；留空为正常采集'
+        type: string
+        default: ''
       baseline_diagnostic:
         description: '仅诊断 NAS 基线下载：不采集、不构建、不发布（优先于仅发布选项）'
         type: boolean
@@ -25,6 +29,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   JOB_RADAR_SCHEDULE_ENABLED: 'true'
@@ -34,7 +39,7 @@ jobs:
   prepare-baseline:
     outputs:
       universities_sha256: ${{ steps.compact.outputs.baseline_sha256 }}
-    if: ${{ (inputs.baseline_diagnostic || !inputs.deploy_only) && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
+    if: ${{ !inputs.reuse_run_id && (inputs.baseline_diagnostic || !inputs.deploy_only) && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -100,6 +105,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Validate recovery options
+        env:
+          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
+          DEPLOY_ONLY: ${{ inputs.deploy_only }}
+        run: |
+          python3 -c "import os; run=os.environ.get('REUSE_RUN_ID',''); assert not run or (run.isascii() and run.isdecimal()), 'Recovery run ID must contain digits only'; assert not run or os.environ.get('DEPLOY_ONLY') != 'true', 'Do not combine recovery with deploy_only'"
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -150,7 +161,7 @@ jobs:
   # Each shard starts from the same baseline and only updates its own sources.
   # Four concurrent runners keep wall-clock time bounded without hammering sites.
   collect-shards:
-    if: ${{ !inputs.baseline_diagnostic }}
+    if: ${{ !inputs.baseline_diagnostic && !inputs.reuse_run_id }}
     needs: [prepare-baseline]
     runs-on: ${{ fromJSON(matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' && '["self-hosted","linux","job-radar-nas"]' || '["ubuntu-latest"]') }}
     permissions:
@@ -275,7 +286,7 @@ jobs:
 
   merge-and-deploy:
     needs: [prepare-baseline, quality, collect-shards]
-    if: ${{ !cancelled() && !inputs.baseline_diagnostic && (needs.prepare-baseline.result == 'success' || inputs.deploy_only) && needs.quality.result == 'success' }}
+    if: ${{ !cancelled() && !inputs.baseline_diagnostic && (needs.prepare-baseline.result == 'success' || inputs.deploy_only || inputs.reuse_run_id) && needs.quality.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -299,6 +310,8 @@ jobs:
         with:
           name: collector-baseline
           path: data
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.reuse_run_id || github.run_id }}
 
       - name: Download Collector Shards
         if: ${{ !inputs.deploy_only }}
@@ -308,11 +321,18 @@ jobs:
           pattern: collector-shard-*
           path: data/shards
           merge-multiple: false
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.reuse_run_id || github.run_id }}
 
       - name: Merge Collector Shards
         if: ${{ !inputs.deploy_only }}
         id: merge
+        env:
+          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
         run: |
+          if [ -n "$REUSE_RUN_ID" ]; then
+            python -c "from pathlib import Path; packs='regional-official universities-a universities-b finance large-enterprises public-leads'.split(); missing=[p for p in packs if not list((Path('data/shards')/('collector-shard-'+p)).rglob('state.json'))]; assert not missing, f'Recovery requires all shards: {missing}'"
+          fi
           python scripts/ci_collect.py merge \
             --data-dir data \
             --public-dir public \

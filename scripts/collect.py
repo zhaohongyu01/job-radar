@@ -2337,6 +2337,7 @@ def schedule_enabled():
 
 def export_snapshot(state, public_dir, days=180, changes=None):
     """Publish the index last; immutable assets cannot mix across refreshes."""
+    from snapshot_assets import chunks, MAX_ASSET_BYTES
     jobs=repair_sdu_urls(state['jobs'])
     eligible = [j for j in jobs.values() if publishable_job(j)]
     public_jobs=sorted(deduplicate([public_record(j) for j in eligible]),
@@ -2345,6 +2346,8 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     assets.mkdir(parents=True,exist_ok=True)
     def asset(prefix, payload):
         content=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
+        if len(content.encode('utf-8')) > MAX_ASSET_BYTES:
+            raise ValueError(f'Generated {prefix} asset exceeds 25 MiB; publication stopped')
         name=prefix+'-'+hashlib.sha256(content.encode()).hexdigest()[:20]+'.json'
         target=assets/name
         if not target.exists(): target.write_text(content,encoding='utf-8')
@@ -2353,7 +2356,9 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     for job in public_jobs:
         shards.setdefault(job['id'][:2],{})[job['id']]=job
     detail_shards={key:asset('detail-'+key,{'schema_version':1,'jobs':rows}) for key,rows in shards.items()}
-    search_url=asset('search',{'jobs':{j['id']:build_search_text(j) for j in public_jobs}})
+    search_chunks=list(chunks([[j['id'],build_search_text(j)] for j in public_jobs]))
+    search_shards=[asset('search',{'jobs':dict(batch)}) for batch in search_chunks]
+    search_url=search_shards[0] if search_shards else asset('search',{'jobs':{}})
     snapshot={'schema_version':2,'generated_at':state['last_run_at'],
               'last_success_at':max((j['last_verified_at'] for j in jobs.values()),default=None),
               'schedule_enabled':schedule_enabled(),'raw_records':len(eligible),
@@ -2362,7 +2367,18 @@ def export_snapshot(state, public_dir, days=180, changes=None):
               'detail_shards':detail_shards,'search_url':search_url,
               'jobs':[public_summary(j) for j in public_jobs],
               'sources':list(state['sources'].values()),'changes':changes or {}}
-    atomic_json(public_dir/'jobs.json',snapshot,pretty=False)
+    if len(search_shards) > 1:
+        snapshot['search_shards']=search_shards[1:]
+    batches=list(chunks(snapshot['jobs']))
+    disk_snapshot=snapshot
+    if len(batches) > 1:
+        snapshot['schema_version']=3
+        snapshot['index_count']=len(snapshot['jobs'])
+        snapshot['index_shards']=[asset('index',{'jobs':batch}) for batch in batches]
+        disk_snapshot=dict(snapshot,jobs=[])
+    if len(json.dumps(disk_snapshot,ensure_ascii=False,separators=(',',':')).encode('utf-8')) > MAX_ASSET_BYTES:
+        raise ValueError('Snapshot metadata exceeds 25 MiB; publication stopped')
+    atomic_json(public_dir/'jobs.json',disk_snapshot,pretty=False)
     atomic_json(public_dir/'snapshot-manifest.json', {
         'schema_version': 1, 'generated_at': snapshot['generated_at'],
         'raw_records': len(eligible),

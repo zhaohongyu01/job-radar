@@ -7,9 +7,9 @@ import re
 from urllib.request import Request, urlopen
 
 try:
-    from stage_public import ASSET
+    from stage_public import ASSET, asset_paths
 except ImportError:
-    from scripts.stage_public import ASSET
+    from scripts.stage_public import ASSET, asset_paths
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
 
@@ -30,7 +30,7 @@ def download(site, public):
     if metadata.get('schema_version') != 1 or hashlib.sha256(index).hexdigest() != metadata.get('index_sha256'):
         raise ValueError('Published snapshot manifest mismatch; deployment stopped')
     snapshot = json.loads(index)
-    paths = {*snapshot['detail_shards'].values(), snapshot['search_url']}
+    paths = asset_paths(snapshot)
     from concurrent.futures import ThreadPoolExecutor
 
     def fetch_asset(path):
@@ -50,7 +50,7 @@ def download(site, public):
     public.mkdir(parents=True, exist_ok=True)
     (public / 'jobs.json').write_bytes(index)
     (public / 'snapshot-manifest.json').write_bytes(metadata_raw)
-    print(f'Reused published snapshot with {len(snapshot["jobs"])} records; no collection performed')
+    print(f'Reused published snapshot with {snapshot.get("index_count", len(snapshot["jobs"]))} records; no collection performed')
 
 
 if __name__ == '__main__':

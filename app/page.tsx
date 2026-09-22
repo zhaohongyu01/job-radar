@@ -1,4 +1,5 @@
 'use client';
+import { loadSnapshotParts } from '../lib/snapshot-loader';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radar,
@@ -173,11 +174,18 @@ export default function Home() {
       const json = (await r.json()) as Snapshot;
       if (
         !json ||
-        ![1, 2].includes(json.schema_version) ||
+        ![1, 2, 3].includes(json.schema_version) ||
         !Array.isArray(json.jobs) ||
         !Array.isArray(json.sources)
       )
         throw Error('招聘数据格式异常。');
+      if (json.index_shards?.length) {
+        const parts = await loadSnapshotParts<{ jobs: Job[] }>(json.index_shards, 'index');
+        if (parts.some((part) => !Array.isArray(part.jobs))) throw Error('招聘数据分片格式异常。');
+        json.jobs = parts.flatMap((part) => part.jobs);
+        if (json.jobs.length !== json.index_count || new Set(json.jobs.map((job) => job.id)).size !== json.jobs.length)
+          throw Error('招聘数据分片不完整，请刷新重试。');
+      }
       detailCache.current = {};
       detailsPromise.current = {};
       ++detailRequest.current;
@@ -349,14 +357,14 @@ export default function Home() {
   useEffect(() => {
     if (!needsSearch || !data?.search_url || searchIndex) return;
     const controller = new AbortController();
-    fetch(data.search_url, { cache: 'force-cache', signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw Error('全文索引读取失败，请点击刷新重试。');
-        const payload = await response.json() as { jobs?: Record<string, string> };
-        if (!payload.jobs || Array.isArray(payload.jobs) || typeof payload.jobs !== 'object' ||
-            data.jobs.some((j) => typeof payload.jobs?.[j.id] !== 'string'))
+    loadSnapshotParts<{ jobs: Record<string, string> }>([data.search_url, ...(data.search_shards ?? [])], 'search', controller.signal)
+      .then((parts) => {
+        if (parts.some((part) => !part.jobs || Array.isArray(part.jobs) || typeof part.jobs !== 'object'))
+          throw Error('全文索引格式异常。');
+        const jobs = Object.assign({}, ...parts.map((part) => part.jobs)) as Record<string, string>;
+        if (data.jobs.some((j) => typeof jobs[j.id] !== 'string'))
           throw Error('全文索引不完整，请点击刷新重试。');
-        if (!controller.signal.aborted) setSearchIndex(payload.jobs);
+        if (!controller.signal.aborted) setSearchIndex(jobs);
       }).catch((e) => { if (!controller.signal.aborted) setSearchError(e.message); });
     return () => controller.abort();
   }, [needsSearch, data, searchIndex]);

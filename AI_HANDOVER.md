@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-09-22：无损索引分片与失败发布恢复
+
+第 86 轮产物本地还原得到 12,711 条公告、26,503,211 字节主索引，超过 Workers 单文件 25 MiB。保留全部字段，超过 4 MiB 的列表按记录分成内容哈希命名的 index 资产；磁盘 jobs.json 为 schema 3、jobs 空数组、index_shards/index_count，export_snapshot 返回值仍含完整 jobs。全文搜索同样按记录分片，search_url 为第一片，search_shards 为剩余片。前端按最多 4 路加载，收齐列表才展示；prepare/snapshot_state、发布复制和 deploy_only 下载兼容新旧快照。生成及 staging 都检查 25 MiB 上限，单条异常大数据仍会明确阻止发布。完整正文、摘要、筛选字段不截断。
+
+手动 reuse_run_id 下载同仓库指定运行的基线和六个分片，跳过新采集，执行当前代码质量检查、合并完整性检查和发布。恢复要求六个分片齐全；不要同时选择 deploy_only/baseline_diagnostic。第 86 轮运行 ID 为 35697829191；产物只有 2 天保留期。未替用户推送或触发。本地分析产物在 data/run86-analysis（忽略目录）。
+
+验证：第 86 轮七个真实产物离线合并成功，12,711 条列表记录、全文搜索文本及详情字节保持一致，入口约 100 KiB，7 个列表片、6 个搜索片，最大数据文件 4,760,169 字节。分片往返、冷启动恢复、仅发布复制、超限拒绝、前端有界并发/失败处理及旧格式定向检查通过；TypeScript、定向 lint、Actionlint 通过。未执行本地全量测试或实际云端发布。
+
 ## NAS Python 环境复用（2026-09-22）
 
 主工作流和兼容 NAS 工作流均调用 scripts/prepare_nas_python.py。虚拟环境保存在持久卷 /home/runner/state/python-envs，按 requirements.txt 内容、Python 版本与路径、CPU 架构取哈希；校验固定版本、关键模块导入及 pip check 后才能复用。仅首次、依赖变化或环境损坏时安装，国内镜像直连最多 150 秒，失败再尝试官方源最多 120 秒；脚本总预算 360 秒，步骤上限 7 分钟。失败不写 NAS_PYTHON，不开始采集。不会被仓库 checkout 清理。旧版本缓存暂保留，不自动删除。已做静态检查，定向 mock 测试待用户认可。

@@ -2,10 +2,14 @@ name: Daily Job Radar Pipeline
 
 on:
   schedule:
-    # 每天北京时间 16:00 (UTC 08:00) 自动触发
-    - cron: '0 8 * * *'
+    # 每天北京时间 11:00 (UTC 03:00) 自动触发
+    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
+      baseline_diagnostic:
+        description: '仅诊断 NAS 基线下载：不采集、不构建、不发布（优先于仅发布选项）'
+        type: boolean
+        default: false
       include_universities_b:
         description: '采集高校分片（NAS 离线时取消勾选，保留高校历史记录）'
         type: boolean
@@ -28,10 +32,18 @@ env:
 jobs:
   # Restore one consistent historical baseline before the collection fan-out.
   prepare-baseline:
-    if: ${{ !inputs.deploy_only && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
+    outputs:
+      universities_sha256: ${{ steps.compact.outputs.baseline_sha256 }}
+    if: ${{ (inputs.baseline_diagnostic || !inputs.deploy_only) && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Check diagnostic configuration
+        if: ${{ inputs.baseline_diagnostic && (vars.UNIVERSITIES_B_RUNNER != 'nas' || !github.event.repository.private) }}
+        run: |
+          echo '::error::NAS 下载诊断要求私有仓库且 UNIVERSITIES_B_RUNNER=nas。'
+          exit 1
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -58,7 +70,21 @@ jobs:
       - name: Restore Published Baseline
         run: python scripts/ci_collect.py prepare --site https://sites-project.job-radar.workers.dev
 
+      - name: Prepare universities-only baseline
+        id: compact
+        run: python scripts/shard_baseline.py prepare --source data/state.json --output data/universities-baseline
+
+      - name: Upload universities-only baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-baseline-universities-b
+          path: data/universities-baseline/*.json
+          compression-level: 6
+          if-no-files-found: error
+          retention-days: 2
+
       - name: Upload Collector Baseline
+        if: ${{ !inputs.baseline_diagnostic }}
         uses: actions/upload-artifact@v4
         with:
           name: collector-baseline
@@ -68,7 +94,7 @@ jobs:
           retention-days: 2
 
   quality:
-    if: ${{ github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false' }}
+    if: ${{ !inputs.baseline_diagnostic && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -122,6 +148,7 @@ jobs:
   # Each shard starts from the same baseline and only updates its own sources.
   # Four concurrent runners keep wall-clock time bounded without hammering sites.
   collect-shards:
+    if: ${{ !inputs.baseline_diagnostic }}
     needs: [prepare-baseline]
     runs-on: ${{ fromJSON(matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' && '["self-hosted","linux","job-radar-nas"]' || '["ubuntu-latest"]') }}
     permissions:
@@ -150,11 +177,26 @@ jobs:
         if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         run: python -m pip install -r requirements.txt
 
+      - name: Start baseline download timer
+        run: echo "BASELINE_DOWNLOAD_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Download Collector Baseline
+        id: baseline_download
+        timeout-minutes: 5
         uses: actions/download-artifact@v4
         with:
-          name: collector-baseline
+          name: ${{ matrix.pack == 'universities-b' && 'collector-baseline-universities-b' || 'collector-baseline' }}
           path: data
+
+      - name: Verify universities baseline before collection
+        if: ${{ matrix.pack == 'universities-b' }}
+        env:
+          EXPECTED_BASELINE_SHA256: ${{ needs.prepare-baseline.outputs.universities_sha256 }}
+        run: python3 scripts/shard_baseline.py verify --directory data --expected-sha256 "$EXPECTED_BASELINE_SHA256"
+
+      - name: Explain baseline download failure
+        if: ${{ failure() && steps.baseline_download.outcome == 'failure' }}
+        run: echo '基线下载失败或超过 5 分钟；本分片未开始采集，合并时保留历史。请查看下载日志中的连接错误和压缩产物大小。' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run Collector Shard
         if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
@@ -184,6 +226,7 @@ jobs:
           .nas-venv/bin/python -m pip install --retries 2 --timeout 20 -r requirements.txt
 
       - name: Collect universities on NAS directly
+        id: nas_collector
         if: ${{ matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' }}
         env:
           NO_PROXY: '*'
@@ -196,7 +239,8 @@ jobs:
             --source-budget 120 --shard-budget 1500
 
       - name: Upload Shard State
-        if: ${{ always() && hashFiles('data/state.json') != '' }}
+        timeout-minutes: 3
+        if: ${{ always() && (steps.collector.outcome == 'success' || steps.collector.outcome == 'failure' || steps.nas_collector.outcome == 'success' || steps.nas_collector.outcome == 'failure') && hashFiles('data/state.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: collector-shard-${{ matrix.pack }}
@@ -205,9 +249,36 @@ jobs:
             data/ci-report.json
           retention-days: 2
 
+  baseline-diagnostic:
+    needs: [prepare-baseline]
+    if: ${{ inputs.baseline_diagnostic && vars.UNIVERSITIES_B_RUNNER == 'nas' && github.event.repository.private }}
+    runs-on: [self-hosted, linux, job-radar-nas]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        timeout-minutes: 3
+        with:
+          persist-credentials: false
+      - name: Start baseline download timer
+        run: echo "BASELINE_DOWNLOAD_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Download universities baseline (maximum 5 minutes)
+        id: download
+        timeout-minutes: 5
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-baseline-universities-b
+          path: data/diagnostic-baseline
+      - name: Verify downloaded baseline and report
+        env:
+          EXPECTED_BASELINE_SHA256: ${{ needs.prepare-baseline.outputs.universities_sha256 }}
+        run: python3 scripts/shard_baseline.py verify --directory data/diagnostic-baseline --expected-sha256 "$EXPECTED_BASELINE_SHA256"
+      - name: Explain failed download
+        if: ${{ failure() && steps.download.outcome == 'failure' }}
+        run: echo '高校基线下载失败或超过 5 分钟。没有进行采集或发布；请展开下载日志排查网络。' >> "$GITHUB_STEP_SUMMARY"
+
   merge-and-deploy:
     needs: [prepare-baseline, quality, collect-shards]
-    if: ${{ !cancelled() && (needs.prepare-baseline.result == 'success' || inputs.deploy_only) && needs.quality.result == 'success' }}
+    if: ${{ !cancelled() && !inputs.baseline_diagnostic && (needs.prepare-baseline.result == 'success' || inputs.deploy_only) && needs.quality.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

@@ -5,9 +5,13 @@
 
 ---
 
+## 2026-09-22：高校基线传输
+
+高校分片使用 `scripts/shard_baseline.py` 从本轮完整 state 生成的专用产物，保留高校 jobs/pending、全体 sources（共享冷却）和原始 last_run_at；独立 SHA256 输出绑定下载内容。下载步骤上限 5 分钟，上传分片 3 分钟。手动 `baseline_diagnostic` 优先于 `deploy_only`，仅准备、下载及验证，不采集或发布。说明见 docs/actions-cost-control.md。本轮新增 tests/test_shard_baseline.py，6 项定向测试通过（裁剪保真、共享冷却、哈希损坏、跨版本拒绝、文件缺失、空高校历史）；Actionlint 通过。未进行 NAS 实际下载验证。
+
 ## 2026-09-21：Actions 节省分钟变更（覆盖下文旧 NAS 交接说明）
 
-提交仅运行轻量检查；定时改为每天 16:00。主矩阵高校分片现在直接运行于 NAS，不再让云端轮询子任务；这是本轮节省分钟的明确调整。NAS 离线会排队，需取消并手动跳过高校分片。仅发页面使用 `deploy_only`，按哈希复用线上真实快照。具体开关与限制见 [docs/actions-cost-control.md](docs/actions-cost-control.md)。用户要求本地只做定向验证，不执行全量测试；下文旧全量验证要求不适用。
+提交仅运行轻量检查；定时改为每天 11:00。主矩阵高校分片现在直接运行于 NAS，不再让云端轮询子任务；这是本轮节省分钟的明确调整。NAS 离线会排队，需取消并手动跳过高校分片。仅发页面使用 `deploy_only`，按哈希复用线上真实快照。具体开关与限制见 [docs/actions-cost-control.md](docs/actions-cost-control.md)。用户要求本地只做定向验证，不执行全量测试；下文旧全量验证要求不适用。
 
 ## 1. 项目速览 (Project Overview)
 
@@ -20,7 +24,7 @@
   - **前端**：`Vinext` (基于 Vite 8 的 Next.js 兼容框架) + `React 19` + `TypeScript` + `Tailwind CSS 4` + 自定义设计系统规范。
   - **采集与数据管线**：`Python 3.12`（无头解析、多源抓取、去重归并、分片校验）。
   - **托管与发布**：`Cloudflare Workers`（Sites 静态托管与边缘分发，通过 `wrangler 4.92` 部署）。
-  - **定时流水线**：GitHub Actions（每天北京时间 16:00 自动分片采集、构建与部署）。
+  - **定时流水线**：GitHub Actions（每天北京时间 11:00 自动分片采集、构建与部署）。
 
 ---
 

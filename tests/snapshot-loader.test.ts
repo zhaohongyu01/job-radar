@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSnapshotParts } from '../lib/snapshot-loader.ts';
 
-test('snapshot parts retain order, bound concurrency and reject missing parts', async () => {
+await test('snapshot parts retain order, bound concurrency and reject missing parts', async () => {
   const previous = globalThis.fetch;
   const paths = Array.from({ length: 9 }, (_, i) => `/job-assets/index-${i.toString(16).padStart(20, '0')}.json`);
   let active = 0, peak = 0;

@@ -72,13 +72,15 @@ jobs:
 
       - name: Prepare universities-only baseline
         id: compact
-        run: python scripts/shard_baseline.py prepare --source data/state.json --output data/universities-baseline
+        run: |
+          python scripts/shard_baseline.py prepare --source data/state.json --output data/universities-baseline
+          cp scripts/shard_baseline.py data/universities-baseline/shard_baseline.py
 
       - name: Upload universities-only baseline
         uses: actions/upload-artifact@v4
         with:
           name: collector-baseline-universities-b
-          path: data/universities-baseline/*.json
+          path: data/universities-baseline/
           compression-level: 6
           if-no-files-found: error
           retention-days: 2
@@ -255,10 +257,6 @@ jobs:
     runs-on: [self-hosted, linux, job-radar-nas]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-        timeout-minutes: 3
-        with:
-          persist-credentials: false
       - name: Start baseline download timer
         run: echo "BASELINE_DOWNLOAD_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - name: Download universities baseline (maximum 5 minutes)
@@ -267,11 +265,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: collector-baseline-universities-b
-          path: data/diagnostic-baseline
+          path: ${{ runner.temp }}/baseline-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Verify downloaded baseline and report
         env:
           EXPECTED_BASELINE_SHA256: ${{ needs.prepare-baseline.outputs.universities_sha256 }}
-        run: python3 scripts/shard_baseline.py verify --directory data/diagnostic-baseline --expected-sha256 "$EXPECTED_BASELINE_SHA256"
+          BASELINE_DIRECTORY: ${{ runner.temp }}/baseline-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+        run: python3 "$BASELINE_DIRECTORY/shard_baseline.py" verify --directory "$BASELINE_DIRECTORY" --expected-sha256 "$EXPECTED_BASELINE_SHA256"
       - name: Explain failed download
         if: ${{ failure() && steps.download.outcome == 'failure' }}
         run: echo '高校基线下载失败或超过 5 分钟。没有进行采集或发布；请展开下载日志排查网络。' >> "$GITHUB_STEP_SUMMARY"

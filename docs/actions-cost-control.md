@@ -4,6 +4,8 @@
 
 代码推送到 main 后，进入 Actions → Daily Job Radar Pipeline → Run workflow，勾选“仅诊断 NAS 基线下载”，运行即可。此选项优先于 `deploy_only`：只在云端准备基线，在 NAS 下载并校验；不采集、不运行 quality、不构建、不合并发布。需要 NAS 在线且 `UNIVERSITIES_B_RUNNER=nas`。未在线时诊断任务仍会排队。
 
+诊断任务不再执行仓库 checkout，直接下载同一轮云端打包的基线和仅依赖标准库的校验脚本，使用按运行 ID/attempt 隔离的临时目录。正式采集仍需 checkout，因此诊断成功不代表正式采集的 GitHub 拉取问题已解决。
+
 在 `baseline-diagnostic` 的摘要查看解压后文件字节数、记录数、下载及校验耗时；压缩产物大小看下载步骤日志。下载步骤最多 5 分钟，整个诊断 job 最多 10 分钟（不含调度排队）。网络异常仍可能使诊断失败，本改动不改变 NAS 网络路由。
 
 高校使用本轮单独生成的 `collector-baseline-universities-b`：只包含高校历史岗位及待采队列，保留全部来源状态以继承共享主机冷却，保持原基线版本。下载后比对云端 job 输出的 SHA256；校验失败不采集。其他分片仍使用完整基线，主合并历史完整性校验不变。各分片基线下载统一限制为 5 分钟，上传分片结果限制为 3 分钟。

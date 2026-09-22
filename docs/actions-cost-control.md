@@ -1,30 +1,23 @@
 # Actions 分钟控制
 
-## NAS 下载排查入口
+## NAS 独立流水线与排查入口
 
-代码推送到 main 后，进入 Actions → Daily Job Radar Pipeline → Run workflow，勾选“仅诊断 NAS 基线下载”，运行即可。此选项优先于 `deploy_only`：只在云端准备基线，在 NAS 下载并校验；不采集、不运行 quality、不构建、不合并发布。需要 NAS 在线且 `UNIVERSITIES_B_RUNNER=nas`。未在线时诊断任务仍会排队。
+高校采集采用独立解耦工作流 `NAS Universities Pipeline`（`.github/workflows/nas-universities.yml`），由其专程调度自建 NAS Runner。
 
-诊断任务不再执行仓库 checkout，直接下载同一轮云端打包的基线和仅依赖标准库的校验脚本，使用按运行 ID/attempt 隔离的临时目录。正式采集仍需 checkout，因此诊断成功不代表正式采集的 GitHub 拉取问题已解决。
+- 排查入口：进入 Actions → NAS Universities Pipeline → Run workflow，勾选“仅诊断 NAS 基线下载”，运行即可。此选项只在云端准备高校基线并在 NAS 测试下载与 SHA256 校验；不采集、不构建、不发布。
+- 诊断任务按运行 ID 隔离临时目录，在摘要查看解压文件大小、记录数、下载及校验耗时。
+- 独立解耦保障：主站日常流水线（`Daily Job Radar Pipeline`）在每天 05:00 和 14:00 自动触发，5 个通用分类 100% 运行在 GitHub 云端，完全不受 NAS 在线状态影响，10~15 分钟无人值守准时发布；NAS 离线时主站自动完整保留线上高校历史数据。
 
-在 `baseline-diagnostic` 的摘要查看解压后文件字节数、记录数、下载及校验耗时；压缩产物大小看下载步骤日志。下载步骤最多 5 分钟，整个诊断 job 最多 10 分钟（不含调度排队）。网络异常仍可能使诊断失败，本改动不改变 NAS 网络路由。
-
-高校使用本轮单独生成的 `collector-baseline-universities-b`：只包含高校历史岗位及待采队列，保留全部来源状态以继承共享主机冷却，保持原基线版本。下载后比对云端 job 输出的 SHA256；校验失败不采集。其他分片仍使用完整基线，主合并历史完整性校验不变。各分片基线下载统一限制为 5 分钟，上传分片结果限制为 3 分钟。
-
-下载失败或核验失败的分片不会把下载到的基线作为采集结果上传；主流程按现有规则保留该分片历史。没有任何来源成功核验时，仍拒绝发布。
-
-- 推送 main：只运行 `Push Checks`（Python 语法、前端 lint 和类型检查）。文档变更不触发；连续推送取消旧检查。不采集、不部署。
-- `Daily Job Radar Pipeline`：每天北京时间 05:00、14:00 采集、验证和发布。原有完整发布校验继续保留。
-- 手动只发页面：在该工作流的 **Run workflow** 勾选 `deploy_only`。读取线上快照及其全部详情、搜索分片并校验哈希，失败即停止，不使用仓库旧数据兜底。
-- 手动采集：不勾选 `deploy_only`。默认包含高校；NAS 离线时取消 `include_universities_b`，保留高校历史数据。
-- 如本月剩余分钟不足，可把仓库 Actions variable `RUN_SCHEDULED_COLLECTION` 设为字符串 `false`，暂时停止定时运行；手动入口仍可用。恢复时删除变量或改为 `true`。
+- 推送 main：只运行 `Push Checks`（Python 编译检查、前端单测, lint、类型检查与生产打包）。文档变更不触发；连续推送取消旧检查。不采集、不部署。
+- `Daily Job Radar Pipeline`：每天北京时间 05:00、14:00 采集 5 个通用分类并验证发布。
+- `NAS Universities Pipeline`：每天北京时间 04:00、13:00（比主站提前 1 小时）在 NAS 直连采集 SDEI 高校并增量合并发布。
+- 手动只发页面：在 Daily Job Radar Pipeline 勾选 `deploy_only`。读取线上快照及其全部详情、搜索分片并校验哈希，失败即停止，不使用仓库旧数据兜底。
+- 如需临时停用定时，可把仓库 Actions variable `RUN_SCHEDULED_COLLECTION` 设为字符串 `false`，暂时停止定时运行；手动入口仍可用。恢复时删除变量或改为 `true`。
 
 ## NAS 执行方式
 
-保持 `UNIVERSITIES_B_RUNNER=nas`，现有 runner 标签 `self-hosted, linux, job-radar-nas` 不变。主工作流的高校分片直接在 NAS 执行，其他分片仍用云端 runner。全部分片从同一次运行的 baseline 开始，合并时继续检查归属与基线一致性。
-
-不再派发并轮询 `NAS Universities Collector` 子工作流。旧入口仅为兼容保留，不要另行启动，否则可能重复采集。GitHub 调度器等待 NAS 不占用一台云端 runner。
-
-**行为变化：NAS 离线时高校任务会排队，原来 90 秒无结果自动降级不再适用。** 若离线，取消本轮后手动运行并取消高校选项。NAS 在线但采集失败时，仍由现有合并规则决定能否保留历史并发布；所有分片均未成功核验时继续拒绝发布。
+高校采集独立运行在标签为 `self-hosted, linux, job-radar-nas` 的 NAS Runner 上，每次从云端拉取经过裁剪的 `collector-baseline-universities-b` 基线（仅含高校历史与共享冷却状态），采集完成后由云端合并校验并部署至 Cloudflare Workers。
+NAS 离线时，仅 `NAS Universities Pipeline` 会处于排队或等待状态，主站 5 大分类的定时更新发布完全不受任何干扰。
 
 ## 费用边界
 

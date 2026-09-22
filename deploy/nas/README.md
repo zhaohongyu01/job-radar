@@ -72,15 +72,16 @@ UNIVERSITIES_B_RUNNER = nas
 ```
 
 不是 Secret，不要填入令牌。NAS 任务只得到本仓库的临时只读 GitHub 权限，不需要 Cloudflare 密钥。
-主工作流在矩阵任务中直接分流：当 `UNIVERSITIES_B_RUNNER=nas` 时，`universities-b` 分片直接调度至 `[self-hosted, linux, job-radar-nas]`。
+高校分片采用**独立流水线解耦架构**：
+- **高校专项流水线**（`.github/workflows/nas-universities.yml`）：每天北京时间 04:00、13:00（比主站提前 1 小时）或手动触发，直接在 NAS Runner 上执行 SDEI 17 所高校的直连采集与增量发布。
+- **主站日常流水线**（`.github/workflows/daily-collect.yml`）：每天北京时间 05:00、14:00 自动触发，5 个通用分类 100% 运行在 GitHub 云端，完全不受 NAS 在线状态影响，10~15 分钟准时发布。
 
-手动运行一次 **Daily Job Radar Pipeline** 验收。
-开启变量后，定时或手动触发均会自动调度高校分片至 NAS。
+手动运行一次 **NAS Universities Pipeline** 进行首次验收。
 
 ## 4. 首次验收
 
-- GitHub Actions 的 `collect-shards (universities-b)` 步骤中显示运行于自建 NAS Runner。
-- 高校分片下载 `collector-baseline-universities-b` 并生成 `collector-shard-universities-b` 产物，合并步骤正常汇总结算。
+- GitHub Actions 的 `NAS Universities Pipeline` 中，`collect` 步骤显示运行于自建 NAS Runner。
+- 高校分片下载 `collector-baseline-universities-b` 并生成 `collector-shard-universities-b` 产物，云端合并发布到 Cloudflare Workers。
 - 核对来源列表的实际 `pages / parsed / cached` 和错误，不只看任务绿色状态。
 - 首次可能仍处于以前保留的四小时冷却；不要清空历史或强行重试，等冷却结束后再验收。
 - 如果仍有 403，检查报告中的 `portal / announcements_list / positions_list` 阶段，并确认家庭宽带和路由器规则。NAS 不保证能解除上游限制。
@@ -88,9 +89,8 @@ UNIVERSITIES_B_RUNNER = nas
 ## 5. 离线、超时和回退
 
 - NAS 执行预算：单源预算 120 秒，分片总预算 1500 秒，Job 超时 45 分钟。
-- NAS 离线处理：若 NAS 离线，高校分片会在 GitHub 队列中排队。可取消本轮运行，并在手动运行时取消勾选 `include_universities_b` 选项继续发布其他分片。
-- NAS 失败或产物缺失：合并器保留高校历史记录并报告缺失；其他来源有成功核验且完整性通过时可正常发布。
-- 要恢复为云端 Runner 采集高校，删除变量 `UNIVERSITIES_B_RUNNER` 或改为非 `nas` 值即可，无需删除历史数据。
+- NAS 离线处理：若 NAS 离线，仅 `NAS Universities Pipeline` 会在 GitHub 队列中等待或超时，**主站流水线（daily-collect）完全不受任何影响**，照常按时更新发布其余 5 大分类并完整保留历史高校数据。
+- 诊断入口：在 `NAS Universities Pipeline` 的 Run workflow 中勾选“仅诊断 NAS 基线下载”，只在云端准备基线并在 NAS 测试下载与 SHA256 校验，不采详情不发布。
 
 ## 更新与维护
 

@@ -1,0 +1,282 @@
+name: NAS Universities Pipeline
+
+on:
+  schedule:
+    # 每天北京时间 04:00 (UTC 20:00) 与 13:00 (UTC 05:00) 自动触发（比主站提前 1 小时）
+    - cron: '0 5,20 * * *'
+  workflow_dispatch:
+    inputs:
+      baseline_diagnostic:
+        description: '仅诊断 NAS 基线下载：不采集、不构建、不发布'
+        type: boolean
+        default: false
+
+concurrency:
+  group: nas-universities-pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # Restore live published baseline on GitHub Cloud, then prepare a compact baseline for NAS
+  prepare-baseline:
+    outputs:
+      universities_sha256: ${{ steps.compact.outputs.baseline_sha256 }}
+    if: ${{ github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Restore Collector State
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/state.json
+            data/published-baseline.json
+          key: collector-state-v3-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            collector-state-v3-
+
+      - name: Restore Published Baseline
+        run: python scripts/ci_collect.py prepare --site https://sites-project.job-radar.workers.dev
+
+      - name: Prepare universities-only baseline
+        id: compact
+        run: |
+          python scripts/shard_baseline.py prepare --source data/state.json --output data/universities-baseline
+          cp scripts/shard_baseline.py data/universities-baseline/shard_baseline.py
+
+      - name: Upload universities-only baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-baseline-universities-b
+          path: data/universities-baseline/
+          compression-level: 6
+          if-no-files-found: error
+          retention-days: 2
+
+      - name: Upload Full Collector Baseline
+        if: ${{ !inputs.baseline_diagnostic }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-baseline
+          path: |
+            data/state.json
+            data/ci-baseline.json
+          retention-days: 2
+
+  baseline-diagnostic:
+    needs: [prepare-baseline]
+    if: ${{ inputs.baseline_diagnostic }}
+    runs-on: [self-hosted, linux, job-radar-nas]
+    timeout-minutes: 10
+    steps:
+      - name: Start baseline download timer
+        run: echo "BASELINE_DOWNLOAD_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Download universities baseline (maximum 5 minutes)
+        id: download
+        timeout-minutes: 5
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-baseline-universities-b
+          path: ${{ runner.temp }}/baseline-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify downloaded baseline and report
+        env:
+          EXPECTED_BASELINE_SHA256: ${{ needs.prepare-baseline.outputs.universities_sha256 }}
+          BASELINE_DIRECTORY: ${{ runner.temp }}/baseline-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+        run: python3 "$BASELINE_DIRECTORY/shard_baseline.py" verify --directory "$BASELINE_DIRECTORY" --expected-sha256 "$EXPECTED_BASELINE_SHA256"
+      - name: Explain failed download
+        if: ${{ failure() && steps.download.outcome == 'failure' }}
+        run: echo '高校基线下载失败或超过 5 分钟。没有进行采集或发布；请展开下载日志排查网络。' >> "$GITHUB_STEP_SUMMARY"
+
+  collect:
+    needs: [prepare-baseline]
+    if: ${{ !inputs.baseline_diagnostic }}
+    runs-on: [self-hosted, linux, job-radar-nas]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Start baseline download timer
+        run: echo "BASELINE_DOWNLOAD_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Download Collector Baseline
+        id: baseline_download
+        timeout-minutes: 5
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-baseline-universities-b
+          path: data
+
+      - name: Verify universities baseline before collection
+        env:
+          EXPECTED_BASELINE_SHA256: ${{ needs.prepare-baseline.outputs.universities_sha256 }}
+        run: python3 scripts/shard_baseline.py verify --directory data --expected-sha256 "$EXPECTED_BASELINE_SHA256"
+
+      - name: Explain baseline download failure
+        if: ${{ failure() && steps.baseline_download.outcome == 'failure' }}
+        run: echo '基线下载失败或超过 5 分钟；高校分片未开始采集。请查看下载日志中的连接错误和压缩产物大小。' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up NAS Python environment
+        timeout-minutes: 7
+        run: python3 scripts/prepare_nas_python.py
+
+      - name: Collect universities on NAS
+        id: collector
+        env:
+          JOB_RADAR_SCHEDULE_ENABLED: 'true'
+          NO_PROXY: '*'
+        run: |
+          export no_proxy="$NO_PROXY"
+          "$NAS_PYTHON" scripts/ci_collect.py collect \
+            --source-pack universities-b --data-dir data --public-dir public \
+            --pages 2 --days 30 --refresh-hours 72 --probe-budget 1 \
+            --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6 \
+            --source-budget 120 --shard-budget 1500
+
+      - name: Upload Shard State
+        timeout-minutes: 3
+        if: ${{ always() && (steps.collector.outcome == 'success' || steps.collector.outcome == 'failure') && hashFiles('data/state.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-shard-universities-b
+          path: |
+            data/state.json
+            data/ci-report.json
+          retention-days: 2
+
+  quality:
+    if: ${{ !inputs.baseline_diagnostic }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Upload Built Application
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-application
+          path: |
+            dist
+            !dist/client/jobs.json
+            !dist/client/snapshot-manifest.json
+            !dist/client/job-assets
+            !dist/client/job-assets/**
+          include-hidden-files: true
+          retention-days: 2
+
+  merge-and-deploy:
+    needs: [prepare-baseline, collect, quality]
+    if: ${{ !cancelled() && !inputs.baseline_diagnostic && needs.prepare-baseline.result == 'success' && needs.collect.result == 'success' && needs.quality.result == 'success' }}
+    concurrency:
+      group: cloudflare-deployment
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Download Collector Baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-baseline
+          path: data
+
+      - name: Download Universities Shard
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-shard-universities-b
+          path: data/shards/collector-shard-universities-b
+
+      - name: Merge Universities Shard
+        id: merge
+        run: |
+          python scripts/ci_collect.py merge \
+            --data-dir data \
+            --public-dir public \
+            --shards-dir data/shards \
+            --days 30 \
+            --expected-shards "universities-b"
+
+      - name: Save Collector State
+        if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/state.json
+            data/published-baseline.json
+          key: collector-state-v3-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload Collection Diagnostics
+        if: ${{ always() && hashFiles('data/ci-report.json') != '' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-report-${{ github.run_attempt }}
+          path: |
+            data/ci-report.json
+            data/coverage-changes.json
+          retention-days: 7
+
+      - name: Download Built Application
+        uses: actions/download-artifact@v4
+        with:
+          name: built-application
+          path: dist
+
+      - name: Attach Validated Data to Application
+        run: python scripts/stage_public.py --public-dir public --dist-dir dist
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Deploy to Cloudflare Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes --package wrangler@4.92.0 wrangler deploy --config dist/server/wrangler.json --keep-vars

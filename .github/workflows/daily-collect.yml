@@ -10,14 +10,6 @@ on:
         description: '复用已完成采集的运行 ID，仅重新合并发布（不重新采集）；留空为正常采集'
         type: string
         default: ''
-      baseline_diagnostic:
-        description: '仅诊断 NAS 基线下载：不采集、不构建、不发布（优先于仅发布选项）'
-        type: boolean
-        default: false
-      include_universities_b:
-        description: '采集高校分片（NAS 离线时取消勾选，保留高校历史记录）'
-        type: boolean
-        default: true
       deploy_only:
         description: '仅发布页面，复用线上数据，不启动采集'
         type: boolean
@@ -37,18 +29,10 @@ env:
 jobs:
   # Restore one consistent historical baseline before the collection fan-out.
   prepare-baseline:
-    outputs:
-      universities_sha256: ${{ steps.compact.outputs.baseline_sha256 }}
-    if: ${{ !inputs.reuse_run_id && (inputs.baseline_diagnostic || !inputs.deploy_only) && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
+    if: ${{ !inputs.reuse_run_id && !inputs.deploy_only && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check diagnostic configuration
-        if: ${{ inputs.baseline_diagnostic && vars.UNIVERSITIES_B_RUNNER != 'nas' }}
-        run: |
-          echo '::error::NAS 下载诊断要求 UNIVERSITIES_B_RUNNER=nas。'
-          exit 1
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -75,23 +59,7 @@ jobs:
       - name: Restore Published Baseline
         run: python scripts/ci_collect.py prepare --site https://sites-project.job-radar.workers.dev
 
-      - name: Prepare universities-only baseline
-        id: compact
-        run: |
-          python scripts/shard_baseline.py prepare --source data/state.json --output data/universities-baseline
-          cp scripts/shard_baseline.py data/universities-baseline/shard_baseline.py
-
-      - name: Upload universities-only baseline
-        uses: actions/upload-artifact@v4
-        with:
-          name: collector-baseline-universities-b
-          path: data/universities-baseline/
-          compression-level: 6
-          if-no-files-found: error
-          retention-days: 2
-
       - name: Upload Collector Baseline
-        if: ${{ !inputs.baseline_diagnostic }}
         uses: actions/upload-artifact@v4
         with:
           name: collector-baseline
@@ -101,7 +69,7 @@ jobs:
           retention-days: 2
 
   quality:
-    if: ${{ !inputs.baseline_diagnostic && (github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false') }}
+    if: ${{ github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -158,20 +126,19 @@ jobs:
           include-hidden-files: true
           retention-days: 2
 
-  # Each shard starts from the same baseline and only updates its own sources.
-  # Four concurrent runners keep wall-clock time bounded without hammering sites.
+  # Five concurrent cloud runners keep wall-clock time bounded and collect cleanly.
   collect-shards:
-    if: ${{ !inputs.baseline_diagnostic && !inputs.reuse_run_id }}
+    if: ${{ !inputs.reuse_run_id }}
     needs: [prepare-baseline]
-    runs-on: ${{ fromJSON(matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' && '["self-hosted","linux","job-radar-nas"]' || '["ubuntu-latest"]') }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-    timeout-minutes: 45
+    timeout-minutes: 35
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 5
       matrix:
-        pack: ${{ fromJSON(github.event_name == 'workflow_dispatch' && !inputs.include_universities_b && '["regional-official","universities-a","finance","large-enterprises","public-leads"]' || '["regional-official","universities-a","universities-b","finance","large-enterprises","public-leads"]') }}
+        pack: ["regional-official", "universities-a", "finance", "large-enterprises", "public-leads"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -179,7 +146,6 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python 3.12
-        if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         uses: actions/setup-python@v5
         with:
           python-version-file: .python-version
@@ -187,7 +153,6 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install Python dependencies
-        if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         run: python -m pip install -r requirements.txt
 
       - name: Start baseline download timer
@@ -198,21 +163,10 @@ jobs:
         timeout-minutes: 5
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.pack == 'universities-b' && 'collector-baseline-universities-b' || 'collector-baseline' }}
+          name: collector-baseline
           path: data
 
-      - name: Verify universities baseline before collection
-        if: ${{ matrix.pack == 'universities-b' }}
-        env:
-          EXPECTED_BASELINE_SHA256: ${{ needs.prepare-baseline.outputs.universities_sha256 }}
-        run: python3 scripts/shard_baseline.py verify --directory data --expected-sha256 "$EXPECTED_BASELINE_SHA256"
-
-      - name: Explain baseline download failure
-        if: ${{ failure() && steps.baseline_download.outcome == 'failure' }}
-        run: echo '基线下载失败或超过 5 分钟；本分片未开始采集，合并时保留历史。请查看下载日志中的连接错误和压缩产物大小。' >> "$GITHUB_STEP_SUMMARY"
-
       - name: Run Collector Shard
-        if: ${{ matrix.pack != 'universities-b' || vars.UNIVERSITIES_B_RUNNER != 'nas' }}
         id: collector
         env:
           JOB_RADAR_SCHEDULE_ENABLED: 'true'
@@ -231,27 +185,9 @@ jobs:
             --source-budget 180 \
             --shard-budget 1080
 
-      - name: Set up NAS Python environment
-        if: ${{ matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' }}
-        timeout-minutes: 7
-        run: python3 scripts/prepare_nas_python.py
-
-      - name: Collect universities on NAS directly
-        id: nas_collector
-        if: ${{ matrix.pack == 'universities-b' && vars.UNIVERSITIES_B_RUNNER == 'nas' }}
-        env:
-          NO_PROXY: '*'
-        run: |
-          export no_proxy="$NO_PROXY"
-          "$NAS_PYTHON" scripts/ci_collect.py collect \
-            --source-pack universities-b --data-dir data --public-dir public \
-            --pages 2 --days 30 --refresh-hours 72 --probe-budget 1 \
-            --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6 \
-            --source-budget 120 --shard-budget 1500
-
       - name: Upload Shard State
         timeout-minutes: 3
-        if: ${{ always() && (steps.collector.outcome == 'success' || steps.collector.outcome == 'failure' || steps.nas_collector.outcome == 'success' || steps.nas_collector.outcome == 'failure') && hashFiles('data/state.json') != '' }}
+        if: ${{ always() && (steps.collector.outcome == 'success' || steps.collector.outcome == 'failure') && hashFiles('data/state.json') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: collector-shard-${{ matrix.pack }}
@@ -260,33 +196,12 @@ jobs:
             data/ci-report.json
           retention-days: 2
 
-  baseline-diagnostic:
-    needs: [prepare-baseline]
-    if: ${{ inputs.baseline_diagnostic && vars.UNIVERSITIES_B_RUNNER == 'nas' }}
-    runs-on: [self-hosted, linux, job-radar-nas]
-    timeout-minutes: 10
-    steps:
-      - name: Start baseline download timer
-        run: echo "BASELINE_DOWNLOAD_STARTED=$(date +%s)" >> "$GITHUB_ENV"
-      - name: Download universities baseline (maximum 5 minutes)
-        id: download
-        timeout-minutes: 5
-        uses: actions/download-artifact@v4
-        with:
-          name: collector-baseline-universities-b
-          path: ${{ runner.temp }}/baseline-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Verify downloaded baseline and report
-        env:
-          EXPECTED_BASELINE_SHA256: ${{ needs.prepare-baseline.outputs.universities_sha256 }}
-          BASELINE_DIRECTORY: ${{ runner.temp }}/baseline-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
-        run: python3 "$BASELINE_DIRECTORY/shard_baseline.py" verify --directory "$BASELINE_DIRECTORY" --expected-sha256 "$EXPECTED_BASELINE_SHA256"
-      - name: Explain failed download
-        if: ${{ failure() && steps.download.outcome == 'failure' }}
-        run: echo '高校基线下载失败或超过 5 分钟。没有进行采集或发布；请展开下载日志排查网络。' >> "$GITHUB_STEP_SUMMARY"
-
   merge-and-deploy:
     needs: [prepare-baseline, quality, collect-shards]
-    if: ${{ !cancelled() && !inputs.baseline_diagnostic && (needs.prepare-baseline.result == 'success' || inputs.deploy_only || inputs.reuse_run_id) && needs.quality.result == 'success' }}
+    if: ${{ !cancelled() && (needs.prepare-baseline.result == 'success' || inputs.deploy_only || inputs.reuse_run_id) && needs.quality.result == 'success' }}
+    concurrency:
+      group: cloudflare-deployment
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -331,14 +246,14 @@ jobs:
           REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
         run: |
           if [ -n "$REUSE_RUN_ID" ]; then
-            python -c "from pathlib import Path; packs='regional-official universities-a universities-b finance large-enterprises public-leads'.split(); missing=[p for p in packs if not list((Path('data/shards')/('collector-shard-'+p)).rglob('state.json'))]; assert not missing, f'Recovery requires all shards: {missing}'"
+            python -c "from pathlib import Path; packs='regional-official universities-a finance large-enterprises public-leads'.split(); missing=[p for p in packs if not list((Path('data/shards')/('collector-shard-'+p)).rglob('state.json'))]; assert not missing, f'Recovery requires all shards: {missing}'"
           fi
           python scripts/ci_collect.py merge \
             --data-dir data \
             --public-dir public \
             --shards-dir data/shards \
             --days 30 \
-            --expected-shards "regional-official,universities-a,universities-b,finance,large-enterprises,public-leads"
+            --expected-shards "regional-official,universities-a,finance,large-enterprises,public-leads"
 
       - name: Restore exact live snapshot for page-only deployment
         if: ${{ inputs.deploy_only }}

@@ -39,8 +39,12 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Typecheck and Lint Frontend
+      - name: Typecheck, Test, and Lint Frontend
         run: |
+          node --experimental-strip-types --test tests/*.test.ts
           npm run lint
           npx tsc --noEmit
+
+      - name: Build Web Application
+        run: npm run build
 

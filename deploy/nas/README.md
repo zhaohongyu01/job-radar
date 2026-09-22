@@ -72,30 +72,25 @@ UNIVERSITIES_B_RUNNER = nas
 ```
 
 不是 Secret，不要填入令牌。NAS 任务只得到本仓库的临时只读 GitHub 权限，不需要 Cloudflare 密钥。
-主流程的采集 job 使用 Actions 写权限，仅用于派发和取消自己创建的 NAS 子任务。
+主工作流在矩阵任务中直接分流：当 `UNIVERSITIES_B_RUNNER=nas` 时，`universities-b` 分片直接调度至 `[self-hosted, linux, job-radar-nas]`。
 
-手动运行一次 **Daily Job Radar Pipeline**，不要手工填写 NAS 子工作流的内部输入参数。
-开启变量后，下一次定时或推送触发也会使用 NAS。
+手动运行一次 **Daily Job Radar Pipeline** 验收。
+开启变量后，定时或手动触发均会自动调度高校分片至 NAS。
 
 ## 4. 首次验收
 
-- GitHub 出现关联的 `NAS universities-b <主任务ID>-<次数>` 子任务，并在 Runner 信息中显示 NAS 名称。
-- 子任务下载本轮基线并生成 `nas-universities-b` 产物，主任务接收后生成 `collector-shard-universities-b`。
+- GitHub Actions 的 `collect-shards (universities-b)` 步骤中显示运行于自建 NAS Runner。
+- 高校分片下载 `collector-baseline-universities-b` 并生成 `collector-shard-universities-b` 产物，合并步骤正常汇总结算。
 - 核对来源列表的实际 `pages / parsed / cached` 和错误，不只看任务绿色状态。
 - 首次可能仍处于以前保留的四小时冷却；不要清空历史或强行重试，等冷却结束后再验收。
 - 如果仍有 403，检查报告中的 `portal / announcements_list / positions_list` 阶段，并确认家庭宽带和路由器规则。NAS 不保证能解除上游限制。
 
 ## 5. 离线、超时和回退
 
-- NAS 未接单：GitHub 约等待 90 秒后尝试取消子任务，其余分片继续。API 单次超时会增加少量等待。
-- NAS 已接单：最多等待约 1100 秒；采集器本身预算 900 秒，子 job 20 分钟上限。
-- 子任务晚到：开始时检查父任务是否仍在运行、提交及尝试次数是否一致、请求是否过期，避免执行旧队列。
-- NAS 失败或产物缺失：原合并器保留高校历史记录并报告缺失；其他来源有成功核验且完整性通过时可正常发布。
-- 不自动切回海外 Runner 请求同一受限平台，避免来回重复触发限制。
-- 要恢复旧的 GitHub 高校采集，删除变量 `UNIVERSITIES_B_RUNNER` 或改为 `github`，无需删除历史数据。
-
-GitHub 上等待 NAS 的协调 job 仍会占用 GitHub-hosted Runner 分钟数；自有 NAS 不意味着整个方案零费用。
-启用后观察 Actions 的 Usage，尤其当前一天三次运行；若接近账户免费额度，先降低运行次数再评估异步采集架构。
+- NAS 执行预算：单源预算 120 秒，分片总预算 1500 秒，Job 超时 45 分钟。
+- NAS 离线处理：若 NAS 离线，高校分片会在 GitHub 队列中排队。可取消本轮运行，并在手动运行时取消勾选 `include_universities_b` 选项继续发布其他分片。
+- NAS 失败或产物缺失：合并器保留高校历史记录并报告缺失；其他来源有成功核验且完整性通过时可正常发布。
+- 要恢复为云端 Runner 采集高校，删除变量 `UNIVERSITIES_B_RUNNER` 或改为非 `nas` 值即可，无需删除历史数据。
 
 ## 更新与维护
 

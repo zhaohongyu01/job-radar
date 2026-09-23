@@ -119,6 +119,20 @@ jobs:
 
       - name: Download Collector Baseline
         id: baseline_download
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-baseline-universities-b
+          path: data
+
+      - name: Wait before retrying baseline download
+        if: ${{ steps.baseline_download.outcome == 'failure' }}
+        run: sleep 20
+
+      - name: Retry Collector Baseline download
+        id: baseline_download_retry
+        if: ${{ steps.baseline_download.outcome == 'failure' }}
         timeout-minutes: 5
         uses: actions/download-artifact@v4
         with:
@@ -130,9 +144,13 @@ jobs:
           EXPECTED_BASELINE_SHA256: ${{ needs.prepare-baseline.outputs.universities_sha256 }}
         run: python3 scripts/shard_baseline.py verify --directory data --expected-sha256 "$EXPECTED_BASELINE_SHA256"
 
+      - name: Report recovered baseline download
+        if: ${{ steps.baseline_download.outcome == 'failure' && steps.baseline_download_retry.outcome == 'success' }}
+        run: echo 'NAS 基线下载首次失败，等待 20 秒后重试成功并通过校验。' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Explain baseline download failure
-        if: ${{ failure() && steps.baseline_download.outcome == 'failure' }}
-        run: echo '基线下载失败或超过 5 分钟；高校分片未开始采集。请查看下载日志中的连接错误和压缩产物大小。' >> "$GITHUB_STEP_SUMMARY"
+        if: ${{ failure() && steps.baseline_download_retry.outcome == 'failure' }}
+        run: echo '基线下载连续两次失败；高校分片未开始采集。请检查 NAS Runner 到 GitHub Actions 产物服务的网络及代理连接。' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up NAS Python environment
         timeout-minutes: 7

@@ -52,6 +52,17 @@ export interface RecentChange {
 
 export type ChangeTypeFilter = '全部' | '有变更' | '截止延期' | '补录招募' | '岗位调整' | '考核阶段';
 
+export type TalkEvent = {
+  id: string;
+  date: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  city?: string | null;
+  school: string;
+  venue: string;
+  url: string;
+};
+
 export type Job = {
   id: string;
   title: string;
@@ -63,6 +74,9 @@ export type Job = {
   source?: string;
   source_name: string;
   source_url: string;
+  talk_event?: TalkEvent | null;
+  talk_events?: TalkEvent[];
+  talk_attached_to?: string;
   published_at: string | null;
   date_label?: string;
   provenance?: string;
@@ -247,7 +261,9 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
     const cities = (job.cities ?? []).slice().sort().join(',');
 
     let key: string;
-    if (kind === '具体岗位') {
+    if (job.source_id?.endsWith('-talks')) {
+      key = `talk_${job.id}`;
+    } else if (kind === '具体岗位') {
       if (!company || !job.title) {
         key = `pos_fallback_${job.id}`;
       } else {
@@ -321,6 +337,13 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
       }
       existing.duplicate_ids = existing.duplicate_ids ?? [];
       existing.duplicate_ids.push(job.id);
+      if (job.talk_events?.length) {
+        const events = new Map((existing.talk_events ?? []).map((event) => [event.id, event]));
+        for (const event of job.talk_events) events.set(event.id, event);
+        existing.talk_events = [...events.values()].sort((a, b) =>
+          `${a.date} ${a.start_time ?? ''}`.localeCompare(`${b.date} ${b.start_time ?? ''}`),
+        );
+      }
       if (job.duplicate_ids?.length) {
         existing.duplicate_ids = [...new Set([...existing.duplicate_ids, ...job.duplicate_ids])];
       }
@@ -1044,6 +1067,7 @@ export function filterJobs(
   return jobs
     .filter((j) => {
       const p = personalFor(j, personal);
+      if (f.view === 'all' && j.talk_attached_to) return false;
       if (f.onlyUnread && !isUnread(j, personal)) return false;
       if (
         (f.view === 'saved' && !p.saved) ||
@@ -1058,7 +1082,8 @@ export function filterJobs(
       if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
       if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
       const location = locationMatch(j, f.city);
-      if (f.city !== '全部城市' && location !== f.locationScope) return false;
+      const talkInCity = j.talk_events?.some((event) => event.city === f.city) ?? false;
+      if (f.city !== '全部城市' && location !== f.locationScope && !talkInCity) return false;
       if (
         f.type !== '全部' &&
         !j.types.includes(f.type) &&
@@ -1122,6 +1147,7 @@ export function filterJobs(
           const searchable = [
             j.title,
             j.company,
+            ...(j.talk_events?.map((event) => `${event.city ?? ''} ${event.school} ${event.venue} ${event.date}`) ?? []),
             j.excerpt,
             j.education,
             ...(j.directions ?? []),

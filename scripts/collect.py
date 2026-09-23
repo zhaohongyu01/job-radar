@@ -128,6 +128,22 @@ SDEI_SCHOOLS = [
     ('bzmc', '滨州医学院'), ('lcu', '聊城大学'), ('lyu', '临沂大学'),
     ('sdtbu', '山东工商学院'), ('dzu', '德州学院'), ('sdua', '山东农业工程学院'),
 ]
+# Only named physical campuses whose city is confirmed by school websites.
+# Multi-city institutions are deliberately not inferred from the school name.
+# sdufe.edu.cn/xxgk_/xxjj.htm, zsb.qlu.edu.cn/home/article/faq_details/87,
+# zs.qust.edu.cn/lxwm.htm, ujn.edu.cn/xxgk/xxjj.htm,
+# ldu.edu.cn/xxgk/xxjj.htm, new.sdtbu.edu.cn/xxgk/xxjj.htm,
+# ytu.edu.cn/info/1003/12777.htm, sdua.edu.cn.
+TALK_CAMPUS_CITY = {
+    '山东财经大学': (r'燕山|舜耕|圣井|章丘', '济南'),
+    '齐鲁工业大学': (r'长清|历城|彩石', '济南'),
+    '青岛科技大学': (r'崂山|四方|中德(?:生态园|校区)', '青岛'),
+    '济南大学': (r'主校区|舜耕校区', '济南'),
+    '鲁东大学': (r'鲁东大学北区|北校区', '烟台'),
+    '山东工商学院': (r'东校', '烟台'),
+    '烟台大学': (r'北校区|主校区|南校区|八角湾校区', '烟台'),
+    '山东航空学院': (r'山东航空学院', '滨州'),
+}
 CORE_SDEI_SCHOOLS = {'jobsdufe', 'ujn', 'sdnu', 'qlu'}
 ROTATING_SDEI_GROUPS = [
     ['qdu', 'qust', 'ytu', 'ldu'],
@@ -1575,6 +1591,7 @@ def parse_detail(html, item, source):
                 event_lines.append(f'{label}：{value}')
         if event_lines:
             raw_job['body'] += '\n\n宣讲活动信息：\n' + '\n'.join(event_lines)
+        raw_job['talk_event'] = extract_talk_event(dict(raw_job, structured=structured))
     return enrich_job_with_positions(raw_job, positions)
 
 
@@ -2009,7 +2026,11 @@ def deduplicate(jobs):
         norm_comp = normalize_company(company)
         norm_title = normalize_title_core(job.get('title', ''))
 
-        if kind == '具体岗位':
+        if job.get('source_id', '').endswith('-talks'):
+            # A campus event is a distinct source record, even when its
+            # recruitment text describes the same campaign as an announcement.
+            key = ('talk', job['id'])
+        elif kind == '具体岗位':
             if not company or not job.get('title'):
                 key = ('position_fallback', job['id'])
             else:
@@ -2234,9 +2255,123 @@ def deduplicate(jobs):
     return list(groups.values())
 
 
+def extract_talk_event(job):
+    """Read event facts independently of recruitment work cities and deadlines."""
+    structured = job.get('structured') or {}
+    body = job.get('body') or ''
+
+    def field(key, label):
+        value = structured.get(key)
+        if isinstance(value, str) and value.strip():
+            return clean(value)[:200]
+        match = re.search(rf'{label}\s*[：:]\s*([^\n]+)', body)
+        return match[1].strip()[:200] if match else ''
+
+    raw_date = field('fairDate', '宣讲时间')
+    match = re.search(r'(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})', raw_date)
+    if not match:
+        return None
+    try:
+        date = dt.date(*(int(part) for part in match.groups())).isoformat()
+    except ValueError:
+        return None
+    time_text = field('fairStartTime', '宣讲时间')
+    start = re.search(r'(?<!\d)([01]?\d|2[0-3]):[0-5]\d', time_text)
+    end_text = field('fairEndTime', '宣讲时间')
+    times = re.findall(r'(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d', end_text)
+    end = times[-1] if len(times) > 1 else (times[0] if structured.get('fairEndTime') else '')
+    school = field('schoolName', '宣讲学校')
+    venue = field('fairAddress', '举办地点')
+    if not school or not venue:
+        return None
+    explicit_cities = [city for city in CITIES if city in venue]
+    city = explicit_cities[0] if len(explicit_cities) == 1 else None
+    campus = TALK_CAMPUS_CITY.get(school)
+    if not city and campus and not re.search(r'线上|直播|空中宣讲|腾讯会议', venue) and re.search(campus[0], venue):
+        city = campus[1]
+    return {'id': job['id'], 'date': date,
+            'start_time': start[0] if start else None, 'end_time': end or None,
+            'school': school[:80], 'venue': venue, 'city': city,
+            'url': job.get('source_url', '')}
+
+
+def talk_company_names(job):
+    name = job.get('company') or ''
+    names = {normalize_company(name)} if name else set()
+    if name:
+        # Only accept an alias explicitly declared next to the legal employer.
+        pattern = re.escape(name) + r'\s*[（(]\s*(?:以下简称|简称)\s*[“\"‘]?([\u4e00-\u9fa5A-Za-z0-9]{3,15})'
+        match = re.search(pattern, (job.get('body') or '')[:1200])
+        if match:
+            names.add(normalize_company(match[1]))
+    return names - {''}
+
+
+def talk_campaign_phase(title):
+    if re.search(r'春招|春季招聘', title):
+        return '春'
+    if re.search(r'秋招|秋季招聘', title):
+        return '秋'
+    return None
+
+
+def attach_talk_events(jobs):
+    """Attach a dated talk only when one matching employer/cohort campaign wins."""
+    from collections import defaultdict
+    campaigns = defaultdict(list)
+    for job in jobs:
+        job.pop('talk_attached_to', None)
+        job.pop('talk_events', None)
+        if job.get('source_id', '').endswith('-talks') or job.get('kind') == '具体岗位':
+            continue
+        if '校招' not in job.get('types', []) or not job.get('graduation_years'):
+            continue
+        for name in talk_company_names(job):
+            campaigns[name].append(job)
+
+    for talk in jobs:
+        if not talk.get('source_id', '').endswith('-talks'):
+            continue
+        event = talk.get('talk_event')
+        years = set(talk.get('graduation_years') or [])
+        if not event or not years or not talk.get('company'):
+            continue
+        candidates = {}
+        for name in talk_company_names(talk):
+            for campaign in campaigns[name]:
+                campaign_years = set(campaign.get('graduation_years') or [])
+                if not years.intersection(campaign_years):
+                    continue
+                talk_phase = talk_campaign_phase(talk.get('title') or '')
+                campaign_phase = talk_campaign_phase(campaign.get('title') or '')
+                if talk_phase and campaign_phase and talk_phase != campaign_phase:
+                    continue
+                # Prefer the same legal employer and exact cohort. Never use
+                # application URLs alone as evidence of a shared campaign.
+                score = (int(normalize_company(talk['company']) == normalize_company(campaign.get('company'))),
+                         int(years == campaign_years))
+                candidates[campaign['id']] = (score, campaign)
+        if not candidates:
+            continue
+        ranked = sorted(candidates.values(), key=lambda item: item[0], reverse=True)
+        if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
+            continue
+        campaign = ranked[0][1]
+        campaign.setdefault('talk_events', []).append(event)
+        talk['talk_attached_to'] = campaign['id']
+
+    for job in jobs:
+        if job.get('talk_events'):
+            job['talk_events'].sort(key=lambda event: (event['date'], event.get('start_time') or '', event['id']))
+
+
 def public_record(job):
     """Recompute derived location labels from retained text, without advancing verification time."""
     row=refine_facts({k:v for k,v in job.items() if k!='fingerprint'})
+    if row.get('source_id', '').endswith('-talks'):
+        # Older retained state predates the dedicated event field. Rebuild it
+        # from structured list data and the event lines already in the body.
+        row['talk_event'] = extract_talk_event(row)
     row['provenance']='第三方线索' if row.get('source_id') in {'wondercv','offerjack'} else '公开原始来源'
     row.setdefault('kind','招聘公告')
     combined_text=row.get('title','')+'\n'+(row.get('body') or row.get('excerpt') or '')
@@ -2358,6 +2493,7 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     eligible = [j for j in jobs.values() if publishable_job(j)]
     public_jobs=sorted(deduplicate([public_record(j) for j in eligible]),
                        key=lambda j:j.get('published_at') or '',reverse=True)
+    attach_talk_events(public_jobs)
     assets=public_dir/'job-assets'
     assets.mkdir(parents=True,exist_ok=True)
     def asset(prefix, payload):

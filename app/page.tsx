@@ -229,7 +229,7 @@ export default function Home() {
       setDetailLoading(false);
       const cached = detailCache.current[job.id];
       setSelected(
-        cached ?? {
+        cached ? { ...cached, talk_events: job.talk_events ?? cached.talk_events } : {
           ...job,
           body: job.body || '正在读取完整公告…',
           emails: job.emails ?? [],
@@ -267,7 +267,7 @@ export default function Home() {
         if (!full) throw Error('这条公告的详情暂未生成，请打开原公告核对。');
         if (request === detailRequest.current) {
           detailCache.current = { ...detailCache.current, ...records };
-          setSelected(full);
+          setSelected({ ...full, talk_events: job.talk_events ?? full.talk_events });
           markRead(full);
         }
       } catch (e) {
@@ -908,6 +908,7 @@ export default function Home() {
                     const content = viewMode === 'table' ? (
                       <JobTable
                         jobs={group.jobs}
+                        city={filters.city}
                         personal={personal}
                         ready={ready}
                         now={now}
@@ -1044,6 +1045,8 @@ export default function Home() {
 
       <DetailDrawer
         selected={selected}
+        city={filters.city}
+        now={now}
         personal={personal}
         ready={ready}
         detailLoading={detailLoading}

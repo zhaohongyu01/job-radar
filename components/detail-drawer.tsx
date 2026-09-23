@@ -13,9 +13,12 @@ import { Button } from '@/components/ui/button';
 import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 import { formatDate, OutLink } from '@/components/job-card';
+import { TalkEvents } from '@/components/talk-events';
 
 export function DetailDrawer({
   selected,
+  city,
+  now,
   personal,
   ready,
   detailLoading,
@@ -28,6 +31,8 @@ export function DetailDrawer({
   setNotice,
 }: {
   selected: Job | null;
+  city: string;
+  now: number;
   personal: Personal;
   ready: boolean;
   detailLoading: boolean;
@@ -115,6 +120,7 @@ export function DetailDrawer({
                     : ''}
                 </p>
               )}
+              <TalkEvents job={selected} city={city} now={now} onOpen={() => onRead(selected)} />
               <div className="detail-actions">
                 <Button
                   variant="outline"

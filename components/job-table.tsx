@@ -3,9 +3,11 @@ import { Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { publicationText, externalUrl, getDeadlineCountdown, isExpired, isUnread, locationSummary, personalFor } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
+import { talkDateLabel, talkEventsForCity } from '@/lib/talk-events';
 
-export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadChange, onToggle }: {
+export function JobTable({ jobs, city, personal, ready, now, onDetail, onRead, onReadChange, onToggle }: {
   jobs: Job[];
+  city: string;
   personal: Personal;
   ready: boolean;
   now: number;
@@ -31,6 +33,8 @@ export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadC
           const expired = isExpired(job, now);
           const countdown = getDeadlineCountdown(job.deadline, now);
           const href = externalUrl(job.application_url || job.source_url);
+          const cityTalks = talkEventsForCity(job, city, now);
+          const talk = cityTalks[0];
           return <tr key={job.id} className={expired ? 'expired' : undefined}>
             <th scope="row">
               <button className="job-title table-title" onClick={() => onDetail(job)}>{job.title}</button>
@@ -38,6 +42,7 @@ export function JobTable({ jobs, personal, ready, now, onDetail, onRead, onReadC
               {job.company_conflict && <p className="small muted">{job.company_note}</p>}
               <p className="small muted">{job.kind} · {job.types.join(' / ') || '类型待确认'}{job.graduation_years.length ? ` · ${job.graduation_years.join(' / ')} 届` : ''}</p>
               {job.classification_note?.startsWith('仅核实') && <span className="tag">详情待核对</span>}
+              {talk && <p className="small table-talk">宣讲 {talkDateLabel(talk)} · {talk.school} · {talk.venue}{cityTalks.length > 1 ? ' · 详情查看更多' : ''}</p>}
             </th>
             <td><div className="table-location" title={locationSummary(job)}>{locationSummary(job)}</div></td>
             <td>

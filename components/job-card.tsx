@@ -27,6 +27,7 @@ import {
 } from '@/lib/jobs';
 import type { Job, Personal, Filters } from '@/lib/jobs';
 import { HighlightText } from '@/components/highlight-text';
+import { TalkEvents } from '@/components/talk-events';
 
 export function extractSalary(job: Job): { cleanTitle: string; salary: string | null } {
   let cleanTitle = displayJobTitle(job);
@@ -115,6 +116,7 @@ export function JobCard({
   onCopy: (job: Job) => void;
 }) {
   const location = locationMatch(job, filters.city);
+  const hasSelectedCityTalk = job.talk_events?.some((event) => event.city === filters.city) ?? false;
   const saved = personalFor(job, personal).saved;
   const applied = personalFor(job, personal).applied;
   const expired = isExpired(job, now);
@@ -159,6 +161,8 @@ export function JobCard({
             <span className="tag">
               {location === 'exact'
                 ? `工作地含${filters.city}`
+                : hasSelectedCityTalk
+                  ? `宣讲地${filters.city} · 工作地另核`
                 : location === 'possible'
                   ? '全省 / 全国待核实'
                   : '地点未明确'}
@@ -283,6 +287,7 @@ export function JobCard({
           <HighlightText text={excerptText} query={filters.query} />
         </p>
       )}
+      <TalkEvents job={job} city={filters.city} now={now} limit={2} onOpen={() => onRead(job)} />
       <div className="card-foot">
         <div>
           <p className={'deadline ' + (expired ? 'closed' : '')}>

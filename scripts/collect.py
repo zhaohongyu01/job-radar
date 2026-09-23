@@ -1178,14 +1178,30 @@ def refine_facts(job):
     # A legal employer name at the beginning of the recruitment title is also explicit evidence.
     match=re.match(r'^([\u4e00-\u9fffA-Za-z0-9（）()·]{2,60}?(?:有限责任公司|有限公司|银行[\u4e00-\u9fff]{0,12}分行))(?=\s|招聘|20\d{2}|校园|社会|$)',title)
     if match: candidates.add(match[1])
+    # A company introduction may name the legal employer without declaring an
+    # alias. Require its name to end with the employer phrase in the title;
+    # merely mentioning a customer/parent company elsewhere is not evidence.
+    title_employer = re.split(r'20\d{2}|校园招聘|招聘', compact(title), maxsplit=1)[0]
+    introductions = re.findall(
+        r'(?:^|\n)[ \t]*(?:[一二三四五六七八九十\d]+[、.．][ \t]*)?'
+        r'[【\[]?(?:公司|企业|单位)(?:简介|介绍)[】\]]?[：: \t]*\n?[ \t]*'
+        r'([\u4e00-\u9fffA-Za-z0-9（）()·]{2,60}?(?:有限责任公司|有限公司))'
+        r'(?=[（(，,。\s]|是|为|成立|$)', text)
+    if len(title_employer) >= 4 and job.get('kind', '招聘公告') != '具体岗位':
+        for name in introductions:
+            stem = re.sub(r'(?:股份)?(?:有限责任公司|有限公司)$', '', compact(name))
+            if stem.endswith(title_employer):
+                candidates.add(name)
     replacement=next(iter(candidates)) if len(candidates)==1 else ''
     conflict=bool(company and row.get('source_id','').endswith('-announcements')
                   and compact(company) not in compact(text+'\n'+title)
                   and not compact(title).startswith(compact(re.sub(r'(?:股份)?(?:有限责任公司|有限公司)$','',company))))
     if replacement and (not company or conflict) and compact(replacement)!=compact(company):
         row['company']=replacement
-        row['company_note']='企业名称按公告标题或正文中明确的简称对应关系整理。'
-        if company: row.update(company_original=company,company_conflict=True)
+        row['company_note']='企业名称按公告标题、明确简称或公司简介中的对应关系整理。'
+        if company:
+            row.setdefault('company_original', company)
+            row['company_conflict']=True
     elif conflict:
         row['company']=''
         row['company_original']=company

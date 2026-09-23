@@ -80,6 +80,24 @@ class CollectionTests(unittest.TestCase):
         self.assertFalse(c.refine_facts(dict(row,body='投递：javascript:alert(1)')).get('application_url'))
         self.assertFalse(c.refine_facts(dict(row,body='投递：https://a.example.com\n投递：https://b.example.com')).get('application_url'))
 
+    def test_company_introduction_repairs_conflict_conservatively(self):
+        original = dict(title='宇视科技2027届校园招聘简章', company='',
+                        company_original='济南宇视智能科技有限公司', company_conflict=True,
+                        source_id='ujn-announcements',
+                        body='一、公司简介\n浙江宇视科技有限公司（uniview），是企业。')
+        fixed = c.refine_facts(original)
+        self.assertEqual(fixed['company'], '浙江宇视科技有限公司')
+        self.assertEqual(fixed['company_original'], original['company_original'])
+        self.assertEqual(c.refine_facts(fixed)['company'], fixed['company'])
+        self.assertEqual(original['company'], '')
+        raw = c.refine_facts(dict(original, company=original['company_original']))
+        self.assertEqual(raw['company'], fixed['company'])
+        for body in ['客户介绍\n浙江宇视科技有限公司（uniview）',
+                     '公司简介\n杭州其他科技有限公司，是企业。',
+                     original['body'] + '\n公司简介\n北京宇视科技有限公司，是企业。']:
+            self.assertEqual(c.refine_facts(dict(original, body=body))['company'], '')
+        self.assertEqual(c.refine_facts(dict(original, kind='具体岗位'))['company'], '')
+
     def test_later_page_failure_retains_discoveries_and_export_is_consistent(self):
         source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')
         item={'url':'https://example.com/retained','title':'甲企业财务招聘',

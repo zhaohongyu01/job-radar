@@ -277,6 +277,10 @@ jobs:
         if: ${{ inputs.deploy_only }}
         run: python scripts/download_public.py --site https://sites-project.job-radar.workers.dev --public-dir data/live-public
 
+      - name: Audit actual data freshness and source coverage
+        if: ${{ !inputs.deploy_only }}
+        run: python scripts/audit_freshness.py --public-dir public --output data/freshness-report.json
+
       - name: Save Collector State
         if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}
         continue-on-error: true
@@ -296,6 +300,7 @@ jobs:
           path: |
             data/ci-report.json
             data/coverage-changes.json
+            data/freshness-report.json
           retention-days: 7
 
       - name: Download Built Application

@@ -427,7 +427,7 @@ def request_diagnostic(error, url, stage, method, started):
 
 
 @bounded_request
-def fetch(url, form=None, timeout=18, retries=1, referer='', extra_headers=None, request_stage='request'):
+def fetch(url, form=None, timeout=18, retries=1, referer='', extra_headers=None, request_stage='request', max_size=3_000_000):
     # Keep list/API requests tolerant of slow public sites, while allowing
     # detail callers to opt into a shorter budget.  No TLS weakening or login
     # bypass is used here.
@@ -453,9 +453,9 @@ def fetch(url, form=None, timeout=18, retries=1, referer='', extra_headers=None,
             req = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode() if form is not None else None,
                 headers=headers)
             with OPENER.open(req, timeout=remaining(timeout)) as r:
-                raw = bounded_read(r, 3_000_000, timeout)
+                raw = bounded_read(r, max_size, timeout)
                 charset = r.headers.get_content_charset()
-            if len(raw) > 3_000_000:
+            if len(raw) > max_size:
                 raise ValueError('response exceeds size limit')
             # A number of legacy Chinese government/university sites omit the
             # charset header and serve GBK/GB2312 HTML.  Honor a charset meta
@@ -668,7 +668,8 @@ def sdei_list(source, page):
     warm_sdei_session(source['school'])
     positions = source['channel'] == 'positions'
     talks = source['channel'] == 'talks'
-    params = {'pageNum': page, 'pageSize': 20}
+    page_size = 10 if source['channel'] == 'announcements' else 20
+    params = {'pageNum': page, 'pageSize': page_size}
     url = base + ('school/companyissueinfo/list1' if positions else 'front/indexCarieList' if talks else 'front/indexZpggList')
     referer = source['url']
     extra_headers = {
@@ -678,7 +679,7 @@ def sdei_list(source, page):
     payload = json.loads(
         fetch(url, params, referer=referer, extra_headers=extra_headers, request_stage='positions_list')
         if positions else
-        fetch(url + '?' + urllib.parse.urlencode(params), referer=referer, extra_headers=extra_headers, request_stage='talks_list' if talks else 'announcements_list')
+        fetch(url + '?' + urllib.parse.urlencode(params), referer=referer, extra_headers=extra_headers, request_stage='talks_list' if talks else 'announcements_list', max_size=12_000_000)
     )
     if not isinstance(payload.get('rows'), list) or 'total' not in payload:
         raise ValueError('public list response missing rows/total')
@@ -715,7 +716,7 @@ def sdei_list(source, page):
                     'structured': row, 'kind': '招聘公告'}
         items.append(item)
     source['_total_items'] = int(payload['total'])
-    return items, (int(payload['total']) + 19) // 20
+    return items, (int(payload['total']) + page_size - 1) // page_size
 
 
 def sdei_news_list(page, page_size=50):
@@ -790,7 +791,7 @@ def official_bank_list(html, base, source):
         date_match = re.search(r'20\d{2}[-./年]\d{1,2}[-./月]\d{1,2}', parent_text)
         published = re.sub(r'[./年]', '-', date_match[0]).replace('月', '-').replace('日', '') if date_match else None
         if not published:
-            path_date = re.search(r'/(20\d{4})/t20(\d{2})(\d{2})', href)
+            path_date = re.search(r'/t(20\d{2})(\d{2})(\d{2})', href)
             if path_date:
                 published = f'{path_date[1]}-{path_date[2]}-{path_date[3]}'
         items.append({'url': url, 'title': title, 'published_at': published, 'kind': '招聘公告'})
@@ -2374,6 +2375,13 @@ def public_record(job):
         row['talk_event'] = extract_talk_event(row)
     row['provenance']='第三方线索' if row.get('source_id') in {'wondercv','offerjack'} else '公开原始来源'
     row.setdefault('kind','招聘公告')
+    observed_day = max((str(row.get(field) or '')[:10] for field in ('first_seen_at', 'last_verified_at', 'updated_at')), default='')
+    published_day = str(row.get('published_at') or '')[:10]
+    if observed_day and re.fullmatch(r'20\d{2}-\d{2}-\d{2}', published_day) and published_day > observed_day:
+        row['source_published_at'] = row['published_at']
+        row['published_at'] = None
+        row['publication_note'] = '来源发布日期晚于首次收录，日期待核实；按首次收录时间展示。'
+
     combined_text=row.get('title','')+'\n'+(row.get('body') or row.get('excerpt') or '')
     extra_years=extract_graduation_years(combined_text)
     row['graduation_years']=sorted(set(row.get('graduation_years',[])+extra_years))
@@ -2449,7 +2457,7 @@ def public_summary(job):
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
         'possible_cities','province_possible','details_available','company_original',
         'positions','primary_facts','structured','identity','fingerprint','content_fingerprint','inline_announcement_fingerprint',
-        'probe_attempt_at','listing_missing_count','listing_missing_at',
+        'probe_attempt_at','listing_missing_count','listing_missing_at','listing_signature',
     }
     row={k:v for k,v in job.items() if k not in heavy}
     # The full timeline remains in the detail. Retain all recent change events
@@ -2543,7 +2551,7 @@ PAGINATION_FIELDS = (
     'resume_page', 'list_complete', 'total_items', 'early_exit_safe',
     'completed_history_days', 'target_history_days', 'patrol_page',
     'last_full_scan_at', 'last_patrol_at', 'coverage_warning', 'patrol_turn', 'last_list_read_at',
-    'last_execution_at', 'consecutive_list_failures', 'source_retry_after'
+    'last_execution_at', 'consecutive_list_failures', 'source_retry_after', 'head_scan_at', 'head_discovered'
 )
 
 
@@ -2566,6 +2574,8 @@ def run(args):
     now=dt.datetime.now(TZ).isoformat(timespec='seconds')
     cutoff=(dt.datetime.now(TZ)-dt.timedelta(days=args.days)).date().isoformat()
     incoming=[]
+    head_only = bool(getattr(args, 'head_only', False))
+    from collection_plan import retry_due, defer_detail, prioritize_details, listing_signature
     sources=dict(previous['sources'])
     source_filter = set(filter(None, (getattr(args, 'sources', '') or '').split(',')))
     source_pack = getattr(args, 'source_pack', '') or ''
@@ -2667,6 +2677,8 @@ def run(args):
             offerjack_cities=([args.target_city] if args.target_city else ['']+CITIES) if is_offerjack else []
             offerjack_query_limit=(getattr(args,'offerjack_pages',0) or 1000) if is_offerjack else 0
             page_budget=offerjack_query_limit*len(offerjack_cities) if is_offerjack else args.pages
+            if head_only:
+                page_budget = 2 if source.get('channel') in {'announcements', 'talks'} else 1
             if source.get('channel') == 'talks':
                 page_budget = min(page_budget, 2)
             offerjack_city_index=0
@@ -2705,7 +2717,9 @@ def run(args):
             deep_patrolled = False
             status['list_complete'] = False
             for slot in range(1,page_budget+1):
-                if resumable:
+                if head_only:
+                    page = slot
+                elif resumable:
                     if slot == 1:
                         if page_budget > 1:
                             page = 1
@@ -2718,7 +2732,7 @@ def run(args):
                         page = cursor + (slot - 2 if page_budget > 1 else 0)
                 else:
                     page = slot
-                if resumable and not is_history_complete:
+                if resumable and not head_only and not is_history_complete:
                     status['resume_page'] = resume_page if page == 1 else page
                 try:
                     if is_offerjack:
@@ -2796,8 +2810,17 @@ def run(args):
                     if item.get('identity',item['url']) not in known:
                         known.add(item.get('identity',item['url']))
                         if item.get('is_active_listing') or not item['published_at'] or item['published_at']>=cutoff:
-                            items.append(item)
-                if resumable:
+                            items.append(dict(item))
+                if head_only:
+                    checkpoint_status = dict(status)
+                    for field in PAGINATION_FIELDS:
+                        if field in prior_source:
+                            checkpoint_status[field] = prior_source[field]
+                    backlog = {i['url']: i for i in queues.get(source['id'], [])}
+                    backlog.update({i['url']: i for i in items})
+                    atomic_json(data_dir/'checkpoint.json', {'run_at':now, 'source':checkpoint_status,
+                        'pending':list(backlog.values()), 'inventory_complete':False, 'inventory_ids':[]})
+                if resumable and not head_only:
                     if not is_history_complete:
                         if page == 1:
                             resume_page = min(resume_page, max(2, total))
@@ -2891,7 +2914,7 @@ def run(args):
                     if status.get('patrol_page', 2) > total:
                         status['patrol_page'] = 2
             status['list_complete'] = list_complete
-            if resumable:
+            if resumable and not head_only:
                 status['early_exit_safe'] = list_complete and not resumed_tail
                 if list_complete:
                     status['resume_page'] = 1
@@ -2923,28 +2946,56 @@ def run(args):
             # Resume details left by a previous source budget, including items
             # that have since moved beyond the first discovery pages.
             item_urls = {item['url'] for item in items}
+            inventory_urls = set(item_urls)
+            old_pending = {item['url']: item for item in queues.get(source['id'], [])}
+            for item in items:
+                old_item = old_pending.get(item['url'], {})
+                if (old_item.get('title') == item.get('title') and old_item.get('published_at') == item.get('published_at')
+                        and listing_signature(old_item) == listing_signature(item)):
+                    for field in ('detail_retry_after', 'detail_failures'):
+                        if field in old_item:
+                            item[field] = old_item[field]
             for queued in queues.get(source['id'], []):
                 if queued['url'] not in item_urls:
                     items.append(queued)
                     item_urls.add(queued['url'])
             cached=0
             remaining=[]
+            deferred_details=[]
             for item in items:
+                if args.refresh_hours and not retry_due(item, dt.datetime.now(TZ)):
+                    deferred_details.append(item)
+                    continue
+                if head_only and item['url'] not in inventory_urls:
+                    deferred_details.append(item)
+                    continue
                 old=previous['jobs'].get(item_id(item))
                 inline_fingerprint = inline_announcement_fingerprint(item, source)
                 unchanged_inline = bool(inline_fingerprint and old and
                     old.get('inline_announcement_fingerprint') == inline_fingerprint)
-                if ('inline_html' not in item or requires_position_detail(item) or unchanged_inline) and old and publishable_job(old) and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and (old.get('last_verified_at') or '')>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
+                signature = listing_signature(item)
+                listing_changed = bool(signature and old and old.get('listing_signature') != signature)
+                if not listing_changed and ('inline_html' not in item or requires_position_detail(item) or unchanged_inline) and old and publishable_job(old) and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and (old.get('last_verified_at') or '')>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
                     cached+=1
                 else: remaining.append(item)
             status['cached']=cached
             # Fresh/unverified opportunities precede refreshing already-visible
             # records. Stable ordering keeps the latest list page first.
-            remaining.sort(key=lambda item: bool(
-                (old := previous['jobs'].get(item_id(item))) and publishable_job(old)
-                and old.get('last_verified_at')
-                and not old.get('classification_note', '').startswith('仅核实')))
-            queued_by_url = {item['url']: item for item in remaining}
+            remaining = prioritize_details(remaining, previous['jobs'])
+            queued_by_url = {item['url']: item for item in deferred_details + remaining}
+            if head_only:
+                limit = {'positions': 2, 'talks': 4}.get(source.get('channel'), 12)
+                remaining = remaining[:limit]
+                status['head_scan_at'] = now
+                status['head_discovered'] = len(inventory_urls)
+                status['coverage'] = f'已巡检最新 {status["pages"]} 页；历史翻页和积压详情使用剩余预算续采'
+                # Never claim historical completeness from a first-page-only scan.
+                for field in PAGINATION_FIELDS:
+                    if field in prior_source:
+                        status[field] = prior_source[field]
+                status['head_scan_at'] = now
+                status['head_discovered'] = len(inventory_urls)
+                inventory_complete = False
             queues[source['id']] = list(queued_by_url.values())
             atomic_json(data_dir/'checkpoint.json', {'run_at':now, 'source':status,
                         'pending':queues[source['id']], 'inventory_complete':inventory_complete,
@@ -2974,7 +3025,7 @@ def run(args):
                 probe_candidates.append(old_job)
 
             probe_candidates.sort(key=lambda j:j.get('last_verified_at') or '')
-            probe_budget=getattr(args,'probe_budget',10)
+            probe_budget=0 if head_only else getattr(args,'probe_budget',10)
             if source.get('channel') == 'talks':
                 probe_budget = min(probe_budget, 1)
             selected_probes=probe_candidates[:probe_budget]
@@ -3063,6 +3114,8 @@ def run(args):
                 incoming.append(fallback)
 
             def record_detail_failure(item, error):
+                if not item.get('is_probe'):
+                    defer_detail(item, dt.datetime.now(TZ))
                 # Transport failures do not invalidate a previously readable page.
                 # Only an explicit missing page or invalid detail body hides it.
                 invalid_detail = (isinstance(error, ValueError) or
@@ -3092,6 +3145,9 @@ def run(args):
                 status['detail_attempted'] = status.get('detail_attempted', 0) + 1
                 try:
                     job = future.result()
+                    signature = listing_signature(item)
+                    if signature:
+                        job['listing_signature'] = signature
                     inline_fingerprint = inline_announcement_fingerprint(item, source)
                     if inline_fingerprint:
                         job['inline_announcement_fingerprint'] = inline_fingerprint
@@ -3277,6 +3333,7 @@ def run(args):
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--pages',type=int,default=100)
+    parser.add_argument('--head-only',action='store_true',help='scan a bounded newest-page window; preserve historical cursors and deferred detail queue')
     parser.add_argument('--rate-state',default='',help='shared host scheduler SQLite path for CI source workers')
     parser.add_argument('--days',type=int,default=120)
     parser.add_argument('--history-days',type=int,choices=range(1,366),default=180,metavar='1..365',help='rolling historical window for resumable sources; same page budget')

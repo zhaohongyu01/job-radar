@@ -1,17 +1,18 @@
-'use client';
-
+import { useState, useMemo } from 'react';
 import {
+  AlertCircle,
+  ArrowUpRight,
   Bookmark,
-  Building2,
+  Briefcase,
+  Check,
   Clock3,
-  ChevronRight,
   GraduationCap,
   MapPin,
   Share2,
-  ArrowUpRight,
-  AlertCircle,
+  Paperclip,
+  Mail,
+  Users,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
   externalUrl,
   displayJobTitle,
@@ -29,17 +30,27 @@ import type { Job, Personal, Filters } from '@/lib/jobs';
 import { HighlightText } from '@/components/highlight-text';
 import { TalkEvents } from '@/components/talk-events';
 
-export function extractSalary(job: Job): { cleanTitle: string; salary: string | null } {
+export function extractSalary(job: Job): {
+  cleanTitle: string;
+  salary: string | null;
+} {
   let cleanTitle = displayJobTitle(job);
   let salary: string | null = null;
-  const titleSalaryRegex = /(?:[（(])?(\d+(?:\.\d+)?(?:k|K|万|元)?\s*[-~至–]\s*\d+(?:\.\d+)?(?:k|K|万|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天)?)(?:[)）])?$/;
+  const titleSalaryRegex =
+    /(?:[（(])?(\d+(?:\.\d+)?(?:k|K|万|元)?\s*[-~至–]\s*\d+(?:\.\d+)?(?:k|K|万|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天)?)(?:[)）])?$/;
   const match = cleanTitle.match(titleSalaryRegex);
   if (match) {
     salary = match[1].trim();
     cleanTitle = cleanTitle.replace(titleSalaryRegex, '').trim();
   } else {
-    const excerptMatch = job.excerpt?.match(/薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]+)/);
-    if (excerptMatch) {
+    const excerptMatch = job.excerpt?.match(
+      /薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]+)/,
+    );
+    if (
+      excerptMatch &&
+      /\d/.test(excerptMatch[1]) &&
+      excerptMatch[1].length <= 24
+    ) {
       salary = excerptMatch[1].trim();
     }
   }
@@ -69,11 +80,14 @@ export function OutLink({
   children,
   primary = false,
   onOpen,
+  className,
 }: {
   url: string | null | undefined;
   children: React.ReactNode;
   primary?: boolean;
   onOpen?: () => void;
+  /** Overrides the legacy primary-link / quiet-link classes. */
+  className?: string;
 }) {
   const href = externalUrl(url);
   return href ? (
@@ -82,12 +96,19 @@ export function OutLink({
       onClick={onOpen}
       target="_blank"
       rel="noopener noreferrer"
-      className={primary ? 'primary-link' : 'quiet-link'}
+      className={className ?? (primary ? 'primary-link' : 'quiet-link')}
     >
       {children}
       <ArrowUpRight size={15} />
     </a>
   ) : null;
+}
+
+/** Stable, purely decorative tone so the same employer is recognisable while scanning. */
+function monogramTone(name: string) {
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return String(hash % 6);
 }
 
 export function JobCard({
@@ -116,7 +137,8 @@ export function JobCard({
   onCopy: (job: Job) => void;
 }) {
   const location = locationMatch(job, filters.city);
-  const hasSelectedCityTalk = job.talk_events?.some((event) => event.city === filters.city) ?? false;
+  const hasSelectedCityTalk =
+    job.talk_events?.some((event) => event.city === filters.city) ?? false;
   const saved = personalFor(job, personal).saved;
   const applied = personalFor(job, personal).applied;
   const expired = isExpired(job, now);
@@ -126,222 +148,327 @@ export function JobCard({
   const excerptText = cleanExcerpt(job.excerpt);
   const stageInfo = getLifecycleStage(job, now);
   const changeAlert =
-    (job.recent_change?.detail && job.recent_change.detail !== '招聘公告正文或附件内容已同步最新变动'
+    (job.recent_change?.detail &&
+    job.recent_change.detail !== '招聘公告正文或附件内容已同步最新变动'
       ? job.recent_change.detail
       : null) ||
-    (stageInfo.stage === 'extended' ? '报名截止时间已延期（详见原公告）' : null) ||
+    (stageInfo.stage === 'extended'
+      ? '报名截止时间已延期（详见原公告）'
+      : null) ||
     (stageInfo.stage === 'supplemental' ? '补录 / 追加招聘批次进行中' : null) ||
     (stageInfo.stage === 'selection' ? '发布考核选拔或录用进展通知' : null);
+  const monogramSource = job.company || cleanTitle;
+  const isNew = !!since && Date.parse(job.first_seen_at) > Date.parse(since);
+  const showStage = !['accepting', 'expired', 'expiring_soon'].includes(stageInfo.stage);
+  const deadlineState = expired
+    ? 'is-closed'
+    : countdown?.urgency === 'urgent'
+      ? 'is-urgent'
+      : countdown?.urgency === 'warning'
+        ? 'is-warning'
+        : '';
+
+  const displayPositions = useMemo(() => {
+    if (job.sample_positions?.length) return job.sample_positions.slice(0, 5);
+    if (job.positions?.length) {
+      const names = Array.from(new Set(job.positions.map((p) => p.name).filter(Boolean)));
+      return names.slice(0, 5);
+    }
+    if (job.directions?.length && job.directions[0] !== '全部') {
+      return job.directions.slice(0, 5);
+    }
+    return [];
+  }, [job.sample_positions, job.positions, job.directions]);
+
+  const displayMajors = useMemo(() => {
+    const set = new Set<string>();
+    for (const pos of job.positions ?? []) {
+      for (const m of pos.majors ?? []) {
+        if (m && m.length <= 16 && !['不限', '无', '见原表', '相关专业'].includes(m)) {
+          set.add(m);
+        }
+      }
+    }
+    return Array.from(set).slice(0, 6);
+  }, [job.positions]);
+
+  const hasJobTableAttachment = useMemo(() => {
+    return (job.attachments ?? []).some(
+      (a) => a.parse_status === 'parsed' || /岗位|职位|专业|需求|一览表|需求表/.test(a.title),
+    );
+  }, [job.attachments]);
+
+  const directEmail = job.emails?.[0];
+  const [copiedEmail, setCopiedEmail] = useState(false);
+  const handleCopyEmail = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (directEmail) {
+      void navigator.clipboard.writeText(directEmail).then(() => {
+        setCopiedEmail(true);
+        setTimeout(() => setCopiedEmail(false), 2000);
+      });
+    }
+  };
 
   return (
-    <article className={'job-card' + (expired ? ' expired' : '')}>
-      <div className="job-top">
-        <div className="tags">
-          <button
-            className={unread ? 'tag read-status unread' : 'tag read-status'}
-            disabled={!ready}
-            aria-label={`${unread ? '标为已读' : '标为未读'}：${job.title}`}
-            onClick={() => onReadChange(job, unread)}
-          >
-            {unread ? '未读' : '已读'}
-          </button>
-          {stageInfo.stage !== 'accepting' &&
-            stageInfo.stage !== 'expired' &&
-            stageInfo.stage !== 'expiring_soon' && (
-              <span className={`tag ${stageInfo.badgeClass}`}>
-                {stageInfo.badge}
+    <article
+      className={
+        'opp-card' +
+        (expired ? ' is-expired' : '') +
+        (saved ? ' is-saved' : '')
+      }
+    >
+      <header className="opp-head">
+        <div className="opp-logo" data-tone={monogramTone(monogramSource)} aria-hidden="true">
+          {monogramSource.slice(0, 2)}
+        </div>
+        <div className="opp-identity">
+          <p className="opp-company">
+            {unread && <span className="opp-unread-dot" title="未读" />}
+            <span className="opp-company-name">{job.company || '企业名称待核实'}</span>
+            {job.sectors[0] && <span className="opp-sector">{job.sectors[0]}</span>}
+            {job.kind === '具体岗位' && <span className="opp-tag-sm">具体岗位</span>}
+            {job.provenance === '第三方线索' && <span className="opp-sector">第三方线索</span>}
+            {!!job.duplicate_sources?.length && (
+              <span className="opp-tag-sm" title={`已同步 ${job.duplicate_sources.length + 1} 个官方渠道`}>
+                {job.duplicate_sources.length + 1} 渠道同步
               </span>
             )}
-          {countdown && countdown.urgency !== 'expired' && countdown.urgency !== 'normal' && (
-            <span className={`tag deadline-${countdown.urgency}`}>
-              ⏳ {countdown.text}
-            </span>
-          )}
-          {filters.city !== '全部城市' && (
-            <span className="tag">
-              {location === 'exact'
-                ? `工作地含${filters.city}`
-                : hasSelectedCityTalk
-                  ? `宣讲地${filters.city} · 工作地另核`
-                : location === 'possible'
-                  ? '全省 / 全国待核实'
-                  : '地点未明确'}
-            </span>
-          )}
-          <span className={'tag ' + (job.types.includes('校招') ? 'blue' : '')}>
+          </p>
+          <h2 className="opp-title">
+            <button onClick={() => onDetail(job)}>
+              <HighlightText text={cleanTitle} query={filters.query} />
+            </button>
+          </h2>
+        </div>
+        <div className="opp-aside">
+          <div className="opp-quick">
+            <button
+              className="icon-btn"
+              aria-label={`复制岗位信息：${job.title}`}
+              title="复制岗位信息"
+              onClick={() => onCopy(job)}
+            >
+              <Share2 size={16} />
+            </button>
+            <button
+              className="icon-btn"
+              aria-label={(saved ? '取消收藏：' : '收藏：') + job.title}
+              title={saved ? '取消收藏' : '收藏'}
+              aria-pressed={!!saved}
+              disabled={!ready}
+              onClick={() => onToggle(job, 'saved')}
+            >
+              <Bookmark size={17} fill={saved ? 'currentColor' : 'none'} />
+            </button>
+          </div>
+          {salary && <span className="opp-salary">{salary}</span>}
+        </div>
+      </header>
+
+      <div className="opp-body">
+        <ul className="opp-facts">
+          <li title={locationSummary(job)}>
+            <MapPin />
+            {job.cities.length > 4
+              ? `${job.cities.slice(0, 3).join(' / ')} 等 ${job.cities.length} 城市`
+              : locationSummary(job)}
+          </li>
+          <li>
+            <GraduationCap />
+            {job.education || '学历待核实'}
+          </li>
+          <li>
+            <Briefcase />
             {job.types.join(' / ') || '招聘类型待确认'}
-          </span>
-          {job.graduation_years.length > 0 && (
-            <span className="tag">{job.graduation_years.join(' / ')} 届</span>
+            {!!job.graduation_years.length && ` · ${job.graduation_years.join(' / ')} 届`}
+          </li>
+          {!!job.position_count && (
+            <li>
+              <Users size={14} />
+              共 {job.position_count} 个在招岗位
+            </li>
           )}
-          <span className="tag">{job.sectors[0]}</span>
-          {job.classification_note?.startsWith('仅核实') && (
-            <span className="tag">详情待核对</span>
-          )}
-          {since && Date.parse(job.first_seen_at) > Date.parse(since) && (
-            <span className="tag new">首次收录</span>
-          )}
-          {!!job.duplicate_sources?.length && (
-            <span
-              className="tag channel-pill"
-              title={`同步收录渠道：${[job.source_name, ...job.duplicate_sources.map((s) => s.source_name || s.source || s.title)].filter(Boolean).join('、')}`}
-            >
-              {job.duplicate_sources.length + 1} 渠道同步
-            </span>
-          )}
-          {!!job.position_count && job.position_count > 0 && (
-            <span
-              className="tag position-count-pill"
-              title={
-                job.sample_positions?.length
-                  ? `包含岗位：${job.sample_positions.join('、')}`
-                  : `已解析 ${job.position_count} 个具体岗位`
-              }
-            >
-              📋 {job.position_count} 岗位
-            </span>
-          )}
-          {applied && <span className="tag new">已投递</span>}
-        </div>
-        <div className="card-top-actions">
-          <button
-            className="copy-button"
-            aria-label={`复制岗位信息：${job.title}`}
-            title="复制岗位信息"
-            onClick={() => onCopy(job)}
-          >
-            <Share2 size={16} />
-          </button>
-          <button
-            className={'bookmark-button' + (saved ? ' saved' : '')}
-            aria-label={(saved ? '取消收藏：' : '收藏：') + job.title}
-            aria-pressed={!!saved}
-            disabled={!ready}
-            onClick={() => onToggle(job, 'saved')}
-          >
-            <Bookmark size={18} fill={saved ? 'currentColor' : 'none'} />
-          </button>
-        </div>
-      </div>
-      <div className="job-title-row">
-        <h2 className="job-title-wrap">
-          <button className="job-title" onClick={() => onDetail(job)}>
-            <HighlightText text={cleanTitle} query={filters.query} />
-          </button>
-        </h2>
-        {salary && <span className="salary-badge">{salary}</span>}
-      </div>
-      {job.company && (
-        <p className="company-name">
-          <Building2 size={14} className="company-icon" />
-          <span>
-            <HighlightText text={job.company} query={filters.query} />
-          </span>
-        </p>
-      )}
-      {job.sample_positions && job.sample_positions.length > 0 && (
-        <div className="card-sample-positions">
-          <span className="sample-pos-label">需求职位：</span>
-          <span className="sample-pos-list">
-            <HighlightText
-              text={
-                job.sample_positions.slice(0, 3).join(' · ') +
-                (job.position_count && job.position_count > 3
-                  ? ` 等 ${job.position_count} 个职位`
-                  : '')
-              }
-              query={filters.query}
-            />
-          </span>
-        </div>
-      )}
-      {job.company_conflict && <p className="small muted">{job.company_note}</p>}
-      {changeAlert && (
-        <div className="card-change-callout">
-          <AlertCircle size={14} className="change-callout-icon" />
-          <span className="change-callout-text">
-            <strong>变更提醒：</strong>
-            {changeAlert}
-          </span>
-        </div>
-      )}
-      <div className="job-meta">
-        <span>
-          <MapPin size={14} />
-          {locationSummary(job)}
-        </span>
-        {job.education && (
-          <span>
-            <GraduationCap size={14} />
-            {job.education}
-          </span>
+        </ul>
+        {filters.city !== '全部城市' && (
+          <p className={'opp-loc-note' + (location === 'exact' ? ' is-exact' : '')}>
+            {location === 'exact'
+              ? `工作地含${filters.city}`
+              : hasSelectedCityTalk
+                ? `宣讲地在${filters.city}，工作地需另核对`
+                : location === 'possible'
+                  ? `覆盖全省 / 全国，${filters.city}岗位待核实`
+                  : '工作地点尚未明确'}
+          </p>
         )}
+
+        {(showStage || isNew || applied) && (
+          <div className="opp-badges">
+            {showStage && (
+              <span className={`chip ${stageInfo.badgeClass}`}>{stageInfo.badge}</span>
+            )}
+            {isNew && <span className="chip chip-brand">新收录</span>}
+            {applied && (
+              <span className="chip chip-brand">
+                <Check />
+                已投递
+              </span>
+            )}
+          </div>
+        )}
+
+        {displayPositions.length > 0 && (
+          <div className="opp-positions">
+            <span className="opp-positions-label">在招职位</span>
+            {displayPositions.map((pos, idx) => (
+              <span key={idx} className="opp-pos-pill">
+                <HighlightText text={pos} query={filters.query} />
+              </span>
+            ))}
+            {job.position_count && job.position_count > displayPositions.length && (
+              <span className="text-muted text-xs">等 {job.position_count} 个职位</span>
+            )}
+          </div>
+        )}
+
+        {displayMajors.length > 0 && (
+          <div className="opp-majors">
+            <span className="opp-majors-label">需求专业</span>
+            {displayMajors.map((m, idx) => (
+              <span key={idx} className="opp-major-pill">
+                <HighlightText text={m} query={filters.query} />
+              </span>
+            ))}
+          </div>
+        )}
+
+        {(hasJobTableAttachment || directEmail) && (
+          <div className="opp-extras">
+            {hasJobTableAttachment && (
+              <span className="opp-extra-pill" title="公告附带官方岗位需求表，点击详情可查看解析明细">
+                <Paperclip size={12} />
+                附官方岗位需求表
+              </span>
+            )}
+            {directEmail && (
+              <button
+                type="button"
+                className="opp-email-btn"
+                onClick={handleCopyEmail}
+                title="点击复制投递邮箱"
+              >
+                <Mail size={12} />
+                <span>{directEmail}</span>
+                <small>{copiedEmail ? '已复制！' : '复制邮箱'}</small>
+              </button>
+            )}
+          </div>
+        )}
+
+        {changeAlert && (
+          <p className="opp-alert">
+            <AlertCircle size={14} />
+            <span>
+              <strong>变更提醒：</strong>
+              {changeAlert}
+            </span>
+          </p>
+        )}
+        {job.company_conflict && <p className="opp-note">{job.company_note}</p>}
+        {excerptText && (
+          <p className="opp-excerpt" title="点击标题查看完整招聘详情">
+            <HighlightText text={excerptText} query={filters.query} />
+          </p>
+        )}
+        <TalkEvents
+          job={job}
+          city={filters.city}
+          now={now}
+          limit={2}
+          onOpen={() => onRead(job)}
+        />
       </div>
-      {job.directions.length > 0 && (
-        <p className="inline-note">
-          公告涉及：{job.directions.join('、')} · 以具体岗位要求为准
-        </p>
-      )}
-      {excerptText && (
-        <p className="job-excerpt">
-          <HighlightText text={excerptText} query={filters.query} />
-        </p>
-      )}
-      <TalkEvents job={job} city={filters.city} now={now} limit={2} onOpen={() => onRead(job)} />
-      <div className="card-foot">
-        <div>
-          <p className={'deadline ' + (expired ? 'closed' : '')}>
+
+      <footer className="opp-foot">
+        <div className="opp-meta">
+          <p className={`opp-deadline ${deadlineState}`}>
+            <Clock3 />
             {job.deadline ? (
-              <>
-                <Clock3 size={14} />
-                {expired ? (
-                  '已截止 '
-                ) : countdown ? (
-                  <span className={`deadline-highlight ${countdown.urgency}`}>
-                    {countdown.text} · 截止{' '}
-                  </span>
-                ) : (
-                  '公告截止 '
-                )}
-                {formatDate(job.deadline, true)}
-                {job.deadline_precision === 'day' ? '（原文仅日期）' : ''}
-              </>
+              <span>
+                <strong>{expired ? '已截止' : countdown?.text || '公告截止'}</strong>
+                <span className="opp-deadline-date">
+                  {' '}
+                  · {formatDate(job.deadline, true)}
+                  {job.deadline_precision === 'day' ? '（原文仅日期）' : ''}
+                </span>
+              </span>
             ) : (
-              <>未明确截止日期，请先核对是否仍可报名</>
+              <span>截止日期未明确 · 投递前请核实</span>
             )}
           </p>
-          <p className="small muted">
-            {job.kind} · {job.source_name}
-            {!!job.duplicate_sources?.length && ` 等 ${job.duplicate_sources.length + 1} 渠道`}
-            {' · '}
-            {job.date_label || '发布'}{' '}
-            {publicationText(job, now)}
-            {job.provenance === '第三方线索' && ' · 未经企业原文复核'}
-          </p>
+          <div className="opp-source">
+            <span
+              className={
+                job.provenance === '第三方线索' ? 'opp-trust is-unverified' : 'opp-trust'
+              }
+            >
+              {job.provenance === '第三方线索' ? '第三方线索 · 待核验' : '公开原始来源'}
+            </span>
+            <span>
+              {job.source_name}
+              {!!job.duplicate_sources?.length &&
+                ` · ${job.duplicate_sources.length + 1} 渠道收录`}{' '}
+              · {job.date_label || '发布'} {publicationText(job, now)}
+            </span>
+            <button
+              className={unread ? 'read-toggle is-unread' : 'read-toggle'}
+              disabled={!ready}
+              aria-label={`${unread ? '标为已读' : '标为未读'}：${job.title}`}
+              title={unread ? '点击标为已读' : '点击标为未读'}
+              onClick={() => onReadChange(job, unread)}
+            >
+              {unread ? '未读' : '已读'}
+            </button>
+          </div>
         </div>
-        <div className="card-actions">
-          {sdeiPositionListUrl(job.source_url) && (
-            <OutLink url={sdeiPositionListUrl(job.source_url)!} onOpen={() => onRead(job)}>
-              来源岗位列表
-            </OutLink>
-          )}
-          <Button variant="ghost" size="sm" onClick={() => onDetail(job)}>
+        <div className="opp-actions">
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={!ready}
+            aria-pressed={!!applied}
+            onClick={() => onToggle(job, 'applied')}
+            title="仅记录投递状态，不会代为提交申请"
+          >
+            <Check />
+            {applied ? '已投递' : '标记已投'}
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={() => onDetail(job)}>
             详情
-            <ChevronRight size={14} />
-          </Button>
+          </button>
           <OutLink
-            primary
+            className="btn btn-primary btn-sm"
             url={job.application_url || job.source_url}
             onOpen={() => onRead(job)}
           >
             {job.application_url
               ? '前往投递'
               : job.provenance === '第三方线索'
-                ? '查看线索来源'
+                ? '查看线索'
                 : '查看原公告'}
           </OutLink>
         </div>
-      </div>
+      </footer>
+      {sdeiPositionListUrl(job.source_url) && (
+        <div className="opp-fallback">
+          <OutLink
+            className=""
+            url={sdeiPositionListUrl(job.source_url)}
+            onOpen={() => onRead(job)}
+          >
+            原文打不开？查看来源岗位列表
+          </OutLink>
+        </div>
+      )}
     </article>
   );
 }

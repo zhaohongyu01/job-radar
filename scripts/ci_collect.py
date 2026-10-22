@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+from collection_plan import scan_plan
 from concurrent.futures import ThreadPoolExecutor
 import datetime as dt
 import hashlib
@@ -569,6 +571,8 @@ def run_source(definition, prior, args, budget):
                    '--detail-retries', str(getattr(args,'detail_retries',1)),
                    '--detail-failure-limit', str(getattr(args,'detail_failure_limit',6))]
         command.extend(['--rate-state', str((args.data_dir / 'host-pacing.sqlite').resolve())])
+        if getattr(args, 'head_only', False):
+            command.append('--head-only')
         if getattr(args, 'deep_scan', False):
             command.append('--deep-scan')
         if getattr(args, 'sdei_group', None) is not None:
@@ -643,23 +647,36 @@ def collect(args):
                     errors=errors if errors is not None else [], coverage=coverage)
         base.update(extra)
         for field in collector.PAGINATION_FIELDS:
-            prior_status = baseline.get('sources', {}).get(definition['id'], {})
+            prior_status = state.get('sources', {}).get(definition['id']) or baseline.get('sources', {}).get(definition['id'], {})
             if field in prior_status:
                 base[field] = prior_status[field]
         return base
 
     is_single_explicit_source = bool(len(selected) == 1)
 
-    for definition in definitions:
+    freshness_first = bool(getattr(args, 'freshness_first', False))
+    plan = scan_plan(definitions, source_priority, freshness_first)
+    heads_remaining = sum(head for _, head in plan)
+    head_deadline = time.monotonic() + max(0, (deadline - time.monotonic()) * 0.70)
+    for definition, head_only in plan:
         identifier = definition['id']
         host = urllib.parse.urlsplit(definition['url']).netloc
         budget = min(float(getattr(args, 'source_budget', 180)), deadline - time.monotonic())
-        if definition.get('channel') == 'talks':
+        if head_only:
+            allowance = max(0, head_deadline - time.monotonic()) / max(1, heads_remaining)
+            budget = min(budget, 30.0, allowance)
+            heads_remaining -= 1
+        elif definition.get('channel') == 'talks' and not freshness_first:
             budget = min(budget, 30.0, talks_remaining)
         prior = {'jobs':{k:v for k,v in baseline['jobs'].items() if v.get('source_id') == identifier},
                  'sources':{identifier:baseline['sources'][identifier]} if identifier in baseline['sources'] else {},
                  'pending':{identifier:baseline.get('pending', {}).get(identifier, [])},
                  'last_run_at':baseline['last_run_at']}
+        prior['jobs'].update({k:v for k,v in state['jobs'].items() if v.get('source_id') == identifier})
+        if identifier in state['sources']:
+            prior['sources'][identifier] = state['sources'][identifier]
+        if identifier in state['pending']:
+            prior['pending'][identifier] = state['pending'][identifier]
         prior_source = prior.get('sources', {}).get(identifier, {})
         candidates = [t for t in (prior_source.get('blocked_until'), host_blocked_until.get(host)) if t]
         prior_blocked = max(candidates) if candidates else None
@@ -686,7 +703,7 @@ def collect(args):
                     continue
             except Exception:
                 pass
-        if definition.get('adapter') == 'sdei' and not is_single_explicit_source:
+        if definition.get('adapter') == 'sdei' and not is_single_explicit_source and not head_only:
             school = definition['school']
             channel = definition['channel']
             if school not in active_sdei_schools:
@@ -713,6 +730,8 @@ def collect(args):
                         status['list_complete'] = prior_source['list_complete']
                     if 'blocked_until' in prior_source:
                         status['blocked_until'] = prior_source['blocked_until']
+                    if freshness_first and prior_source.get('head_scan_at'):
+                        status = dict(prior_source, backfill_status='deferred')
                     result = dict(prior, sources={identifier: status}, last_run_at=now)
                     combine_states(result)
                     state['sources'][identifier] = status
@@ -745,10 +764,14 @@ def collect(args):
             if is_host_blocked:
                 status['blocked_until'] = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
                 host_blocked_until[host] = status['blocked_until']
+            if freshness_first and not head_only and not is_host_blocked and prior_source.get('head_scan_at'):
+                status = dict(prior_source, backfill_status='deferred', backfill_note=reason)
             result = dict(prior, sources={identifier:status}, last_run_at=now)
         else:
             started_source = time.monotonic()
-            result = run_source(definition, prior, args, budget)
+            worker_args = copy.copy(args)
+            worker_args.head_only = head_only
+            result = run_source(definition, prior, worker_args, budget)
             result_status = result['sources'][identifier]
             executed_at = dt.datetime.now(TZ)
             result_status['last_execution_at'] = executed_at.isoformat(timespec='seconds')
@@ -764,7 +787,7 @@ def collect(args):
                 if failures >= 2:
                     hours = min(12, 2 ** min(failures - 2, 4))
                     result_status['source_retry_after'] = (executed_at + dt.timedelta(hours=hours)).isoformat(timespec='seconds')
-            if definition.get('channel') == 'talks':
+            if definition.get('channel') == 'talks' and not freshness_first:
                 talks_remaining -= time.monotonic() - started_source
         combine_states(result)
         status = result['sources'][identifier]
@@ -813,6 +836,7 @@ if __name__ == '__main__':
     parser.add_argument('--expected-shards', default='', help='comma-separated source pack names expected during merge')
     parser.add_argument('--refresh-hours', type=int, default=72,
                         help='reuse recently verified detail pages for this many hours')
+    parser.add_argument('--freshness-first', action='store_true', help='巡检所有高校最新页，再按剩余预算轮转补历史详情')
     parser.add_argument('--source-budget', type=float, default=180, help='hard wall-clock budget per isolated source process')
     parser.add_argument('--shard-budget', type=float, default=1080, help='stop starting sources before the CI hard timeout')
     parser.add_argument('--probe-budget', type=int, default=10,

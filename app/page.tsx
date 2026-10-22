@@ -4,8 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radar,
   Search,
-  Bookmark,
-  Check,
   SlidersHorizontal,
   Clock3,
   ExternalLink,
@@ -14,6 +12,8 @@ import {
   Bell,
   Database,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Info,
 } from 'lucide-react';
 import {
@@ -23,10 +23,7 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Sheet,
   SheetContent,
@@ -35,7 +32,6 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Empty, EmptyTitle, EmptyDescription } from '@/components/ui/empty';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Pagination,
   PaginationContent,
@@ -44,7 +40,6 @@ import {
 import {
   defaultFilters,
   filterJobs,
-  isExpired,
   validatePersonal,
   externalUrl,
   personalFor,
@@ -63,6 +58,9 @@ import { FilterSidebar } from '@/components/filter-sidebar';
 import { JobCard, formatDate as date, OutLink, extractSalary } from '@/components/job-card';
 import { DetailDrawer } from '@/components/detail-drawer';
 import { PersonalRadar } from '@/components/personal-radar';
+import { DataHealth } from '@/components/data-health';
+import { ActionRail } from '@/components/action-rail';
+import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
 
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
 const STORAGE = 'quancheng-personal-v1',
@@ -84,8 +82,8 @@ function ResultsPagination({
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const unit = grouped ? '组' : '条';
   return (
-    <div className="results-pager">
-      <div className="page-size-control">
+    <div className="pager">
+      <div className="pager-size">
         <span id={`page-size-label-${position}`}>每页显示</span>
         <Select value={String(pageSize)} onValueChange={(value) => {
           const size = Number(value);
@@ -98,41 +96,28 @@ function ResultsPagination({
             {PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size} {unit}</SelectItem>)}
           </SelectContent>
         </Select>
-        <span className="page-range" aria-live="polite">
+        <span className="pager-range" aria-live="polite">
           {total ? `第 ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} ${unit} / 共 ${total} ${unit}` : `共 0 ${unit}`}
         </span>
       </div>
       {pages > 1 && (
-        <Pagination className="result-page-navigation" aria-label={position === 'top' ? '招聘结果顶部分页' : '招聘结果底部分页'}>
+        <Pagination className="pager-nav" aria-label={position === 'top' ? '招聘结果顶部分页' : '招聘结果底部分页'}>
           <PaginationContent>
             <PaginationItem>
-              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => onPageChange(page - 1)}>上一页</Button>
+              <button className="btn btn-secondary btn-sm" disabled={page === 1} onClick={() => onPageChange(page - 1)}>
+                <ChevronLeft size={14} /> 上一页
+              </button>
             </PaginationItem>
-            <PaginationItem><span className="page-number">{page} / {pages}</span></PaginationItem>
+            <PaginationItem><span className="pager-num">{page} / {pages}</span></PaginationItem>
             <PaginationItem>
-              <Button variant="outline" size="sm" disabled={page === pages} onClick={() => onPageChange(page + 1)}>下一页</Button>
+              <button className="btn btn-secondary btn-sm" disabled={page === pages} onClick={() => onPageChange(page + 1)}>
+                下一页 <ChevronRight size={14} />
+              </button>
             </PaginationItem>
           </PaginationContent>
         </Pagination>
       )}
     </div>
-  );
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="check-label">
-      <Checkbox checked={checked} onCheckedChange={onChange} />
-      <span>{label}</span>
-    </label>
   );
 }
 
@@ -155,7 +140,10 @@ export default function Home() {
     [now, setNow] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false),
     [detailError, setDetailError] = useState('');
+  const [dataOrigin, setDataOrigin] = useState('site');
   const fileRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const discoveryFilters = useRef<Filters>(defaultFilters);
   const resultsTopRef = useRef<HTMLDivElement>(null);
   const personalRef = useRef<Personal>({});
   const preferencesWarning = useRef(false);
@@ -171,6 +159,7 @@ export default function Home() {
     try {
       const r = await fetch('/jobs.json', { cache: 'no-store' });
       if (!r.ok) throw Error('招聘信息暂时无法读取，请稍后重试。');
+      const origin = r.headers.get('x-job-radar-data-origin') || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'local' : 'site');
       const json = (await r.json()) as Snapshot;
       if (
         !json ||
@@ -193,6 +182,7 @@ export default function Home() {
       setDetailLoading(false);
       setSearchIndex(null);
       setSearchError('');
+      setDataOrigin(origin);
       setData(json);
     } catch (e) {
       setError(e instanceof Error ? e.message : '读取失败');
@@ -353,6 +343,30 @@ export default function Home() {
     save(next);
   };
 
+  const openView = (view: Filters['view']) => {
+    if (view === filters.view) return;
+    if (filters.view === 'all') discoveryFilters.current = filters;
+    setFilters(view === 'all' ? { ...discoveryFilters.current, view: 'all' } : personalViewFilters(view));
+    setPage(1);
+  };
+
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey &&
+        !target.closest('input, textarea, [contenteditable="true"], [role="dialog"]')) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', focusSearch);
+    return () => window.removeEventListener('keydown', focusSearch);
+  }, []);
+
+  const allJobs = useMemo(() => mergeDuplicateOpportunities(data?.jobs ?? []), [data]);
+  const savedCount = allJobs.filter((job) => personalFor(job, personal).saved).length;
+  const appliedCount = allJobs.filter((job) => personalFor(job, personal).applied).length;
+
   const needsSearch = !!filters.query.trim() && !!data?.search_url;
   useEffect(() => {
     if (!needsSearch || !data?.search_url || searchIndex) return;
@@ -372,9 +386,9 @@ export default function Home() {
   const searchPending = needsSearch && !searchIndex;
   const searchableJobs = useMemo(() => {
     if (searchPending) return [];
-    const base = mergeDuplicateOpportunities(data?.jobs ?? []);
+    const base = allJobs;
     return base.map((j) => (needsSearch ? { ...j, search_text: searchIndex?.[j.id] ?? '' } : j));
-  }, [data, needsSearch, searchIndex, searchPending]);
+  }, [allJobs, needsSearch, searchIndex, searchPending]);
 
   const filtered = useMemo(
     () => filterJobs(searchableJobs, filters, personal, since, now),
@@ -473,12 +487,8 @@ export default function Home() {
         Date.parse(j.updated_at) > Date.parse(since)),
   ).length;
 
-  const dueCount = (data?.jobs ?? []).filter(
-    (j) =>
-      personalFor(j, personal).saved &&
-      j.deadline &&
-      !isExpired(j, now) &&
-      Date.parse(j.deadline) - now < 7 * 86400000,
+  const dueCount = buildActionQueue(allJobs, personal, now).filter(
+    (job) => job.deadline && Date.parse(job.deadline) - now < 7 * 86400000,
   ).length;
 
   const years = [
@@ -594,68 +604,100 @@ export default function Home() {
 
   return (
     <>
-      <header className="topbar">
-        <div className="brand">
-          <Radar className="brand-icon" size={42} />
-          <span>
-            职讯雷达 <span className="edition">个人版</span>
-          </span>
+      <a className="skip-to-results" href="#opportunities">跳到招聘结果</a>
+      <input type="file" accept="application/json,.json" ref={fileRef} hidden onChange={(e) => void importPersonal(e.target.files?.[0])} />
+      <header className="app-bar">
+        <div className="app-bar-inner">
+          <div className="brand-mark">
+            <Radar size={26} />
+            <div className="brand-text">
+              <strong>职讯雷达</strong>
+              <small>求职工作台</small>
+            </div>
+          </div>
+          <nav className="app-nav" aria-label="工作台导航">
+            <button className="app-nav-item" aria-current={filters.view === 'all' ? 'page' : undefined} onClick={() => openView('all')}>
+              发现机会
+            </button>
+            <button className="app-nav-item" aria-current={filters.view === 'saved' ? 'page' : undefined} onClick={() => openView('saved')}>
+              我的收藏 <span className="app-nav-count">{savedCount}</span>
+            </button>
+            <button className="app-nav-item" aria-current={filters.view === 'applied' ? 'page' : undefined} onClick={() => openView('applied')}>
+              投递记录 <span className="app-nav-count">{appliedCount}</span>
+            </button>
+          </nav>
+          <div className="app-bar-actions">
+            <button className="btn btn-ghost btn-sm" onClick={() => setSourceOpen(true)}>
+              <Database size={15} />
+              <span>信息来源</span>
+            </button>
+          </div>
         </div>
-        <Button variant="ghost" onClick={() => setSourceOpen(true)}>
-          <Database size={16} />
-          <span>信息来源</span>
-        </Button>
       </header>
 
-      <main className="workspace">
-        <div className="intro">
+      <main className="page">
+        <div className="page-head">
           <div>
-            <h1>找到下一份机会</h1>
-            <p className="subtitle">聚合高校就业网、政务直聘与权威招聘线索</p>
+            <p className="page-eyebrow">
+              {filters.city === '全部城市' ? '全国 / 全省' : filters.city} · {filters.type}
+              {filters.type === '校招' && filters.year !== '全部' ? ` · ${filters.year}届` : ''}
+            </p>
+            <h1 className="page-title">
+              {filters.view === 'all' ? '发现机会' : filters.view === 'saved' ? '我的收藏' : '投递记录'}
+            </h1>
+            <p className="page-lede">
+              {filters.view === 'all'
+                ? '聚合高校就业网、政务直聘与官方公告，追踪网申截止时间与宣讲日程。'
+                : filters.view === 'saved'
+                  ? '已收藏的机会按截止时间排列，便于优先投递即将截止的岗位。'
+                  : '记录已投递的岗位，本地保存，随时跟踪。'}
+            </p>
           </div>
-          <div className="update-block">
-            <span className="update-dot" />
-            <span>最近采集 {date(data?.last_success_at, true)}</span>
-            {data && !data.schedule_enabled && <span className="update-status">自动更新未启用</span>}
+          <div className={`freshness ${!data?.last_success_at || stale ? 'is-stale' : ''}`}>
+            <span className="freshness-dot" />
+            <span>{loading && !data ? '正在读取招聘信息…' : `最近采集 ${date(data?.last_success_at, true)}`}</span>
+            {data && !data.schedule_enabled && <span className="text-muted">（未启用定时）</span>}
             <button
+              className="icon-btn"
               onClick={() => void refresh()}
               disabled={loading}
               aria-label="重新读取招聘数据"
             >
-              <RefreshCw size={15} className={loading ? 'spinning' : ''} />
+              <RefreshCw size={14} className={loading ? 'spinning' : ''} />
             </button>
           </div>
         </div>
 
         {notice && (
-          <output className="notice">
-            {notice}
+          <output className="toast">
+            <span>{notice}</span>
             <button aria-label="关闭提示" onClick={() => setNotice('')}>
-              <X size={16} />
+              <X size={15} />
             </button>
           </output>
         )}
 
         {error && (
-          <div className="notice warning" role="alert">
-            {error}
-            {data ? ' 保留上次读取的结果。' : ''}
-            <Button variant="outline" onClick={() => void refresh()}>
+          <div className="inline-alert is-danger" role="alert">
+            <span>{error} {data ? '（已保留上次读取的结果）' : ''}</span>
+            <button className="btn btn-secondary btn-sm" onClick={() => void refresh()}>
               重试
-            </Button>
+            </button>
           </div>
         )}
 
         {data && stale && (
-          <div className="pilot-notice">
+          <div className="inline-alert is-warn">
             <Clock3 size={16} />
-            <strong>信息已超过 36 小时未更新，请在原公告核对是否仍可报名。</strong>
+            <span>信息已超过 36 小时未更新，请在原公告核对是否仍可报名。</span>
           </div>
         )}
 
-        <div className="layout">
+        {data && now > 0 && <DataHealth data={data} now={now} city={filters.city} visibleJobs={filtered} origin={dataOrigin} onSources={() => setSourceOpen(true)} />}
+
+        <div className="page-grid">
           <FilterSidebar
-            className="desktop-sidebar"
+            className="filters-desktop"
             filters={filters}
             data={data}
             years={years}
@@ -663,17 +705,68 @@ export default function Home() {
             onChange={change}
             onReset={resetFilters}
             onExport={exportPersonal}
-            onImport={(f) => void importPersonal(f)}
-            fileRef={fileRef}
+            onImport={() => fileRef.current?.click()}
           />
 
-          <section className="results" aria-label="招聘机会">
+          <section className="results-col" id="opportunities" aria-label="招聘机会">
+            <details className="plan-mobile">
+              <summary>
+                <span>我的安排<small>待投递 · 宣讲日程</small></span>
+                <ChevronDown size={16} />
+              </summary>
+              <ActionRail jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready} onDetail={(job) => void openDetail(job)} onView={openView} />
+            </details>
+
+            <div className="search-row">
+              <div className="search-field">
+                <Search size={18} />
+                <input
+                  ref={searchRef}
+                  aria-label="搜索岗位、企业或专业"
+                  placeholder="搜索企业、岗位、专业，找到你的下一站"
+                  value={filters.query}
+                  onChange={(e) => change('query', e.target.value)}
+                />
+                {!filters.query && <kbd className="kbd">/</kbd>}
+                {filters.query && (
+                  <button
+                    className="icon-btn"
+                    aria-label="清空搜索"
+                    onClick={() => change('query', '')}
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary filters-trigger"
+                onClick={() => setMobileFilterOpen(true)}
+                aria-label="打开筛选面板"
+              >
+                <SlidersHorizontal size={16} />
+                <span>筛选</span>
+                {activeFilterCount > 0 && (
+                  <span className="filters-trigger-badge">{activeFilterCount}</span>
+                )}
+              </button>
+            </div>
+
+            <div className="search-hints">
+              <span>试着搜</span>
+              {['财务', '软件工程师', '管培生', '不限专业'].map((term) => (
+                <button key={term} type="button" onClick={() => change('query', term)}>{term}</button>
+              ))}
+              <span className="hint-tail">支持企业、岗位、专业全文搜索</span>
+            </div>
+
             <PersonalRadar
+              now={now}
               currentFilters={filters}
               filteredJobs={radarScopeJobs}
               activeFocus={filters.radarFocus}
               onApplyPreset={(presetFilters) => {
-                setFilters((prev) => ({ ...prev, ...presetFilters, radarFocus: 'none' }));
+                setFilters(restoreBrowsing({ filters: { ...defaultFilters, ...presetFilters, view: 'all', radarFocus: 'none' } }).filters);
                 setPage(1);
               }}
               onQuickFocus={(focus) => {
@@ -694,216 +787,219 @@ export default function Home() {
               }}
             />
 
-            <div className="search-box-row">
-              <div className="search-box">
-                <Search size={20} />
-                <Input
-                  aria-label="搜索岗位、企业或专业"
-                  placeholder="搜索岗位、企业或专业，多词空格分隔，例如：财务 审计"
-                  value={filters.query}
-                  onChange={(e) => change('query', e.target.value)}
-                />
-                {filters.query && (
-                  <button
-                    aria-label="清空搜索"
-                    onClick={() => change('query', '')}
-                  >
-                    <X size={16} />
-                  </button>
-                )}
-              </div>
-              <Button
-                variant="outline"
-                className="mobile-filter-btn"
-                onClick={() => setMobileFilterOpen(true)}
-                aria-label="打开筛选面板"
-              >
-                <SlidersHorizontal size={16} />
-                <span>筛选</span>
-                {activeFilterCount > 0 && (
-                  <span className="filter-badge">{activeFilterCount}</span>
-                )}
-              </Button>
-            </div>
-
-            <div className="results-toolbar-row">
-              <div className="results-navigation">
-                <Tabs
-                  value={filters.view}
-                  onValueChange={(v) => change('view', String(v))}
-                >
-                  <TabsList variant="line" aria-label="个人招聘列表">
-                    <TabsTrigger value="all">全部机会</TabsTrigger>
-                    <TabsTrigger value="saved">
-                      <Bookmark size={15} />
-                      已收藏
-                    </TabsTrigger>
-                    <TabsTrigger value="applied">
-                      <Check size={15} />
-                      已投递
-                    </TabsTrigger>
-                    <TabsTrigger value="hidden">不感兴趣</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-
-              <div className="toolbar-controls">
-                <fieldset className="view-mode-buttons" aria-label="招聘信息显示方式">
-                  <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'outline'} aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')}>卡片</Button>
-                  <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>表格</Button>
-                </fieldset>
-                <div className="sort-control">
-                  <Select value={filters.sort} onValueChange={(v) => change('sort', v as Filters['sort'])}>
-                    <SelectTrigger className="sort-select-trigger" aria-label="排序方式">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="newest">最新发布</SelectItem>
-                      <SelectItem value="deadline_asc">即将截止优先</SelectItem>
-                      <SelectItem value="salary_desc">薪资从高到低</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Toggle label="只看未读" checked={filters.onlyUnread} onChange={(v) => change('onlyUnread', v)} />
-                <Toggle label="新收录/变更" checked={filters.onlyNew} onChange={(v) => change('onlyNew', v)} />
-                <Toggle label="合并同企业" checked={groupCompanies} onChange={(v) => { setGroupCompanies(v); setPage(1); }} />
-              </div>
-            </div>
-
-            {filters.city !== '全部城市' && (
-              <div className="location-scopes-compact">
-                <fieldset
-                  className="scope-buttons"
-                  aria-label="工作地点匹配范围"
-                >
-                  {locationOptions.map((option) => (
-                    <Button
-                      key={option.scope}
-                      variant={
-                        filters.locationScope === option.scope
-                          ? 'default'
-                          : 'outline'
-                      }
-                      aria-pressed={filters.locationScope === option.scope}
-                      onClick={() => change('locationScope', option.scope)}
-                    >
-                      {option.label} · {option.count}
-                    </Button>
-                  ))}
-                </fieldset>
-                <span className="location-hint-inline">
-                  {filters.locationScope === 'exact'
-                    ? `仅展示已提取到${filters.city}地点的公告`
-                    : filters.locationScope === 'possible'
-                      ? `工作地域覆盖所在省份或全国，尚未确认是否有${filters.city}岗位`
-                      : `未提取到明确工作地点公告`}
-                </span>
-              </div>
+            {filters.view !== 'all' && (
+              <p className="note-line">
+                <Info size={15} />
+                <span>个人列表默认不限城市，并保留已截止记录；返回「发现机会」会恢复之前的筛选。投递后请手动标记状态。</span>
+              </p>
             )}
 
+            <div className="result-bar">
+              <div className="result-bar-left">
+                <div className="result-count" aria-live="polite">
+                  {searchPending ? (
+                    <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output>
+                  ) : (
+                    <>
+                      <div className="result-count-main">
+                        <span className="result-count-num">{filtered.length}</span>
+                        <span className="result-count-unit">条机会</span>
+                      </div>
+                      <span>（{filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}）</span>
+                      {filters.type === '校招' && filters.year !== '全部' && (
+                        <span>
+                          明确{filters.year}届 <strong>{filtered.filter((j) => j.graduation_years.includes(filters.year)).length}</strong> 条
+                          {filters.includeUncertain && (
+                            <span className="text-muted">
+                              （{filtered.filter((j) => j.graduation_years.length === 0).length} 未明确）
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      {filters.salary !== '全部' && (
+                        <span className="chip chip-brand">薪资 {filters.salary}</span>
+                      )}
+                      {filters.radarFocus !== 'none' && (
+                        <span className="focus-chip">
+                          <span>
+                            {filters.radarFocus === 'today' && '今日新发'}
+                            {filters.radarFocus === 'supplement' && '新开补录'}
+                            {filters.radarFocus === 'urgent' && '3天内截止'}
+                            {filters.radarFocus === 'change' && '近期变更'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => change('radarFocus', 'none')}
+                            title="点击取消聚焦，查看全部"
+                            aria-label="取消聚焦"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="result-toggles">
+                  <button
+                    type="button"
+                    className="toggle-chip toggle-chip-sm"
+                    aria-pressed={filters.onlyUnread}
+                    onClick={() => change('onlyUnread', !filters.onlyUnread)}
+                  >
+                    只看未读
+                  </button>
+                  <button
+                    type="button"
+                    className="toggle-chip toggle-chip-sm"
+                    aria-pressed={filters.onlyNew}
+                    onClick={() => change('onlyNew', !filters.onlyNew)}
+                  >
+                    新收录 / 变更
+                  </button>
+                  <button
+                    type="button"
+                    className="toggle-chip toggle-chip-sm"
+                    aria-pressed={groupCompanies}
+                    onClick={() => { setGroupCompanies(!groupCompanies); setPage(1); }}
+                  >
+                    合并同企业
+                  </button>
+                  <button
+                    type="button"
+                    className="toggle-chip toggle-chip-sm"
+                    aria-pressed={filters.view === 'hidden'}
+                    onClick={() => openView(filters.view === 'hidden' ? 'all' : 'hidden')}
+                  >
+                    {filters.view === 'hidden' ? '返回全部机会' : '不感兴趣'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="result-tools">
+                <Select value={filters.sort} onValueChange={(v) => change('sort', v as Filters['sort'])}>
+                  <SelectTrigger className="sort-trigger" aria-label="排序方式">
+                    <SelectValue>{filters.sort === 'deadline_asc' ? '即将截止优先' : filters.sort === 'salary_desc' ? '薪资从高到低' : '最新发布'}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">最新发布</SelectItem>
+                    <SelectItem value="deadline_asc">即将截止优先</SelectItem>
+                    <SelectItem value="salary_desc">薪资从高到低</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <fieldset className="seg" aria-label="招聘信息显示方式">
+                  <button
+                    type="button"
+                    aria-pressed={viewMode === 'cards'}
+                    onClick={() => setViewMode('cards')}
+                  >
+                    卡片
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={viewMode === 'table'}
+                    onClick={() => setViewMode('table')}
+                  >
+                    表格
+                  </button>
+                </fieldset>
+
+                {pages > 1 && !searchPending && (
+                  <div className="pager-mini">
+                    <button
+                      className="icon-btn"
+                      disabled={currentPage === 1}
+                      onClick={() => changePage(currentPage - 1)}
+                      aria-label="上一页"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span>{currentPage} / {pages}</span>
+                    <button
+                      className="icon-btn"
+                      disabled={currentPage === pages}
+                      onClick={() => changePage(currentPage + 1)}
+                      aria-label="下一页"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="result-subbar">
+              {filters.city !== '全部城市' ? (
+                <div className="scope-bar">
+                  <fieldset
+                    className="seg"
+                    aria-label="工作地点匹配范围"
+                  >
+                    {locationOptions.map((option) => (
+                      <button
+                        key={option.scope}
+                        type="button"
+                        aria-pressed={filters.locationScope === option.scope}
+                        onClick={() => change('locationScope', option.scope)}
+                      >
+                        {option.label}
+                        <span className="seg-count">{option.count}</span>
+                      </button>
+                    ))}
+                  </fieldset>
+                </div>
+              ) : <div />}
+
+              <div className="filter-chips" aria-label="已选筛选条件">
+                <span>当前筛选</span>
+                {([
+                  ['city', filters.city, '全部城市'], ['type', filters.type, '全部'],
+                  ...(filters.type === '校招' ? [['year', filters.year === '全部' ? '全部' : `${filters.year}届`, '全部']] : []),
+                  ['sector', filters.sector, '全部'], ['direction', filters.direction, '全部'],
+                  ['salary', filters.salary, '全部'], ['education', filters.education, ''],
+                  ['provenance', filters.provenance, '全部'], ['kind', filters.kind, '全部'],
+                  ['changeType', filters.changeType, '全部'],
+                ] as [keyof Filters, string, string][]).filter(([, value, empty]) => value !== empty).map(([key, value, empty]) => (
+                  <button key={key} className="filter-chip" onClick={() => change(key, empty)} aria-label={`移除筛选：${value}`}>
+                    {value}
+                    <X size={12} />
+                  </button>
+                ))}
+                <button className="text-btn" onClick={resetFilters}>恢复默认</button>
+              </div>
+            </div>
+
             {filters.onlyNew && !since && (
-              <p className="inline-note">
+              <p className="note-line">
                 这是你首次访问，尚无上次查看时间。关闭此筛选可查看全部收录。
               </p>
             )}
 
             {since && newCount > 0 && (
-              <p className="inline-note">
+              <p className="note-line">
                 全库有 {newCount}{' '}
                 条自上次访问以来首次收录或内容变更；首次收录不代表刚发布。
               </p>
             )}
 
             {dueCount > 0 && (
-              <div className="deadline-banner">
-                <Bell size={17} />
-                你收藏的 {dueCount} 条公告将在 7
-                天内截止。请在原公告核对报名要求。
+              <div className="due-banner">
+                <Bell size={16} />
+                <span>你收藏的 {dueCount} 条公告将在 7 天内截止。请在原公告核对报名要求。</span>
               </div>
             )}
 
             {loading && !data ? (
-              <div className="cards" aria-label="正在读取">
-                <Skeleton className="h-48 w-full" />
-                <Skeleton className="h-48 w-full" />
+              <div className="opp-list" aria-label="正在读取">
+                <div className="opp-skeleton" />
+                <div className="opp-skeleton" />
               </div>
             ) : (
               <>
-                <div className="results-top-bar">
-                  <div className="result-count-label" aria-live="polite">
-                    {searchPending ? (
-                      <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output>
-                    ) : (
-                      <>
-                        <span>共 <strong>{filtered.length}</strong> 条</span>
-                        <span className="muted">（{filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}）</span>
-                        {filters.type === '校招' && filters.year !== '全部' && (
-                          <span className="cohort-breakdown">
-                            明确{filters.year}届 <strong>{filtered.filter((j) => j.graduation_years.includes(filters.year)).length}</strong> 条
-                            {filters.includeUncertain && (
-                              <span className="muted">
-                                {' '}（{filtered.filter((j) => j.graduation_years.length === 0).length} 条未明确）
-                              </span>
-                            )}
-                          </span>
-                        )}
-                        {filters.salary !== '全部' && (
-                          <span className="salary-filter-badge">
-                            薪资{filters.salary}
-                          </span>
-                        )}
-                        {filters.radarFocus !== 'none' && (
-                          <span className={`active-radar-focus-chip ${filters.radarFocus}`}>
-                            <span>
-                              {filters.radarFocus === 'today' && '⚡ 今日新发'}
-                              {filters.radarFocus === 'supplement' && '🔥 新开补录'}
-                              {filters.radarFocus === 'urgent' && '⏳ 3天内截止'}
-                              {filters.radarFocus === 'change' && '🔔 近期变更'}
-                            </span>
-                            <button
-                              type="button"
-                              className="clear-radar-focus-btn"
-                              onClick={() => change('radarFocus', 'none')}
-                              title="点击取消聚焦，查看全部"
-                              aria-label="取消聚焦"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        )}
-                        {filters.sort === 'deadline_asc' && (
-                          <span className="sort-active-badge">
-                            ⏳ 即将截止优先
-                          </span>
-                        )}
-                        {filters.sort === 'salary_desc' && (
-                          <span className="sort-active-badge">
-                            💰 薪资从高到低
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <div ref={resultsTopRef} tabIndex={-1} className="results-page-start">
-                    {data && !searchPending && (
-                      <ResultsPagination page={currentPage} pageSize={pageSize} total={groups.length} grouped={groupCompanies} position="top" onPageChange={changePage} onPageSizeChange={changePageSize} />
-                    )}
-                  </div>
-                </div>
-
-                <details className="usage-help">
-                  <summary>
-                    <Info size={13} />
-                    <span>最新在前 · 筛选与阅读说明</span>
-                    <ChevronDown size={12} className="help-chevron" />
-                  </summary>
-                  <div className="usage-help-content">
-                    <p>按来源发布 / 收录时间从新到旧排列，日期不明确的排在最后。查看详情或投递入口后标为已读，内容更新后重新提示未读。表格可左右滑动。</p>
-                    <p>合并仅折叠同名企业、同届校招的信息，提前批、春招、秋招等明确批次分开展示；所有岗位和来源均保留。每组按最新一条排序，展开后逐条投递或收藏。未明确企业或届别的单独展示。</p>
-                  </div>
-                </details>
-
-                <div className="cards">
+                <div ref={resultsTopRef} tabIndex={-1} />
+                <div className="opp-list">
                   {displayBlocks.map((group) => {
                     const content = viewMode === 'table' ? (
                       <JobTable
@@ -936,20 +1032,20 @@ export default function Home() {
                       ))
                     );
                     return group.grouped ? (
-                      <details className="company-group" key={group.id} open>
+                      <details className="opp-group" key={group.id} open>
                         <summary>
-                          <div className="company-group-title">
+                          <div className="opp-group-title">
                             <strong>{group.company}</strong>
-                            <span className="group-caption">
+                            <span>
                               {group.label} · 最新 {group.jobs[0].published_at || '日期未明确'}
                             </span>
                           </div>
-                          <div className="group-count">
+                          <div className="opp-group-count">
                             <span>{group.jobs.length} 条信息</span>
-                            <ChevronDown size={15} className="group-chevron" />
+                            <ChevronDown size={14} />
                           </div>
                         </summary>
-                        <div className="group-members">{content}</div>
+                        <div className="opp-group-members">{content}</div>
                       </details>
                     ) : (
                       <div key={group.id}>{content}</div>
@@ -976,7 +1072,10 @@ export default function Home() {
                         variant="outline"
                         onClick={() => {
                           setFilters({
-                            ...filters,
+                            ...defaultFilters,
+                            city: filters.city,
+                            view: filters.view,
+                            locationScope: filters.locationScope,
                             type: '全部',
                             sector: '全部',
                             direction: '全部',
@@ -1003,11 +1102,23 @@ export default function Home() {
               <ResultsPagination page={currentPage} pageSize={pageSize} total={groups.length} grouped={groupCompanies} position="bottom" onPageChange={changePage} onPageSizeChange={changePageSize} />
             )}
 
-            <p className="source-note">
+            <details className="help-fold">
+              <summary>
+                <Info size={14} />
+                <span>筛选与阅读说明</span>
+                <ChevronDown size={14} />
+              </summary>
+              <div className="help-fold-body">
+                <p>按来源发布 / 收录时间从新到旧排列，日期不明确的排在最后。查看详情或投递入口后标为已读，内容更新后重新提示未读。表格可左右滑动。</p>
+                <p>合并仅折叠同名企业、同届校招的信息，提前批、春招、秋招等明确批次分开展示；所有岗位和来源均保留。每组按最新一条排序，展开后逐条投递或收藏。未明确企业或届别的单独展示。</p>
+              </div>
+            </details>
+
+            <p className="foot-note">
               {data?.sources.length ?? 0} 个来源 ·
               当前按公告聚合，部分公告包含多个岗位。标签由文字提取，未知资格不会当作“不符合”。
               <button
-                className="quiet-link"
+                className="text-btn"
                 onClick={() => setSourceOpen(true)}
               >
                 查看覆盖与更新状态
@@ -1015,8 +1126,10 @@ export default function Home() {
               </button>
             </p>
           </section>
+          <div className="plan-desktop"><ActionRail jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
         </div>
       </main>
+
 
       <Sheet open={mobileFilterOpen} onOpenChange={setMobileFilterOpen}>
         <SheetContent side="left" className="mobile-filter-sheet">
@@ -1036,8 +1149,7 @@ export default function Home() {
               onChange={change}
               onReset={resetFilters}
               onExport={exportPersonal}
-              onImport={(f) => void importPersonal(f)}
-              fileRef={fileRef}
+              onImport={() => fileRef.current?.click()}
             />
           </div>
         </SheetContent>
@@ -1118,7 +1230,8 @@ export default function Home() {
                   读取 {s.pages ?? 0} 页，发现 {s.discovered ?? 0} 条、详情解析 {s.parsed ?? 0}{' '}
                   条{s.cached ? `、复用近期已核实 ${s.cached} 条` : ''} · {s.coverage || '按规则运行'}
                 </p>
-                <p>最近完整成功：{date(s.last_success_at, true)}</p>
+                <p>最近列表巡检：{date(s.last_list_read_at || s.head_scan_at || ((s.pages ?? 0) > 0 ? s.last_attempt_at : null), true)}</p>
+                <p>最近完整成功：{date(s.last_success_at, true)} · 待补详情 {s.pending_details ?? 0} 条</p>
                 <p>最近尝试：{date(s.last_attempt_at, true)}</p>
                 {Boolean(s.errors && s.errors.length > 0) && (
                   <p className="warning-text">

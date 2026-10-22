@@ -1,9 +1,11 @@
 'use client';
 
+import { useId } from 'react';
+
 import {
-  SlidersHorizontal,
-  RotateCcw,
+  ChevronDown,
   Download,
+  RotateCcw,
   Upload,
 } from 'lucide-react';
 import {
@@ -14,7 +16,6 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { Filters, Snapshot } from '@/lib/jobs';
 
@@ -30,10 +31,10 @@ function Choice({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="filter-field">
+    <div className="field">
       <span className="field-label">{label}</span>
       <Select value={value} onValueChange={(v) => onChange(v ?? '全部')}>
-        <SelectTrigger className="field-control" aria-label={label}>
+        <SelectTrigger className="field-select" aria-label={label}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -48,6 +49,7 @@ function Choice({
   );
 }
 
+/** Short option sets read best as a segmented control; longer ones wrap as chips. */
 function PillChoice({
   label,
   value,
@@ -59,16 +61,17 @@ function PillChoice({
   options: string[];
   onChange: (v: string) => void;
 }) {
+  const segmented = options.length <= 3;
   return (
-    <div className="filter-field">
+    <div className="field">
       <span className="field-label">{label}</span>
-      <fieldset className="pill-group" aria-label={label}>
+      <fieldset className={segmented ? 'seg seg-block' : 'chip-row'} aria-label={label}>
         {options.map((opt) => (
           <button
             key={opt}
             type="button"
             aria-pressed={value === opt}
-            className={`pill-item ${value === opt ? 'active' : ''}`}
+            className={segmented ? undefined : 'toggle-chip toggle-chip-sm'}
             onClick={() => onChange(opt)}
           >
             {opt}
@@ -89,7 +92,7 @@ function Toggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="check-label">
+    <label className="check-row">
       <Checkbox checked={checked} onCheckedChange={onChange} />
       <span>{label}</span>
     </label>
@@ -105,7 +108,6 @@ export function FilterSidebar({
   onReset,
   onExport,
   onImport,
-  fileRef,
   className = '',
 }: {
   filters: Filters;
@@ -115,24 +117,19 @@ export function FilterSidebar({
   onChange: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
   onReset: () => void;
   onExport: () => void;
-  onImport: (file?: File) => void;
-  fileRef: React.RefObject<HTMLInputElement | null>;
+  onImport: () => void;
   className?: string;
 }) {
+  const educationId = useId();
   return (
-    <aside className={`filter-panel ${className}`} aria-label="筛选条件">
-      <h2>
-        <SlidersHorizontal size={17} />
-        筛选机会
-        <button
-          aria-label="重置筛选"
-          title="重置筛选"
-          onClick={onReset}
-        >
-          <RotateCcw size={15} />
+    <aside className={`filter-rail ${className}`} aria-label="筛选条件">
+      <div className="rail-head">
+        <h2>筛选</h2>
+        <button className="text-btn" aria-label="重置筛选" title="重置筛选" onClick={onReset}>
+          <RotateCcw />
+          重置
         </button>
-      </h2>
-      <p className="saved-filter-note">筛选条件会记在本机，下次继续使用。右上角可重置。</p>
+      </div>
       <Choice
         label="工作城市"
         value={filters.city}
@@ -185,44 +182,41 @@ export function FilterSidebar({
         options={['全部', '6K以上', '8K以上', '10K以上', '15K以上', '20K以上']}
         onChange={(v) => onChange('salary', v)}
       />
-      <label htmlFor="education" className="filter-field">
+      <label htmlFor={educationId} className="field">
         <span className="field-label">学历关键词</span>
         <Input
-          id="education"
-          className="field-control"
+          id={educationId}
+          className="field-input"
           value={filters.education}
           onChange={(e) => onChange('education', e.target.value)}
           placeholder="不限，可输入本科"
         />
       </label>
-      <Choice
-        label="排序方式"
-        value={filters.sort === 'deadline_asc' ? '即将截止优先' : filters.sort === 'salary_desc' ? '薪资从高到低' : '最新发布'}
-        options={['最新发布', '即将截止优先', '薪资从高到低']}
-        onChange={(v) => {
-          const mapped = v === '即将截止优先' ? 'deadline_asc' : v === '薪资从高到低' ? 'salary_desc' : 'newest';
-          onChange('sort', mapped);
-        }}
-      />
-      <PillChoice
-        label="信息来源"
-        value={filters.provenance}
-        options={['全部', '高校 / 政府', '第三方线索']}
-        onChange={(v) => onChange('provenance', v)}
-      />
-      <PillChoice
-        label="信息类型"
-        value={filters.kind}
-        options={['全部', '具体岗位', '招聘公告']}
-        onChange={(v) => onChange('kind', v)}
-      />
-      <Choice
-        label="招聘变更 / 状态"
-        value={filters.changeType}
-        options={['全部', '有变更', '截止延期', '补录招募', '岗位调整', '考核阶段']}
-        onChange={(v) => onChange('changeType', v as Filters['changeType'])}
-      />
-      <div className="filter-checks">
+      <details className="filter-more">
+        <summary>
+          <span>
+            更多条件<small>来源 · 信息状态</small>
+          </span>
+          <ChevronDown size={15} />
+        </summary>
+        <PillChoice
+          label="信息来源"
+          value={filters.provenance}
+          options={['全部', '高校 / 政府', '第三方线索']}
+          onChange={(v) => onChange('provenance', v)}
+        />
+        <PillChoice
+          label="信息类型"
+          value={filters.kind}
+          options={['全部', '具体岗位', '招聘公告']}
+          onChange={(v) => onChange('kind', v)}
+        />
+        <Choice
+          label="招聘变更 / 状态"
+          value={filters.changeType}
+          options={['全部', '有变更', '截止延期', '补录招募', '岗位调整', '考核阶段']}
+          onChange={(v) => onChange('changeType', v as Filters['changeType'])}
+        />
         <Toggle
           label="保留招聘类型、届别或学历未明确的公告"
           checked={filters.includeUncertain}
@@ -233,39 +227,22 @@ export function FilterSidebar({
           checked={filters.showExpired}
           onChange={(v) => onChange('showExpired', v)}
         />
-        <p>
+        <p className="filter-help">
           默认只保留国内或地点未明确的机会；仅海外岗位自动排除。默认不限专业，可在搜索框输入专业名称；公告未写明的资格需查看原文。
         </p>
-      </div>
-      <div className="local-records">
+      </details>
+      <div className="rail-foot">
         <h3>我的记录</h3>
         <p>仅存当前浏览器，可导出后在其他设备导入。</p>
-        <div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onExport}
-            disabled={!ready}
-          >
-            <Download size={14} />
+        <div className="rail-foot-actions">
+          <button className="btn btn-secondary btn-sm" onClick={onExport} disabled={!ready}>
+            <Download />
             导出
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileRef.current?.click()}
-            disabled={!ready}
-          >
-            <Upload size={14} />
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={onImport} disabled={!ready}>
+            <Upload />
             导入
-          </Button>
-          <input
-            type="file"
-            accept="application/json,.json"
-            ref={fileRef}
-            hidden
-            onChange={(e) => onImport(e.target.files?.[0])}
-          />
+          </button>
         </div>
       </div>
     </aside>

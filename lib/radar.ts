@@ -1,5 +1,5 @@
 import type { Filters, Job } from './jobs.ts';
-import { getDeadlineCountdown, hasRecentJobChange, parseSalaryRange } from './jobs.ts';
+import { getDeadlineCountdown, hasRecentJobChange, parseSalaryRange, isTodayOpportunity, isSupplementOpportunity } from './jobs.ts';
 
 export type RadarPreset = {
   id: string;
@@ -44,7 +44,7 @@ export const DEFAULT_RADAR_PRESETS: RadarPreset[] = [
   },
   {
     id: 'preset-sd-finance',
-    name: '全省 · 国企银行',
+    name: '全国 · 银行机会',
     filters: {
       city: '全部城市',
       sector: '银行',
@@ -69,18 +69,17 @@ export function loadRadarPresets(): RadarPreset[] {
   return DEFAULT_RADAR_PRESETS;
 }
 
-export function saveRadarPresets(presets: RadarPreset[]): void {
-  if (typeof window === 'undefined') return;
+export function saveRadarPresets(presets: RadarPreset[]): boolean {
+  if (typeof window === 'undefined') return false;
   try {
     window.localStorage.setItem(RADAR_PRESETS_STORAGE, JSON.stringify(presets));
+    return true;
   } catch {
-    // ignore
+    return false;
   }
 }
 
 export function computeRadarMetrics(jobs: Job[], now = Date.now()): RadarMetrics {
-  const todayStr = new Date(now).toLocaleString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
-
   let todayCount = 0;
   let supplementCount = 0;
   let urgentCount = 0;
@@ -88,10 +87,10 @@ export function computeRadarMetrics(jobs: Job[], now = Date.now()): RadarMetrics
   let changeCount = 0;
 
   for (const job of jobs) {
-    if (job.published_at === todayStr || job.first_seen_at?.slice(0, 10) === todayStr) {
+    if (isTodayOpportunity(job, now)) {
       todayCount++;
     }
-    if (/补录|补招|追加|第[二两三]批|春招补录|秋招补录|续聘/.test(job.title)) {
+    if (isSupplementOpportunity(job)) {
       supplementCount++;
     }
     const countdown = getDeadlineCountdown(job.deadline, now);

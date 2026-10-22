@@ -10,7 +10,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl } from '@/lib/jobs';
+import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 import { formatDate, OutLink } from '@/components/job-card';
 import { TalkEvents } from '@/components/talk-events';
@@ -44,7 +44,8 @@ export function DetailDrawer({
   onCopy: (job: Job) => void;
   setNotice: (msg: string) => void;
 }) {
-  const [positionFilter, setPositionFilter] = useState('');
+  const [positionSearch, setPositionSearch] = useState({ jobId: '', value: '' });
+  const positionFilter = positionSearch.jobId === selected?.id ? positionSearch.value : '';
 
   const displayedPositions = useMemo(() => {
     const list = selected?.positions ?? [];
@@ -66,8 +67,8 @@ export function DetailDrawer({
   );
 
   const currentStage = useMemo(
-    () => (selected ? getLifecycleStage(selected) : null),
-    [selected],
+    () => (selected ? getLifecycleStage(selected, now) : null),
+    [selected, now],
   );
   return (
     <Sheet
@@ -99,6 +100,12 @@ export function DetailDrawer({
               </SheetDescription>
             </SheetHeader>
             <div className="detail-body">
+              <dl className="detail-facts">
+                <div><dt>工作地点</dt><dd>{locationSummary(selected)}</dd></div>
+                <div><dt>学历要求</dt><dd>{selected.education || '原公告未明确'}</dd></div>
+                <div><dt>招聘对象</dt><dd>{selected.types.join(' / ') || '类型待核实'}{selected.graduation_years.length ? ` · ${selected.graduation_years.join(' / ')}届` : ''}</dd></div>
+                <div><dt>报名截止</dt><dd>{selected.deadline ? formatDate(selected.deadline, true) : '日期未明确，请核实'}</dd></div>
+              </dl>
               {detailLoading && (
                 <output className="inline-note">
                   正在读取完整公告，列表筛选仍可继续使用……
@@ -131,6 +138,7 @@ export function DetailDrawer({
                 </Button>
                 <Button
                   variant={personalFor(selected, personal).saved ? 'default' : 'outline'}
+                  disabled={!ready}
                   onClick={() => onToggle(selected, 'saved')}
                 >
                   <Bookmark size={16} />
@@ -138,6 +146,7 @@ export function DetailDrawer({
                 </Button>
                 <Button
                   variant={personalFor(selected, personal).applied ? 'default' : 'outline'}
+                  disabled={!ready}
                   onClick={() => onToggle(selected, 'applied')}
                 >
                   <Check size={16} />
@@ -367,7 +376,7 @@ export function DetailDrawer({
                           className="positions-filter-input"
                           placeholder="搜索职位或专业..."
                           value={positionFilter}
-                          onChange={(e) => setPositionFilter(e.target.value)}
+                          onChange={(e) => setPositionSearch({ jobId: selected.id, value: e.target.value })}
                           aria-label="筛选当前公告具体岗位"
                         />
                       </div>

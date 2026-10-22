@@ -165,9 +165,9 @@ jobs:
           export no_proxy="$NO_PROXY"
           "$NAS_PYTHON" scripts/ci_collect.py collect \
             --source-pack universities-b --data-dir data --public-dir public \
-            --pages 2 --days 30 --refresh-hours 72 --probe-budget 1 \
+            --freshness-first --pages 2 --days 30 --refresh-hours 72 --probe-budget 1 \
             --detail-timeout 8 --detail-retries 1 --detail-failure-limit 6 \
-            --source-budget 120 --shard-budget 1500
+            --source-budget 90 --shard-budget 1200
 
       - name: Upload Shard State
         timeout-minutes: 3
@@ -257,6 +257,9 @@ jobs:
             --days 30 \
             --expected-shards "universities-b"
 
+      - name: Audit actual data freshness and source coverage
+        run: python scripts/audit_freshness.py --public-dir public --output data/freshness-report.json
+
       - name: Save Collector State
         if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}
         continue-on-error: true
@@ -276,6 +279,7 @@ jobs:
           path: |
             data/ci-report.json
             data/coverage-changes.json
+            data/freshness-report.json
           retention-days: 7
 
       - name: Download Built Application

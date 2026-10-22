@@ -1,0 +1,59 @@
+.collection-health {
+  background: var(--surface, #fffefa);
+  border: 1px solid var(--line, #e7e2d7);
+  border-radius: 8px;
+  margin: 0 0 20px;
+  color: var(--ink-3, #686357);
+  font-size: 12px;
+}
+.collection-health > summary {
+  display: flex;
+  gap: 10px 22px;
+  align-items: center;
+  flex-wrap: wrap;
+  cursor: pointer;
+  list-style: none;
+  padding: 11px 14px;
+}
+.collection-health > summary::-webkit-details-marker {
+  display: none;
+}
+.collection-health summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.collection-health summary > svg {
+  margin-left: auto;
+}
+.collection-health strong {
+  color: var(--brand, #1f5140);
+  font-weight: 600;
+}
+.collection-health-body {
+  padding: 0 14px 13px;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.collection-health-body p {
+  margin: 7px 0;
+}
+@media (max-width: 600px) {
+  .collection-health > summary {
+    gap: 6px 12px;
+    font-size: 10px;
+  }
+}
+
+.agenda.is-expanded {
+  max-height: 520px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 5px;
+}
+.plan-desktop {
+  max-height: calc(100dvh - var(--header-h, 60px) - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}

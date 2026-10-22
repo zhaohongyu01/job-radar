@@ -1,3 +1,19 @@
+export function shanghaiDay(value: string | number): string {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const timestamp = typeof value === 'number' ? value : Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp + 8 * 3600000).toISOString().slice(0, 10) : '';
+}
+
+export function isTodayOpportunity(job: Job, now: number): boolean {
+  const today = shanghaiDay(now);
+  return shanghaiDay(job.published_at || '') === today || shanghaiDay(job.first_seen_at) === today;
+}
+
+export function isSupplementOpportunity(job: Job): boolean {
+  return /补录|补招|追加|第[二两三]批|春招补录|秋招补录|续聘/.test(job.title) ||
+    job.recent_change?.type === 'supplemental' || job.lifecycle_stage === 'supplemental';
+}
+
 export type PositionRequirement = {
   name: string;
   category?: string;
@@ -147,6 +163,9 @@ export type Source = {
   coverage?: string;
   last_success_at?: string | null;
   last_attempt_at?: string | null;
+  last_list_read_at?: string | null;
+  head_scan_at?: string | null;
+  pending_details?: number;
   errors?: { url: string; reason: string }[];
 };
 export type Snapshot = {
@@ -1125,15 +1144,9 @@ export function filterJobs(
       }
       if (f.radarFocus && f.radarFocus !== 'none') {
         if (f.radarFocus === 'today') {
-          const todayStr = new Date(now).toLocaleString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
-          const isToday = j.published_at === todayStr || j.first_seen_at?.slice(0, 10) === todayStr;
-          if (!isToday) return false;
+          if (!isTodayOpportunity(j, now)) return false;
         } else if (f.radarFocus === 'supplement') {
-          const isSupp =
-            /补录|补招|追加|第[二两三]批|春招补录|秋招补录|续聘/.test(j.title) ||
-            j.recent_change?.type === 'supplemental' ||
-            j.lifecycle_stage === 'supplemental';
-          if (!isSupp) return false;
+          if (!isSupplementOpportunity(j)) return false;
         } else if (f.radarFocus === 'urgent') {
           const countdown = getDeadlineCountdown(j.deadline, now);
           if (!countdown || countdown.urgency !== 'urgent') return false;

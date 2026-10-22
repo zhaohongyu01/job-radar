@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './design.css';
+import './data-health.css';
 export const metadata: Metadata = {
   title: '职讯雷达 · 招聘机会',
   description: '按城市、校招和社招查看招聘机会，收藏岗位并直达原始报名入口。',

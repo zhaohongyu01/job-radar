@@ -1410,6 +1410,7 @@ button:disabled {
 .detail-sheet {
   width: min(720px, 100vw) !important;
   max-width: 720px !important;
+  background-color: #fffefa !important;
   gap: 0 !important;
 }
 

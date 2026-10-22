@@ -34,6 +34,20 @@
   --info: #34587c;
   --info-soft: #e8eef5;
 
+  /* Compatibility aliases for detail drawer and panels */
+  --color-paper: var(--paper);
+  --color-paper-card: var(--surface);
+  --color-paper-sunken: var(--paper-sunken);
+  --color-paper-border: var(--line);
+  --color-paper-border-strong: var(--line-strong);
+  --color-ink-primary: var(--ink);
+  --color-ink-secondary: var(--ink-2);
+  --color-ink-muted: var(--ink-3);
+  --color-ink-subtle: var(--ink-4);
+  --color-brand: var(--brand);
+  --color-brand-tint: var(--brand-soft);
+  --color-brand-subtle: var(--brand-line);
+
   /* Type. No web fonts: the audience is in mainland China. Serif CJK faces are
      used where installed; otherwise CJK falls through to sans, never SimSun. */
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC',
@@ -539,10 +553,22 @@ button.chip:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 24px;
   margin-bottom: 16px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
+}
+.page-head-intro {
+  flex-shrink: 0;
+  min-width: 0;
+}
+.page-head-aside {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 0;
 }
 .page-eyebrow {
   margin: 0 0 4px;
@@ -567,6 +593,170 @@ button.chip:hover {
   font-size: 13px;
   line-height: 1.45;
 }
+
+/* 顶部求职行动看板卡片（深墨纸本质感，整合待投/已投/急需处理机会） */
+.top-action-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius, 10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  max-width: 640px;
+  min-width: 280px;
+}
+.top-action-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.top-stat-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: all var(--dur) var(--ease);
+}
+.top-stat-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.top-stat-btn.is-active {
+  background: rgba(255, 255, 255, 0.14);
+}
+.top-stat-val {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #fff;
+  font-variant-numeric: lining-nums;
+}
+.top-stat-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 1px;
+}
+.top-stat-sep {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.15);
+}
+.top-action-cue {
+  flex: 1;
+  min-width: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  padding-left: 12px;
+}
+.top-cue-urgent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.top-cue-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  letter-spacing: 0.04em;
+}
+.top-cue-job-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+}
+.top-cue-job-btn:hover .top-cue-company {
+  color: var(--brand-ink, #68d391);
+}
+.top-cue-company {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--dur) var(--ease);
+}
+.top-cue-title {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.top-cue-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #fca5a5;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.top-cue-all-link,
+.top-cue-explore-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--brand-ink, #68d391);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all var(--dur) var(--ease);
+}
+.top-cue-all-link:hover,
+.top-cue-explore-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+  text-decoration: underline;
+}
+.top-cue-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+.top-cue-icon {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.5);
+}
+.top-cue-tip {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .freshness {
   display: flex;
   align-items: center;
@@ -574,6 +764,7 @@ button.chip:hover {
   color: var(--ink-3);
   font-size: 13px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .freshness-dot {
   width: 8px;
@@ -2107,12 +2298,166 @@ button.chip:hover {
   font-size: 12px;
   line-height: 1.7;
 }
+
+/* 高校筛选框与快捷标签 */
+.plan-school-filter-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 6px;
+}
+
+.plan-school-select-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 6px);
+  padding: 0 8px 0 10px;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.plan-school-select-box:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(26, 77, 46, 0.12);
+}
+
+.plan-school-icon {
+  flex-shrink: 0;
+  color: var(--brand);
+  margin-right: 6px;
+  pointer-events: none;
+}
+
+.plan-school-select {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  padding-right: 20px;
+  appearance: auto;
+}
+
+.plan-school-select option {
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.plan-school-clear {
+  position: absolute;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.plan-school-clear:hover {
+  background: var(--line-strong);
+  color: var(--ink);
+}
+
+/* 快捷学校筛选标签 */
+.plan-school-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.plan-school-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  transition: all var(--dur) var(--ease);
+}
+
+.plan-school-chip span {
+  display: inline-block;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-4);
+  background: var(--surface-muted);
+  border-radius: 4px;
+  padding: 0 3px;
+  line-height: 1.3;
+}
+
+.plan-school-chip:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+
+.plan-school-chip.is-active {
+  border-color: var(--brand);
+  background: var(--brand-surface, #e8f3ed);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.plan-school-chip.is-active span {
+  background: rgba(26, 77, 46, 0.15);
+  color: var(--brand);
+}
+
 .agenda {
   display: grid;
   gap: 14px;
   margin: 16px 0 8px;
   padding: 0;
   list-style: none;
+}
+.agenda.is-expanded {
+  max-height: calc(100dvh - 240px);
+  min-height: 460px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.agenda.is-expanded::-webkit-scrollbar {
+  width: 5px;
+}
+.agenda.is-expanded::-webkit-scrollbar-track {
+  background: transparent;
+}
+.agenda.is-expanded::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+}
+.agenda.is-expanded::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-4);
 }
 .agenda li {
   display: flex;
@@ -2205,6 +2550,18 @@ button.chip:hover {
     grid-template-columns: 220px minmax(0, 1fr);
     gap: 28px;
   }
+  .page-head {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .page-head-aside {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .top-action-card {
+    flex: 1;
+    max-width: none;
+  }
   .plan-desktop {
     display: none;
   }
@@ -2242,12 +2599,13 @@ button.chip:hover {
     transform: rotate(180deg);
   }
   .plan-mobile .plan-rail {
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 12px;
     padding: 0 12px 12px;
   }
   .plan-mobile .plan-privacy {
-    grid-column: 1 / -1;
+    margin-top: 4px;
   }
 }
 @media (max-width: 900px) {
@@ -2271,6 +2629,25 @@ button.chip:hover {
     flex-direction: column;
     align-items: flex-start;
     gap: 14px;
+  }
+  .page-head-aside {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .top-action-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .top-action-cue {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    padding-left: 0;
+    padding-top: 8px;
+  }
+  .top-cue-urgent {
+    flex-wrap: wrap;
   }
   .page-title {
     font-size: 28px;
@@ -2468,23 +2845,34 @@ button.chip:hover {
 }
 
 /* Detail Drawer (Sheet) */
+[data-slot="sheet-overlay"] {
+  background: rgba(28, 27, 24, 0.46) !important;
+  backdrop-filter: blur(2px) !important;
+  -webkit-backdrop-filter: blur(2px) !important;
+  z-index: 99 !important;
+}
+
 .detail-sheet {
   width: min(780px, 100vw) !important;
   max-width: 780px !important;
-  background: var(--color-paper-card) !important;
-  border-left: 1px solid var(--color-paper-border-strong) !important;
-  color: var(--color-ink-primary) !important;
-  box-shadow: -12px 0 36px rgba(28, 27, 24, 0.08) !important;
+  background-color: var(--surface, #fffefa) !important;
+  background: var(--surface, #fffefa) !important;
+  border-left: 1px solid var(--line-strong, #d7d0c1) !important;
+  color: var(--ink, #1c1b18) !important;
+  box-shadow: -16px 0 48px rgba(28, 27, 24, 0.16), -4px 0 12px rgba(28, 27, 24, 0.08) !important;
   display: flex !important;
   flex-direction: column !important;
   padding: 0 !important;
   gap: 0 !important;
+  z-index: 100 !important;
+  overflow: hidden !important;
 }
 
 .detail-header {
   padding: 24px 32px 18px !important;
-  border-bottom: 1px solid var(--color-paper-border) !important;
-  background: var(--color-paper-card) !important;
+  border-bottom: 1px solid var(--line, #e7e2d7) !important;
+  background-color: var(--surface, #fffefa) !important;
+  background: var(--surface, #fffefa) !important;
 }
 
 .detail-header .eyebrow {
@@ -2527,6 +2915,8 @@ button.chip:hover {
   font-size: 14px;
   line-height: 1.7;
   color: var(--color-ink-primary);
+  background-color: var(--surface, #fffefa) !important;
+  background: var(--surface, #fffefa) !important;
   flex: 1;
 }
 

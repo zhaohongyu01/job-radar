@@ -60,6 +60,7 @@ import { DetailDrawer } from '@/components/detail-drawer';
 import { PersonalRadar } from '@/components/personal-radar';
 import { DataHealth } from '@/components/data-health';
 import { ActionRail } from '@/components/action-rail';
+import { TopActionCard } from '@/components/top-action-card';
 import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
 
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
@@ -637,7 +638,7 @@ export default function Home() {
 
       <main className="page">
         <div className="page-head">
-          <div>
+          <div className="page-head-intro">
             <p className="page-eyebrow">
               {filters.city === '全部城市' ? '全国 / 全省' : filters.city} · {filters.type}
               {filters.type === '校招' && filters.year !== '全部' ? ` · ${filters.year}届` : ''}
@@ -653,18 +654,32 @@ export default function Home() {
                   : '记录已投递的岗位，本地保存，随时跟踪。'}
             </p>
           </div>
-          <div className={`freshness ${!data?.last_success_at || stale ? 'is-stale' : ''}`}>
-            <span className="freshness-dot" />
-            <span>{loading && !data ? '正在读取招聘信息…' : `最近采集 ${date(data?.last_success_at, true)}`}</span>
-            {data && !data.schedule_enabled && <span className="text-muted">（未启用定时）</span>}
-            <button
-              className="icon-btn"
-              onClick={() => void refresh()}
-              disabled={loading}
-              aria-label="重新读取招聘数据"
-            >
-              <RefreshCw size={14} className={loading ? 'spinning' : ''} />
-            </button>
+
+          <div className="page-head-aside">
+            <TopActionCard
+              jobs={allJobs}
+              personal={personal}
+              now={now}
+              ready={ready}
+              activeView={filters.view}
+              onDetail={(job) => void openDetail(job)}
+              onView={openView}
+            />
+
+            <div className={`freshness ${!data?.last_success_at || stale ? 'is-stale' : ''}`}>
+              <span className="freshness-dot" />
+              <span>{loading && !data ? '正在读取…' : `最近采集 ${date(data?.last_success_at, true)}`}</span>
+              {data && !data.schedule_enabled && <span className="text-muted">（未启用定时）</span>}
+              <button
+                className="icon-btn"
+                onClick={() => void refresh()}
+                disabled={loading}
+                aria-label="重新读取招聘数据"
+                title="重新读取招聘数据"
+              >
+                <RefreshCw size={14} className={loading ? 'spinning' : ''} />
+              </button>
+            </div>
           </div>
         </div>
 

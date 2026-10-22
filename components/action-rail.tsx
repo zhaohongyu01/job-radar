@@ -2,101 +2,70 @@
 
 import { useId, useMemo, useState } from 'react';
 import {
-  ArrowUpRight,
-  Bookmark,
   CalendarDays,
-  CheckCheck,
-  Clock3,
+  GraduationCap,
   MapPin,
+  X,
 } from 'lucide-react';
 import type { Job, Personal, Filters } from '@/lib/jobs';
-import { personalFor, getDeadlineCountdown } from '@/lib/jobs';
-import { buildActionQueue, upcomingTalks } from '@/lib/workspace';
+import { upcomingTalks } from '@/lib/workspace';
 
 export function ActionRail({
   jobs,
   personal,
   city,
   now,
-  ready,
   onDetail,
-  onView,
 }: {
   jobs: Job[];
   personal: Personal;
   city: string;
   now: number;
-  ready: boolean;
+  ready?: boolean;
   onDetail: (job: Job) => void;
-  onView: (view: Filters['view']) => void;
+  onView?: (view: Filters['view']) => void;
 }) {
-  const [allTalks, setAllTalks] = useState(false);
+  const [allTalks, setAllTalks] = useState(true);
+  const [selectedSchool, setSelectedSchool] = useState<string>('');
   const agendaId = useId();
-  const queue = useMemo(
-    () => buildActionQueue(jobs, personal, now),
-    [jobs, personal, now],
-  );
+
   const talks = useMemo(
     () => upcomingTalks(jobs, personal, city, now),
     [jobs, personal, city, now],
   );
-  const applied = jobs.filter(
-    (job) => personalFor(job, personal).applied,
-  ).length;
+
+  // 从当前宣讲结果中聚合提取学校及场次，按场次降序、拼音升序排列
+  const schoolOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const { event } of talks) {
+      const s = event.school?.trim();
+      if (s) {
+        map.set(s, (map.get(s) || 0) + 1);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([school, count]) => ({ school, count }))
+      .sort((a, b) => b.count - a.count || a.school.localeCompare(b.school, 'zh-Hans-CN'));
+  }, [talks]);
+
+  // 当当前选择的高校不在当前城市结果中时自动回退为全部，避免使用 effect 触发级联渲染
+  const activeSchool = useMemo(() => {
+    if (!selectedSchool) return '';
+    return schoolOptions.some((opt) => opt.school === selectedSchool)
+      ? selectedSchool
+      : '';
+  }, [schoolOptions, selectedSchool]);
+
+  // 按学校筛选宣讲日程
+  const filteredTalks = useMemo(() => {
+    if (!activeSchool) return talks;
+    return talks.filter(({ event }) => event.school?.trim() === activeSchool);
+  }, [talks, activeSchool]);
+
+  const displayTalks = allTalks ? filteredTalks : filteredTalks.slice(0, 4);
+
   return (
-    <aside className="plan-rail" aria-label="我的求职安排">
-      <section className="plan-card plan-next">
-        <p className="plan-kicker">下一步</p>
-        <h2 className="plan-title">把收藏变成投递</h2>
-        <p className="plan-lede">收藏且未截止的机会按截止时间排好，先投最急的。</p>
-        <div className="plan-stats">
-          <button disabled={!ready} onClick={() => onView('saved')}>
-            <strong>{ready ? queue.length : '—'}</strong>
-            <span>
-              待投递 <ArrowUpRight size={12} />
-            </span>
-          </button>
-          <button disabled={!ready} onClick={() => onView('applied')}>
-            <strong>{ready ? applied : '—'}</strong>
-            <span>
-              已投递 <CheckCheck size={12} />
-            </span>
-          </button>
-        </div>
-        {queue.length ? (
-          <ol className="plan-queue">
-            {queue.slice(0, 3).map((job) => (
-              <li key={job.id}>
-                <button onClick={() => onDetail(job)}>
-                  <strong>{job.company || job.title}</strong>
-                  <span>{job.title}</span>
-                  <small>
-                    <Clock3 size={12} />
-                    {getDeadlineCountdown(job.deadline, now)?.text ||
-                      '截止日期待核实'}
-                  </small>
-                </button>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <div className="plan-empty">
-            <Bookmark size={20} />
-            <span>
-              遇到心动的机会，点一下收藏。
-              <br />
-              这里会帮你排好投递顺序。
-            </span>
-          </div>
-        )}
-        <button
-          className="plan-link"
-          disabled={!ready}
-          onClick={() => onView('saved')}
-        >
-          查看全部收藏 <ArrowUpRight size={14} />
-        </button>
-      </section>
+    <aside className="plan-rail" aria-label="宣讲日程安排">
       <section className="plan-card">
         <div className="plan-head">
           <h2>
@@ -105,10 +74,96 @@ export function ActionRail({
           </h2>
           <span className="chip">{city === '全部城市' ? '全部城市' : city}</span>
         </div>
-        <p className="plan-caption">按宣讲地点整理 · 北京时间 · 共 {talks.length} 场</p>
-        {talks.length ? (
-          <ol id={agendaId} className={`agenda${allTalks ? " is-expanded" : ""}`}>
-            {talks.slice(0, allTalks ? undefined : 4).map(({ job, event }) => (
+
+        <p className="plan-caption">
+          {activeSchool
+            ? `按宣讲地点整理 · 已选 ${activeSchool} · 共 ${filteredTalks.length} 场`
+            : `按宣讲地点整理 · 北京时间 · 共 ${talks.length} 场`}
+        </p>
+
+        {schoolOptions.length > 0 && (
+          <div className="plan-school-filter-wrap">
+            <div className="plan-school-select-box">
+              <GraduationCap size={14} className="plan-school-icon" />
+              <select
+                value={activeSchool}
+                onChange={(e) => setSelectedSchool(e.target.value)}
+                className="plan-school-select"
+                aria-label="筛选宣讲学校"
+              >
+                <option value="">全部高校（共 {talks.length} 场）</option>
+                {schoolOptions.map(({ school, count }) => (
+                  <option key={school} value={school}>
+                    {school} ({count} 场)
+                  </option>
+                ))}
+              </select>
+              {activeSchool && (
+                <button
+                  type="button"
+                  className="plan-school-clear"
+                  onClick={() => setSelectedSchool('')}
+                  title="清除学校筛选，查看全部高校"
+                  aria-label="清除学校筛选"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {schoolOptions.length > 1 && (
+              <div className="plan-school-chips" aria-label="快捷学校筛选">
+                <button
+                  type="button"
+                  className={`plan-school-chip ${!activeSchool ? 'is-active' : ''}`}
+                  onClick={() => setSelectedSchool('')}
+                >
+                  全部 <span>{talks.length}</span>
+                </button>
+                {schoolOptions.slice(0, 4).map(({ school, count }) => (
+                  <button
+                    key={school}
+                    type="button"
+                    className={`plan-school-chip ${activeSchool === school ? 'is-active' : ''}`}
+                    onClick={() => setSelectedSchool(school === activeSchool ? '' : school)}
+                    title={`${school}（共 ${count} 场宣讲）`}
+                  >
+                    {school.replace(/（[^）]+）|\([^)]+\)/g, '')} <span>{count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {talks.length === 0 ? (
+          <div className="plan-empty">
+            <CalendarDays size={22} />
+            <span>
+              暂未收录{city === '全部城市' ? '' : city}的后续宣讲。
+              <br />
+              可切换工作城市查看其他场次。
+            </span>
+          </div>
+        ) : filteredTalks.length === 0 ? (
+          <div className="plan-empty">
+            <GraduationCap size={22} />
+            <span>
+              当前学校暂无宣讲日程。
+              <br />
+              <button
+                type="button"
+                className="plan-link"
+                style={{ marginTop: 6, display: 'inline-flex' }}
+                onClick={() => setSelectedSchool('')}
+              >
+                查看全部 {talks.length} 场宣讲
+              </button>
+            </span>
+          </div>
+        ) : (
+          <ol id={agendaId} className={`agenda${allTalks ? ' is-expanded' : ''}`}>
+            {displayTalks.map(({ job, event }) => (
               <li key={event.id || `${job.id}-${event.date}-${event.venue}`}>
                 <div className="agenda-date">
                   <span>{Number(event.date.slice(5, 7))}月</span>
@@ -127,21 +182,26 @@ export function ActionRail({
               </li>
             ))}
           </ol>
-        ) : (
-          <div className="plan-empty">
-            <CalendarDays size={22} />
-            <span>
-              暂未收录{city === '全部城市' ? '' : city}的后续宣讲。
-              <br />
-              可切换工作城市查看其他场次。
-            </span>
-          </div>
         )}
-        {talks.length > 4 && <button className="plan-link" aria-expanded={allTalks} aria-controls={agendaId} onClick={() => setAllTalks((value) => !value)}>{allTalks ? '收起日程' : `查看全部 ${talks.length} 场宣讲`}</button>}
+
+        {filteredTalks.length > 4 && (
+          <button
+            className="plan-link"
+            aria-expanded={allTalks}
+            aria-controls={agendaId}
+            onClick={() => setAllTalks((value) => !value)}
+          >
+            {allTalks
+              ? '收起日程（仅显示前 4 场）'
+              : `查看全部 ${filteredTalks.length} 场宣讲`}
+          </button>
+        )}
+
         <p className="plan-caption">
           宣讲城市不等于工作城市，出发前请核对原公告。
         </p>
       </section>
+
       <p className="plan-privacy">
         收藏和投递记录仅保存在当前浏览器。
         <br />

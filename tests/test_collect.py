@@ -1220,7 +1220,8 @@ class CollectionTests(unittest.TestCase):
 
         # Deep scan includes all schools
         schools_all, _ = c.get_active_sdei_schools(now_dt=d1, deep_scan=True)
-        self.assertEqual(len(schools_all), 17)
+        self.assertEqual(schools_all, {school for school, _ in c.SDEI_SCHOOLS})
+        self.assertIn('sdutcm', schools1)
 
     def test_sdei_pacing_and_rejection_pauses(self):
         import collector_runtime as cr

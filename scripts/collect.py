@@ -21,6 +21,8 @@ import time
 import urllib.parse
 import urllib.request
 import collector_runtime
+from campus_talks import (SDU_CALENDAR, sdu_calendar, sdu_recruitment_body, bysjy_calendar,
+                         sdnu_graduate_list, sdnu_graduate_event)
 from bs4 import BeautifulSoup
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 
@@ -121,12 +123,21 @@ SOURCES = [
      'cms_tpl_set_id': 'qRnIbtU5GwoFGC9hjemFn', 'allow_empty_pages': True,
      'exclude_title_re': r'拟聘|拟录用|录用名单|名单公示|结果公示|体检通知|递补|资格复审|面试|笔试|成绩|考察'},
 ]
+SOURCES.append({'id': 'sdu-talks', 'name': '山东大学 · 宣讲会', 'url': SDU_CALENDAR,
+                'adapter': 'sdu_talks', 'channel': 'talks', 'allow_empty_pages': True})
+SOURCES.append({'id': 'sdnu-graduate-talks', 'name': '山东师范大学研究生就业网 · 宣讲通知',
+    'url': 'http://www.yjsjy.sdnu.edu.cn/xyzp.htm', 'adapter': 'sdnu_graduate', 'channel': 'talks'})
+for code, school_name in [('sdjzu', '山东建筑大学'), ('sdjt', '山东交通学院')]:
+    SOURCES.append({'id': code + '-talks', 'name': school_name + ' · 宣讲日历',
+        'url': f'https://{code}.bysjy.com.cn/module/careers', 'school_name': school_name,
+        'adapter': 'bysjy_talks', 'channel': 'talks', 'allow_empty_pages': True})
 SDEI_SCHOOLS = [
     ('jobsdufe', '山东财经大学'), ('ujn', '济南大学'), ('sdut', '山东理工大学'), ('qlu', '齐鲁工业大学'),
     ('sdnu', '山东师范大学'), ('sdsmu', '山东第二医科大学'), ('qust', '青岛科技大学'), ('qdu', '青岛大学'),
     ('ytu', '烟台大学'), ('ldu', '鲁东大学'), ('sdfmu', '山东第一医科大学'),
     ('bzmc', '滨州医学院'), ('lcu', '聊城大学'), ('lyu', '临沂大学'),
     ('sdtbu', '山东工商学院'), ('dzu', '德州学院'), ('sdua', '山东农业工程学院'),
+    ('sdutcm', '山东中医药大学'),
 ]
 # Only named physical campuses whose city is confirmed by school websites.
 # Multi-city institutions are deliberately not inferred from the school name.
@@ -136,6 +147,10 @@ SDEI_SCHOOLS = [
 # ytu.edu.cn/info/1003/12777.htm, sdua.edu.cn.
 TALK_CAMPUS_CITY = {
     '山东财经大学': (r'燕山|舜耕|圣井|章丘', '济南'),
+    '山东大学': (r'中心校区|洪家楼校区|趵突泉校区|千佛山校区|软件园校区|兴隆山校区', '济南'),
+    '山东中医药大学': (r'长清|千佛山', '济南'),
+    '山东师范大学': (r'长清湖|千佛山', '济南'),
+    '山东建筑大学': (r'博文楼|西南教学组团|雪山书苑', '济南'),
     '齐鲁工业大学': (r'长清|历城|彩石', '济南'),
     '青岛科技大学': (r'崂山|四方|中德(?:生态园|校区)', '青岛'),
     '济南大学': (r'主校区|舜耕校区', '济南'),
@@ -144,7 +159,7 @@ TALK_CAMPUS_CITY = {
     '烟台大学': (r'北校区|主校区|南校区|八角湾校区', '烟台'),
     '山东航空学院': (r'山东航空学院', '滨州'),
 }
-CORE_SDEI_SCHOOLS = {'jobsdufe', 'ujn', 'sdnu', 'qlu'}
+CORE_SDEI_SCHOOLS = {'jobsdufe', 'ujn', 'sdnu', 'qlu', 'sdutcm'}
 ROTATING_SDEI_GROUPS = [
     ['qdu', 'qust', 'ytu', 'ldu'],
     ['sdsmu', 'sdfmu', 'bzmc'],
@@ -250,7 +265,7 @@ SOURCES.extend([
 for _source in SOURCES:
     _adapter = _source.get('adapter')
     _source.setdefault('scope', '国内')
-    _source.setdefault('recruitment_types', ['校招'] if _adapter in {'sdei', 'wondercv', 'offerjack'} or _source['id'] in {'nankai', 'sdu', 'upc'} else ['社招', '事业单位', '国企'])
+    _source.setdefault('recruitment_types', ['校招'] if _adapter in {'sdei', 'wondercv', 'offerjack'} or _source.get('channel') == 'talks' or _source['id'] in {'nankai', 'sdu', 'upc'} else ['社招', '事业单位', '国企'])
     _source.setdefault('sectors', ['综合'])
     _source.setdefault('trust', '第三方线索' if _adapter in {'wondercv', 'offerjack'} else '官方原始来源')
     _source.setdefault('source_family', _source['name'].split(' · ', 1)[0])
@@ -262,7 +277,7 @@ for _source in SOURCES:
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 SOURCE_PACKS = {
     'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': ['nankai', 'sdu', 'upc'],
+    'universities-a': ['nankai', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'upc'],
     'universities-b': _sdei_source_ids,
     'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
     'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
@@ -706,7 +721,12 @@ def sdei_list(source, page):
                     'title': str(row['fairName']), 'published_at': None,
                     'structured': row, 'kind': '招聘公告'}
             # fairDate is the event date, not publication or application expiry.
-            # Always read the detail; the list cannot verify jobs or work cities.
+            # Calendar facts can be published now; jobs and work cities need the detail.
+            article = row.get('fairDetail') or ''
+            text = clean(Tree(article).root.text()) if article else ''
+            if (len(text) >= 80 and re.search(r'招聘对象|招聘岗位|岗位及专业|招聘简章|招聘需求', text)
+                    and re.search(r'工作地点|简历投递|投递简历|投递方式|投递邮箱|招聘流程|网申|应聘方式|应聘流程', text)):
+                item.update(inline_html='<article>' + article + '</article>', inline_talk_content=True)
         else:
             title = row['gonggaoTitle']
             url = base + 'jiuye/zhaopingg/detail/' + str(row['gonggaoId'])
@@ -1253,6 +1273,8 @@ def requires_position_detail(job):
 
 
 def publishable_job(job):
+    if job.get('source_id', '').endswith('-talks') and job.get('event_verification') == 'official_list':
+        return bool(extract_talk_event(job))
     if job.get('detail_verification') == 'failed':
         return False
     if requires_verified_detail(job):
@@ -1262,7 +1284,8 @@ def publishable_job(job):
 
 def requires_verified_detail(job):
     url = job.get('source_url') or job.get('url') or ''
-    return requires_position_detail(job) or '/school/TblCareerFairReviewRecord/detail/' in url
+    return (requires_position_detail(job) or '/school/TblCareerFairReviewRecord/detail/' in url
+            or job.get('source_id', '').endswith('-talks'))
 
 
 def parse_sdei_position_detail(html, item, source):
@@ -1340,9 +1363,16 @@ def parse_detail(html, item, source):
     metas={n.attrs.get('name','').lower():n.attrs.get('content','') for n in root.find('meta')}
     structured=item.get('structured') or {}
     fields={}
-    if source.get('channel') == 'talks':
+    if source.get('adapter') == 'sdu_talks':
+        article, company = sdu_recruitment_body(html)
+        body = Tree(article).root
+        title = item['title']
+        published = None  # 举办日期 is not the publication date.
+        page_text = ''
+    elif source.get('channel') == 'talks':
         page_text = clean(root.text())
-        if not re.search(r'宣讲时间|宣讲类别|宣讲学校', page_text):
+        inline_calendar = item.get('inline_talk_content') and extract_talk_event(dict(item, id=item_id(item)))
+        if not inline_calendar and not re.search(r'宣讲时间|宣讲类别|宣讲学校', page_text):
             raise ValueError('talk detail missing event information')
         # Select the recruitment article, excluding school navigation, event
         # location and gated contacts. Retain its tables and QR images.
@@ -1351,7 +1381,7 @@ def parse_detail(html, item, source):
                       and re.search(r'工作地点|简历投递|投递简历|投递方式|投递邮箱|招聘流程|网申|应聘方式|应聘流程', n.text())]
         if not candidates:
             raise ValueError('talk detail missing recruitment content')
-        body = min(candidates, key=lambda n: len(n.text()))
+        body = root if inline_calendar else min(candidates, key=lambda n: len(n.text()))
         title = item['title']
         match = re.search(r'单位名称\s*[：:]\s*([^\n]+)', page_text)
         company = re.split(r'联系人\s*[：:]|单位地址\s*[：:]', match[1])[0].strip() if match else ''
@@ -1849,12 +1879,14 @@ def detect_job_events(job, old, now, changed):
 
 
 def inline_announcement_fingerprint(item, source):
-    """Cache only complete SDEI announcement payloads, never position lists.
+    """Cache complete SDEI recruitment articles, never position-list summaries.
 
     Bump the version when announcement parsing rules change. The normal
     refresh window still forces periodic attachment and parser revalidation.
     """
-    if source.get('adapter') != 'sdei' or source.get('channel') != 'announcements' or not item.get('inline_html'):
+    eligible = source.get('channel') == 'announcements' or (
+        source.get('channel') == 'talks' and item.get('inline_talk_content'))
+    if source.get('adapter') != 'sdei' or not eligible or not item.get('inline_html'):
         return None
     structured = item.get('structured') or {}
     facts = {'version': 1, 'source': source['id'], 'url': item['url'],
@@ -1889,6 +1921,8 @@ def compute_job_fingerprint(job):
         ]),
         'body_text': re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', job.get('body') or job.get('excerpt') or '')).strip(),
     }
+    if job.get('source_id', '').endswith('-talks'):
+        core['talk_event'] = extract_talk_event(job)
     return hashlib.sha256(json.dumps(core, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
 
 
@@ -2258,6 +2292,8 @@ def deduplicate(jobs):
 
 def extract_talk_event(job):
     """Read event facts independently of recruitment work cities and deadlines."""
+    if re.search(r'已取消|已停办|取消宣讲', job.get('title', '')):
+        return None
     structured = job.get('structured') or {}
     body = job.get('body') or ''
 
@@ -2285,15 +2321,45 @@ def extract_talk_event(job):
     venue = field('fairAddress', '举办地点')
     if not school or not venue:
         return None
-    explicit_cities = [city for city in CITIES if city in venue]
+    explicit_cities = [city for city in CITIES if city in venue
+                       and (city != '佛山' or re.search(r'(?<!千)佛山', venue))]
     city = explicit_cities[0] if len(explicit_cities) == 1 else None
     campus = TALK_CAMPUS_CITY.get(school)
-    if not city and campus and not re.search(r'线上|直播|空中宣讲|腾讯会议', venue) and re.search(campus[0], venue):
+    if re.search(r'线上|直播|空中宣讲|腾讯会议', venue):
+        city = None
+    elif not city and campus and re.search(campus[0], venue):
         city = campus[1]
     return {'id': job['id'], 'date': date,
             'start_time': start[0] if start else None, 'end_time': end or None,
             'school': school[:80], 'venue': venue, 'city': city,
             'url': job.get('source_url', '')}
+
+
+def calendar_record(item, source, old=None):
+    """Publish only official event facts immediately; queue recruitment detail separately."""
+    identifier = item.get('target_id') or hashlib.sha256(item.get('identity', item['url']).encode()).hexdigest()[:20]
+    event = extract_talk_event(dict(item, id=identifier, source_url=item['url']))
+    cancelled = bool(re.search(r'已取消|已停办|取消宣讲', item.get('title', '')))
+    if not event and not (old and cancelled):
+        return None
+    if old and old.get('detail_verification') == 'verified':
+        if extract_talk_event(old) == event and old.get('title') == item['title']:
+            return None  # a list refresh must not renew recruitment-detail freshness
+        row = dict(old)
+        row['detail_verified_at'] = old.get('detail_verified_at') or old.get('last_verified_at')
+    else:
+        row = {'id': identifier, 'kind': '宣讲会', 'company': '', 'cities': [], 'types': [],
+               'sectors': [], 'location_evidence': [], 'domestic_status': 'unknown',
+               'deadline_precision': None,
+               'graduation_years': [], 'directions': [], 'positions': [], 'application_url': None,
+               'published_at': None, 'deadline': None, 'education': '招聘条件待核实',
+               'detail_verification': 'pending', 'event_verification': 'official_list',
+               'body': '学校官方日程已核实；岗位、资格及投递方式请查阅原文。',
+               'excerpt': '学校官方日程已核实；招聘详情待补全。',
+               'classification_note': '仅核实官方宣讲日程，未据此推断岗位资格或工作地点。'}
+    row.update(title=item['title'], source_id=source['id'], source_name=source['name'],
+               source_url=item['url'], structured=item.get('structured', {}), talk_event=event)
+    return row
 
 
 def talk_company_names(job):
@@ -2368,13 +2434,24 @@ def attach_talk_events(jobs):
 
 def public_record(job):
     """Recompute derived location labels from retained text, without advancing verification time."""
-    row=refine_facts({k:v for k,v in job.items() if k!='fingerprint'})
+    row = {k:v for k,v in job.items() if k!='fingerprint'}
+    if row.get('event_verification') == 'official_list' and row.get('detail_verification') == 'failed':
+        event_only = calendar_record({'url': row['source_url'], 'title': row['title'],
+            'target_id': row['id'], 'structured': row.get('structured', {})},
+            {'id': row['source_id'], 'name': row['source_name']})
+        if event_only:
+            # Retain failed recruitment facts in raw state, expose only the verified event.
+            row = {**{k: row[k] for k in ('first_seen_at', 'updated_at', 'last_verified_at', 'revision') if k in row}, **event_only}
+    if row.get('kind') != '宣讲会':
+        row = refine_facts(row)
     if row.get('source_id', '').endswith('-talks'):
         # Older retained state predates the dedicated event field. Rebuild it
         # from structured list data and the event lines already in the body.
         row['talk_event'] = extract_talk_event(row)
     row['provenance']='第三方线索' if row.get('source_id') in {'wondercv','offerjack'} else '公开原始来源'
     row.setdefault('kind','招聘公告')
+    if row['kind'] == '宣讲会':
+        return row  # an event title must not infer job location, cohort or eligibility
     observed_day = max((str(row.get(field) or '')[:10] for field in ('first_seen_at', 'last_verified_at', 'updated_at')), default='')
     published_day = str(row.get('published_at') or '')[:10]
     if observed_day and re.fullmatch(r'20\d{2}-\d{2}-\d{2}', published_day) and published_day > observed_day:
@@ -2666,7 +2743,7 @@ def run(args):
                         print(source['id'], 'deferred 0 0', flush=True)
                         continue
         try:
-            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus'}
+            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks'}
             first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
@@ -2679,8 +2756,10 @@ def run(args):
             page_budget=offerjack_query_limit*len(offerjack_cities) if is_offerjack else args.pages
             if head_only:
                 page_budget = 2 if source.get('channel') in {'announcements', 'talks'} else 1
+                if source.get('adapter') == 'sdu_talks':
+                    page_budget = 5  # this week plus four; empty weeks do not end the calendar
             if source.get('channel') == 'talks':
-                page_budget = min(page_budget, 2)
+                page_budget = min(page_budget, 5 if source.get('adapter') == 'sdu_talks' else 2)
             offerjack_city_index=0
             offerjack_page=1
             offerjack_limited=False
@@ -2752,6 +2831,19 @@ def run(args):
                             offerjack_page=1
                             continue
                         page_number=offerjack_page
+                    elif source.get('adapter')=='sdu_talks':
+                        found = sdu_calendar(fetch(source['url'] + '&weekI=' + str(page-1)))
+                        total = 6  # bounded current week + four upcoming weeks, not an exhaustive history
+                    elif source.get('adapter')=='sdnu_graduate':
+                        found, total = sdnu_graduate_list(first, source['url']), 2
+                    elif source.get('adapter')=='bysjy_talks':
+                        query = urllib.parse.urlencode({'start': (page-1)*20, 'count': 21,
+                            'k': '', 'address': '', 'professionals': '', 'career_type': '',
+                            'type': 'inner', 'day': '', 'is_yun_career': ''})
+                        payload = json.loads(fetch(urllib.parse.urljoin(source['url'], '/module/getcareers')+'?'+query,
+                            referer=source['url'], extra_headers={'X-Requested-With': 'XMLHttpRequest'}))
+                        rows = bysjy_calendar(payload, source)
+                        found, total = rows[:20], page+1 if len(rows)>20 else page
                     elif source.get('adapter')=='sdei':
                         found,total=sdei_list(source,page)
                     elif source.get('adapter')=='sdei_news':
@@ -2806,11 +2898,23 @@ def run(args):
                     status['errors'].append({'url':source['url'],'reason':f'列表分页中断：{exc}'[:200]})
                     status['coverage']=f'已读取 {status["pages"]} 页；分页中断，保留此前发现的记录'
                     break
+                if source.get('channel') == 'talks':
+                    dates = [i.get('structured', {}).get('fairDate', '') for i in found]
+                    status['latest_calendar_date'] = max([status.get('latest_calendar_date', '')] + [d[:10] for d in dates if d])
+                    for event_item in found:
+                        event_job = calendar_record(event_item, source, previous['jobs'].get(item_id(event_item)))
+                        if event_job:
+                            persist_job(event_job, event_item, verified=False)
+                            incoming.append(event_job)
+                            status['calendar_listed'] = status.get('calendar_listed', 0) + 1
                 for item in found:
                     if item.get('identity',item['url']) not in known:
                         known.add(item.get('identity',item['url']))
                         if item.get('is_active_listing') or not item['published_at'] or item['published_at']>=cutoff:
                             items.append(dict(item))
+                if source.get('adapter') == 'sdnu_graduate':
+                    status['coverage'] = '已读取研究生校园招聘最新列表页；旧通知未追溯'
+                    break
                 if head_only:
                     checkpoint_status = dict(status)
                     for field in PAGINATION_FIELDS:
@@ -2963,6 +3067,14 @@ def run(args):
             remaining=[]
             deferred_details=[]
             for item in items:
+                if item.get('calendar_only'):
+                    continue  # this adapter verifies events only, not recruitment eligibility
+                if source.get('channel') == 'talks':
+                    event = extract_talk_event(dict(item, id=item_id(item)))
+                    if event and event['date'] < now[:10]:
+                        continue  # retain calendar history; do not spend detail budget on ended talks
+                    if re.search(r'已取消|已停办|取消宣讲', item.get('title', '')):
+                        continue
                 if args.refresh_hours and not retry_due(item, dt.datetime.now(TZ)):
                     deferred_details.append(item)
                     continue
@@ -2975,7 +3087,7 @@ def run(args):
                     old.get('inline_announcement_fingerprint') == inline_fingerprint)
                 signature = listing_signature(item)
                 listing_changed = bool(signature and old and old.get('listing_signature') != signature)
-                if not listing_changed and ('inline_html' not in item or requires_position_detail(item) or unchanged_inline) and old and publishable_job(old) and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and (old.get('last_verified_at') or '')>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
+                if not listing_changed and ('inline_html' not in item or requires_position_detail(item) or unchanged_inline) and old and old.get('kind') != '宣讲会' and publishable_job(old) and not old.get('classification_note','').startswith('仅核实') and args.refresh_hours and (old.get('detail_verified_at') or old.get('last_verified_at') or '')>=(dt.datetime.now(TZ)-dt.timedelta(hours=args.refresh_hours)).isoformat():
                     cached+=1
                 else: remaining.append(item)
             status['cached']=cached
@@ -2984,7 +3096,7 @@ def run(args):
             remaining = prioritize_details(remaining, previous['jobs'])
             queued_by_url = {item['url']: item for item in deferred_details + remaining}
             if head_only:
-                limit = {'positions': 2, 'talks': 4}.get(source.get('channel'), 12)
+                limit = {'positions': 2, 'talks': 0}.get(source.get('channel'), 12)
                 remaining = remaining[:limit]
                 status['head_scan_at'] = now
                 status['head_discovered'] = len(inventory_urls)
@@ -2996,6 +3108,12 @@ def run(args):
                 status['head_scan_at'] = now
                 status['head_discovered'] = len(inventory_urls)
                 inventory_complete = False
+            elif source.get('channel') == 'talks':
+                if source.get('adapter') == 'sdei':
+                    inline = [i for i in remaining if i.get('inline_talk_content')]
+                    remote = [i for i in remaining if not i.get('inline_talk_content')]
+                    remaining = inline + remote[:2]
+                remaining = remaining[:8]  # bounded recruitment backfill; all read events are already saved
             queues[source['id']] = list(queued_by_url.values())
             atomic_json(data_dir/'checkpoint.json', {'run_at':now, 'source':status,
                         'pending':queues[source['id']], 'inventory_complete':inventory_complete,
@@ -3027,7 +3145,7 @@ def run(args):
             probe_candidates.sort(key=lambda j:j.get('last_verified_at') or '')
             probe_budget=0 if head_only else getattr(args,'probe_budget',10)
             if source.get('channel') == 'talks':
-                probe_budget = min(probe_budget, 1)
+                probe_budget = 0  # refresh via calendar inventory instead of probing stale events
             selected_probes=probe_candidates[:probe_budget]
             status['probed']=len(selected_probes)
 
@@ -3056,6 +3174,9 @@ def run(args):
             detail_failure_limit = max(1, int(getattr(args, 'detail_failure_limit', 6) or 6))
 
             def read_detail(item):
+                if source.get('adapter') == 'sdnu_graduate':
+                    article = fetch(item['url'], timeout=detail_timeout, retries=detail_retries)
+                    return calendar_record(sdnu_graduate_event(article, item), source)
                 if requires_position_detail(item):
                     html = fetch(item['url'], timeout=detail_timeout, retries=detail_retries,
                                  referer=source['url'], request_stage='position_detail')
@@ -3120,10 +3241,13 @@ def run(args):
                 # Only an explicit missing page or invalid detail body hides it.
                 invalid_detail = (isinstance(error, ValueError) or
                                   isinstance(error, urllib.error.HTTPError) and error.code in (404, 410))
-                if requires_verified_detail(item) and invalid_detail:
+                if (requires_verified_detail(item) or source.get('channel') == 'talks') and invalid_detail:
                     old = previous['jobs'].get(item.get('target_id') or item_id(item))
                     if old:
                         hidden = dict(old, detail_verification='failed')
+                        if source.get('channel') == 'talks':
+                            hidden.update(event_verification='official_list', title=item['title'],
+                                          structured=item.get('structured', {}))
                         persist_job(hidden, item, verified=False)
                         incoming.append(hidden)
                 status['detail_failed'] = status.get('detail_failed', 0) + 1
@@ -3145,6 +3269,10 @@ def run(args):
                 status['detail_attempted'] = status.get('detail_attempted', 0) + 1
                 try:
                     job = future.result()
+                    if source.get('channel') == 'talks':
+                        job['detail_verified_at'] = now
+                        if job.get('talk_event'):
+                            status['latest_calendar_date'] = max(status.get('latest_calendar_date', ''), job['talk_event']['date'])
                     signature = listing_signature(item)
                     if signature:
                         job['listing_signature'] = signature

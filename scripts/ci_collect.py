@@ -537,6 +537,11 @@ def recover_source(directory, definition, prior, started, code, timed_out):
     for item in pending:
         identifier = collector.item_id(item)
         if identifier not in state['jobs'] and identifier not in incoming:
+            if definition.get('channel') == 'talks':
+                job = collector.calendar_record(item, definition)
+                if job:
+                    incoming[identifier] = job
+                continue
             job = collector.parse_detail('<div id="zoom">详情尚未读取，请打开原公告核对岗位与报名要求。</div>',
                                          item, {'id':'fallback','name':definition['name']})
             job.update(source_id=definition['id'], classification_note='仅核实列表标题和发布日期；详情与资格待核对。')
@@ -548,7 +553,8 @@ def recover_source(directory, definition, prior, started, code, timed_out):
                                             checkpoint.get('inventory_complete', False), now)
     status = dict(checkpoint.get('source') or definition)
     reason = '来源达到总时间预算；已恢复采集进度，剩余详情下次继续' if timed_out else f'来源进程异常退出（{code}）；已恢复采集进度'
-    status.update(last_attempt_at=started, status='partial' if verified else 'failed',
+    calendar_saved = any(job.get('event_verification') == 'official_list' for job in incoming.values())
+    status.update(last_attempt_at=started, status='partial' if verified or calendar_saved else 'failed',
                   last_success_at=prior.get('sources', {}).get(definition['id'], {}).get('last_success_at'),
                   parsed=len(verified), pending_details=len(pending), coverage=reason)
     status.setdefault('errors', []).append({'url':definition['url'], 'reason':reason})
@@ -611,7 +617,7 @@ def collect(args):
     # consume it. Unused allowance automatically remains available below.
     talks = sorted((s for s in definitions if s.get('channel') == 'talks'), key=source_priority)
     schools = sorted((s for s in definitions if s.get('adapter') == 'sdei' and s.get('channel') != 'talks'), key=source_priority)
-    others = [s for s in definitions if s.get('adapter') != 'sdei']
+    others = [s for s in definitions if s.get('adapter') != 'sdei' and s.get('channel') != 'talks']
     definitions = talks + others + schools
     talks_remaining = 180.0
     deadline = time.monotonic() + float(getattr(args, 'shard_budget', 1080))

@@ -14,6 +14,42 @@ TZ = dt.timezone(dt.timedelta(hours=8))
 ASSET = re.compile(r'^/job-assets/index-([0-9a-f]{20})\.json$')
 
 
+def university_coverage(snapshot, events, definitions=None):
+    """Inventory channels separately: a working job feed does not cover its calendar."""
+    if definitions is None:
+        from collect import SOURCES, SDEI_SCHOOLS
+        names = dict(SDEI_SCHOOLS)
+        names.update(sdu='山东大学', nankai='南开大学', upc='中国石油大学（华东）')
+        definitions = [dict(source, university=source.get('school_name') or
+            names.get(source.get('school')) or names.get(source['id'].split('-')[0])) for source in SOURCES]
+    statuses = {s['id']: s for s in snapshot.get('sources', [])}
+    schools = {}
+    for source in definitions:
+        name = source.get('university')
+        if not name:
+            continue
+        row = schools.setdefault(name, {'school': name, 'channels': [], 'calendar_sources': [],
+            'upcoming_talks': 0, 'unknown_venues': 0, 'calendar_only': 0})
+        channel = source.get('channel', 'announcements')
+        row['channels'].append(channel)
+        if channel == 'talks':
+            status = statuses.get(source['id'], {})
+            row['calendar_sources'].append({'id': source['id'], 'status': status.get('status', 'not_collected'),
+                'last_list_read_at': status.get('last_list_read_at') or status.get('head_scan_at'),
+                'latest_calendar_date': status.get('latest_calendar_date'),
+                'coverage': status.get('coverage'), 'pending_details': status.get('pending_details', 0)})
+    for event in events.values():
+        if event.get('school') in schools:
+            row = schools[event['school']]
+            row['upcoming_talks'] += 1
+            row['unknown_venues'] += int(not event.get('city'))
+    for job in snapshot.get('jobs', []):
+        event = job.get('talk_event') or {}
+        if job.get('kind') == '宣讲会' and event.get('school') in schools:
+            schools[event['school']]['calendar_only'] += 1
+    return list(schools.values())
+
+
 def audit(snapshot, now=None):
     now = now or dt.datetime.now(TZ)
     today = now.date().isoformat()
@@ -50,6 +86,15 @@ def audit(snapshot, now=None):
         warnings.append(f'24 小时内仅巡检 {checked}/{len(sources)} 个来源；请检查来源休眠、网络和采集预算。')
     if not valid_dates or max(valid_dates) < recent_cutoff:
         warnings.append('全站最新明确发布日期已超过 7 天；快照生成成功不代表岗位数据仍然新鲜。')
+    universities = university_coverage(snapshot, events)
+    missing = [row['school'] for row in universities if not row['calendar_sources']]
+    if missing:
+        warnings.append('已接招聘渠道但尚未接入独立宣讲日历：' + '、'.join(missing) + '。')
+    stale_cutoff = (now - dt.timedelta(days=30)).date().isoformat()
+    for row in universities:
+        for calendar in row['calendar_sources']:
+            if calendar['latest_calendar_date'] and calendar['latest_calendar_date'] < stale_cutoff:
+                warnings.append(row['school'] + '日历接口最新活动早于 30 天前；需核对学校是否迁移或改用新闻发布，不能据此断言无宣讲。')
     return {'schema_version': 1, 'audited_at': now.isoformat(timespec='seconds'),
         'snapshot_generated_at': snapshot.get('generated_at'), 'records': len(jobs),
         'latest_publication': max(valid_dates, default=None),
@@ -61,7 +106,7 @@ def audit(snapshot, now=None):
         'pending_details': sum(s['pending_details'] or 0 for s in sources),
         'upcoming_talks': len(events),
         'talk_cities': dict(Counter(e.get('city') or '地点待核实' for e in events.values())),
-        'warnings': warnings, 'sources': sources}
+        'warnings': warnings, 'sources': sources, 'universities': universities}
 
 
 def load_snapshot(site='', public_dir=Path('public')):
@@ -112,3 +157,7 @@ if __name__ == '__main__':
                 f"- 24 小时内巡检：{report['sources_checked_last_24_hours']}/{report['sources_total']} 个来源。\n"
                 f"- 已知待补详情：{report['pending_details']}；后续宣讲：{report['upcoming_talks']} 场。\n"
                 '- 每个来源的巡检时间、失败原因和待续详情见产物 freshness-report.json。\n')
+            handle.write('\n| 高校 | 已接渠道 | 后续宣讲 | 地点待核实 | 日历巡检 |\n|---|---|---:|---:|---|\n')
+            for row in report['universities']:
+                state = '、'.join(c['status'] for c in row['calendar_sources']) or '未接入'
+                handle.write(f"| {row['school']} | {', '.join(row['channels'])} | {row['upcoming_talks']} | {row['unknown_venues']} | {state} |\n")

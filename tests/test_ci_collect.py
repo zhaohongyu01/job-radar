@@ -554,7 +554,7 @@ class PipelineTests(unittest.TestCase):
                 'last_run_at': now
             }
             ci.atomic_json(data / 'state.json', baseline)
-            talk_sources = [s for s in ci.SOURCES if s.get('channel') == 'talks'][:7]
+            talk_sources = [s for s in ci.SOURCES if s.get('adapter') == 'sdei' and s.get('channel') == 'talks'][:7]
             sources_str = ','.join(s['id'] for s in talk_sources) + ',jobsdufe-announcements'
             args = SimpleNamespace(
                 data_dir=data, sources=sources_str, source_pack='',

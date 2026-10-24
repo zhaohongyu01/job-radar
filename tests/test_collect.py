@@ -80,6 +80,19 @@ class CollectionTests(unittest.TestCase):
         self.assertFalse(c.refine_facts(dict(row,body='投递：javascript:alert(1)')).get('application_url'))
         self.assertFalse(c.refine_facts(dict(row,body='投递：https://a.example.com\n投递：https://b.example.com')).get('application_url'))
 
+    def test_organisation_code_is_not_an_employer_name(self):
+        source = dict(title='山东燕喜堂医药连锁有限公司2027届校园宣讲会',
+                      company='91371000670523740H', source_id='ujn-talks',
+                      body='招聘简章，岗位与投递方式详见官网。')
+        fixed = c.refine_facts(source)
+        self.assertEqual(fixed['company'], '山东燕喜堂医药连锁有限公司')
+        self.assertEqual(fixed['company_original'], source['company'])
+        self.assertEqual(c.refine_facts(fixed)['company'], fixed['company'])
+        unknown = c.refine_facts(dict(source, title='校园宣讲会'))
+        self.assertEqual(unknown['company'], '')
+        actual = c.refine_facts(dict(source, company='山东燕喜堂医药连锁有限公司'))
+        self.assertEqual(actual['company'], '山东燕喜堂医药连锁有限公司')
+
     def test_company_introduction_repairs_conflict_conservatively(self):
         original = dict(title='宇视科技2027届校园招聘简章', company='',
                         company_original='济南宇视智能科技有限公司', company_conflict=True,

@@ -1209,6 +1209,13 @@ def refine_facts(job):
     title=row.get('title','')
     compact=lambda value: re.sub(r'\s+','',value).translate(str.maketrans('（）','()'))
     company=row.get('company','')
+    # Some SDEI calendar rows put the organisation code in companyName.
+    # Keep that raw value for traceability; it is not a displayable employer name.
+    if re.fullmatch(r'[0-9]{2}[0-9A-Z]{16}', compact(company)):
+        row.setdefault('company_original', company)
+        row.update(company='', company_conflict=True,
+                   company_note='来源单位字段为机构识别码；企业名称需按公告核实。')
+        company=''
     # Prefer a full employer name whose explicitly declared abbreviation occurs in the title.
     aliases=re.findall(r'([\u4e00-\u9fffA-Za-z0-9（）()·]{3,60}(?:有限责任公司|有限公司))\s*[（(]以下简称[：: ]*[“「\"]([^”」\"]{2,30})[”」\"]',text)
     candidates={name for name,alias in aliases if compact(alias) in compact(title) and alias not in {'公司','集团','本公司','企业'}}

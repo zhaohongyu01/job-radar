@@ -1,4 +1,5 @@
 import type { Filters, Job } from './jobs.ts';
+import { restoreBrowsing } from './browsing.ts';
 import { getDeadlineCountdown, hasRecentJobChange, parseSalaryRange, isTodayOpportunity, isSupplementOpportunity } from './jobs.ts';
 
 export type RadarPreset = {
@@ -61,7 +62,8 @@ export function loadRadarPresets(): RadarPreset[] {
     if (!raw) return DEFAULT_RADAR_PRESETS;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string' && p.filters);
+      return parsed.filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string' && p.filters)
+        .map((p) => ({ ...p, filters: restoreBrowsing({ filters: p.filters }).filters }));
     }
   } catch {
     // fallback

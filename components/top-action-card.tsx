@@ -10,6 +10,7 @@ import {
 import type { Job, Personal, Filters } from '@/lib/jobs';
 import { personalFor, getDeadlineCountdown } from '@/lib/jobs';
 import { buildActionQueue } from '@/lib/workspace';
+import { PersonalReminders } from '@/components/personal-reminders';
 
 export function TopActionCard({
   jobs,
@@ -41,7 +42,7 @@ export function TopActionCard({
   const topUrgent = queue[0];
 
   return (
-    <div className="top-action-card" aria-label="我的求职安排与投递进度">
+    <div className="personal-action-panel"><div className="top-action-card" aria-label="我的求职安排与投递进度">
       <div className="top-action-stats">
         <button
           type="button"
@@ -117,6 +118,6 @@ export function TopActionCard({
           </div>
         )}
       </div>
-    </div>
+    </div><PersonalReminders jobs={jobs} personal={personal} now={now} onDetail={onDetail} /></div>
   );
 }

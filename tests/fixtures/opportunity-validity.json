@@ -1,0 +1,12 @@
+[
+  { "name": "无截止且陈旧不是已关闭", "job": { "deadline": null, "last_verified_at": "2025-01-01T00:00:00+08:00" }, "now": "2026-10-25T12:00:00+08:00", "status": "unconfirmed" },
+  { "name": "当日仅日期截止按北京时间日末", "job": { "deadline": "2026-10-25" }, "now": "2026-10-25T23:30:00+08:00", "status": "unconfirmed" },
+  { "name": "跨北京时间零点后关闭", "job": { "deadline": "2026-10-25" }, "now": "2026-10-26T00:00:00+08:00", "status": "closed" },
+  { "name": "列表新检查不等于在招证据", "job": { "last_verified_at": "2026-10-25T09:00:00+08:00" }, "now": "2026-10-25T12:00:00+08:00", "status": "unconfirmed" },
+  { "name": "近期原文在招证据", "job": { "availability_evidence": { "kind": "open", "text": "岗位状态：在招", "verified": true, "checked_at": "2026-10-24T09:00:00+08:00" } }, "now": "2026-10-25T12:00:00+08:00", "status": "confirmed_open" },
+  { "name": "陈旧正文不被新列表日期续期", "job": { "last_verified_at": "2026-10-25T09:00:00+08:00", "availability_evidence": { "kind": "open", "text": "岗位状态：在招", "verified": true, "checked_at": "2026-09-01T09:00:00+08:00" } }, "now": "2026-10-25T12:00:00+08:00", "status": "unconfirmed" },
+  { "name": "未来核验时间不可信", "job": { "availability_evidence": { "kind": "open", "text": "岗位状态：在招", "verified": true, "checked_at": "2026-10-27T09:00:00+08:00" } }, "now": "2026-10-25T12:00:00+08:00", "status": "unconfirmed" },
+  { "name": "长期招聘原文保留", "job": { "availability_evidence": { "kind": "long_term", "text": "本岗位长期招聘", "verified": true } }, "now": "2026-10-25T12:00:00+08:00", "status": "long_term" },
+  { "name": "撤回优先于长期招聘", "job": { "listing_status": "withdrawn", "availability_evidence": { "kind": "long_term", "text": "本岗位长期招聘", "verified": true } }, "now": "2026-10-25T12:00:00+08:00", "status": "closed" },
+  { "name": "延期后的未来截止仍可在招", "job": { "deadline": "2026-11-01T23:59:00+08:00", "availability_evidence": { "kind": "open", "text": "岗位状态：在招", "verified": true, "checked_at": "2026-10-24T09:00:00+08:00" } }, "now": "2026-10-25T12:00:00+08:00", "status": "confirmed_open" }
+]

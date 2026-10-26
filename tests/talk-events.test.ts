@@ -33,7 +33,9 @@ await test('attached talks collapse to a campaign and an event city can match in
     source_id: 'jobsdufe-talks', talk_events: undefined, talk_attached_to: 'campaign' };
   const merged = mergeDuplicateOpportunities([campaign, talk]);
   assert.equal(merged.length, 2);
-  const visible = filterJobs(merged, { ...defaultFilters, city: '济南', locationScope: 'exact' }, {}, null);
+  // Legacy preferences explicitly opt into local talks; expired talks no longer
+  // keep an unrelated work city visible forever.
+  const visible = filterJobs(merged, { ...defaultFilters, city: '济南', locationScope: 'exact', includeRelatedTalks: true }, {}, null, Date.parse('2026-09-22T12:00:00+08:00'));
   assert.deepEqual(visible.map((row) => row.id), ['campaign']);
   assert.deepEqual(filterJobs(merged, { ...defaultFilters, city: '北京', locationScope: 'exact' }, {}, null), []);
 });

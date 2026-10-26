@@ -1,20 +1,8 @@
 """Explain changes between internal collection baselines and public snapshots."""
 import datetime as dt
 import re
+from city_registry import PROVINCE_CITIES, work_cities
 
-PROVINCE_CITIES = {
-    '山东': '济南 青岛 淄博 枣庄 东营 烟台 潍坊 济宁 泰安 威海 日照 临沂 德州 聊城 滨州 菏泽'.split(),
-    '广东': '广州 深圳 珠海 东莞 佛山'.split(),
-    '江苏': ['南京', '苏州'],
-    '浙江': ['杭州', '宁波'],
-    '安徽': ['合肥'],
-    '福建': ['福州', '厦门'],
-    '湖北': ['武汉'],
-    '湖南': ['长沙'],
-    '河南': ['郑州'],
-    '陕西': ['西安'],
-    '四川': ['成都'],
-}
 ALL_SPECIFIC_CITIES = [c for cities in PROVINCE_CITIES.values() for c in cities]
 LOCATION_PREFIX_RE = re.compile(r'^(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)')
 
@@ -27,7 +15,7 @@ def location_match(job, city):
         return 'exact'
     evidence = job.get('location_evidence') or []
     detail_locations = [line for line in evidence if LOCATION_PREFIX_RE.match(line)]
-    specific_cities = [cand for cand in ALL_SPECIFIC_CITIES if any(cand in line for line in detail_locations)]
+    specific_cities = work_cities(detail_locations)
     if city in specific_cities:
         return 'exact'
     return 'none'

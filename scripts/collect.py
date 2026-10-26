@@ -25,12 +25,15 @@ from campus_talks import (SDU_CALENDAR, sdu_calendar, sdu_recruitment_body, bysj
                          sdnu_graduate_list, sdnu_graduate_event)
 from bs4 import BeautifulSoup
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
+from city_registry import (CITIES, PROVINCE_CITIES, CODE_CITY, cities_in_text,
+                           work_cities, resolve_event_city, collection_cities)
+from external_calendars import nankai_calendar, nankai_event, pku_calendar
+from opportunity_facts import employment_type, availability_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 TZ = dt.timezone(dt.timedelta(hours=8))
-CITIES = '济南 青岛 淄博 枣庄 东营 烟台 潍坊 济宁 泰安 威海 日照 临沂 德州 聊城 滨州 菏泽 北京 天津 上海 重庆 南京 苏州 杭州 宁波 合肥 福州 厦门 广州 深圳 珠海 东莞 佛山 武汉 长沙 郑州 西安 成都 昆明 贵阳 南昌 南宁 海口 太原 石家庄 沈阳 大连 长春 哈尔滨 兰州 西宁 银川 乌鲁木齐 拉萨'.split()
 LOCATION_LABEL = r'(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)'
-PROVINCES_LIST = '北京 天津 上海 重庆 河北 山西 辽宁 吉林 黑龙江 江苏 浙江 安徽 福建 江西 山东 河南 湖北 湖南 广东 广西 海南 四川 贵州 云南 陕西 甘肃 青海 宁夏 新疆 内蒙古 西藏 香港 澳门 台湾'.split()
+PROVINCES_LIST = list(PROVINCE_CITIES) + ['香港', '澳门', '台湾']
 
 try:
     from parse_positions import extract_all_positions, enrich_job_with_positions, deduplicate_positions, split_majors
@@ -45,7 +48,12 @@ except ImportError:
 
 
 def extract_locations_from_text(evidence, text, title='', company=''):
-    evidence = list(evidence)
+    # Historical projections used company-name hints as work facts. Demote
+    # them before reading any explicit location, including after a cold restore.
+    evidence = [re.sub(r'^工作地点[：:]?', '用人单位所在地：', line)
+                if re.search(r'标题/单位标注地点|标题/单位明确企事业单位或机构', line)
+                else re.sub(r'^工作地点[：:]?', '分支机构线索：', line)
+                if '标题/单位明确分支机构' in line else line for line in evidence]
     lines = text.splitlines()
     for index, line in enumerate(lines):
         m = re.search(LOCATION_LABEL + r'[\]】 ：:\t]*(.*)', line)
@@ -55,14 +63,14 @@ def extract_locations_from_text(evidence, text, title='', company=''):
                 evidence.append('工作地点：' + value[:1200])
 
     name_scope = f"{title} {company}"
-    for city in CITIES:
+    for city in cities_in_text(name_scope):
         if re.search(rf'{city}(?:市)?(?:分行|分公司|支行|管辖行)', name_scope):
-            evidence.append(f'工作地点：{city}（标题/单位明确分支机构）')
+            evidence.append(f'分支机构线索：{city}（标题/单位明确分支机构）')
         if re.search(rf'[（(]{city}(?:市)?[）)]', name_scope):
-            evidence.append(f'工作地点：{city}（标题/单位标注地点）')
-    explicit_cities = [c for c in CITIES if any(c in s for s in evidence if s.startswith('工作地点：') and not s.endswith('（标题/单位明确企事业单位或机构）'))]
+            evidence.append(f'用人单位所在地：{city}（标题/单位标注地点）')
+    explicit_cities = work_cities(evidence)
 
-    for city in CITIES:
+    for city in cities_in_text(name_scope):
         if re.search(
             rf'(?:^|[（(山东省]{{0,4}}){city}(?:市)?'
             r'[一二三四五六七八九十\u4e00-\u9fa5]{0,10}?'
@@ -87,7 +95,7 @@ def extract_locations_from_text(evidence, text, title='', company=''):
 
 
 def filter_institution_locations(evidence):
-    explicit = [c for c in CITIES if any(c in s for s in evidence if not s.endswith('（标题/单位明确企事业单位或机构）') and not s.startswith('用人单位所在地：'))]
+    explicit = work_cities(evidence)
     if not explicit:
         return list(evidence)
     res = []
@@ -125,6 +133,14 @@ SOURCES = [
 ]
 SOURCES.append({'id': 'sdu-talks', 'name': '山东大学 · 宣讲会', 'url': SDU_CALENDAR,
                 'adapter': 'sdu_talks', 'channel': 'talks', 'allow_empty_pages': True})
+SOURCES.extend([
+    {'id': 'nankai-talks', 'name': '南开大学 · 官方宣讲日历',
+     'url': 'https://career.nankai.edu.cn/recruitment/index2.html',
+     'adapter': 'nankai_talks', 'channel': 'talks', 'school_name': '南开大学'},
+    {'id': 'pku-talks', 'name': '北京大学 · 官方招聘日历',
+     'url': 'https://scc.pku.edu.cn/frontpage/pku/html/recruitmentFairList.html?fairType=1',
+     'adapter': 'pku_talks', 'channel': 'talks', 'school_name': '北京大学', 'allow_empty_pages': True},
+])
 SOURCES.append({'id': 'sdnu-graduate-talks', 'name': '山东师范大学研究生就业网 · 宣讲通知',
     'url': 'http://www.yjsjy.sdnu.edu.cn/xyzp.htm', 'adapter': 'sdnu_graduate', 'channel': 'talks'})
 for code, school_name in [('sdjzu', '山东建筑大学'), ('sdjt', '山东交通学院')]:
@@ -145,20 +161,6 @@ SDEI_SCHOOLS = [
 # zs.qust.edu.cn/lxwm.htm, ujn.edu.cn/xxgk/xxjj.htm,
 # ldu.edu.cn/xxgk/xxjj.htm, new.sdtbu.edu.cn/xxgk/xxjj.htm,
 # ytu.edu.cn/info/1003/12777.htm, sdua.edu.cn.
-TALK_CAMPUS_CITY = {
-    '山东财经大学': (r'燕山|舜耕|圣井|章丘', '济南'),
-    '山东大学': (r'中心校区|洪家楼校区|趵突泉校区|千佛山校区|软件园校区|兴隆山校区', '济南'),
-    '山东中医药大学': (r'长清|千佛山', '济南'),
-    '山东师范大学': (r'长清湖|千佛山', '济南'),
-    '山东建筑大学': (r'博文楼|西南教学组团|雪山书苑', '济南'),
-    '齐鲁工业大学': (r'长清|历城|彩石', '济南'),
-    '青岛科技大学': (r'崂山|四方|中德(?:生态园|校区)', '青岛'),
-    '济南大学': (r'主校区|舜耕校区', '济南'),
-    '鲁东大学': (r'鲁东大学北区|北校区', '烟台'),
-    '山东工商学院': (r'东校', '烟台'),
-    '烟台大学': (r'北校区|主校区|南校区|八角湾校区', '烟台'),
-    '山东航空学院': (r'山东航空学院', '滨州'),
-}
 CORE_SDEI_SCHOOLS = {'jobsdufe', 'ujn', 'sdnu', 'qlu', 'sdutcm'}
 ROTATING_SDEI_GROUPS = [
     ['qdu', 'qust', 'ytu', 'ldu'],
@@ -197,7 +199,7 @@ for school, name in SDEI_SCHOOLS:
                     'url': f'https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo?type=xjh',
                     'adapter': 'sdei', 'school': school, 'channel': 'talks'})
 SOURCES.append({'id': 'upc', 'name': '中国石油大学（华东）就业网', 'url': 'https://career.upc.edu.cn/career/zpxx/zpxx', 'adapter': 'upc'})
-SOURCES.append({'id': 'qdhrss', 'name': '青岛市人社局 · 招聘与引才', 'url': 'https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/', 'adapter': 'qdhrss'})
+SOURCES.append({'id': 'qdhrss', 'name': '青岛市人社局 · 招聘与引才', 'url': 'https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/', 'adapter': 'qdhrss', 'allow_empty_pages': True})
 SOURCES.append({'id': 'wondercv', 'name': '超级简历 · 公开校招线索', 'url': 'https://www.wondercv.com/xiaozhao/', 'adapter': 'wondercv'})
 SOURCES.append({'id': 'offerjack', 'name': 'Jacky学长校招 · 公开招聘线索', 'url': 'https://www.offerjack.cn/', 'adapter': 'offerjack'})
 # Province-wide and sector-specific official sources.  These are deliberately
@@ -277,7 +279,7 @@ for _source in SOURCES:
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 SOURCE_PACKS = {
     'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': ['nankai', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'upc'],
+    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'upc'],
     'universities-b': _sdei_source_ids,
     'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
     'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
@@ -816,6 +818,8 @@ def official_bank_list(html, base, source):
                 published = f'{path_date[1]}-{path_date[2]}-{path_date[3]}'
         items.append({'url': url, 'title': title, 'published_at': published, 'kind': '招聘公告'})
 
+    if source.get('bank_type') == 'psbc' and not items:
+        raise ValueError('邮储官网当前招聘栏目返回空列表，无法确认公告是否齐全；保留历史记录，需核对银行官方招聘入口')
     page_match = re.search(r'createPageHTML\(\s*(\d+)\s*,', html, re.I)
     if not page_match:
         page_match = re.search(r'countPage\s*=\s*(\d+)', html, re.I)
@@ -1114,6 +1118,11 @@ def qdhrss_list(html, base):
         published = date_match[0] if date_match else None
         items.append({'url': url, 'title': title, 'published_at': published, 'kind': '招聘公告'})
     pages = [1]
+    page_count = re.search(r'PAGE_COUNT\s*=\s*[\"\'](\d+)', html)
+    if page_count:
+        pages.append(int(page_count[1]))
+    if not root.find('li') or (not items and not re.search(r'/t20\d{6}_\d+\.shtml', html)):
+        raise ValueError('Qingdao official notice list missing; not a verified empty page')
     for m in re.finditer(r'index_(\d+)\.shtml', html):
         pages.append(int(m.group(1)) + 1)
     return items, max(pages, default=1)
@@ -1520,15 +1529,14 @@ def parse_detail(html, item, source):
                 for i in indexes:
                     if i<len(cells): location_evidence.append(clean(cells[i].text()))
     location_evidence = filter_institution_locations(location_evidence)
-    cities=[city for city in CITIES if any(city in s for s in location_evidence if not s.startswith('用人单位所在地：'))]
+    cities=work_cities(location_evidence)
     # Province platform supplies a standard administrative code even for district-only labels.
     code=str(structured.get('workplace2') or '')
-    shandong={'3701':'济南','3702':'青岛','3703':'淄博','3704':'枣庄','3705':'东营','3706':'烟台','3707':'潍坊','3708':'济宁','3709':'泰安','3710':'威海','3711':'日照','3713':'临沂','3714':'德州','3715':'聊城','3716':'滨州','3717':'菏泽'}
-    if len(code)==6 and code[:4] in shandong:
-        city=shandong[code[:4]]
+    if len(code)==6 and code in CODE_CITY:
+        city=CODE_CITY[code]
         if city not in cities: cities.append(city)
         location_evidence.append(f"岗位工作地行政区划代码 {code}，归属{city}（来源结构化字段）")
-    possible=[city for city in CITIES if city in combined and city not in cities]
+    possible=[city for city in cities_in_text(combined) if city not in cities]
     location_status=domestic_status(location_evidence,cities)
     expires,expires_text,precision=deadline(text)
     application_url=None
@@ -1910,8 +1918,8 @@ def compute_job_fingerprint(job):
     core = {
         'title': (job.get('title') or '').strip(),
         'company': (job.get('company') or '').strip(),
-        'deadline': job.get('deadline'),
         'cities': sorted(job.get('cities') or []),
+        'deadline': job.get('deadline'),
         'education': (job.get('education') or '').strip(),
         'types': sorted(job.get('types') or []),
         'graduation_years': sorted(job.get('graduation_years') or []),
@@ -1929,7 +1937,8 @@ def compute_job_fingerprint(job):
         'body_text': re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', job.get('body') or job.get('excerpt') or '')).strip(),
     }
     if job.get('source_id', '').endswith('-talks'):
-        core['talk_event'] = extract_talk_event(job)
+        event = extract_talk_event(job)
+        core['talk_event'] = {k: v for k, v in event.items() if k not in {'city', 'city_resolution'}} if event else None
     return hashlib.sha256(json.dumps(core, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
 
 
@@ -2004,8 +2013,8 @@ def merge(previous, incoming, now):
         changed = False
         if old:
             old_fp = old.get('content_fingerprint')
-            if not old_fp:
-                old_fp = compute_job_fingerprint(old)
+            if not old_fp or old.get('fingerprint_version') != 3:
+                old_fp = compute_job_fingerprint(dict(old, cities=public_record(old).get('cities', old.get('cities', []))))
             changed = bool(old_fp != fingerprint)
 
         timeline, recent_change = detect_job_events(job, old, now, changed)
@@ -2017,7 +2026,7 @@ def merge(previous, incoming, now):
                 timeline = [e for e in timeline if e.get('detail') != '招聘公告正文或附件内容已同步最新变动']
 
         stage = compute_lifecycle_stage({**job, 'recent_change': recent_change}, now)
-        row = dict(job, fingerprint=fingerprint, content_fingerprint=fingerprint,
+        row = dict(job, fingerprint=fingerprint, content_fingerprint=fingerprint, fingerprint_version=3,
                    first_seen_at=old.get('first_seen_at', now) if old else now,
                    updated_at=now if changed or not old else old.get('updated_at', now), last_verified_at=now,
                    revision=old.get('revision', 1) + int(changed) if old else 1,
@@ -2027,11 +2036,11 @@ def merge(previous, incoming, now):
     return result, counts
 
 
-def atomic_json(path,value,pretty=True):
+def atomic_json(path,value,pretty=True,sort_keys=False):
     path.parent.mkdir(parents=True,exist_ok=True)
     temp=path.with_suffix('.tmp')
     temp.write_text(json.dumps(value,ensure_ascii=False,indent=2 if pretty else None,
-                               separators=None if pretty else (',',':')),encoding='utf-8')
+                               separators=None if pretty else (',',':'),sort_keys=sort_keys),encoding='utf-8')
     os.replace(temp,path)
 
 
@@ -2112,80 +2121,16 @@ def deduplicate(jobs):
         if job.get('source_id') == 'sdu':
             key = sdu_keys.setdefault(job.get('source_url'), key)
         if key not in groups:
-            primary_facts = {
-                'id': job['id'],
-                'identity': job.get('identity'),
-                'company': job.get('company', ''),
-                'title': job.get('title', ''),
-                'published_at': job.get('published_at'),
-                'cities': list(job.get('cities', [])),
-                'location_evidence': list(job.get('location_evidence', [])),
-                'education': job.get('education', ''),
-                'deadline': job.get('deadline'),
-                'deadline_evidence': job.get('deadline_evidence'),
-                'deadline_precision': job.get('deadline_precision'),
-                'types': list(job.get('types', [])),
-                'graduation_years': list(job.get('graduation_years', [])),
-                'positions': job.get('positions'),
-                'position_count': job.get('position_count'),
-                'sample_positions': job.get('sample_positions'),
-                'majors': job.get('majors'),
-                'application_url': job.get('application_url'),
-                'source_url': job.get('source_url', ''),
-                'source_id': job.get('source_id', ''),
-                'source_name': job.get('source_name', ''),
-                'body': job.get('body'),
-                'excerpt': job.get('excerpt'),
-                'first_seen_at': job.get('first_seen_at'),
-                'updated_at': job.get('updated_at'),
-                'last_verified_at': job.get('last_verified_at'),
-                'revision': job.get('revision'),
-                'timeline': job.get('timeline'),
-                'recent_change': job.get('recent_change'),
-                'lifecycle_stage': job.get('lifecycle_stage'),
-                'structured': job.get('structured'),
-            }
-            primary_facts.update({field: job.get(field) for field in LISTING_FIELDS})
-            primary_facts['detail_verification'] = job.get('detail_verification')
+            primary_facts = {field: value for field, value in job.items()
+                             if field not in {'duplicate_ids', 'duplicate_sources', 'primary_facts', 'fingerprint', 'content_fingerprint', 'details_available', 'search_text'}}
             groups[key] = dict(job, duplicate_sources=[], duplicate_ids=[], primary_facts=primary_facts)
+            if isinstance(job.get('attachments'), list):
+                groups[key]['attachments'] = list(job['attachments'])
         else:
             parent = groups[key]
             existing_urls = {parent.get('source_url')} | {s.get('url') for s in parent['duplicate_sources']}
-            duplicate_facts = {
-                'id': job['id'],
-                'identity': job.get('identity'),
-                'company': job.get('company', ''),
-                'title': job.get('title', ''),
-                'published_at': job.get('published_at'),
-                'cities': list(job.get('cities', [])),
-                'location_evidence': list(job.get('location_evidence', [])),
-                'education': job.get('education', ''),
-                'deadline': job.get('deadline'),
-                'deadline_evidence': job.get('deadline_evidence'),
-                'deadline_precision': job.get('deadline_precision'),
-                'types': list(job.get('types', [])),
-                'graduation_years': list(job.get('graduation_years', [])),
-                'positions': job.get('positions'),
-                'position_count': job.get('position_count'),
-                'sample_positions': job.get('sample_positions'),
-                'majors': job.get('majors'),
-                'application_url': job.get('application_url'),
-                'source_url': job.get('source_url', ''),
-                'source_id': job.get('source_id', ''),
-                'source_name': job.get('source_name', ''),
-                'body': job.get('body'),
-                'excerpt': job.get('excerpt'),
-                'first_seen_at': job.get('first_seen_at'),
-                'updated_at': job.get('updated_at'),
-                'last_verified_at': job.get('last_verified_at'),
-                'revision': job.get('revision'),
-                'timeline': job.get('timeline'),
-                'recent_change': job.get('recent_change'),
-                'lifecycle_stage': job.get('lifecycle_stage'),
-                'structured': job.get('structured'),
-            }
-            duplicate_facts.update({field: job.get(field) for field in LISTING_FIELDS})
-            duplicate_facts['detail_verification'] = job.get('detail_verification')
+            duplicate_facts = {field: value for field, value in job.items()
+                               if field not in {'duplicate_ids', 'duplicate_sources', 'primary_facts', 'fingerprint', 'content_fingerprint', 'details_available', 'search_text'}}
             if (job.get('listing_checked_at') or '') > (parent.get('listing_checked_at') or ''):
                 parent.update({field: job.get(field) for field in LISTING_FIELDS})
             parent['duplicate_sources'].append({
@@ -2249,7 +2194,7 @@ def deduplicate(jobs):
 
             # Merge timeline events across duplicate sources
             if job.get('timeline'):
-                p_timeline = parent.get('timeline') or []
+                p_timeline = [dict(event) for event in (parent.get('timeline') or [])]
                 p_keys = {(e.get('date'), e.get('type'), e.get('title')) for e in p_timeline}
                 for e in job['timeline']:
                     k = (e.get('date'), e.get('type'), e.get('title'))
@@ -2299,8 +2244,7 @@ def deduplicate(jobs):
 
 def extract_talk_event(job):
     """Read event facts independently of recruitment work cities and deadlines."""
-    if re.search(r'已取消|已停办|取消宣讲', job.get('title', '')):
-        return None
+    cancelled = bool(re.search(r'已取消|已停办|取消宣讲', job.get('title', '')))
     structured = job.get('structured') or {}
     body = job.get('body') or ''
 
@@ -2326,24 +2270,27 @@ def extract_talk_event(job):
     end = times[-1] if len(times) > 1 else (times[0] if structured.get('fairEndTime') else '')
     school = field('schoolName', '宣讲学校')
     venue = field('fairAddress', '举办地点')
-    if not school or not venue:
+    if not school:
         return None
-    explicit_cities = [city for city in CITIES if city in venue
-                       and (city != '佛山' or re.search(r'(?<!千)佛山', venue))]
-    city = explicit_cities[0] if len(explicit_cities) == 1 else None
-    campus = TALK_CAMPUS_CITY.get(school)
-    if re.search(r'线上|直播|空中宣讲|腾讯会议', venue):
-        city = None
-    elif not city and campus and re.search(campus[0], venue):
-        city = campus[1]
+    city, city_resolution = resolve_event_city(school, venue)
     return {'id': job['id'], 'date': date,
             'start_time': start[0] if start else None, 'end_time': end or None,
-            'school': school[:80], 'venue': venue, 'city': city,
-            'url': job.get('source_url', '')}
+            'school': school[:80], 'venue': venue, 'city': city, 'city_resolution': city_resolution,
+            'url': job.get('source_url', ''), 'status': 'cancelled' if cancelled else 'scheduled',
+            'event_type': ('interview' if re.search(r'面试', job.get('title', '')) else
+                           'test' if re.search(r'笔试|测评|考试', job.get('title', '')) else
+                           'job_fair' if re.search(r'双选会|招聘会', job.get('title', '')) else
+                           'talk' if re.search(r'宣讲', job.get('title', '')) else
+                           'guidance' if re.search(r'指导|辅导', job.get('title', '')) else 'unknown'),
+            'mode': 'online' if re.search(r'线上|直播|空中宣讲|腾讯会议', venue) else 'offline' if venue else 'unknown'}
 
 
 def calendar_record(item, source, old=None):
     """Publish only official event facts immediately; queue recruitment detail separately."""
+    if old and (old.get('structured') or {}).get('fairDate') == (item.get('structured') or {}).get('fairDate'):
+        # Some official lists contain only date/title; do not erase the venue
+        # actually read from the matching detail on every later head pass.
+        item = dict(item, structured={**(old.get('structured') or {}), **(item.get('structured') or {})})
     identifier = item.get('target_id') or hashlib.sha256(item.get('identity', item['url']).encode()).hexdigest()[:20]
     event = extract_talk_event(dict(item, id=identifier, source_url=item['url']))
     cancelled = bool(re.search(r'已取消|已停办|取消宣讲', item.get('title', '')))
@@ -2451,6 +2398,8 @@ def public_record(job):
             row = {**{k: row[k] for k in ('first_seen_at', 'updated_at', 'last_verified_at', 'revision') if k in row}, **event_only}
     if row.get('kind') != '宣讲会':
         row = refine_facts(row)
+        row['employment_type'] = employment_type((row.get('title') or '') + '\n' + (row.get('body') or ''))
+        row['availability_evidence'] = availability_evidence(row)
     if row.get('source_id', '').endswith('-talks'):
         # Older retained state predates the dedicated event field. Rebuild it
         # from structured list data and the event lines already in the body.
@@ -2507,14 +2456,17 @@ def public_record(job):
             m = re.match(r'^工作地点[：:\s]*(.*)', ev)
             if m:
                 ev_val = m[1].strip()
-                matched_cities = [c for c in CITIES if c in ev_val]
+                matched_cities = cities_in_text(ev_val)
                 if matched_cities and all(c not in work_location_text for c in matched_cities):
                     continue
             sanitized_evidence.append(ev)
         evidence = sanitized_evidence
+    if row.get('positions'):
+        evidence = [line for line in evidence if not line.startswith('岗位表标注工作地点：')]
+        evidence.extend('岗位表标注工作地点：' + str(position['city']) for position in row['positions'] if position.get('city'))
     evidence = filter_institution_locations(evidence)
     row['location_evidence']=list(dict.fromkeys(evidence))
-    row['cities']=[city for city in CITIES if any(city in s for s in evidence if not s.startswith('用人单位所在地：'))]
+    row['cities']=work_cities(evidence)
     row['domestic_status']=domestic_status(row['location_evidence'],row['cities'])
     if 'graduation_years' in row:
         row['graduation_years']=[y for y in row['graduation_years'] if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
@@ -2540,13 +2492,16 @@ def public_summary(job):
     heavy={
         'body','attachments','links','emails','qr_attachment','deadline_evidence',
         'possible_cities','province_possible','details_available','company_original',
-        'positions','primary_facts','structured','identity','fingerprint','content_fingerprint','inline_announcement_fingerprint',
+        'positions','primary_facts','structured','identity','fingerprint','content_fingerprint','inline_announcement_fingerprint','fingerprint_version',
         'probe_attempt_at','listing_missing_count','listing_missing_at','listing_signature',
     }
     row={k:v for k,v in job.items() if k not in heavy}
+    if job.get('positions'):
+        row['position_matches'] = [{k: p[k] for k in ('name', 'city', 'majors', 'education', 'cohort') if k in p}
+                                   for p in job['positions']]
     # The full timeline remains in the detail. Retain all recent change events
     # needed by filters; initial publication/reposts are derived from metadata.
-    row['timeline'] = [event for event in row.get('timeline', [])
+    row['timeline'] = [event for event in (row.get('timeline') or [])
                        if event.get('type') not in {'published', 'source_repost'}]
     if 'duplicate_sources' in row and isinstance(row['duplicate_sources'], list):
         cleaned_sources = []
@@ -2589,7 +2544,7 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     assets=public_dir/'job-assets'
     assets.mkdir(parents=True,exist_ok=True)
     def asset(prefix, payload):
-        content=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
+        content=json.dumps(payload,ensure_ascii=False,separators=(',',':'),sort_keys=True)
         if len(content.encode('utf-8')) > MAX_ASSET_BYTES:
             raise ValueError(f'Generated {prefix} asset exceeds 25 MiB; publication stopped')
         name=prefix+'-'+hashlib.sha256(content.encode()).hexdigest()[:20]+'.json'
@@ -2610,7 +2565,9 @@ def export_snapshot(state, public_dir, days=180, changes=None):
               'duplicates_merged':len(eligible)-len(public_jobs),'coverage_days':days,'cities':CITIES,
               'detail_shards':detail_shards,'search_url':search_url,
               'jobs':[public_summary(j) for j in public_jobs],
-              'sources':list(state['sources'].values()),'changes':changes or {}}
+              'sources':list(state['sources'].values()),'changes':changes or {},'projection_version':1}
+    from city_coverage import build_city_coverage
+    snapshot['coverage_url'] = asset('coverage', build_city_coverage(dict(snapshot, jobs=public_jobs)))
     if len(search_shards) > 1:
         snapshot['search_shards']=search_shards[1:]
     batches=list(chunks(snapshot['jobs']))
@@ -2622,7 +2579,7 @@ def export_snapshot(state, public_dir, days=180, changes=None):
         disk_snapshot=dict(snapshot,jobs=[])
     if len(json.dumps(disk_snapshot,ensure_ascii=False,separators=(',',':')).encode('utf-8')) > MAX_ASSET_BYTES:
         raise ValueError('Snapshot metadata exceeds 25 MiB; publication stopped')
-    atomic_json(public_dir/'jobs.json',disk_snapshot,pretty=False)
+    atomic_json(public_dir/'jobs.json',disk_snapshot,pretty=False,sort_keys=True)
     atomic_json(public_dir/'snapshot-manifest.json', {
         'schema_version': 1, 'generated_at': snapshot['generated_at'],
         'raw_records': len(eligible),
@@ -2758,7 +2715,7 @@ def run(args):
             list_complete = False
             is_offerjack=source.get('adapter')=='offerjack'
             is_active_listing_source=source.get('adapter') in {'zhiye_jobs','haier_jobs','haier_campus'}
-            offerjack_cities=([args.target_city] if args.target_city else ['']+CITIES) if is_offerjack else []
+            offerjack_cities=([args.target_city] if args.target_city else collection_cities()) if is_offerjack else []
             offerjack_query_limit=(getattr(args,'offerjack_pages',0) or 1000) if is_offerjack else 0
             page_budget=offerjack_query_limit*len(offerjack_cities) if is_offerjack else args.pages
             if head_only:
@@ -2843,6 +2800,13 @@ def run(args):
                         total = 6  # bounded current week + four upcoming weeks, not an exhaustive history
                     elif source.get('adapter')=='sdnu_graduate':
                         found, total = sdnu_graduate_list(first, source['url']), 2
+                    elif source.get('adapter')=='nankai_talks':
+                        page_url = source['url'] if page == 1 else f'https://career.nankai.edu.cn/recruitment/index2/p/{page}.html'
+                        found, total = nankai_calendar(first if page == 1 else fetch(page_url), source['url'])
+                    elif source.get('adapter')=='pku_talks':
+                        payload = json.loads(fetch('https://scc.pku.edu.cn/f/recruitmentFair/ajax_frontRecruitfair',
+                            form={'pageNo': page, 'pageSize': 20, 'fairType': 1}, referer=source['url']))
+                        found, total = pku_calendar(payload, source['url'])
                     elif source.get('adapter')=='bysjy_talks':
                         query = urllib.parse.urlencode({'start': (page-1)*20, 'count': 21,
                             'k': '', 'address': '', 'professionals': '', 'career_type': '',
@@ -2918,7 +2882,7 @@ def run(args):
                     if item.get('identity',item['url']) not in known:
                         known.add(item.get('identity',item['url']))
                         if item.get('is_active_listing') or not item['published_at'] or item['published_at']>=cutoff:
-                            items.append(dict(item))
+                            items.append(dict(item, detail_queued_at=next((old.get('detail_queued_at') for old in queues.get(source['id'], []) if old.get('url') == item['url']), now)))
                 if source.get('adapter') == 'sdnu_graduate':
                     status['coverage'] = '已读取研究生校园招聘最新列表页；旧通知未追溯'
                     break
@@ -3181,9 +3145,14 @@ def run(args):
             detail_failure_limit = max(1, int(getattr(args, 'detail_failure_limit', 6) or 6))
 
             def read_detail(item):
+                if source.get('adapter') == 'pku_talks':
+                    return calendar_record(item, source)
                 if source.get('adapter') == 'sdnu_graduate':
                     article = fetch(item['url'], timeout=detail_timeout, retries=detail_retries)
                     return calendar_record(sdnu_graduate_event(article, item), source)
+                if source.get('adapter') == 'nankai_talks':
+                    article = fetch(item['url'], timeout=detail_timeout, retries=detail_retries)
+                    return calendar_record(nankai_event(article, item), source)
                 if requires_position_detail(item):
                     html = fetch(item['url'], timeout=detail_timeout, retries=detail_retries,
                                  referer=source['url'], request_stage='position_detail')
@@ -3296,7 +3265,8 @@ def run(args):
                     if not old_job:
                         status['has_new_announcements'] = True
                     else:
-                        old_fp = old_job.get('content_fingerprint') or compute_job_fingerprint(old_job)
+                        old_fp = old_job.get('content_fingerprint') if old_job.get('fingerprint_version') == 3 else None
+                        old_fp = old_fp or compute_job_fingerprint(dict(old_job, cities=public_record(old_job).get('cities', old_job.get('cities', []))))
                         if job_fp != old_fp:
                             status['has_new_announcements'] = True
                     return True, False
@@ -3437,6 +3407,9 @@ def run(args):
             status['list_complete'] = prior_source['list_complete']
         status['elapsed_seconds'] = round(time.monotonic() - source_started, 2)
         status['pending_details'] = len(queues.get(source['id'], []))
+        ages = [i.get('detail_queued_at') for i in queues.get(source['id'], []) if i.get('detail_queued_at')]
+        status['oldest_pending_at'] = min(ages, default=None)
+        status['pending_age_unknown'] = status['pending_details'] - len(ages)
         status['inventory_complete'] = inventory_complete if is_active_listing_source else None
         if source['id']=='nankai' and args.nankai_area:
             status['coverage']=f'省份定向列表（原站区域 {args.nankai_area}）；'+status['coverage']

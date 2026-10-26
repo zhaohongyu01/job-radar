@@ -44,11 +44,12 @@ import {
   externalUrl,
   personalFor,
   isUnread,
-  mergePersonal,
   locationSummary,
   mergeDuplicateOpportunities,
+  selectedWorkCities,
+  workCitiesLabel,
 } from '@/lib/jobs';
-import type { Job, Snapshot, Personal, Filters } from '@/lib/jobs';
+import type { Job, Snapshot, Personal, Filters, PersonalRecord } from '@/lib/jobs';
 import { restoreBrowsing } from '@/lib/browsing';
 import type { ViewMode } from '@/lib/browsing';
 import { JobTable } from '@/components/job-table';
@@ -62,6 +63,11 @@ import { DataHealth } from '@/components/data-health';
 import { ActionRail } from '@/components/action-rail';
 import { TopActionCard } from '@/components/top-action-card';
 import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
+import type { CoverageReport } from '@/lib/city-coverage';
+import { createBackup, validateBackup, writeBackup } from '@/lib/personal-backup';
+import type { PersonalBackup } from '@/lib/personal-backup';
+import { personalConflicts, mergePersonalRecords } from '@/lib/personal-records';
+import { EVENT_PERSONAL_STORAGE, validateEventPersonal } from '@/lib/agenda';
 
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
 const STORAGE = 'quancheng-personal-v1',
@@ -142,6 +148,22 @@ export default function Home() {
   const [detailLoading, setDetailLoading] = useState(false),
     [detailError, setDetailError] = useState('');
   const [dataOrigin, setDataOrigin] = useState('site');
+  const [importPreview, setImportPreview] = useState<PersonalBackup | null>(null);
+  const [presetRevision, setPresetRevision] = useState(0);
+  const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
+  const coverage = coverageReport?.as_of === data?.generated_at ? coverageReport : null;
+  useEffect(() => {
+    const url = data?.coverage_url;
+    if (!url || !/^\/job-assets\/coverage-[0-9a-f]{20}\.json$/.test(url)) return;
+    const controller = new AbortController();
+    void fetch(url, { cache: 'force-cache', signal: controller.signal }).then(async (response) => {
+      if (!response.ok) throw Error('Coverage unavailable');
+      const report = await response.json() as CoverageReport;
+      if (report.schema_version !== 1 || !report.cities || !Array.isArray(report.schools)) throw Error('Coverage format invalid');
+      setCoverageReport(report);
+    }).catch(() => { /* Coverage failures do not hide a complete jobs index. */ });
+    return () => controller.abort();
+  }, [data?.coverage_url]);
   const fileRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const discoveryFilters = useRef<Filters>(defaultFilters);
@@ -327,7 +349,14 @@ export default function Home() {
   }, [ready, filters, viewMode, groupCompanies]);
 
   const change = <K extends keyof Filters>(key: K, value: Filters[K]) => {
-    setFilters((f) => ({ ...f, [key]: value }));
+    setFilters((f) => {
+      if (key === 'city') return { ...f, city: value as string, workCities: undefined };
+      if (key === 'workCities') {
+        const cities = value as string[];
+        return { ...f, workCities: cities, city: cities.length === 1 ? cities[0] : '全部城市' };
+      }
+      return { ...f, [key]: value };
+    });
     setPage(1);
   };
 
@@ -337,9 +366,15 @@ export default function Home() {
   }, []);
 
   const toggle = (job: Job, key: 'saved' | 'applied' | 'hidden') => {
+    const old = personalFor(job, personalRef.current);
+    const record: PersonalRecord = { ...old, [key]: !old[key], personal_updated_at: new Date().toISOString() };
+    if (key === 'applied') {
+      record.application_stage = record.applied ? 'applied' : 'planned';
+      record.applied_at = record.applied ? old.applied_at || new Date().toISOString() : null;
+    }
     const next = {
       ...personalRef.current,
-      [job.id]: { ...personalFor(job, personalRef.current), [key]: !personalFor(job, personalRef.current)[key] },
+      [job.id]: record,
     };
     save(next);
   };
@@ -406,7 +441,11 @@ export default function Home() {
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    if (filters.city !== defaultFilters.city) count++;
+    if (selectedWorkCities(filters).join('|') !== selectedWorkCities(defaultFilters).join('|')) count++;
+    if (filters.employmentType !== defaultFilters.employmentType) count++;
+    if (filters.validity !== defaultFilters.validity) count++;
+    if (filters.major !== defaultFilters.major) count++;
+    if (filters.includeRelatedTalks !== defaultFilters.includeRelatedTalks) count++;
     if (filters.type !== defaultFilters.type) count++;
     if (filters.year !== defaultFilters.year) count++;
     if (filters.sector !== defaultFilters.sector) count++;
@@ -431,7 +470,7 @@ export default function Home() {
       scope,
       label:
         scope === 'exact'
-          ? `来源标注${filters.city}`
+          ? `来源标注${workCitiesLabel(filters)}`
           : scope === 'possible'
             ? '全省 / 全国待核实'
             : '地点未明确',
@@ -510,8 +549,11 @@ export default function Home() {
     now - Date.parse(data.last_success_at) > 36 * 3600000;
 
   const exportPersonal = () => {
+    try {
+    const content = JSON.stringify(createBackup(personal, localStorage), null, 2);
+    if (new TextEncoder().encode(content).length > 5000000) throw Error('备份超过当前 5 MB 导入上限，请先减少不需要的备注或记录后导出；未截断任何数据。');
     const blob = new Blob(
-      [JSON.stringify({ version: 2, records: personal }, null, 2)],
+      [content],
       { type: 'application/json' },
     );
     const url = URL.createObjectURL(blob);
@@ -521,6 +563,7 @@ export default function Home() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setNotice('个人记录已导出。');
+    } catch (error) { setNotice(error instanceof Error ? error.message : '导出失败'); }
   };
 
   const importPersonal = async (file?: File) => {
@@ -528,14 +571,31 @@ export default function Home() {
     try {
       if (file.size > 5000000) throw Error('备份文件不能超过 5 MB');
       const backup = JSON.parse(await file.text());
-      if (![1, 2].includes(backup.version)) throw Error('不支持此备份版本');
-      const imported = validatePersonal(backup.records);
-      if (save(mergePersonal(personalRef.current, imported)))
-        setNotice('已合并备份中的个人记录。');
+      setImportPreview(validateBackup(backup));
     } catch (e) {
       setNotice(e instanceof Error ? e.message : '无法读取备份文件');
     }
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const confirmImport = (preferImported: boolean) => {
+    if (!importPreview) return;
+    try {
+      const records = mergePersonalRecords(personalRef.current, importPreview.records, preferImported);
+      const currentEvents = validateEventPersonal(JSON.parse(localStorage.getItem(EVENT_PERSONAL_STORAGE) || '{}'));
+      const events = { ...currentEvents };
+      for (const [id, record] of Object.entries(importPreview.event_records || {})) {
+        const old = events[id];
+        if (!old || (old.updated_at && record.updated_at ? old.updated_at <= record.updated_at : preferImported)) events[id] = record;
+      }
+      const validated = validateBackup({ ...importPreview, records, event_records: events });
+      writeBackup(validated, localStorage);
+      personalRef.current = records; setPersonal(records);
+      if (validated.browsing) { setFilters(validated.browsing.filters); setViewMode(validated.browsing.viewMode); setGroupCompanies(validated.browsing.groupCompanies); }
+      window.dispatchEvent(new Event('job-radar-local-workspace-change'));
+      setPresetRevision((value) => value + 1);
+      setImportPreview(null); setNotice('备份已合并；个人记录、活动及设置已保存。');
+    } catch (error) { setNotice(error instanceof Error ? error.message : '导入未完成'); }
   };
 
   const copyJob = (job: Job) => {
@@ -640,7 +700,7 @@ export default function Home() {
         <div className="page-head">
           <div className="page-head-intro">
             <p className="page-eyebrow">
-              {filters.city === '全部城市' ? '全国 / 全省' : filters.city} · {filters.type}
+              {workCitiesLabel(filters)} · {filters.type}
               {filters.type === '校招' && filters.year !== '全部' ? ` · ${filters.year}届` : ''}
             </p>
             <h1 className="page-title">
@@ -708,7 +768,7 @@ export default function Home() {
           </div>
         )}
 
-        {data && now > 0 && <DataHealth data={data} now={now} city={filters.city} visibleJobs={filtered} origin={dataOrigin} onSources={() => setSourceOpen(true)} />}
+        {data && now > 0 && <DataHealth coverage={coverage} data={data} now={now} city={filters.city} visibleJobs={filtered} origin={dataOrigin} onSources={() => setSourceOpen(true)} />}
 
         <div className="page-grid">
           <FilterSidebar
@@ -729,7 +789,7 @@ export default function Home() {
                 <span>我的安排<small>待投递 · 宣讲日程</small></span>
                 <ChevronDown size={16} />
               </summary>
-              <ActionRail jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready} onDetail={(job) => void openDetail(job)} onView={openView} />
+              <ActionRail coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready} onDetail={(job) => void openDetail(job)} onView={openView} />
             </details>
 
             <div className="search-row">
@@ -776,6 +836,7 @@ export default function Home() {
             </div>
 
             <PersonalRadar
+              key={presetRevision}
               now={now}
               currentFilters={filters}
               filteredJobs={radarScopeJobs}
@@ -946,7 +1007,7 @@ export default function Home() {
             </div>
 
             <div className="result-subbar">
-              {filters.city !== '全部城市' ? (
+              {selectedWorkCities(filters).length > 0 ? (
                 <div className="scope-bar">
                   <fieldset
                     className="seg"
@@ -1075,7 +1136,7 @@ export default function Home() {
                       <EmptyDescription>
                         当前来源尚未收录符合这些条件的公告，不代表没有招聘。可切换地点范围，或清除岗位方向、学历和关键词限制。
                       </EmptyDescription>
-                      {filters.city !== '全部城市' && locationOptions
+                      {selectedWorkCities(filters).length > 0 && locationOptions
                         .filter((option) => option.scope !== filters.locationScope && option.count > 0)
                         .map((option) => (
                           <Button key={option.scope} variant="outline"
@@ -1141,7 +1202,7 @@ export default function Home() {
               </button>
             </p>
           </section>
-          <div className="plan-desktop"><ActionRail jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
+          <div className="plan-desktop"><ActionRail coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
         </div>
       </main>
 
@@ -1188,7 +1249,25 @@ export default function Home() {
         onToggle={toggle}
         onCopy={copyJob}
         setNotice={setNotice}
+        onPersonalSave={(job, record) => save({ ...personalRef.current, [job.id]: record })}
       />
+
+      <Sheet open={!!importPreview} onOpenChange={(open) => { if (!open) setImportPreview(null); }}>
+        <SheetContent className="backup-import-sheet">
+          <SheetHeader><SheetTitle>确认合并个人备份</SheetTitle><SheetDescription>验证完成后统一保存；可在合并前先导出当前浏览器备份。</SheetDescription></SheetHeader>
+          {importPreview && <div className="application-tracker">
+            <p>岗位记录 {Object.keys(importPreview.records).length} 条，活动记录 {Object.keys(importPreview.event_records || {}).length} 条。</p>
+            <p>有 {personalConflicts(personal, importPreview.records).length} 条备注或投递阶段缺少可比较的更新时间；请选择冲突处理方式。已有明确时间的内容采用较新记录。</p>
+            {personalConflicts(personal, importPreview.records).slice(0, 20).map((id) => <details key={id}><summary>{allJobs.find((job) => job.id === id || job.duplicate_ids?.includes(id))?.title || id}</summary>
+              <p>本机：{personal[id].application_stage || '阶段未填写'} · {personal[id].notes || personal[id].next_action_note || '无备注'}</p>
+              <p>备份：{importPreview.records[id].application_stage || '阶段未填写'} · {importPreview.records[id].notes || importPreview.records[id].next_action_note || '无备注'}</p>
+            </details>)}
+            <button className="btn btn-outline" onClick={exportPersonal}>先导出本机备份</button>
+            <button className="btn btn-primary" onClick={() => confirmImport(false)}>合并，保留本机冲突备注</button>
+            <button className="btn btn-outline" onClick={() => confirmImport(true)}>合并，冲突以备份为准</button>
+          </div>}
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={sourceOpen} onOpenChange={setSourceOpen}>
         <SheetContent className="detail-sheet">

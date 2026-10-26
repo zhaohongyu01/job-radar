@@ -12,6 +12,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
+import type { PersonalRecord } from '@/lib/jobs';
+import { ApplicationTracker } from '@/components/application-tracker';
 import { formatDate, OutLink } from '@/components/job-card';
 import { TalkEvents } from '@/components/talk-events';
 
@@ -29,6 +31,7 @@ export function DetailDrawer({
   onToggle,
   onCopy,
   setNotice,
+  onPersonalSave,
 }: {
   selected: Job | null;
   city: string;
@@ -43,6 +46,7 @@ export function DetailDrawer({
   onToggle: (job: Job, key: 'saved' | 'applied' | 'hidden') => void;
   onCopy: (job: Job) => void;
   setNotice: (msg: string) => void;
+  onPersonalSave: (job: Job, record: PersonalRecord) => boolean;
 }) {
   const [positionSearch, setPositionSearch] = useState({ jobId: '', value: '' });
   const positionFilter = positionSearch.jobId === selected?.id ? positionSearch.value : '';
@@ -450,6 +454,7 @@ export function DetailDrawer({
                 </div>
               )}
 
+              <ApplicationTracker key={selected.id} job={selected} record={personalFor(selected, personal)} onSave={onPersonalSave} />
               <h3>公告文字</h3>
               <div className="announcement-text">
                 {selected.body || '完整公告尚未读取，请打开原公告核对。'}

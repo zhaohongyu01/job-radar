@@ -25,10 +25,13 @@ import {
   locationMatch,
   locationSummary,
   personalFor,
+  selectedWorkCities,
 } from '@/lib/jobs';
 import type { Job, Personal, Filters } from '@/lib/jobs';
 import { HighlightText } from '@/components/highlight-text';
 import { TalkEvents } from '@/components/talk-events';
+import { assessOpportunityValidity } from '@/lib/opportunity-validity';
+import { positionMatches } from '@/lib/eligibility';
 
 export function extractSalary(job: Job): {
   cleanTitle: string;
@@ -51,7 +54,9 @@ export function extractSalary(job: Job): {
       /\d/.test(excerptMatch[1]) &&
       excerptMatch[1].length <= 24
     ) {
-      salary = excerptMatch[1].trim();
+      // Keep the numeric pay expression; adjacent benefit prose belongs in
+      // the announcement, not the narrow salary badge on a phone.
+      salary = excerptMatch[1].match(/^\d+(?:\.\d+)?(?:[kK万wW元])?(?:\s*[-~至–]\s*\d+(?:\.\d+)?(?:[kK万wW元])?)?(?:元)?(?:\/(?:小时|月|年|天|日))?(?:·\d+薪)?/)?.[0] || null;
     }
   }
   return { cleanTitle: cleanTitle || job.title, salary };
@@ -136,9 +141,11 @@ export function JobCard({
   onToggle: (job: Job, key: 'saved' | 'applied' | 'hidden') => void;
   onCopy: (job: Job) => void;
 }) {
-  const location = locationMatch(job, filters.city);
+  const workCities = selectedWorkCities(filters);
+  const locationScopes = workCities.map((city) => locationMatch(job, city));
+  const location = !workCities.length || locationScopes.includes('exact') ? 'exact' : locationScopes.includes('possible') ? 'possible' : 'unknown';
   const hasSelectedCityTalk =
-    job.talk_events?.some((event) => event.city === filters.city) ?? false;
+    Boolean(filters.includeRelatedTalks && job.talk_events?.some((event) => workCities.includes(event.city || '') && event.status !== 'cancelled' && Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now));
   const saved = personalFor(job, personal).saved;
   const applied = personalFor(job, personal).applied;
   const expired = isExpired(job, now);
@@ -168,7 +175,12 @@ export function JobCard({
         ? 'is-warning'
         : '';
 
+  const matchingPositions = useMemo(() => (job.position_matches || job.positions || []).filter((position) => positionMatches(position, {
+    cities: selectedWorkCities(filters), education: filters.education, major: filters.major || '',
+    year: filters.type === '校招' ? filters.year : '全部', includeUnknown: filters.includeUncertain,
+  })), [job.position_matches, job.positions, filters]);
   const displayPositions = useMemo(() => {
+    if (matchingPositions.length) return [...new Set(matchingPositions.map((position) => position.name))].slice(0, 5);
     if (job.sample_positions?.length) return job.sample_positions.slice(0, 5);
     if (job.positions?.length) {
       const names = Array.from(new Set(job.positions.map((p) => p.name).filter(Boolean)));
@@ -178,7 +190,7 @@ export function JobCard({
       return job.directions.slice(0, 5);
     }
     return [];
-  }, [job.sample_positions, job.positions, job.directions]);
+  }, [job.sample_positions, job.positions, job.directions, matchingPositions]);
 
   const displayMajors = useMemo(() => {
     const set = new Set<string>();
@@ -302,8 +314,10 @@ export function JobCard({
           </p>
         )}
 
-        {(showStage || isNew || applied) && (
+        {(showStage || isNew || applied || job.kind !== '宣讲会') && (
           <div className="opp-badges">
+            {job.kind !== '宣讲会' && <span className="chip" title={`${assessOpportunityValidity(job, now).reason}；最近核验：${assessOpportunityValidity(job, now).checkedAt || '未知'}`}>{assessOpportunityValidity(job, now).label}</span>}
+            {job.employment_type && job.employment_type !== 'unknown' && <span className="chip">{({ full_time: '全职', internship: '实习', part_time: '兼职' })[job.employment_type]}</span>}
             {showStage && (
               <span className={`chip ${stageInfo.badgeClass}`}>{stageInfo.badge}</span>
             )}
@@ -319,7 +333,7 @@ export function JobCard({
 
         {displayPositions.length > 0 && (
           <div className="opp-positions">
-            <span className="opp-positions-label">在招职位</span>
+            <span className="opp-positions-label">{matchingPositions.length ? `匹配岗位 ${matchingPositions.length}` : '岗位信息'}</span>
             {displayPositions.map((pos, idx) => (
               <span key={idx} className="opp-pos-pill">
                 <HighlightText text={pos} query={filters.query} />

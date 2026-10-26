@@ -5,6 +5,8 @@ import { Database, ChevronDown } from 'lucide-react';
 import type { Job, Snapshot } from '@/lib/jobs';
 import { collectionHealth, latestPublication } from '@/lib/data-health';
 import { upcomingTalks } from '@/lib/workspace';
+import { agendaCoverageMessage } from '@/lib/city-coverage';
+import type { CoverageReport } from '@/lib/city-coverage';
 
 export function DataHealth({
   data,
@@ -13,6 +15,7 @@ export function DataHealth({
   visibleJobs,
   origin,
   onSources,
+  coverage,
 }: {
   data: Snapshot;
   now: number;
@@ -20,6 +23,7 @@ export function DataHealth({
   visibleJobs: Job[];
   origin: string;
   onSources: () => void;
+  coverage?: CoverageReport | null;
 }) {
   const health = useMemo(() => collectionHealth(data, now), [data, now]);
   const talks = useMemo(
@@ -62,6 +66,11 @@ export function DataHealth({
           {city === '全部城市' ? '全部城市' : city}已收录 {talks.length}{' '}
           场后续宣讲；宣讲地点与工作地点分别核实。
         </p>
+        <p>{city === '全部城市' ? '全国城市可筛选；各城市的本地渠道接入程度不同。' : agendaCoverageMessage(coverage?.cities[city], now)}</p>
+        {coverage?.cities[city] && <p>
+          本地信息渠道 {coverage.cities[city].local_sources.length} 个，日历渠道 {coverage.cities[city].calendar_sources.length} 个；
+          计划补齐：{coverage.cities[city].planned_schools.join('、') || '尚无新增学校计划'}。已接渠道数量不等于全市完整覆盖。
+        </p>}
         {origin === 'local' && (
           <p>
             当前使用仓库自带历史数据。正常启动本地预览会读取线上快照；离线数据不会冒充最新采集结果。

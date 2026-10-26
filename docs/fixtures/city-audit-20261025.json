@@ -1,0 +1,229 @@
+{
+  "fixture_version": 1,
+  "purpose": "Documentation fixture: selected published facts, not a complete raw-state backup. Talk structured fields are reconstructed from published talk_event and checked against the official list. No collection or deployment is performed.",
+  "code_revision": "87edcf6",
+  "as_of": "2026-10-25T11:52:51.364+08:00",
+  "snapshot_generated_at": "2026-10-25T06:54:59+08:00",
+  "talks": [
+    {
+      "input": {
+        "id": "748c4c69946466b275b3",
+        "title": "中国电建集团山东电力建设第一工程有限公司2027届高校毕业生招聘",
+        "source_id": "sdut-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/sdut/school/TblCareerFairReviewRecord/detail/202610201625051f67d6f5",
+        "structured": {
+          "fairDate": "2026-10-27",
+          "fairStartTime": "09:30",
+          "fairEndTime": "11:30",
+          "schoolName": "山东理工大学",
+          "fairAddress": "西校区13号楼301教室（电气与电子工程学院）"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "淄博"
+    },
+    {
+      "input": {
+        "id": "0e43da5f80a42fffabcf",
+        "title": "中国核工业华兴建设有限公司校园招聘宣讲会",
+        "source_id": "sdut-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/sdut/school/TblCareerFairReviewRecord/detail/20261013102037e52e279d",
+        "structured": {
+          "fairDate": "2026-10-27",
+          "fairStartTime": "14:30",
+          "fairEndTime": "16:30",
+          "schoolName": "山东理工大学",
+          "fairAddress": "西校区12号教学楼313教室（建筑工程与空间信息学院）"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "淄博"
+    },
+    {
+      "input": {
+        "id": "2ce39cf9504e84e53be7",
+        "title": "德邦快递27届海豚校招宣讲会",
+        "source_id": "sdut-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/sdut/school/TblCareerFairReviewRecord/detail/2026102112363527ebc57d",
+        "structured": {
+          "fairDate": "2026-10-27",
+          "fairStartTime": "14:30",
+          "fairEndTime": "16:30",
+          "schoolName": "山东理工大学",
+          "fairAddress": "西校区赋能中心就业宣讲室"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "淄博"
+    },
+    {
+      "input": {
+        "id": "6de2b221a75c1aaa84b1",
+        "title": "英特莱福集团2027届校园招聘（山东理工大学专场）",
+        "source_id": "sdut-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/sdut/school/TblCareerFairReviewRecord/detail/202610221425238e50f395",
+        "structured": {
+          "fairDate": "2026-10-27",
+          "fairStartTime": "14:30",
+          "fairEndTime": "16:30",
+          "schoolName": "山东理工大学",
+          "fairAddress": "西校区12号教学楼419教室（机械工程学院）"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "淄博"
+    },
+    {
+      "input": {
+        "id": "bb4626978c9907e420c5",
+        "title": "和乐门窗有限公司2027届校园招聘宣讲会(工作地点全国就近安排)",
+        "source_id": "sdut-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/sdut/school/TblCareerFairReviewRecord/detail/2026102309381619929f9d",
+        "structured": {
+          "fairDate": "2026-10-29",
+          "fairStartTime": "14:30",
+          "fairEndTime": "16:30",
+          "schoolName": "山东理工大学",
+          "fairAddress": "西校区赋能中心就业宣讲室"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "淄博"
+    },
+    {
+      "input": {
+        "id": "93654b985029884cd44a",
+        "title": "天津蓝巢电力检修有限公司2027届本科毕业生校园宣讲会",
+        "source_id": "sdut-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/sdut/school/TblCareerFairReviewRecord/detail/202610221515503c889d0a",
+        "structured": {
+          "fairDate": "2026-11-06",
+          "fairStartTime": "09:30",
+          "fairEndTime": "11:30",
+          "schoolName": "山东理工大学",
+          "fairAddress": "西校区13号教学楼301教室（电气与电子工程学院）"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "淄博"
+    },
+    {
+      "input": {
+        "id": "a52137af3e0f19803b57",
+        "title": "山东创新精密科技有限公司招聘宣讲会",
+        "source_id": "lcu-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/lcu/school/TblCareerFairReviewRecord/detail/20261017113151bf8935d9",
+        "structured": {
+          "fairDate": "2026-10-26",
+          "fairStartTime": "16:00",
+          "fairEndTime": "18:00",
+          "schoolName": "聊城大学",
+          "fairAddress": "就业服务大厅宣讲室【东校区】"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "聊城"
+    },
+    {
+      "input": {
+        "id": "cc42fea025a48f17d1f7",
+        "title": "聊城市东阿县南湖行知学校2027年教师招聘",
+        "source_id": "lcu-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/lcu/school/TblCareerFairReviewRecord/detail/20261022154345411a47bc",
+        "structured": {
+          "fairDate": "2026-10-28",
+          "fairStartTime": "14:00",
+          "fairEndTime": "16:00",
+          "schoolName": "聊城大学",
+          "fairAddress": "就业服务大厅宣讲室【东校区】"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "聊城"
+    },
+    {
+      "input": {
+        "id": "1fc4c48b44c63c976ae6",
+        "title": "先声药业2027届校园招聘简章",
+        "source_id": "sdsmu-talks",
+        "source_url": "https://school.gxjy.sdei.edu.cn/sdsmu/school/TblCareerFairReviewRecord/detail/202610231656515b53e0e2",
+        "structured": {
+          "fairDate": "2026-10-29",
+          "fairStartTime": "15:00",
+          "fairEndTime": "17:00",
+          "schoolName": "山东第二医科大学",
+          "fairAddress": "乐道书院学促中心"
+        }
+      },
+      "observed_city": null,
+      "expected_city": "潍坊"
+    }
+  ],
+  "work_location_conflict": {
+    "input": {
+      "id": "024e6c6324e814578c45",
+      "title": "微玖（苏州）光电科技有限公司 · 前台文员接待",
+      "company": "微玖（苏州）光电科技有限公司",
+      "source_id": "qdu-positions",
+      "source_url": "https://school.gxjy.sdei.edu.cn/qdu/school/companyissueinfo/edit1/27971",
+      "cities": [
+        "北京",
+        "苏州"
+      ],
+      "location_evidence": [
+        "工作地点：北京市大兴区",
+        "工作地点：苏州（标题/单位标注地点）"
+      ]
+    },
+    "verified_workplace": "北京市大兴区",
+    "expected_exact_cities": [
+      "北京"
+    ],
+    "expected_excluded_company_city": "苏州",
+    "verified_on": "2026-10-25"
+  },
+  "missing_city_cases": [
+    {
+      "kind": "synthetic_regression_input",
+      "evidence": "工作地点：无锡市",
+      "expected_exact_cities": [
+        "无锡"
+      ]
+    },
+    {
+      "kind": "synthetic_regression_input",
+      "evidence": "工作地点：南通市",
+      "expected_exact_cities": [
+        "南通"
+      ]
+    },
+    {
+      "kind": "synthetic_regression_input",
+      "evidence": "工作地点：常州市",
+      "expected_exact_cities": [
+        "常州"
+      ]
+    },
+    {
+      "kind": "synthetic_regression_input",
+      "evidence": "工作地点：泉州市",
+      "expected_exact_cities": [
+        "泉州"
+      ]
+    },
+    {
+      "kind": "synthetic_regression_input",
+      "evidence": "工作地点：温州市",
+      "expected_exact_cities": [
+        "温州"
+      ]
+    },
+    {
+      "kind": "synthetic_regression_input",
+      "evidence": "工作地点：呼和浩特市",
+      "expected_exact_cities": [
+        "呼和浩特"
+      ]
+    }
+  ]
+}

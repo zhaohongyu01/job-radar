@@ -22,7 +22,7 @@ export function TalkEvents({ job, city, now, limit, onOpen }: {
         const href = externalUrl(event.url);
         const ended = Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) < now;
         return <li key={event.id}>
-          <span className="talk-event-date">{talkDateLabel(event)}{ended && <small> · 已结束</small>}</span>
+          <span className="talk-event-date">{talkDateLabel(event)}{event.status === 'cancelled' ? <small> · 已取消</small> : ended && <small> · 已结束</small>}</span>
           <span className="talk-event-place">{city === '全部城市' && event.city ? `${event.city} · ` : ''}{event.school} · {event.venue}</span>
           {href && <a href={href} target="_blank" rel="noopener noreferrer" onClick={onOpen} aria-label={`查看${event.school}${talkDateLabel(event)}宣讲会原文`}>原文<ArrowUpRight size={13} /></a>}
         </li>;

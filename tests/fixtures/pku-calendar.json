@@ -1,0 +1,32 @@
+{
+  "state": 1,
+  "object": {
+    "totalPage": 32,
+    "list": [
+      {
+        "title": "智算无界 向新而生——之江实验室2027届校园招聘宣讲会",
+        "url": "/f/recruitmentFair/show?recruitmentFairId=f38414e0a3ff461496ab32e23324ea9c",
+        "fieldExport": "新太阳学生中心212室",
+        "startTime": "2026-11-17 14:00:00",
+        "id": "f38414e0a3ff461496ab32e23324ea9c",
+        "endTime": "2026-11-17 16:00:00"
+      },
+      {
+        "title": "上海机场(集团)有限公司2027年度校园招聘",
+        "url": "/f/recruitmentFair/show?recruitmentFairId=7b014486e28249f39ac191788c7d5d03",
+        "fieldExport": "新太阳学生中心212室",
+        "startTime": "2026-11-12 14:00:00",
+        "id": "7b014486e28249f39ac191788c7d5d03",
+        "endTime": "2026-11-12 16:00:00"
+      },
+      {
+        "title": "上海国际集团2027“菁英计划“校园招聘宣讲会",
+        "url": "/f/recruitmentFair/show?recruitmentFairId=1695ed17e72e4ce893240622802956d1",
+        "fieldExport": "英杰月光厅",
+        "startTime": "2026-11-11 19:00:00",
+        "id": "1695ed17e72e4ce893240622802956d1",
+        "endTime": "2026-11-11 21:00:00"
+      }
+    ]
+  }
+}

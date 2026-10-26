@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "campus-1",
+      "school": "山东财经大学",
+      "venue_pattern": "燕山|舜耕|圣井|章丘",
+      "city": "济南",
+      "evidence_url": "https://www.sdufe.edu.cn/xxgk_/xxjj.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-2",
+      "school": "山东大学",
+      "venue_pattern": "中心校区|洪家楼校区|趵突泉校区|千佛山校区|软件园校区|兴隆山校区",
+      "city": "济南",
+      "evidence_url": "https://www.sdu.edu.cn/xxgk/sdjj.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-3",
+      "school": "山东中医药大学",
+      "venue_pattern": "长清|千佛山",
+      "city": "济南",
+      "evidence_url": "https://www.sdutcm.edu.cn/xxgk/xxjj.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-4",
+      "school": "山东师范大学",
+      "venue_pattern": "长清湖|千佛山",
+      "city": "济南",
+      "evidence_url": "https://www.sdnu.edu.cn/xxgk/xxjj.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-5",
+      "school": "山东建筑大学",
+      "venue_pattern": "博文楼|西南教学组团|雪山书苑",
+      "city": "济南",
+      "evidence_url": "https://www.sdjzu.edu.cn/xxgk/xxjj.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-6",
+      "school": "齐鲁工业大学",
+      "venue_pattern": "长清|历城|彩石",
+      "city": "济南",
+      "evidence_url": "https://zsb.qlu.edu.cn/home/article/faq_details/87",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-7",
+      "school": "青岛科技大学",
+      "venue_pattern": "崂山|四方|中德(?:生态园|校区)",
+      "city": "青岛",
+      "evidence_url": "https://zs.qust.edu.cn/lxwm.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-8",
+      "school": "济南大学",
+      "venue_pattern": "主校区|舜耕校区",
+      "city": "济南",
+      "evidence_url": "https://www.ujn.edu.cn/xxgk/xxjj.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-9",
+      "school": "鲁东大学",
+      "venue_pattern": "鲁东大学北区|北校区",
+      "city": "烟台",
+      "evidence_url": "https://www.ldu.edu.cn/xxgk/xxjj.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-10",
+      "school": "山东工商学院",
+      "venue_pattern": "东校",
+      "city": "烟台",
+      "evidence_url": "https://new.sdtbu.edu.cn/xxgk/xxjj.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-11",
+      "school": "烟台大学",
+      "venue_pattern": "北校区|主校区|南校区|八角湾校区",
+      "city": "烟台",
+      "evidence_url": "https://www.ytu.edu.cn/info/1003/12777.htm",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-12",
+      "school": "山东航空学院",
+      "venue_pattern": "山东航空学院",
+      "city": "滨州",
+      "evidence_url": "https://www.sdua.edu.cn/",
+      "verified_on": "2026-10-24"
+    },
+    {
+      "id": "campus-13",
+      "school": "山东理工大学",
+      "venue_pattern": "东校区|西校区",
+      "city": "淄博",
+      "evidence_url": "https://www.sdut.edu.cn/xxgk/xxjj.htm",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "campus-14",
+      "school": "聊城大学",
+      "venue_pattern": "东校区",
+      "city": "聊城",
+      "evidence_url": "https://kyc.lcu.edu.cn/",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "campus-15",
+      "school": "山东第二医科大学",
+      "venue_pattern": "乐道书院学促中心",
+      "city": "潍坊",
+      "evidence_url": "https://www.sdsmu.edu.cn/4227/list.htm",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "campus-16",
+      "school": "山东大学",
+      "venue_pattern": "青岛校区",
+      "city": "青岛",
+      "evidence_url": "https://www.qd.sdu.edu.cn/",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "campus-17",
+      "school": "山东大学",
+      "venue_pattern": "威海校区|山东大学（威海）",
+      "city": "威海",
+      "evidence_url": "https://www.wh.sdu.edu.cn/",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "nankai-main-campus",
+      "school": "南开大学",
+      "venue_pattern": "津南校区|八里台校区",
+      "city": "天津",
+      "evidence_url": "https://career.nankai.edu.cn/recruitment/index2.html",
+      "verified_on": "2026-10-26"
+    },
+    {
+      "id": "pku-campus-calendar",
+      "school": "北京大学",
+      "venue_pattern": "新太阳学生中心|英杰",
+      "city": "北京",
+      "evidence_url": "https://scc.pku.edu.cn/frontpage/pku/html/recruitmentFairList.html?fairType=1",
+      "verified_on": "2026-10-26"
+    }
+  ]
+}

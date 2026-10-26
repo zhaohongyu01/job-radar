@@ -1,0 +1,33 @@
+/* Additions to the current design; keep the legacy workspace stylesheet inactive. */
+[data-slot="sheet-content"] { z-index: 100 !important; }
+.backup-import-sheet { width: min(540px, 100vw) !important; max-width: 540px !important; padding: 16px; overflow-y: auto; background: var(--surface, #fffefa); }
+.backup-import-sheet [data-slot="sheet-header"] { padding-right: 28px; }
+.backup-import-sheet .application-tracker { overflow-wrap: anywhere; }
+.agenda-controls { display: grid; gap: 8px; margin: 12px 0; }
+.agenda-controls label { display: grid; gap: 4px; font-size: 12px; color: var(--muted-foreground, #59655e); }
+.agenda-controls input:not([type="checkbox"]), .agenda-controls select { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border, #ddd); border-radius: 7px; background: var(--card, #fff); color: inherit; }
+.agenda-controls label.check-row { display: flex; align-items: center; gap: 6px; }
+.agenda-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0; }
+.agenda-event { min-width: 0; display: grid; gap: 4px; }
+.agenda-event > small { font-size: 11px; color: var(--muted-foreground, #68756d); }
+.agenda-event-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 11px; }
+.agenda-event-actions button { display: inline-flex; align-items: center; gap: 3px; color: inherit; }
+.agenda-event-actions a { color: var(--primary, #205941); }
+.agenda-changed { color: #a64b18 !important; }
+.application-tracker { display: grid; gap: 10px; margin: 16px 0; padding: 14px; border: 1px solid var(--border, #ddd); border-radius: 10px; }
+.application-tracker label { display: grid; gap: 5px; font-size: 13px; min-width: 0; }
+.application-tracker input, .application-tracker select, .application-tracker textarea { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--border, #ddd); border-radius: 6px; background: var(--card, #fff); color: inherit; }
+.personal-reminders { padding: 10px 14px; display: grid; gap: 4px; font-size: 12px; color: var(--muted-foreground, #68756d); }
+.personal-action-panel { display: grid; gap: 6px; max-width: 440px; min-width: 0; }
+.personal-reminders small { line-height: 1.5; }
+.plan-card .agenda-controls { font-size: 12px; }
+.agenda-event-actions button { width: auto; padding: 0; }
+.opp-aside { min-width: 0; }
+.opp-salary { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .personal-action-panel { max-width: 100%; width: 100%; }
+  .result-subbar, .scope-bar { min-width: 0; max-width: 100%; }
+  .scope-bar .seg { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .scope-bar .seg button { max-width: 100%; }
+  .agenda-dates { grid-template-columns: 1fr; }
+}

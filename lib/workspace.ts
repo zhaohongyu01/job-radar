@@ -7,6 +7,7 @@ export function personalViewFilters(view: Filters['view']): Filters {
     ...defaultFilters,
     view,
     city: '全部城市',
+    workCities: [],
     year: '全部',
     showExpired: true,
   };
@@ -55,6 +56,7 @@ export function upcomingTalks(
       continue;
     for (const event of job.talk_events ??
       (job.talk_event ? [job.talk_event] : [])) {
+      if (event.status === 'cancelled') continue;
       if (city !== '全部城市' && event.city !== city) continue;
       const end = Date.parse(
         `${event.date}T${event.end_time || '23:59'}:00+08:00`,

@@ -57,7 +57,7 @@ class CampusCalendarTests(unittest.TestCase):
                             ('威海校区报告厅', '威海'), ('线上宣讲（济南）', None), ('某报告厅', None)]:
             item['structured']['fairAddress'] = venue
             self.assertEqual(c.calendar_record(item, self.source)['talk_event']['city'], city)
-        self.assertIsNone(c.calendar_record(dict(item, title='已取消 某企业'), self.source))
+        self.assertEqual(c.calendar_record(dict(item, title='已取消 某企业'), self.source)['talk_event']['status'], 'cancelled')
 
     def test_sdu_recruitment_section_excludes_event_and_employer_address(self):
         html = '<div class="ggName">甲公司</div><div class="bd_one">企业信息 北京</div>' \
@@ -117,7 +117,7 @@ class CampusCalendarTests(unittest.TestCase):
         self.assertEqual(updated['talk_event']['venue'], '主校区新报告厅')
         self.assertNotEqual(c.compute_job_fingerprint(updated), c.compute_job_fingerprint(old))
         cancelled = c.calendar_record(dict(item, title='已取消：甲公司'), self.source, old)
-        self.assertIsNone(c.public_record(cancelled)['talk_event'])
+        self.assertEqual(c.public_record(cancelled)['talk_event']['status'], 'cancelled')
 
     def test_head_pass_saves_all_list_events_without_detail_requests_and_roundtrips(self):
         found = [event_item(i) for i in range(40)]
@@ -172,8 +172,10 @@ class CampusCalendarTests(unittest.TestCase):
             state = json.loads((Path(tmp) / 'state.json').read_text(encoding='utf-8'))
             snapshot = c.export_snapshot(state, Path(tmp))
             self.assertEqual(state['pending'][self.source['id']], [])
-            self.assertEqual(len(snapshot['jobs']), 1)
-            self.assertEqual(snapshot['jobs'][0]['talk_event']['date'], past['structured']['fairDate'])
+            self.assertEqual(len(snapshot['jobs']), 2)  # keep a cancellation tombstone for saved calendars
+            cancelled = [j for j in snapshot['jobs'] if j['talk_event']['status'] == 'cancelled']
+            self.assertEqual(len(cancelled), 1)
+            self.assertEqual(cancelled[0]['talk_event']['date'], item['structured']['fairDate'])
 
     def test_bysjy_calendar_uses_venue_not_employer_city(self):
         source = next(s for s in c.SOURCES if s['id'] == 'sdjzu-talks')
@@ -185,7 +187,7 @@ class CampusCalendarTests(unittest.TestCase):
         self.assertEqual(job['talk_event']['city'], '济南')
         self.assertEqual(job['cities'], [])
         row['career_state'] = '1'
-        self.assertIsNone(c.calendar_record(bysjy_calendar({'code': 1, 'data': [row]}, source)[0], source))
+        self.assertEqual(c.calendar_record(bysjy_calendar({'code': 1, 'data': [row]}, source)[0], source)['talk_event']['status'], 'cancelled')
         with self.assertRaises(ValueError):
             bysjy_calendar({'code': 0, 'msg': 'error'}, source)
 

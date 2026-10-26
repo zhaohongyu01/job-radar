@@ -62,10 +62,11 @@ HEADER_NOTES = re.compile(
     re.I,
 )
 
-SHANDONG_CITIES = [
-    '济南', '青岛', '淄博', '枣庄', '东营', '烟台', '潍坊', '济宁',
-    '泰安', '威海', '日照', '临沂', '德州', '聊城', '滨州', '菏泽',
-]
+try:
+    from city_registry import PROVINCE_CITIES, cities_in_text
+except ImportError:
+    from scripts.city_registry import PROVINCE_CITIES, cities_in_text
+SHANDONG_CITIES = PROVINCE_CITIES['山东']
 
 
 def clean_cell(text: Any) -> str:
@@ -568,10 +569,10 @@ def enrich_job_with_positions(job: Dict[str, Any], positions: List[Dict[str, Any
     location_evidence = list(job.get('location_evidence') or [])
     for p in positions:
         pos_city = p.get('city', '')
-        for c in SHANDONG_CITIES:
-            if c in pos_city and c not in cities:
+        for c in cities_in_text(pos_city, infer_counties=True):
+            if c not in cities:
                 cities.append(c)
-                location_evidence.append(f'岗位表标注工作地点：{c}（{p.get("name", "")}）')
+                location_evidence.append(f'岗位表标注工作地点：{c}')
 
     job['cities'] = cities
     job['location_evidence'] = location_evidence[:15]

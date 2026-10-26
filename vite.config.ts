@@ -3,7 +3,7 @@ import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
 import { defineConfig } from 'vite';
 import hostingConfig from './.openai/hosting.json';
-import { previewDataProxy } from './vite.preview-data';
+import { previewDataProxy, previewDataDirectory } from './vite.preview-data';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   '00000000-0000-4000-8000-000000000000';
@@ -52,6 +52,7 @@ export default defineConfig(async () => {
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
     },
     plugins: [
+      previewDataDirectory(),
       vinext(),
       sites(),
       cloudflare({

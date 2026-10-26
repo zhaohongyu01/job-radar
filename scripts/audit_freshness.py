@@ -69,7 +69,9 @@ def audit(snapshot, now=None):
             age = None
         sources.append({'id': source['id'], 'name': source.get('name', source['id']),
             'status': source.get('status', 'unknown'), 'last_list_read_at': stamp, 'age_hours': age,
-            'pending_details': source.get('pending_details', 0), 'coverage': source.get('coverage', ''),
+            'pending_details': source.get('pending_details', 0),
+            'oldest_pending_at': source.get('oldest_pending_at'), 'pending_age_unknown': source.get('pending_age_unknown'),
+            'coverage': source.get('coverage', ''),
             'error': (source.get('errors') or [{}])[0].get('reason', '')})
     events = {}
     for job in jobs:

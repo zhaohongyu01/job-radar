@@ -29,7 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check Python syntax without collection
-        run: python -m compileall -q scripts tests
+        run: |
+          python -m compileall -q scripts tests
+          python scripts/generate_city_registry.py --check
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:

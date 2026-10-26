@@ -611,7 +611,7 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(calls[0],(1,''))
             self.assertEqual(calls[1],(2,''))
             self.assertTrue(all(page==1 for page,_ in calls[2:]))
-            self.assertEqual(len(calls),len(c.CITIES)+2)
+            self.assertEqual(len(calls),len(c.collection_cities())+1)
             snapshot=json.loads((Path(temp)/'jobs.json').read_text(encoding='utf8'))
             self.assertEqual(snapshot['schema_version'],2)
             self.assertEqual(snapshot['sources'][0]['status'],'partial')

@@ -1,0 +1,816 @@
+{
+  "version": 1,
+  "verified_on": "2026-10-26",
+  "note": "城市仅描述来源或校区所在地，不用于推断岗位工作地；计划清单不等于全市高校总数。",
+  "sources": [
+    {
+      "source_id": "nankai",
+      "channel": "announcements",
+      "school": "南开大学",
+      "cities": [
+        "天津"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "jinan",
+      "channel": "announcements",
+      "school": null,
+      "cities": [
+        "济南"
+      ],
+      "scope": "local_official",
+      "connected": true
+    },
+    {
+      "source_id": "sdu",
+      "channel": "announcements",
+      "school": "山东大学",
+      "cities": [
+        "威海",
+        "济南",
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "hrss",
+      "channel": "announcements",
+      "school": null,
+      "cities": [
+        "济南"
+      ],
+      "scope": "local_official",
+      "connected": true
+    },
+    {
+      "source_id": "jinan-employment",
+      "channel": "announcements",
+      "school": null,
+      "cities": [
+        "济南"
+      ],
+      "scope": "local_official",
+      "connected": true
+    },
+    {
+      "source_id": "gzw",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "sdu-talks",
+      "channel": "calendar",
+      "school": "山东大学",
+      "cities": [
+        "威海",
+        "济南",
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdnu-graduate-talks",
+      "channel": "calendar",
+      "school": "山东师范大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdjzu-talks",
+      "channel": "calendar",
+      "school": "山东建筑大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdjt-talks",
+      "channel": "calendar",
+      "school": "山东交通学院",
+      "cities": [],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "jobsdufe-announcements",
+      "channel": "announcements",
+      "school": "山东财经大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "jobsdufe-positions",
+      "channel": "jobs",
+      "school": "山东财经大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ujn-announcements",
+      "channel": "announcements",
+      "school": "济南大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ujn-positions",
+      "channel": "jobs",
+      "school": "济南大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdut-announcements",
+      "channel": "announcements",
+      "school": "山东理工大学",
+      "cities": [
+        "淄博"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdut-positions",
+      "channel": "jobs",
+      "school": "山东理工大学",
+      "cities": [
+        "淄博"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qlu-announcements",
+      "channel": "announcements",
+      "school": "齐鲁工业大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qlu-positions",
+      "channel": "jobs",
+      "school": "齐鲁工业大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdnu-announcements",
+      "channel": "announcements",
+      "school": "山东师范大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdnu-positions",
+      "channel": "jobs",
+      "school": "山东师范大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdsmu-announcements",
+      "channel": "announcements",
+      "school": "山东第二医科大学",
+      "cities": [
+        "潍坊"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdsmu-positions",
+      "channel": "jobs",
+      "school": "山东第二医科大学",
+      "cities": [
+        "潍坊"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qust-announcements",
+      "channel": "announcements",
+      "school": "青岛科技大学",
+      "cities": [
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qust-positions",
+      "channel": "jobs",
+      "school": "青岛科技大学",
+      "cities": [
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qdu-announcements",
+      "channel": "announcements",
+      "school": "青岛大学",
+      "cities": [
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qdu-positions",
+      "channel": "jobs",
+      "school": "青岛大学",
+      "cities": [
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ytu-announcements",
+      "channel": "announcements",
+      "school": "烟台大学",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ytu-positions",
+      "channel": "jobs",
+      "school": "烟台大学",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ldu-announcements",
+      "channel": "announcements",
+      "school": "鲁东大学",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ldu-positions",
+      "channel": "jobs",
+      "school": "鲁东大学",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdfmu-announcements",
+      "channel": "announcements",
+      "school": "山东第一医科大学",
+      "cities": [
+        "泰安",
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdfmu-positions",
+      "channel": "jobs",
+      "school": "山东第一医科大学",
+      "cities": [
+        "泰安",
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "bzmc-announcements",
+      "channel": "announcements",
+      "school": "滨州医学院",
+      "cities": [
+        "滨州",
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "bzmc-positions",
+      "channel": "jobs",
+      "school": "滨州医学院",
+      "cities": [
+        "滨州",
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "lcu-announcements",
+      "channel": "announcements",
+      "school": "聊城大学",
+      "cities": [
+        "聊城"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "lcu-positions",
+      "channel": "jobs",
+      "school": "聊城大学",
+      "cities": [
+        "聊城"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "lyu-announcements",
+      "channel": "announcements",
+      "school": "临沂大学",
+      "cities": [
+        "临沂"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "lyu-positions",
+      "channel": "jobs",
+      "school": "临沂大学",
+      "cities": [
+        "临沂"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdtbu-announcements",
+      "channel": "announcements",
+      "school": "山东工商学院",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdtbu-positions",
+      "channel": "jobs",
+      "school": "山东工商学院",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "dzu-announcements",
+      "channel": "announcements",
+      "school": "德州学院",
+      "cities": [
+        "德州"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "dzu-positions",
+      "channel": "jobs",
+      "school": "德州学院",
+      "cities": [
+        "德州"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdua-announcements",
+      "channel": "announcements",
+      "school": "山东农业工程学院",
+      "cities": [
+        "济南",
+        "淄博"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdua-positions",
+      "channel": "jobs",
+      "school": "山东农业工程学院",
+      "cities": [
+        "济南",
+        "淄博"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdutcm-announcements",
+      "channel": "announcements",
+      "school": "山东中医药大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdutcm-positions",
+      "channel": "jobs",
+      "school": "山东中医药大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "jobsdufe-talks",
+      "channel": "calendar",
+      "school": "山东财经大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ujn-talks",
+      "channel": "calendar",
+      "school": "济南大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdut-talks",
+      "channel": "calendar",
+      "school": "山东理工大学",
+      "cities": [
+        "淄博"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qlu-talks",
+      "channel": "calendar",
+      "school": "齐鲁工业大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdnu-talks",
+      "channel": "calendar",
+      "school": "山东师范大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdsmu-talks",
+      "channel": "calendar",
+      "school": "山东第二医科大学",
+      "cities": [
+        "潍坊"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qust-talks",
+      "channel": "calendar",
+      "school": "青岛科技大学",
+      "cities": [
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qdu-talks",
+      "channel": "calendar",
+      "school": "青岛大学",
+      "cities": [
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ytu-talks",
+      "channel": "calendar",
+      "school": "烟台大学",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "ldu-talks",
+      "channel": "calendar",
+      "school": "鲁东大学",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdfmu-talks",
+      "channel": "calendar",
+      "school": "山东第一医科大学",
+      "cities": [
+        "泰安",
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "bzmc-talks",
+      "channel": "calendar",
+      "school": "滨州医学院",
+      "cities": [
+        "滨州",
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "lcu-talks",
+      "channel": "calendar",
+      "school": "聊城大学",
+      "cities": [
+        "聊城"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "lyu-talks",
+      "channel": "calendar",
+      "school": "临沂大学",
+      "cities": [
+        "临沂"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdtbu-talks",
+      "channel": "calendar",
+      "school": "山东工商学院",
+      "cities": [
+        "烟台"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "dzu-talks",
+      "channel": "calendar",
+      "school": "德州学院",
+      "cities": [
+        "德州"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdua-talks",
+      "channel": "calendar",
+      "school": "山东农业工程学院",
+      "cities": [
+        "济南",
+        "淄博"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "sdutcm-talks",
+      "channel": "calendar",
+      "school": "山东中医药大学",
+      "cities": [
+        "济南"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "upc",
+      "channel": "announcements",
+      "school": "中国石油大学（华东）",
+      "cities": [
+        "青岛"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "qdhrss",
+      "channel": "announcements",
+      "school": null,
+      "cities": [
+        "青岛"
+      ],
+      "scope": "local_official",
+      "connected": true
+    },
+    {
+      "source_id": "wondercv",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "offerjack",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "sdei-news",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "boc-recruitment",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "psbc-campus",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "psbc-social",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "taiping-campus",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "taiping-social",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "haier-campus",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "haier-social",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "hisense-campus",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "hisense-social",
+      "channel": "announcements",
+      "school": null,
+      "cities": [],
+      "scope": "national_supplement",
+      "connected": true
+    },
+    {
+      "source_id": "nankai-talks",
+      "channel": "calendar",
+      "school": "南开大学",
+      "cities": [
+        "天津"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    },
+    {
+      "source_id": "pku-talks",
+      "channel": "calendar",
+      "school": "北京大学",
+      "cities": [
+        "北京"
+      ],
+      "scope": "school_feed",
+      "connected": true
+    }
+  ],
+  "planned": [
+    {
+      "coverage_key": "upc-calendar",
+      "school": "中国石油大学（华东）",
+      "cities": [
+        "青岛"
+      ],
+      "channel": "calendar",
+      "status": "blocked",
+      "url": "https://career.upc.edu.cn/career/xjhxx",
+      "reason": "官方接口明确要求登录"
+    },
+    {
+      "coverage_key": "fudan-calendar",
+      "school": "复旦大学",
+      "cities": [
+        "上海"
+      ],
+      "channel": "calendar",
+      "status": "blocked",
+      "url": "https://career.fudan.edu.cn/",
+      "reason": "官方公开页依赖接口认证，尚未取得无需认证的日程来源"
+    }
+  ]
+}

@@ -22,19 +22,24 @@ export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: V
     sort: ['newest', 'deadline_asc', 'salary_desc'],
     changeType: ['全部', '有变更', '截止延期', '补录招募', '岗位调整', '考核阶段'],
     radarFocus: ['none', 'today', 'supplement', 'urgent', 'change'],
+    employmentType: ['all', 'full_time', 'internship', 'part_time'],
+    validity: ['all', 'confirmed_open', 'long_term', 'unconfirmed'],
   } as const;
   for (const key of Object.keys(enums) as (keyof typeof enums)[]) {
     const field = fields[key];
     if (typeof field === 'string' && (enums[key] as readonly string[]).includes(field))
       Object.assign(result.filters, { [key]: field });
   }
-  for (const key of ['includeUncertain', 'showExpired', 'onlyNew', 'onlyUnread'] as const) {
+  for (const key of ['includeUncertain', 'showExpired', 'onlyNew', 'onlyUnread', 'includeRelatedTalks'] as const) {
     if (typeof fields[key] === 'boolean') result.filters[key] = fields[key];
   }
-  for (const key of ['query', 'education'] as const) {
+  for (const key of ['query', 'education', 'major'] as const) {
     if (typeof fields[key] === 'string') result.filters[key] = fields[key].slice(0, 200);
   }
-  if (typeof fields.city === 'string' && /^[\u4e00-\u9fff]{2,12}$/.test(fields.city)) result.filters.city = fields.city;
+  if (typeof fields.city === 'string' && /^[\u4e00-\u9fff]{2,24}$/.test(fields.city)) result.filters.city = fields.city;
+  if (Array.isArray(fields.workCities)) result.filters.workCities = [...new Set(fields.workCities.filter((v): v is string => typeof v === 'string' && /^[\u4e00-\u9fff]{2,24}$/.test(v) && v !== '全部城市'))].slice(0, 20);
+  // Existing saved browsing used local talks as an alternative to work-city matching.
+  if (!Object.hasOwn(fields, 'includeRelatedTalks')) result.filters.includeRelatedTalks = true;
   if (typeof fields.year === 'string' && /^(全部|20\d{2})$/.test(fields.year)) result.filters.year = fields.year;
   return result;
 }

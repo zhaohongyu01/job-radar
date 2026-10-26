@@ -1,6 +1,6 @@
 'use client';
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 
 import {
   ChevronDown,
@@ -18,6 +18,8 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import type { Filters, Snapshot } from '@/lib/jobs';
+import { selectedWorkCities } from '@/lib/jobs';
+import { ALL_CITIES } from '@/lib/cities';
 
 function Choice({
   label,
@@ -35,12 +37,12 @@ function Choice({
       <span className="field-label">{label}</span>
       <Select value={value} onValueChange={(v) => onChange(v ?? '全部')}>
         <SelectTrigger className="field-select" aria-label={label}>
-          <SelectValue />
+          <SelectValue>{({ all: '全部', full_time: '全职', internship: '实习', part_time: '兼职', confirmed_open: '近期核验在招', long_term: '原文长期招聘', unconfirmed: '有效性待核实' } as Record<string, string>)[value] || value}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           {options.map((v) => (
             <SelectItem key={v} value={v}>
-              {v}
+              {({ all: '全部', full_time: '全职', internship: '实习', part_time: '兼职', confirmed_open: '近期核验在招', long_term: '原文长期招聘', unconfirmed: '有效性待核实' } as Record<string, string>)[v] || v}
             </SelectItem>
           ))}
         </SelectContent>
@@ -121,6 +123,11 @@ export function FilterSidebar({
   className?: string;
 }) {
   const educationId = useId();
+  const cityListId = useId();
+  const majorId = useId();
+  const [cityQuery, setCityQuery] = useState('');
+  const selectedCities = selectedWorkCities(filters);
+  const cityOptions = Array.from(new Set([...ALL_CITIES, ...(data?.cities || []), ...selectedCities]));
   return (
     <aside className={`filter-rail ${className}`} aria-label="筛选条件">
       <div className="rail-head">
@@ -130,12 +137,21 @@ export function FilterSidebar({
           重置
         </button>
       </div>
-      <Choice
-        label="工作城市"
-        value={filters.city}
-        options={Array.from(new Set(['全部城市', filters.city, ...(data?.cities ?? ['济南'])]))}
-        onChange={(v) => onChange('city', v)}
-      />
+      <div className="field">
+        <label className="field-label" htmlFor={cityListId}>意向工作城市（可多选）</label>
+        <Input id={cityListId} list={`${cityListId}-options`} value={cityQuery} placeholder="输入城市名称后添加"
+          onChange={(event) => setCityQuery(event.target.value)} />
+        <datalist id={`${cityListId}-options`}>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</datalist>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={!cityOptions.includes(cityQuery) || selectedCities.includes(cityQuery)}
+          onClick={() => { onChange('workCities', [...selectedCities, cityQuery]); setCityQuery(''); }}>添加城市</button>
+        <div className="chip-row">
+          {!selectedCities.length && <span className="chip">全部城市</span>}
+          {selectedCities.map((city) => <button key={city} type="button" className="chip" aria-label={`移除工作城市${city}`}
+            onClick={() => onChange('workCities', selectedCities.filter((value) => value !== city))}>{city} ×</button>)}
+          {!!selectedCities.length && <button type="button" className="text-btn" onClick={() => onChange('workCities', [])}>全部城市</button>}
+        </div>
+        <small className="filter-help">按岗位工作地筛选；各城市的本地来源覆盖程度不同。</small>
+      </div>
       <PillChoice
         label="招聘类型"
         value={filters.type}
@@ -164,6 +180,8 @@ export function FilterSidebar({
         ]}
         onChange={(v) => onChange('sector', v)}
       />
+      <Choice label="工作性质" value={filters.employmentType || 'all'} options={['all', 'full_time', 'internship', 'part_time']}
+        onChange={(value) => onChange('employmentType', value as Filters['employmentType'])} />
       <Choice
         label="岗位方向"
         value={filters.direction}
@@ -191,6 +209,9 @@ export function FilterSidebar({
           onChange={(e) => onChange('education', e.target.value)}
           placeholder="不限，可输入本科"
         />
+      </label>
+      <label className="field" htmlFor={majorId}><span className="field-label">专业关键词（同一岗位匹配）</span>
+        <Input id={majorId} value={filters.major || ''} onChange={(event) => onChange('major', event.target.value)} placeholder="例如会计、软件工程" />
       </label>
       <details className="filter-more">
         <summary>
@@ -227,6 +248,9 @@ export function FilterSidebar({
           checked={filters.showExpired}
           onChange={(v) => onChange('showExpired', v)}
         />
+        <Toggle label="同时看本城宣讲关联机会（工作地另核）" checked={Boolean(filters.includeRelatedTalks)} onChange={(value) => onChange('includeRelatedTalks', value)} />
+        <Choice label="招聘有效性" value={filters.validity || 'all'} options={['all', 'confirmed_open', 'long_term', 'unconfirmed']}
+          onChange={(value) => onChange('validity', value as Filters['validity'])} />
         <p className="filter-help">
           默认只保留国内或地点未明确的机会；仅海外岗位自动排除。默认不限专业，可在搜索框输入专业名称；公告未写明的资格需查看原文。
         </p>

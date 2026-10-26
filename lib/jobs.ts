@@ -1,3 +1,8 @@
+import { PROVINCE_CITIES, citiesInText, workplaceEvidence } from './cities.ts';
+import { assessOpportunityValidity, deadlineTime } from './opportunity-validity.ts';
+import { positionMatches } from './eligibility.ts';
+import { PERSONAL_DETAIL_FIELDS, validatePersonalDetails, mergePersonalRecords } from './personal-records.ts';
+
 export function shanghaiDay(value: string | number): string {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const timestamp = typeof value === 'number' ? value : Date.parse(value);
@@ -77,6 +82,13 @@ export type TalkEvent = {
   school: string;
   venue: string;
   url: string;
+  city_resolution?: { method: 'explicit' | 'campus' | 'unknown'; rule_id?: string; reason?: string };
+  event_type?: 'talk' | 'interview' | 'test' | 'job_fair' | 'guidance' | 'other' | 'unknown';
+  mode?: 'offline' | 'online' | 'hybrid' | 'unknown';
+  status?: 'scheduled' | 'cancelled';
+  registration_url?: string;
+  access_policy?: string;
+  event_updated_at?: string;
 };
 
 export type Job = {
@@ -137,6 +149,9 @@ export type Job = {
   last_verified_at: string;
   revision: number;
   positions?: PositionRequirement[];
+  position_matches?: PositionRequirement[];
+  employment_type?: 'full_time' | 'internship' | 'part_time' | 'unknown';
+  availability_evidence?: { kind: 'open' | 'long_term'; text: string; checked_at?: string | null; url?: string; verified: boolean } | null;
   position_count?: number;
   sample_positions?: string[];
   majors?: string[];
@@ -166,6 +181,8 @@ export type Source = {
   last_list_read_at?: string | null;
   head_scan_at?: string | null;
   pending_details?: number;
+  oldest_pending_at?: string | null;
+  pending_age_unknown?: number;
   errors?: { url: string; reason: string }[];
 };
 export type Snapshot = {
@@ -179,14 +196,15 @@ export type Snapshot = {
   index_shards?: string[];
   index_count?: number;
   search_shards?: string[];
+  coverage_url?: string;
   cities: string[];
   jobs: Job[];
   sources: Source[];
 };
-export type Personal = Record<
-  string,
-  { saved?: boolean; applied?: boolean; hidden?: boolean; readAt?: string | null }
->;
+export type PersonalRecord = { saved?: boolean; applied?: boolean; hidden?: boolean; readAt?: string | null;
+  application_stage?: 'planned' | 'applied' | 'test' | 'interview' | 'offer' | 'rejected' | 'withdrawn';
+  applied_at?: string | null; next_action_at?: string | null; next_action_note?: string; notes?: string; personal_updated_at?: string | null };
+export type Personal = Record<string, PersonalRecord>;
 export type SortOrder = 'newest' | 'deadline_asc' | 'salary_desc';
 export type RadarFocus = 'none' | 'today' | 'supplement' | 'urgent' | 'change';
 export type Filters = {
@@ -209,6 +227,11 @@ export type Filters = {
   sort: SortOrder;
   changeType: ChangeTypeFilter;
   radarFocus: RadarFocus;
+  workCities?: string[];
+  includeRelatedTalks?: boolean;
+  employmentType?: 'all' | 'full_time' | 'internship' | 'part_time';
+  validity?: 'all' | 'confirmed_open' | 'long_term' | 'unconfirmed';
+  major?: string;
 };
 export const defaultFilters: Filters = {
   city: '济南',
@@ -230,7 +253,19 @@ export const defaultFilters: Filters = {
   sort: 'newest',
   changeType: '全部',
   radarFocus: 'none',
+  includeRelatedTalks: false,
+  employmentType: 'all',
+  validity: 'all',
+  major: '',
 };
+
+export function selectedWorkCities(filters: Filters): string[] {
+  return filters.workCities ?? (filters.city === '全部城市' ? [] : [filters.city]);
+}
+
+export function workCitiesLabel(filters: Filters): string {
+  return selectedWorkCities(filters).join(' / ') || '全部城市';
+}
 export function publicationDate(job: Job, now = Date.now()): string {
   const value = job.published_at || '';
   const today = new Date(now + 8 * 3600000).toISOString().slice(0, 10);
@@ -242,9 +277,10 @@ export function publicationText(job: Job, now = Date.now()): string {
 }
 
 export function isExpired(job: Job, now = Date.now()) {
+  if ((job.kind === '宣讲会' || (job.source_id || '').endsWith('-talks')) && job.talk_event?.status === 'cancelled') return true;
   if (job.listing_status === 'withdrawn') return true;
   if (job.deadline) {
-    const t = Date.parse(job.deadline);
+    const t = deadlineTime(job.deadline);
     return !Number.isNaN(t) && t < now;
   }
   return false;
@@ -407,6 +443,10 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
           }
         }
       }
+      if (job.position_matches?.length) {
+        const candidates = [...(existing.position_matches || []), ...job.position_matches];
+        existing.position_matches = [...new Map(candidates.map((p) => [JSON.stringify(p), p])).values()];
+      }
       if (job.positions?.length) {
         existing.positions = existing.positions ?? [];
         const posKey = (p: PositionRequirement) =>
@@ -538,7 +578,12 @@ export function personalFor(job: Job, personal: Personal) {
     readAt = duplicateRecords.flatMap((r) => (r.readAt ? [r.readAt] : [])).sort().at(-1);
   }
 
+  const details: Partial<PersonalRecord> = {};
+  for (const record of [...duplicateRecords].sort((a, b) => (a.personal_updated_at || '').localeCompare(b.personal_updated_at || '')).concat(master ? [master] : [])) {
+    for (const field of PERSONAL_DETAIL_FIELDS) if (Object.hasOwn(record, field)) Object.assign(details, { [field]: record[field] });
+  }
   return {
+    ...details,
     saved,
     applied,
     hidden,
@@ -551,19 +596,39 @@ export function isUnread(job: Job, personal: Personal) {
   return Date.parse(job.updated_at) > Date.parse(readAt);
 }
 export function mergePersonal(current: Personal, imported: Personal): Personal {
-  const result = { ...current };
-  for (const [id, record] of Object.entries(imported)) result[id] = { ...current[id], ...record };
-  return result;
+  return mergePersonalRecords(current, imported);
 }
 export function isDomestic(job: Job) {
   if (job.domestic_status === 'overseas') return false;
   if (job.domestic_status) return true;
-  const evidence = (job.location_evidence ?? []).join('\n');
+  const locationLines = workplaceEvidence(job.location_evidence ?? []);
+  const evidence = locationLines.join('\n');
   return !(
     /海外|国外|境外|境外地区|海外地区/.test(evidence) &&
     !job.cities.length &&
     !/国内|中国大陆|境内|全国|各地可选|不限城市|各地招聘|各省市/.test(evidence)
   );
+}
+const cityProvinces = new Map(Object.entries(PROVINCE_CITIES).flatMap(([province, cities]) => cities.map((city) => [city, province] as const)));
+const broadProvincePatterns = new Map(Object.keys(PROVINCE_CITIES).map((province) => [province,
+  new RegExp(`${province}(?:省)?[ \\t]*(?=$|[/、，,；;\\n]|各地|全省|不限|多个城市|分行辖属|各分支机构)`),
+]));
+const jobLocationFacts = new WeakMap<Job, { evidenceSource: string[] | undefined; citiesSource: string[];
+  evidence: string; detailEvidence: string; provinces: string[]; specificCities: string[] }>();
+
+function locationFacts(job: Job) {
+  const cached = jobLocationFacts.get(job);
+  if (cached && cached.evidenceSource === job.location_evidence && cached.citiesSource === job.cities) return cached;
+  const lines = workplaceEvidence(job.location_evidence ?? []);
+  const evidence = lines.join('\n');
+  const details = lines.filter((line) => /^(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)/.test(line));
+  const detailEvidence = details.join('\n');
+  const facts = { evidenceSource: job.location_evidence, citiesSource: job.cities, evidence,
+    detailEvidence: details.length ? detailEvidence : evidence,
+    provinces: Object.keys(PROVINCE_CITIES).filter((province) => evidence.includes(province)),
+    specificCities: citiesInText(detailEvidence, job.cities.length === 0) };
+  jobLocationFacts.set(job, facts);
+  return facts;
 }
 export function locationMatch(
   job: Job,
@@ -571,67 +636,19 @@ export function locationMatch(
 ): 'exact' | 'possible' | 'unknown' | 'none' {
   if (city === '全部城市' || job.cities.includes(city)) return 'exact';
   // Only recruitment location evidence counts; headquarters and body mentions do not.
-  const evidence = (job.location_evidence ?? []).join('\n');
-  const province = Object.entries(PROVINCE_CITIES).find(([, cities]) =>
-    cities.includes(city),
-  )?.[0];
-  const provinces = Object.keys(PROVINCE_CITIES).filter((p) =>
-    evidence.includes(p),
-  );
+  const { evidence, detailEvidence, provinces, specificCities } = locationFacts(job);
+  const province = cityProvinces.get(city);
   // A specific city in a recruitment-location line takes precedence over a
   // nearby province/national label. This prevents “上海、全国、海外” from
   // being presented as a possible Jinan opportunity.
-  const broadPattern = province && new RegExp(`${province}(?:省)?[ \\t]*(?=$|[/、，,；;\\n]|各地|全省|不限|多个城市|分行辖属|各分支机构)`);
-  const detailLocations = (job.location_evidence ?? []).filter((line) => /^(?:工作地点|工作城市|岗位地点|工作地域|招聘地点|招聘机构|工作区域|意向工作地|意向城市|工作地|招聘城市|所属分行|所属分公司)/.test(line));
-  const specificCities = Object.values(PROVINCE_CITIES)
-    .flat()
-    .filter((candidate) => detailLocations.some((line) => line.includes(candidate)));
+  const broadPattern = province && broadProvincePatterns.get(province);
   if (specificCities.includes(city)) return 'exact';
-  if (broadPattern && broadPattern.test(detailLocations.length ? detailLocations.join('\n') : evidence)) return 'possible';
+  if (broadPattern && broadPattern.test(detailEvidence)) return 'possible';
   if (specificCities.length) return 'none';
   if (/全国|不限城市|各地可选|各地招聘|各省市/.test(evidence)) return 'possible';
   if (job.cities.length || provinces.length) return 'none';
   return 'unknown';
 }
-
-const PROVINCE_CITIES: Record<string, string[]> = {
-  山东: '济南 青岛 淄博 枣庄 东营 烟台 潍坊 济宁 泰安 威海 日照 临沂 德州 聊城 滨州 菏泽'.split(
-    ' ',
-  ),
-  广东: '广州 深圳 珠海 东莞 佛山'.split(' '),
-  江苏: ['南京', '苏州'],
-  浙江: ['杭州', '宁波'],
-  安徽: ['合肥'],
-  福建: ['福州', '厦门'],
-  湖北: ['武汉'],
-  湖南: ['长沙'],
-  河南: ['郑州'],
-  陕西: ['西安'],
-  四川: ['成都'],
-  云南: ['昆明'],
-  贵州: ['贵阳'],
-  江西: ['南昌'],
-  广西: ['南宁'],
-  海南: ['海口'],
-  山西: ['太原'],
-  河北: ['石家庄'],
-  辽宁: ['沈阳', '大连'],
-  吉林: ['长春'],
-  黑龙江: ['哈尔滨'],
-  甘肃: ['兰州'],
-  青海: ['西宁'],
-  宁夏: ['银川'],
-  新疆: ['乌鲁木齐'],
-  西藏: ['拉萨'],
-  内蒙古: ['呼和浩特'],
-  北京: ['北京'],
-  天津: ['天津'],
-  上海: ['上海'],
-  重庆: ['重庆'],
-  香港: ['香港'],
-  澳门: ['澳门'],
-  台湾: ['台北'],
-};
 
 export function locationSummary(job: Job) {
   if (job.cities.length) return job.cities.join(' / ');
@@ -654,7 +671,7 @@ export function getDeadlineCountdown(
   now = Date.now(),
 ): DeadlineCountdown | null {
   if (!deadline) return null;
-  const target = Date.parse(deadline);
+  const target = deadlineTime(deadline);
   if (Number.isNaN(target)) return null;
   const diffMs = target - now;
   if (diffMs <= 0) {
@@ -692,6 +709,7 @@ export type SalaryRange = {
 export function parseSalaryRange(job: Job): SalaryRange | null {
   const title = job.title;
   const excerpt = job.excerpt || '';
+  let salaryContext = title;
 
   // 1. Check title end: (\n6000-8000元, (8k-15k), 20000元以上, 15~18W/年)
   let m = title.match(
@@ -708,6 +726,7 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
     const exMatch = excerpt.match(/薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]+)/);
     if (exMatch) {
       const rawText = exMatch[1].trim();
+      salaryContext = rawText;
       m = rawText.match(
         /(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*[-~至–]\s*(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?/,
       );
@@ -721,21 +740,22 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
   }
 
   if (!m) return null;
+  if (/\/天|\/日|\/小时|日薪|时薪|美元|港币|USD|HKD/i.test(salaryContext)) return null;
 
   let val1 = Number.parseFloat(m[1]);
   const unit1 = m[2] || '';
 
   const matchedStr = m[0];
   const isAnnual =
-    title.includes('/年') ||
-    excerpt.includes('年薪') ||
+    salaryContext.includes('/年') ||
+    salaryContext.includes('年薪') ||
     matchedStr.includes('/年') ||
     matchedStr.includes('年');
 
   if (isAbove) {
     if (['万', 'w', 'W'].includes(unit1)) val1 *= 10000;
     else if (['k', 'K'].includes(unit1)) val1 *= 1000;
-    if (isAnnual || (val1 >= 50000 && !matchedStr.includes('月') && !matchedStr.includes('/月'))) {
+    if (isAnnual) {
       val1 /= 12;
     }
     if (val1 < 1000) return null;
@@ -754,11 +774,7 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
     val2 *= 1000;
   }
 
-  if (
-    isAnnual ||
-    (['万', 'w', 'W'].includes(unit) && val1 >= 50000) ||
-    (val1 >= 50000 && !matchedStr.includes('月') && !matchedStr.includes('/月'))
-  ) {
+  if (isAnnual) {
     val1 /= 12;
     val2 /= 12;
   }
@@ -1100,9 +1116,20 @@ export function filterJobs(
       if (!isDomestic(j)) return false;
       if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
       if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
-      const location = locationMatch(j, f.city);
-      const talkInCity = j.talk_events?.some((event) => event.city === f.city) ?? false;
-      if (f.city !== '全部城市' && location !== f.locationScope && !talkInCity) return false;
+      const workCities = selectedWorkCities(f);
+      const matches = workCities.map((city) => locationMatch(j, city));
+      const location = matches.includes('exact') ? 'exact' : matches.includes('possible') ? 'possible' : matches.includes('unknown') ? 'unknown' : 'none';
+      const talkInCity = Boolean(f.includeRelatedTalks && f.locationScope === 'exact' && j.talk_events?.some((event) =>
+        workCities.includes(event.city || '') && event.status !== 'cancelled' && Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now,
+      ));
+      if (workCities.length && location !== f.locationScope && !talkInCity) return false;
+      if (f.validity && f.validity !== 'all' && assessOpportunityValidity(j, now).status !== f.validity) return false;
+      if (f.employmentType && f.employmentType !== 'all' && j.employment_type !== f.employmentType && !(f.includeUncertain && (!j.employment_type || j.employment_type === 'unknown'))) return false;
+      const positions = j.position_matches || j.positions;
+      if (positions?.length && (f.education || f.major || workCities.length || f.year !== '全部')) {
+        if (!positions.some((position) => positionMatches(position, { cities: workCities, education: f.education,
+          major: f.major || '', year: f.type === '校招' ? f.year : '全部', includeUnknown: f.includeUncertain }))) return false;
+      } else if (f.major && !(j.majors?.some((major) => major.includes(f.major!))) && !(f.includeUncertain && !j.majors?.length)) return false;
       if (
         f.type !== '全部' &&
         !j.types.includes(f.type) &&
@@ -1111,7 +1138,7 @@ export function filterJobs(
         return false;
       if (
         f.type === '校招' &&
-        f.year !== '全部' &&
+        f.year !== '全部' && !positions?.length &&
         !j.graduation_years.includes(f.year) &&
         !(f.includeUncertain && j.graduation_years.length === 0)
       )
@@ -1120,7 +1147,7 @@ export function filterJobs(
       if (f.direction !== '全部' && !j.directions.includes(f.direction))
         return false;
       if (
-        f.education &&
+        f.education && !positions?.length &&
         !j.education.includes(f.education) &&
         !(f.includeUncertain && j.education.includes('未明确'))
       )
@@ -1244,7 +1271,9 @@ export function validatePersonal(input: unknown): Personal {
     )
       throw Error('备份条目不正确');
     const row = value as Record<string, unknown>;
+    const details = validatePersonalDetails(row);
     for (const key of Object.keys(row)) {
+      if ((PERSONAL_DETAIL_FIELDS as readonly string[]).includes(key)) continue;
       if (key === 'readAt') {
         if (row[key] !== null && (typeof row[key] !== 'string' ||
             !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(row[key]) ||
@@ -1257,9 +1286,10 @@ export function validatePersonal(input: unknown): Personal {
       )
         throw Error('备份状态不正确');
     }
-    const item: { saved?: boolean; applied?: boolean; hidden?: boolean; readAt?: string | null } = {};
+    const item: PersonalRecord = { ...details };
     if (typeof row.saved === 'boolean') item.saved = row.saved;
     if (typeof row.applied === 'boolean') item.applied = row.applied;
+    if (item.application_stage) item.applied = item.application_stage !== 'planned';
     if (typeof row.hidden === 'boolean') item.hidden = row.hidden;
     if (Object.hasOwn(row, 'readAt')) item.readAt = row.readAt as string | null;
     result[id] = item;

@@ -24,8 +24,20 @@ def nankai_calendar(html, base):
             'structured': {'fairDate': date[0], 'schoolName': '南开大学'}})
     if not items:
         raise ValueError('Nankai calendar rows missing; cannot infer an empty calendar')
-    total = 2 if soup.select_one('a[href*="/p/2.html"]') else 1
+    pages = [int(match[1]) for link in soup.select('a[href]')
+             if (match := re.search(r'/recruitment/index2/p/(\d+)\.html(?:[?#].*)?$', link['href']))]
+    total = max(pages, default=1)
     return items, total
+
+
+def public_calendar_source(source):
+    """Old two-page metadata cannot prove that the official calendar ended."""
+    row = dict(source)
+    if row.get('id') == 'nankai-talks' and row.get('calendar_pagination_version') != 1:
+        row['list_complete'] = False
+        pages = row.get('pages_read') or row.get('pages') or 0
+        row['coverage'] = f'最近 {pages} 页；旧分页信息不足，更多安排待核实'
+    return row
 
 
 def nankai_event(html, item):

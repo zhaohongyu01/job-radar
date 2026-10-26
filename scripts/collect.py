@@ -27,7 +27,7 @@ from bs4 import BeautifulSoup
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 from city_registry import (CITIES, PROVINCE_CITIES, CODE_CITY, cities_in_text,
                            work_cities, resolve_event_city, collection_cities)
-from external_calendars import nankai_calendar, nankai_event, pku_calendar
+from external_calendars import nankai_calendar, nankai_event, pku_calendar, public_calendar_source
 from opportunity_facts import employment_type, availability_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,7 +136,7 @@ SOURCES.append({'id': 'sdu-talks', 'name': '山东大学 · 宣讲会', 'url': S
 SOURCES.extend([
     {'id': 'nankai-talks', 'name': '南开大学 · 官方宣讲日历',
      'url': 'https://career.nankai.edu.cn/recruitment/index2.html',
-     'adapter': 'nankai_talks', 'channel': 'talks', 'school_name': '南开大学'},
+     'adapter': 'nankai_talks', 'channel': 'talks', 'school_name': '南开大学', 'calendar_pagination_version': 1},
     {'id': 'pku-talks', 'name': '北京大学 · 官方招聘日历',
      'url': 'https://scc.pku.edu.cn/frontpage/pku/html/recruitmentFairList.html?fairType=1',
      'adapter': 'pku_talks', 'channel': 'talks', 'school_name': '北京大学', 'allow_empty_pages': True},
@@ -2565,7 +2565,8 @@ def export_snapshot(state, public_dir, days=180, changes=None):
               'duplicates_merged':len(eligible)-len(public_jobs),'coverage_days':days,'cities':CITIES,
               'detail_shards':detail_shards,'search_url':search_url,
               'jobs':[public_summary(j) for j in public_jobs],
-              'sources':list(state['sources'].values()),'changes':changes or {},'projection_version':1}
+              'sources':[public_calendar_source(source) for source in state['sources'].values()],
+              'changes':changes or {},'projection_version':1}
     from city_coverage import build_city_coverage
     snapshot['coverage_url'] = asset('coverage', build_city_coverage(dict(snapshot, jobs=public_jobs)))
     if len(search_shards) > 1:

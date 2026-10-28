@@ -42,7 +42,7 @@ export function TopActionCard({
   const topUrgent = queue[0];
 
   return (
-    <div className="personal-action-panel"><div className="top-action-card" aria-label="我的求职安排与投递进度">
+    <div className="top-action-card" aria-label="我的求职安排与投递进度">
       <div className="top-action-stats">
         <button
           type="button"
@@ -74,7 +74,9 @@ export function TopActionCard({
       </div>
 
       <div className="top-action-cue">
-        {!ready ? <output>完整索引加载后显示求职安排</output> : topUrgent ? (
+        {!ready ? (
+          <output>完整索引加载后显示求职安排</output>
+        ) : topUrgent ? (
           <div className="top-cue-urgent">
             <span className="top-cue-tag">优先投递</span>
             <button
@@ -118,6 +120,18 @@ export function TopActionCard({
           </div>
         )}
       </div>
-    </div>{ready && <PersonalReminders jobs={jobs} personal={personal} now={now} onDetail={onDetail} />}</div>
+
+      {ready && (
+        <>
+          <div className="top-stat-sep" aria-hidden="true" />
+          <PersonalReminders
+            jobs={jobs}
+            personal={personal}
+            now={now}
+            onDetail={onDetail}
+          />
+        </>
+      )}
+    </div>
   );
 }

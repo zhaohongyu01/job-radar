@@ -3,7 +3,55 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
-## 2026-10-28：精简浏览索引已实现并验证（未发布）
+## 当前接手摘要（2026-10-28）
+
+### 目标与仓库状态
+
+- 用户的首要目标：岗位机会与宣讲日程尽可能全面、及时，同时控制采集时间；性能和界面优化不能以漏采、删记录或错误筛选为代价。
+- 所有 Git、npm、Python 命令在 `D:/code/get_job/web` 执行。保留 Claude 界面与已有 Gemini 优化，主样式为 `app/design.css`，增量样式为 `app/feature-updates.css`，不要重新启用旧 `app/workspace.css`。
+- 本次更新包含页面顶部空间紧凑化重构，移除冗余提示文案，将采集新鲜度整合至求职操作栏，经用户明确指令执行本次提交与推送。保留 Claude 界面与已有 Gemini 优化，主样式为 `app/design.css`，增量样式为 `app/feature-updates.css`，不要重新启用旧 `app/workspace.css`。
+- **未在本次上下文更新中查询远端 Actions 或线上版本**；引用一致不能证明 CI、采集或部署成功。下方“尚未提交 / 未发布”是各批实现时记录，不再描述当前 Git 状态。最后一次保存在文档中的生产验收为 10 月 26 日，不等于当前线上仍停留在该版本。
+- 不沿用旧轮次的发布授权：后续提交、推送、触发采集或部署，应按届时用户明确指令执行。禁止覆盖现有修改。
+
+### 已完成及证据入口
+
+| 批次 | 已实现内容 | 详细记录 |
+| --- | --- | --- |
+| Gemini 审阅修复 R1–R8 | 临时预览与完整快照分离、慢详情竞争修复、完整筛选网址、多城提示、旧 ID 深链、官方来源品牌、未知单位性质及空企业活动标题 | [修复记录](docs/gemini-fixes-20261028.md) |
+| 采集与日程优化 | 南开/北大/BYSJY 日历按两页预算续采、失败重试、首片 256 KiB、日程高级筛选折叠、导出按钮对比度及空白修复 | [优先改进记录](docs/priority-improvements-20261028.md) |
+| 精简浏览索引 | `browse_index.version=1`、共享 TS 薪资/阶段/变更规则、摘要预览 120 字符、按需搜索/详情、原索引兼容、两条工作流生成与 staging | [浏览索引记录](docs/browsing-index-20261028.md) |
+| 顶部降高与提醒浮层重构 | 消除下挂复选框与冗余换行，求职提醒重构为看板内一体化 Bell 浮层面板 + iOS 风格 Switch 开关；顶部高度压缩约 60%，首屏机会大幅上移 | components/personal-reminders.tsx, components/top-action-card.tsx |
+
+最新完整历史样本：32,411 条原始来源→20,823 条合并列表，同一数据的列表 gzip 7,647,384→4,811,096 字节（减少约37.1%），JSON 51,542,425→37,634,024 字节；38 组筛选、8 组查询、8 城日程一致，来源 ID 和历史时间保留。这是 **10 月 26 日历史样本的本地实测**，不是最新线上数据或新增岗位数。生成精简投影本机约2.027秒、零网络；实际云端新增耗时与 NAS 整轮耗时尚待上线核对。
+
+最新批次通过72项定向前端单测、跨 Node/Python 交付验证、20个 Edge 场景，以及 lint/TypeScript/生产构建/Actionlint。完整样本在本地 Workers 运行时验证桌面1440px/手机390px；首次仅取浏览分片，未预取全文/详情。验证范围及时间见各批记录，不把历史通过当成新修改后自动通过。
+
+证据在被忽略的 `data/browse-20261028/`、`data/priority-20261028/`、`data/review-gemini-20261028/fixes/`；这些目录不保证存在于其他 checkout。通用测试不可依赖其中的大文件。最新测试服务3002/3003与隔离浏览器已在验证结束时关闭，勿误停其他使用者的服务。
+
+### 当前运行链路与不可破坏的约束
+
+- `Push Checks` 做代码检查和构建；普通 push 本身不启动日常采集/发布。主流程每天北京时间05:00/14:00，5个云端 pack；NAS高校流程04:00/13:00，独立执行 `universities-b`，主站不等待 NAS。主流程正常手动运行会派发独立 NAS 流程；`deploy_only` 不采集。
+- 当前注册80个来源、6个 pack，其中24个 `channel=talks`；注册数量不是本轮成功巡检数量，也不是完整学校覆盖数。SDEI为18校，5个核心校每轮活跃，其余13校分4组轮转；最新页优先巡检与历史续采分开。以代码注册表为准，不照搬旧记录中的17校/22源数量。
+- NAS单源90秒、分片1200秒；云端单源180秒、分片1080秒。保留共享限速、拒绝冷却、失败退避、队列和检查点。企业在架岗位必须完整单轮校验，不能套用部分续采来判下架。
+- 宣讲举办城市、学校/场地与岗位工作城市独立。保留全部来源、别名、收藏/投递身份与原核验时间；导出、缓存命中和离线回填不得伪造“刚核验”。
+- `browse_index` 是可选浏览投影；原索引/详情/搜索是兼容与还原依据。薪资、阶段、变更不能从120字符短摘要重新推断；浏览资产必须参与哈希、数量、唯一 ID、大小和 staging 校验。失败预览不能冒充完整统计。
+- 个人数据仍只存在当前浏览器，保留旧存储键与备份兼容；网址仅同步筛选和岗位 ID，不上传备注或投递记录。
+- 默认开发预览读取线上数据；隔离测试用 `JOB_RADAR_PREVIEW_DATA=local`。本地 `public/` 含历史小样本，不能拿它证明线上陈旧，也不能覆盖线上完整快照。
+
+### 接下来优先处理
+
+1. 如继续发布验收，先核对 `2c885ef` 的 Actions、部署版本和线上 `jobs.json` 是否已有 `browse_index.version=1`，再决定是否需要新的手动运行；不要根据本地跟踪引用推断成功。
+2. 如只验证页面/性能，新版 `deploy_only` 可从完整线上快照生成精简浏览资产；若要验证日历续采和新岗位发现，必须使用最新代码的正常采集。旧运行的 Re-run 不会换成新提交。无需为这些改动重建 NAS 代理或 Runner 容器。
+3. 继续逐源核验新鲜度、失败/冷却、待补详情、最新发布与活动时间。中石大/复旦日历认证、邮储空栏目及部分陈旧渠道仍有缺口；不能宣称全国完整覆盖。
+4. 提高企业/单位、截止日期、届别、具体岗位、投递入口和结构化薪资质量，使用真实样本回归；保留真实性提示，不把未知字段补成确定答案。
+5. 后续产品项仍包括界面降噪与控件统一、订阅通知、企业聚合页、个人匹配、投递看板/截止日历。当前页面内提醒不是关闭网页后仍生效的推送；这些未因本轮性能优化自动完成。
+6. 浏览列表仍约37.6 MB JSON，内存与全文搜索负担尚可继续优化；进一步变动必须复用同数据筛选/日程一致性及实际浏览器验证。
+
+## 历史实施记录的阅读约定
+
+以下按发生时间保留。各段的“未提交”“已上线”“需批准”和数量/耗时只表示当时状态；当前接手摘要、现行代码与新核验结果优先。不要把已解决问题当成待办，或将历史授权视为新轮次授权。
+
+## 2026-10-28：精简浏览索引已实现并验证（实施时记录）
 
 用户要求继续建议优化项；本轮保留此前全部修改，实现可选 `browse_index.version=1`。说明与复验命令见 [浏览索引记录](docs/browsing-index-20261028.md)。仍未提交、推送、部署或触发生产采集。
 
@@ -13,7 +61,7 @@
 
 72项定向TS、1项Node/Python交付测试、20项Edge场景、真实完整样本生产构建桌面/手机验证及lint/tsc/build/Actionlint通过；未跑本地全仓库测试。证据在忽略目录 `data/browse-20261028/`。不要删原索引来缩部署目录；新增浏览资产必须参与staging/仅发布下载哈希校验。订阅/企业页/推荐与受限来源仍未完成，下方旧批次性能边界以本条为后续进展。
 
-## 2026-10-28：继续推进日历续页、首批加载与日程简化（未发布）
+## 2026-10-28：继续推进日历续页、首批加载与日程简化（实施时记录）
 
 用户要求按建议推进；本轮保留已有 Gemini / R1–R8 修改。实现与量化边界见 [本轮记录](docs/priority-improvements-20261028.md)。仍未提交、推送、部署，勿沿用旧发布授权。
 
@@ -21,7 +69,7 @@
 
 日程城市/学校并排，日期快捷按钮，其余折叠；已生效隐藏条件仍展示且可清除，保留城市学校。少量活动取消强制大空白。28 Python、16 TS、17 Edge 场景及 lint/tsc/build 通过；本地只跑定向测试。证据 `data/priority-20261028/` 被忽略。发布后需正常合并导出新数据才能体现小首片，旧产物部署不会生效；NAS 容器/代理不用重部署。认证来源、全量列表精简、推送与企业页等仍未完成。
 
-## 2026-10-28：Gemini 未提交改动的审阅问题已在本地修复
+## 2026-10-28：Gemini 审阅问题已在本地修复（实施时记录）
 
 用户要求按审阅建议修复 R1–R8；保留 Gemini 已有界面、多城标签及分享修改。结果与复现命令见 [修复记录](docs/gemini-fixes-20261028.md)。本轮尚未提交、推送或部署，未触发采集；勿沿用 10 月 26 日的发布授权自动推送这些新改动。
 
@@ -145,6 +193,8 @@ refine_facts 从明确的公司/企业/单位简介段首提取唯一完整企�
   - **采集与数据管线**：`Python 3.12`（无头解析、多源抓取、去重归并、分片校验）。
   - **托管与发布**：`Cloudflare Workers`（Sites 静态托管与边缘分发，通过 `wrangler 4.92` 部署）。
   - **定时流水线**：GitHub Actions（每天北京时间 05:00、14:00 自动分片采集、构建与部署）。
+- **当前提交与发布状态**：见本文顶部接手摘要；下方历史日志不代替实时 CI/线上核验。
+- **运行要求**：Python 3.12；Node.js >=22.13.0；使用仓库锁定的依赖。
 
 ---
 
@@ -153,14 +203,16 @@ refine_facts 从明确的公司/企业/单位简介段首提取唯一完整企�
 ```mermaid
 graph TD
     A[上游招聘网站 / 高校 / 政务] -->|定时分片采集| B(Python CI Pipeline: scripts/ci_collect.py)
-    B -->|6个Pack多并发| C[6个分片产物: collector-shard-*]
+    B -->|主流程5个云端Pack / NAS独立高校Pack| C[collector-shard-* 采集产物]
     C -->|合并去重/指纹比对| D[public/jobs.json 主索引]
     C -->|切片压缩| E[public/job-assets/detail-*.json 详情分片]
     C -->|全文分词| F[public/job-assets/search-*.json 搜索索引]
-    D & E & F -->|scripts/stage_public.py| G[dist/client 静态部署目录]
+    D & F -->|scripts/build_browse_index.mjs| M[可选精简浏览索引及搜索补充]
+    D & E & F & M -->|scripts/stage_public.py| G[dist/client 静态部署目录]
     H[前端源码: app/ + components/ + lib/] -->|npm run build / vinext build| I[dist/server + dist/client]
     I & G -->|wrangler deploy| J[Cloudflare Workers 线上站点]
-    K[用户浏览器] -->|首屏异步获取| D
+    K[用户浏览器] -->|获取入口并优先浏览分片 / 兼容原索引| M
+    K -->|无浏览索引时回退| D
     K -->|点击卡片按需拉取| E
     K -->|全文搜索按需拉取| F
     K -->|个人操作| L[LocalStorage 本地持久化]
@@ -168,7 +220,8 @@ graph TD
 
 ### 数据交互与静态化设计
 1. **轻量主索引与分片加载**：
-   - `jobs.json` 仅包含卡片筛选必须的元数据（标题、企业、发布/截止日期、地点、类型、届别、标签）。
+   - `jobs.json` 是入口；schema 3 通过 `index_shards/index_count` 声明原完整列表，`browse_index.version=1` 声明可选精简列表。首次可预览首片，但完整数量/唯一性校验通过后才显示全局统计和日程。
+   - 浏览列表摘要120字符，薪资/阶段/变更由共享 TS 规则预计算；原索引/详情/搜索继续保留。首片预算256 KiB，后续约4 MiB，浏览器最多4路加载。
    - `detail-*.json` 按 ID 前两位哈希分片，仅当用户点击“查看详情”时按需请求，不污染首屏带宽。
    - `search-*.json` 全文索引，仅当用户在搜索框输入关键词时异步拉取。
 2. **纯前端免登录持久化**：
@@ -181,18 +234,20 @@ graph TD
 
 | 目录/文件 | 核心职责与设计要点 |
 | :--- | :--- |
-| [web/app/page.tsx](file:///d:/code/get_job/web/app/page.tsx) | 核心主页面。负责客户端 Hydration、异步加载 `jobs.json`、筛选、排序、分页与多视图（卡片/表格）呈现。 |
-| [web/app/error.tsx](file:///d:/code/get_job/web/app/error.tsx) | 路由段级客户端错误边界，提供中文友好容错卡片（重试、清空缓存）。 |
-| [web/app/global-error.tsx](file:///d:/code/get_job/web/app/global-error.tsx) | 根布局级全局错误边界，接管 Vinext 默认的英文未捕获异常白屏。 |
-| [web/components/job-card.tsx](file:///d:/code/get_job/web/components/job-card.tsx) | 招聘卡片组件。支持薪资高亮、截止倒计时、生命周期徽章、多渠道同步折叠、快捷复制分享。 |
-| [web/components/personal-radar.tsx](file:///d:/code/get_job/web/components/personal-radar.tsx) | 个人雷达组件。顶部快捷聚焦（今日新发、新开补录、3天内截止、近期变更）与预设管理。 |
-| [web/lib/jobs.ts](file:///d:/code/get_job/web/lib/jobs.ts) | 领域模型与核心算法：`filterJobs`、`mergeDuplicateOpportunities`、`locationMatch`、`extractSalary` 等。 |
-| [web/lib/radar.ts](file:///d:/code/get_job/web/lib/radar.ts) | 雷达统计指标与预设方案计算逻辑。 |
-| [web/lib/browsing.ts](file:///d:/code/get_job/web/lib/browsing.ts) | 本地浏览喜好安全还原（防范损坏的 LocalStorage 导致崩溃）。 |
-| [web/scripts/collect.py](file:///d:/code/get_job/web/scripts/collect.py) | 核心采集器与适配器池（包含各高校、人社局、国企银行等几十个爬虫）。 |
-| [web/scripts/ci_collect.py](file:///d:/code/get_job/web/scripts/ci_collect.py) | CI 调度驱动器。控制多分片执行、超时退避、轮换排期与分片合并。 |
-| [web/scripts/stage_public.py](file:///d:/code/get_job/web/scripts/stage_public.py) | 校验哈希并把最新快照挂载到构建好的 Cloudflare 部署目录。 |
-| [web/.github/workflows/daily-collect.yml](file:///d:/code/get_job/web/.github/workflows/daily-collect.yml) | GitHub Actions CI/CD 流水线定义。 |
+| [web/app/page.tsx](app/page.tsx) | 核心主页面。负责客户端 Hydration、异步加载 `jobs.json`、筛选、排序、分页与多视图（卡片/表格）呈现。 |
+| [web/app/error.tsx](app/error.tsx) | 路由段级客户端错误边界，提供中文友好容错卡片（重试、清空缓存）。 |
+| [web/app/global-error.tsx](app/global-error.tsx) | 根布局级全局错误边界，接管 Vinext 默认的英文未捕获异常白屏。 |
+| [web/components/job-card.tsx](components/job-card.tsx) | 招聘卡片组件。支持薪资高亮、截止倒计时、生命周期徽章、多渠道同步折叠、快捷复制分享。 |
+| [web/components/personal-radar.tsx](components/personal-radar.tsx) | 个人雷达组件。顶部快捷聚焦（今日新发、新开补录、3天内截止、近期变更）与预设管理。 |
+| [web/lib/jobs.ts](lib/jobs.ts) | 领域模型与核心算法：`filterJobs`、`mergeDuplicateOpportunities`、`locationMatch`、`parseSalaryRange` 等。薪资显示提取在 `lib/salary-display.ts`。 |
+| [web/lib/radar.ts](lib/radar.ts) | 雷达统计指标与预设方案计算逻辑。 |
+| [web/lib/browsing.ts](lib/browsing.ts) | 本地浏览喜好安全还原（防范损坏的 LocalStorage 导致崩溃）。 |
+| [lib/browse-index.ts](lib/browse-index.ts) / [lib/snapshot-loader.ts](lib/snapshot-loader.ts) | 精简浏览数据契约、投影、验证及有界分片加载。 |
+| [scripts/build_browse_index.mjs](scripts/build_browse_index.mjs) / [scripts/audit_browse_index.mjs](scripts/audit_browse_index.mjs) | 用共享 TS 规则生成精简资产及离线一致性/体积审计；无源站请求。 |
+| [web/scripts/collect.py](scripts/collect.py) | 核心采集器与适配器池（包含各高校、人社局、国企银行等几十个爬虫）。 |
+| [web/scripts/ci_collect.py](scripts/ci_collect.py) | CI 调度驱动器。控制多分片执行、超时退避、轮换排期与分片合并。 |
+| [web/scripts/stage_public.py](scripts/stage_public.py) | 校验哈希并把最新快照挂载到构建好的 Cloudflare 部署目录。 |
+| [web/.github/workflows/daily-collect.yml](.github/workflows/daily-collect.yml) | GitHub Actions CI/CD 流水线定义。 |
 
 ---
 
@@ -207,7 +262,7 @@ graph TD
 
 ### 规则 2：SDEI 高校源防护策略
 - 山东高校就业平台（`school.gxjy.sdei.edu.cn`）共享同一入口与 IP 限流策略。
-- **4 组轮转**：17 所高校分为 4 组轮转，每天仅全量扫描 1 组，其余高校休眠（`deferred`）保留历史数据。
+- **核心校与4组轮转**：当前18校中5个核心校每轮活跃，其余13校分4组轮转；最新页优先巡检与历史扫描分开，不能把未读深页说成全量覆盖。以 `SDEI_SCHOOLS`、`CORE_SDEI_SCHOOLS` 和 `ROTATING_SDEI_GROUPS` 为准。
 - **岗位接口按需联动**：仅当某高校的“招聘公告”本轮发现新增或内容变动时，才去触发请求“具体岗位”接口；无更新时岗位接口自动 `deferred`。
 - **持续冷却机制**：一旦遭遇 403/420，记录 `blocked_until`（至少冷却 4 小时），后续采集直接跳过该主机，严禁暴力重试。
 
@@ -219,6 +274,10 @@ graph TD
 - `quancheng-last-visit-v1`：上一次访问时间戳（用于计算“新收录”提示）。
 - `job-radar-presets-v1`：个人雷达预设方案列表。
 - `job-radar-active-preset-v1`：当前激活的雷达预设 ID。
+- `job-radar-agenda-v1`：独立活动城市、学校、日期、形式与类型筛选。
+- `job-radar-event-personal-v1`：活动收藏及已观察到的安排，用于显示改期/取消。
+
+个人备份兼容旧v1/v2，并以v3保留活动及设置；导入先验证与预览冲突，再事务保存。不清空旧存储来修复功能。
 
 ### 规则 4：安全规则（全局规范）
 - **未经用户明确指令，绝不执行 `git push`**。
@@ -226,26 +285,26 @@ graph TD
 
 ---
 
-## 5. 黄金验证命令手册 (Verification Cheat Sheet)
+## 5. 当前验证约定与命令
 
-每次完成代码修改后，务必在 `d:/code/get_job/web` 目录下执行以下验证套件：
+用户要求本机只跑与修改相关的定向验证，**不要执行全仓库套件**；CI按现行工作流做其配置的检查。文档更新只检查内容与链接，不重新采集、构建或跑业务测试。不得把旧批次的测试计数写成当前全仓库测试数。
+
+业务代码修改时按影响选择相应模块；最近浏览索引批次的定向命令如下（其他主题不要机械全部重跑）：
 
 ```powershell
-# 1. 运行前端全量单元测试 (52项测试，毫秒级完成)
-node --experimental-strip-types --test tests/*.test.ts
+# 前端：浏览、筛选、阶段、日程等关联回归
+node --experimental-strip-types --test tests/browse-index.test.ts tests/domain.test.ts tests/snapshot-loader.test.ts tests/multicity-workspace.test.ts tests/radar.test.ts tests/calendar-export.test.ts tests/talk-events.test.ts
 
-# 2. 运行 Python 采集与数据校验测试 (95项测试)
-python -m unittest discover -s tests -p 'test_*.py'
+# Python：浏览资产生成/还原/staging/仅发布下载兼容
+python -m unittest discover -s tests -p test_browse_delivery.py -v
 
-# 3. 代码风格与 Lint 检查 (oxlint)
+# 代码检查及构建（按变更适用性运行）
 npm run lint
-
-# 4. TypeScript 类型校验 (严格模式)
 npx tsc --noEmit
-
-# 5. 生产构建打包验证 (Vinext + Vite)
 npm run build
 ```
+
+工作流变动须用 Actionlint；现有 `.github/actionlint.yaml` 定义自建 Runner 标签。浏览器回归脚本为 `tests/browser-regressions.mjs`，须用专用本地服务和隔离上下文，启动方法见 [修复记录](docs/gemini-fixes-20261028.md)。真实数据一致性用 `scripts/audit_browse_index.mjs`，不得将忽略目录变成必需测试依赖。
 
 ---
 
@@ -262,6 +321,8 @@ npm run build
 ## 7. 常见接手任务与指引 (Quick Recipe for Common Tasks)
 
 ### 采集续页与共享限速（2026-09-16）
+
+> 本节包含旧 NAS 调度方案及当时机器状态。当前生产链路是独立云端/NAS双流程；涉及 `nas_dispatch.py`、`UNIVERSITIES_B_RUNNER` 或“尚未接入NAS”的描述不能作为当前配置依据，先看顶部摘要和现行工作流。
 
 - 2026-09-18：SDEI 具体岗位必须通过真实 `edit1` 详情解析，不能用列表 `inline_html` 充当详情核验。`detail_verification=verified` 才能公开；旧的未核验记录、详情失败记录保留内部状态与待续队列，但不进入主索引、详情分片或搜索索引。正常详情提取 `.info-item`，补齐单位、专业和公开投递方式，排除学校页脚联系方式。发布 `raw_records` 计可公开原始记录，`withheld_records` 计隐藏记录；历史完整性仍检查内部 state，不可因公开隐藏而删除历史。回归测试见 `tests/test_position_verification.py`。
 

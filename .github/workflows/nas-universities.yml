@@ -288,14 +288,17 @@ jobs:
           name: built-application
           path: dist
 
-      - name: Attach Validated Data to Application
-        run: python scripts/stage_public.py --public-dir public --dist-dir dist
-
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
+      - name: Build lightweight browsing index without collection
+        run: node --experimental-strip-types scripts/build_browse_index.mjs --public-dir public
+
+      - name: Attach Validated Data to Application
+        run: python scripts/stage_public.py --public-dir public --dist-dir dist
 
       - name: Deploy to Cloudflare Workers
         env:

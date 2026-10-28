@@ -18,6 +18,10 @@ import {
   generateJobTimeline,
   hasRecentJobChange,
   isExpired,
+  formatCompanyDisplay,
+  eventDisplayTitle,
+  resolveJobId,
+  UNKNOWN_SECTOR,
 } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 const job = {
@@ -354,11 +358,67 @@ void test('filterJobs multi-mode sorting operates correctly', () => {
   assert.deepEqual(salarySorted.map((j) => j.id), ['later', 'nodeadline', 'soon']);
 });
 
+void test('unknown employer sectors remain accessible without relabelling them as enterprises', () => {
+  const generalJob = { ...job, id: 'general', title: '复旦大学辅导员招聘', sectors: ['综合'] };
+  const enterpriseJob = { ...job, id: 'enterprise', title: '华为技术招聘', sectors: ['企业 / 其他'] };
+  const stateJob = { ...job, id: 'state', title: '国家电网招聘', sectors: ['国企'] };
+  const emptyJob = { ...job, id: 'empty', sectors: [] };
+  const mixedJob = { ...stateJob, id: 'mixed', sectors: ['综合', '国企'] };
+
+  const pool = [generalJob, enterpriseJob, stateJob, emptyJob, mixedJob];
+
+  const enterpriseResults = filterJobs(pool, { ...defaultFilters, sector: '企业 / 其他' }, {}, null);
+  assert.deepEqual(enterpriseResults.map((j) => j.id), ['enterprise']);
+
+  for (const sector of [UNKNOWN_SECTOR, '综合（高校 / 平台公告）', '综合']) {
+    const generalResults = filterJobs(pool, { ...defaultFilters, sector }, {}, null);
+    assert.deepEqual(generalResults.map((j) => j.id).sort(), ['empty', 'general']);
+  }
+
+  const stateResults = filterJobs(pool, { ...defaultFilters, sector: '国企' }, {}, null);
+  assert.deepEqual(stateResults.map((j) => j.id).sort(), ['mixed', 'state']);
+  assert.equal(filterJobs(pool, defaultFilters, {}, null).length, pool.length);
+});
+
 void test('normalizeCompanyName strips common legal suffixes', () => {
   assert.equal(normalizeCompanyName('中国石油天然气股份有限公司'), '中国石油天然气');
   assert.equal(normalizeCompanyName('浪潮集团有限公司'), '浪潮');
   assert.equal(normalizeCompanyName('海尔智家股份有限公司'), '海尔智家');
   assert.equal(normalizeCompanyName(undefined), '');
+});
+
+void test('company display uses official source identity without guessing from the job title', () => {
+  const hisenseDept = formatCompanyDisplay('全球营销中心-中国区', '销售经理（全国）(J45816)', 'hisense-campus');
+  assert.equal(hisenseDept.displayCompany, '海信集团 · 全球营销中心-中国区');
+  assert.equal(hisenseDept.monogram, '海信');
+  assert.equal(formatCompanyDisplay('研发中心', '嵌入式软件工程师').displayCompany, '研发中心');
+  assert.equal(formatCompanyDisplay('全球营销中心-中国区', '海尔集团校园招聘').displayCompany, '全球营销中心-中国区');
+  assert.equal(formatCompanyDisplay('全球营销中心-中国区', '', 'haier-campus').displayCompany, '海尔集团 · 全球营销中心-中国区');
+
+  const regular = formatCompanyDisplay('海尔智家股份有限公司', '海尔智家2027届校园招聘');
+  assert.equal(regular.displayCompany, '海尔智家股份有限公司');
+  assert.equal(regular.monogram, '海尔');
+
+  const inspur = formatCompanyDisplay('浪潮集团有限公司', '软件工程师');
+  assert.equal(inspur.displayCompany, '浪潮集团有限公司');
+  assert.equal(inspur.monogram, '浪潮');
+
+  const unknown = formatCompanyDisplay('', '某公司公开招聘公告');
+  assert.equal(unknown.displayCompany, '企业名称待核实');
+  assert.equal(unknown.monogram, '某公');
+  assert.equal(filterJobs([{ ...job, source_id: 'hisense-campus', company: '全球营销中心-中国区', title: '销售经理' }],
+    { ...defaultFilters, query: '海信' }, {}, null).length, 1);
+});
+
+void test('calendar and legacy links preserve their known activity title and canonical record', () => {
+  assert.equal(eventDisplayTitle({ ...job, company: '', title: '中粮集团校园宣讲会' }), '中粮集团校园宣讲会');
+  assert.equal(eventDisplayTitle({ ...job, company: '', title: '' }), '校园活动');
+  const current = { ...job, duplicate_ids: ['old-copy'] };
+  assert.equal(resolveJobId([current], 'old-copy'), current);
+  assert.equal(resolveJobId([current], job.id), current);
+  assert.equal(resolveJobId([current], 'missing'), undefined);
+  const primary = { ...job, id: 'old-copy' };
+  assert.equal(resolveJobId([current, primary], 'old-copy'), primary);
 });
 
 void test('normalizeTitleCore removes bracket prefixes and notice noise', () => {

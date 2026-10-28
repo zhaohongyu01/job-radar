@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { restoreBrowsing } from '../lib/browsing.ts';
-import { defaultFilters, filterJobs, isUnread, mergePersonal, personalFor, validatePersonal } from '../lib/jobs.ts';
+import { restoreBrowsing, parseUrlState, formatUrlQuery } from '../lib/browsing.ts';
+import { defaultFilters, filterJobs, isUnread, mergePersonal, personalFor, validatePersonal, selectedWorkCities, UNKNOWN_SECTOR } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 
 const job = {
@@ -48,4 +48,75 @@ void test('browsing preferences restore all filters without letting malformed fi
   assert.equal(restored.filters.query.length, 200);
   assert.equal(restored.viewMode, 'cards');
   assert.equal(restored.filters.view, 'all');
+});
+
+void test('URL search params can be parsed and formatted cleanly', () => {
+  const parsed = parseUrlState('?job=job123456&city=青岛&q=算法工程师&type=校招&year=2027&sector=国企&view=saved');
+  assert.equal(parsed.jobId, 'job123456');
+  assert.equal(parsed.filters?.city, '青岛');
+  assert.equal(parsed.filters?.query, '算法工程师');
+  assert.equal(parsed.filters?.type, '校招');
+  assert.equal(parsed.filters?.year, '2027');
+  assert.equal(parsed.filters?.sector, '国企');
+  assert.equal(parsed.filters?.view, 'saved');
+
+  const multiCities = parseUrlState('?cities=北京,上海,深圳');
+  assert.deepEqual(multiCities.filters?.workCities, ['北京', '上海', '深圳']);
+
+  const query = formatUrlQuery({
+    ...defaultFilters,
+    city: '青岛',
+    query: '前端开发',
+    type: '校招',
+    year: '2027',
+  }, 'job_abc123');
+  assert.ok(query.includes('job=job_abc123'));
+  assert.ok(query.includes('city=%E9%9D%92%E5%B2%9B'));
+  assert.ok(query.includes('q=%E5%89%8D%E7%AB%AF%E5%BC%80%E5%8F%91'));
+  assert.ok(query.includes('type=%E6%A0%A1%E6%8B%9B'));
+  assert.equal(parseUrlState(query).filters?.year, '2027');
+
+  // The marker makes a shared default independent from the recipient's saved filters.
+  assert.equal(formatUrlQuery(defaultFilters, null), '?f=1');
+});
+
+void test('shared links restore complete conditions and never inherit recipient filters', () => {
+  const recipient = { ...defaultFilters, city: '北京', workCities: ['北京'], salary: '20K以上', major: '会计' };
+  const shared = parseUrlState('?city=青岛').filters!;
+  const restored = restoreBrowsing({ filters: shared }).filters;
+  assert.deepEqual(selectedWorkCities(restored), ['青岛']);
+  assert.equal(restored.salary, '全部');
+  assert.equal(restored.major, '');
+  assert.notDeepEqual(restored, recipient);
+  assert.deepEqual(parseUrlState('?job=abcdefgh').filters, defaultFilters);
+  assert.deepEqual(parseUrlState(''), {});
+  assert.deepEqual(parseUrlState('?utm_source=friend'), {});
+});
+
+void test('every browsing condition survives URL round trips including explicit defaults and all cities', () => {
+  const filters = { ...defaultFilters, city: '全部城市', workCities: ['北京', '上海'], type: '社招', year: '全部',
+    sector: UNKNOWN_SECTOR, direction: '技术 / 研发', query: '财务 审计', education: '硕士', major: '会计',
+    includeUncertain: false, locationScope: 'possible' as const, showExpired: true, view: 'saved', onlyNew: true,
+    onlyUnread: true, provenance: '高校 / 政府', kind: '具体岗位', salary: '20K以上', sort: 'salary_desc' as const,
+    changeType: '截止延期' as const, radarFocus: 'urgent' as const, includeRelatedTalks: true,
+    employmentType: 'internship' as const, validity: 'confirmed_open' as const };
+  assert.deepEqual(parseUrlState(formatUrlQuery(filters, job.id)), { filters, jobId: job.id });
+  const all = { ...defaultFilters, city: '全部城市', workCities: [] };
+  assert.deepEqual(parseUrlState(formatUrlQuery(all)).filters, all);
+  assert.deepEqual(parseUrlState(formatUrlQuery(defaultFilters)).filters, defaultFilters);
+  assert.notEqual(formatUrlQuery(all), formatUrlQuery(defaultFilters));
+});
+
+void test('city aliases and legacy sectors migrate without accepting invalid URL conditions', () => {
+  const restored = restoreBrowsing({ filters: { ...defaultFilters, city: '济南', workCities: ['北京市', '北京', '上海市'], sector: '综合' } }).filters;
+  assert.deepEqual(restored.workCities, ['北京', '上海']);
+  assert.equal(restored.city, '全部城市');
+  assert.equal(restored.sector, UNKNOWN_SECTOR);
+  const url = parseUrlState('?cities=北京市,上海市,不存在的城市&sector=综合&salary=bad&showExpired=oops&major=金融');
+  assert.deepEqual(url.filters?.workCities, ['北京', '上海']);
+  assert.equal(url.filters?.sector, UNKNOWN_SECTOR);
+  assert.equal(url.filters?.salary, '全部');
+  assert.equal(url.filters?.showExpired, false);
+  assert.equal(url.filters?.major, '金融');
+  assert.equal(parseUrlState('?job=<script>').jobId, undefined);
 });

@@ -10,7 +10,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary } from '@/lib/jobs';
+import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary, formatCompanyDisplay } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 import type { PersonalRecord } from '@/lib/jobs';
 import { ApplicationTracker } from '@/components/application-tracker';
@@ -86,6 +86,11 @@ export function DetailDrawer({
           <>
             <SheetHeader className="detail-header">
               <div className="flex flex-wrap items-center gap-2 mb-1">
+                {selected.company && (
+                  <span className="opp-company-name font-semibold text-sm">
+                    {formatCompanyDisplay(selected.company, selected.title, selected.source_id).displayCompany}
+                  </span>
+                )}
                 <span className="eyebrow">
                   {selected.kind} · {selected.source_name}
                 </span>

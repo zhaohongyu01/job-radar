@@ -172,11 +172,12 @@ export function FilterSidebar({
         options={[
           '全部',
           '企业 / 其他',
-          '银行',
-          '保险',
           '国企',
           '事业单位',
           '公务员',
+          '银行',
+          '保险',
+          '单位性质未明确',
         ]}
         onChange={(v) => onChange('sector', v)}
       />

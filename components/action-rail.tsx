@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { CalendarDays, MapPin, Bookmark, Download } from 'lucide-react';
 import type { Job, Personal, Filters, TalkEvent } from '@/lib/jobs';
-import { externalUrl } from '@/lib/jobs';
+import { externalUrl, eventDisplayTitle } from '@/lib/jobs';
 import { ALL_CITIES } from '@/lib/cities';
 import { AGENDA_STORAGE, EVENT_PERSONAL_STORAGE, EVENT_TYPES, agendaEntries, defaultAgenda, restoreAgenda, validateEventPersonal, eventChanged } from '@/lib/agenda';
 import type { AgendaFilters, EventPersonal } from '@/lib/agenda';
@@ -13,9 +13,10 @@ import type { CoverageReport } from '@/lib/city-coverage';
 
 const SYNC = 'job-radar-local-workspace-change';
 
-export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverage }: {
+export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverage, indexReady = true }: {
   jobs: Job[]; personal: Personal; city: string; now: number; ready?: boolean;
   onDetail: (job: Job) => void; onView?: (view: Filters['view']) => void; coverage?: CoverageReport | null;
+  indexReady?: boolean;
 }) {
   const [filters, setFilters] = useState<AgendaFilters>(() => defaultAgenda(city));
   const [saved, setSaved] = useState<EventPersonal>({});
@@ -42,12 +43,18 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
     // A persisted agenda remains independent when the work-city prop changes.
   }, [ready, city]);
 
-  const update = <K extends keyof AgendaFilters>(key: K, value: AgendaFilters[K]) => {
-    const next = { ...filters, [key]: value };
+  const saveFilters = (next: AgendaFilters) => {
     setFilters(next);
     try { localStorage.setItem(AGENDA_STORAGE, JSON.stringify(next)); window.dispatchEvent(new Event(SYNC)); }
     catch { setNotice('本次筛选已生效，但浏览器未能保存安排设置。'); }
   };
+  const update = <K extends keyof AgendaFilters>(key: K, value: AgendaFilters[K]) => saveFilters({ ...filters, [key]: value });
+  const advancedLabels = [
+    filters.range === 'custom' ? `${filters.dateFrom || '不限起日'} 至 ${filters.dateTo || '不限止日'}` : '',
+    filters.mode !== 'all' ? ({ offline: '线下', online: '线上', hybrid: '线上＋线下', unknown: '形式待确认' }[filters.mode]) : '',
+    filters.eventType !== 'all' ? EVENT_TYPES[filters.eventType] : '',
+    filters.includeOnline ? '含异地线上' : '', onlySaved ? '我的日程' : '',
+  ].filter(Boolean);
   const toggleSaved = (event: TalkEvent) => {
     const next = { ...saved, [event.id]: { saved: !saved[event.id]?.saved,
       observed: { date: event.date, start_time: event.start_time, venue: event.venue, status: event.status || 'scheduled' }, updated_at: new Date().toISOString() } };
@@ -61,15 +68,17 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
   const changes = talks.filter(({ event }) => saved[event.id]?.saved && eventChanged(event, saved[event.id]));
   const cityOptions = [...new Set(['全部城市', filters.city, ...ALL_CITIES])];
   const exportSelected = () => {
-    try { downloadCalendar(talks.map(({ job, event }) => ({ event, title: job.company || job.title })), now); }
+    try { downloadCalendar(talks.map(({ job, event }) => ({ event, title: eventDisplayTitle(job) })), now); }
     catch (error) { setNotice(error instanceof Error ? error.message : '日历导出失败'); }
   };
+  if (!indexReady) return <aside className="plan-rail" aria-label="宣讲日程安排"><section className="plan-card"><h2>校园日程</h2><output>完整索引加载后显示日程，已有收藏不会丢失。</output></section></aside>;
   return (
     <aside className="plan-rail" aria-label="宣讲日程安排">
       <section className="plan-card">
         <div className="plan-head"><h2><CalendarDays size={16} />校园日程</h2><span className="chip">{talks.length} 场</span></div>
         <p className="plan-caption">按举办地点 · 北京时间；与工作城市独立设置</p>
         <div className="agenda-controls">
+          <div className="agenda-primary">
           <label>参加活动城市
             <input list={`${cityId}-options`} aria-label="参加活动城市" value={filters.city} onChange={(event) => update('city', event.target.value)} />
             <datalist id={`${cityId}-options`}>{cityOptions.map((value) => <option key={value} value={value}>{value}</option>)}</datalist>
@@ -77,17 +86,30 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
           <label>学校<select aria-label="筛选宣讲学校" value={filters.school} onChange={(event) => update('school', event.target.value)}>
             <option value="">全部高校（含地点待确认）</option>{schools.map((school) => <option key={school} value={school}>{school}</option>)}
           </select></label>
-          <label>日期<select value={filters.range} onChange={(event) => update('range', event.target.value as AgendaFilters['range'])}>
+          </div>
+          <fieldset className="agenda-quick" aria-label="日程日期快捷筛选">
+            {([['all', '全部'], ['today', '今天'], ['week', '未来 7 天']] as const).map(([value, label]) =>
+              <button key={value} type="button" aria-pressed={filters.range === value} onClick={() => update('range', value)}>{label}</button>)}
+          </fieldset>
+          <details className="agenda-more">
+          <summary>更多筛选{advancedLabels.length ? ` · ${advancedLabels.length} 项生效` : ''}</summary>
+          <div className="agenda-advanced">
+          <label>日期<select aria-label="日程日期范围" value={filters.range} onChange={(event) => update('range', event.target.value as AgendaFilters['range'])}>
             <option value="all">全部后续日程</option><option value="today">今天</option><option value="week">未来 7 天</option><option value="custom">自选日期</option>
           </select></label>
           {filters.range === 'custom' && <div className="agenda-dates"><input type="date" aria-label="活动开始日期" value={filters.dateFrom} onChange={(event) => update('dateFrom', event.target.value)} /><input type="date" aria-label="活动结束日期" value={filters.dateTo} onChange={(event) => update('dateTo', event.target.value)} /></div>}
-          <div className="agenda-dates"><label>形式<select value={filters.mode} onChange={(event) => update('mode', event.target.value as AgendaFilters['mode'])}>
+          <div className="agenda-dates"><label>形式<select aria-label="日程形式" value={filters.mode} onChange={(event) => update('mode', event.target.value as AgendaFilters['mode'])}>
             <option value="all">全部形式</option><option value="offline">线下</option><option value="online">线上</option><option value="hybrid">线上＋线下</option><option value="unknown">待核实</option>
-          </select></label><label>类型<select value={filters.eventType} onChange={(event) => update('eventType', event.target.value as AgendaFilters['eventType'])}>
+          </select></label><label>类型<select aria-label="日程类型" value={filters.eventType} onChange={(event) => update('eventType', event.target.value as AgendaFilters['eventType'])}>
             {Object.entries(EVENT_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select></label></div>
           <label className="check-row"><input type="checkbox" checked={filters.includeOnline} onChange={(event) => update('includeOnline', event.target.checked)} />包含不限城市的线上活动</label>
           <label className="check-row"><input type="checkbox" checked={onlySaved} onChange={(event) => setOnlySaved(event.target.checked)} />我的日程（含已结束 / 取消）</label>
+          </div>
+          </details>
+          {!!advancedLabels.length && <div className="agenda-active"><span>{advancedLabels.join(' · ')}</span><button type="button" onClick={() => {
+            saveFilters({ ...defaultAgenda(filters.city), school: filters.school }); setOnlySaved(false);
+          }}>清除附加筛选</button></div>}
         </div>
         {!!changes.length && <output className="plan-caption">已收藏的 {changes.length} 场活动发生改期、换地点或取消，请核对。</output>}
         {notice && <output className="plan-caption">{notice}</output>}
@@ -97,7 +119,7 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
             {displayed.map(({ job, event }) => <li key={event.id}>
               <div className="agenda-date"><span>{Number(event.date.slice(5, 7))}月</span><strong>{event.date.slice(8)}</strong></div>
               <div className="agenda-event">
-                <button onClick={() => onDetail(job)}><strong>{job.company || job.title}</strong><span>{event.start_time || '时间待确认'} · {event.school}</span><small><MapPin size={11} />{event.venue || '地点待核实'}</small></button>
+                <button onClick={() => onDetail(job)}><strong>{eventDisplayTitle(job)}</strong><span>{event.start_time || '时间待确认'} · {event.school}</span><small><MapPin size={11} />{event.venue || '地点待核实'}</small></button>
                 <small>{EVENT_TYPES[event.event_type || 'unknown']} · {event.status === 'cancelled' ? '已取消' : event.mode === 'online' ? '线上' : event.mode === 'offline' ? '线下' : '形式待核实'}</small>
                 <small>入场：{event.access_policy || '原文未说明，请向学校核对'}</small>
                 {eventChanged(event, saved[event.id]) && <small className="agenda-changed">安排有变化，请重新核对来源</small>}

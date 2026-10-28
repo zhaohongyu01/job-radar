@@ -29,6 +29,7 @@ from city_registry import (CITIES, PROVINCE_CITIES, CODE_CITY, cities_in_text,
                            work_cities, resolve_event_city, collection_cities)
 from external_calendars import nankai_calendar, nankai_event, pku_calendar, public_calendar_source
 from opportunity_facts import employment_type, availability_evidence
+from employer_identity import employer_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 TZ = dt.timezone(dt.timedelta(hours=8))
@@ -1638,6 +1639,7 @@ def parse_detail(html, item, source):
         if event_lines:
             raw_job['body'] += '\n\n宣讲活动信息：\n' + '\n'.join(event_lines)
         raw_job['talk_event'] = extract_talk_event(dict(raw_job, structured=structured))
+    raw_job.update(employer_identity(raw_job))
     return enrich_job_with_positions(raw_job, positions)
 
 
@@ -2389,6 +2391,7 @@ def attach_talk_events(jobs):
 def public_record(job):
     """Recompute derived location labels from retained text, without advancing verification time."""
     row = {k:v for k,v in job.items() if k!='fingerprint'}
+    row.update(employer_identity(row))
     if row.get('event_verification') == 'official_list' and row.get('detail_verification') == 'failed':
         event_only = calendar_record({'url': row['source_url'], 'title': row['title'],
             'target_id': row['id'], 'structured': row.get('structured', {})},
@@ -2494,6 +2497,7 @@ def public_summary(job):
         'possible_cities','province_possible','details_available','company_original',
         'positions','primary_facts','structured','identity','fingerprint','content_fingerprint','inline_announcement_fingerprint','fingerprint_version',
         'probe_attempt_at','listing_missing_count','listing_missing_at','listing_signature',
+        'detail_verification','event_verification','publication_note','detail_verified_at','source_published_at',
     }
     row={k:v for k,v in job.items() if k not in heavy}
     if job.get('positions'):
@@ -2516,6 +2520,9 @@ def public_summary(job):
 
 def build_search_text(job):
     body = job.get('body', '')
+    identity = [job.get('employer_brand'), job.get('company_department')]
+    if any(identity):
+        body = '\n'.join(value for value in [*identity, body] if value)
     if not job.get('positions'):
         return body
     parts = [body] if body else []
@@ -2535,7 +2542,7 @@ def schedule_enabled():
 
 def export_snapshot(state, public_dir, days=180, changes=None):
     """Publish the index last; immutable assets cannot mix across refreshes."""
-    from snapshot_assets import chunks, MAX_ASSET_BYTES
+    from snapshot_assets import chunks, MAX_ASSET_BYTES, FIRST_INDEX_BYTES
     jobs=repair_sdu_urls(state['jobs'])
     eligible = [j for j in jobs.values() if publishable_job(j)]
     public_jobs=sorted(deduplicate([public_record(j) for j in eligible]),
@@ -2571,7 +2578,10 @@ def export_snapshot(state, public_dir, days=180, changes=None):
     snapshot['coverage_url'] = asset('coverage', build_city_coverage(dict(snapshot, jobs=public_jobs)))
     if len(search_shards) > 1:
         snapshot['search_shards']=search_shards[1:]
-    batches=list(chunks(snapshot['jobs']))
+    # A small first shard lets the browser preview recent opportunities quickly;
+    # subsequent shards keep the existing throughput-friendly size. No rows or
+    # filter/search facts are discarded to make the preview smaller.
+    batches=list(chunks(snapshot['jobs'], first_budget=FIRST_INDEX_BYTES))
     disk_snapshot=snapshot
     if len(batches) > 1:
         snapshot['schema_version']=3
@@ -2728,11 +2738,15 @@ def run(args):
             offerjack_city_index=0
             offerjack_page=1
             offerjack_limited=False
-            # Only independent numbered announcement lists can resume this way.
+            # Independent numbered announcement/calendar lists can resume.
             # Live inventories need a complete single-run view for withdrawal
             # detection; SDU follows opaque next-page links; OfferJack has cities.
-            resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv'}
+            resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv',
+                                                 'nankai_talks', 'pku_talks', 'bysjy_talks'}
                          or source['id'] in {'nankai', 'jinan'})
+            # BYSJY exposes only a look-ahead row, not an exact last-page number.
+            # Its first-page "total=2" must never reset a deeper saved cursor.
+            exact_page_count = source.get('adapter') != 'bysjy_talks'
             # Target historical window
             target_history_days = max(args.days, getattr(args, 'history_days', 180)) if resumable else args.days
             cutoff = (dt.datetime.now(TZ) - dt.timedelta(days=target_history_days)).date().isoformat()
@@ -2898,11 +2912,11 @@ def run(args):
                         'pending':list(backlog.values()), 'inventory_complete':False, 'inventory_ids':[]})
                 if resumable and not head_only:
                     if not is_history_complete:
-                        if page == 1:
+                        if page == 1 and exact_page_count:
                             resume_page = min(resume_page, max(2, total))
                         status['resume_page'] = resume_page if page == 1 and page_budget > 1 else page + 1
                     else:
-                        if page == 1:
+                        if page == 1 and exact_page_count:
                             patrol_page = min(patrol_page, max(2, total))
                         if page > 1:
                             status['patrol_page'] = page + 1
@@ -2980,6 +2994,9 @@ def run(args):
                 status['coverage']=(f'已读取前 {page_budget} 页；官网仍有在架岗位未读取'
                                     if is_active_listing_source else
                                     f'最近 {page_budget} 页；仍有更早公告未读取')
+                if resumable and not head_only and source.get('channel') == 'talks':
+                    next_page = status.get('patrol_page') if is_history_complete else status.get('resume_page')
+                    status['coverage'] = f'本轮读取 {status["pages"]} 页；下轮继续第 {next_page or 2} 页，尚未完成本轮列表巡查'
             if status['errors']:
                 list_complete = False
                 if is_patrol_due:

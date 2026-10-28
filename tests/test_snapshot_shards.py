@@ -28,7 +28,7 @@ class SnapshotShardsTests(unittest.TestCase):
         chunker = assets.chunks
         with TemporaryDirectory() as tmp, patch('socket.socket.connect', side_effect=AssertionError('Network forbidden')):
             root = Path(tmp)
-            with patch.object(assets, 'chunks', side_effect=lambda rows: chunker(rows, 1200)):
+            with patch.object(assets, 'chunks', side_effect=lambda rows, **kwargs: chunker(rows, 1200, first_budget=600)):
                 full = c.export_snapshot(state, root / 'public')
             disk = ci.read_json(root / 'public/jobs.json')
             self.assertEqual(disk['jobs'], [])

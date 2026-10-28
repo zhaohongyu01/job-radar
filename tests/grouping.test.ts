@@ -28,3 +28,18 @@ void test('city and personal filtering happens before grouping, so other records
   const filtered = filterJobs(jobs, defaultFilters, { c: { hidden: true } }, null);
   assert.deepEqual(groupJobs(filtered).flatMap((g) => g.jobs.map((j) => j.id)), ['a']);
 });
+
+void test('official departments can share a brand group without losing records or merging legal branches', () => {
+  const jobs = [
+    { ...base, id: 'sales', source_id: 'hisense-campus', company: '全球营销中心-中国区' },
+    { ...base, id: 'research', source_id: 'hisense-campus', company: '研发中心' },
+    { ...base, id: 'legal', source_id: 'hisense-campus', company: '海信视像科技股份有限公司' },
+    { ...base, id: 'unknown', source_id: 'other', company: '研发中心' },
+  ];
+  const before = JSON.stringify(jobs);
+  const groups = groupJobs(jobs);
+  assert.deepEqual(groups.map((g) => g.jobs.map((j) => j.id)), [['sales', 'research'], ['legal'], ['unknown']]);
+  assert.equal(groups[0].company, '海信集团');
+  assert.equal(JSON.stringify(jobs), before);
+  assert.equal(groupJobs(jobs, false).length, jobs.length);
+});

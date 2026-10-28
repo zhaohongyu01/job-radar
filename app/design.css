@@ -631,7 +631,8 @@ button.chip:hover {
 .top-stat-btn.is-active {
   background: rgba(255, 255, 255, 0.14);
 }
-.top-stat-val {
+.top-stat-val,
+.top-stat-num {
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 700;
@@ -1298,6 +1299,23 @@ button.chip:hover {
   color: var(--ink-2);
   font-size: 13.5px;
   font-weight: 500;
+}
+.progressive-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: var(--r-pill, 9999px);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary, #2563eb);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  margin-left: 8px;
+  animation: pulse-slow 2s infinite ease-in-out;
+}
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 .result-count strong {
   color: var(--ink);

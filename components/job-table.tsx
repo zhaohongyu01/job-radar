@@ -1,7 +1,7 @@
 'use client';
 import { Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { publicationText, externalUrl, getDeadlineCountdown, isExpired, isUnread, locationSummary, personalFor } from '@/lib/jobs';
+import { publicationText, externalUrl, getDeadlineCountdown, isExpired, isUnread, locationSummary, personalFor, formatCompanyDisplay, duplicateSourceNames } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 import { talkDateLabel, talkEventsForCity } from '@/lib/talk-events';
 
@@ -38,10 +38,10 @@ export function JobTable({ jobs, city, personal, ready, now, onDetail, onRead, o
           return <tr key={job.id} className={expired ? 'expired' : undefined}>
             <th scope="row">
               <button className="job-title table-title" onClick={() => onDetail(job)}>{job.title}</button>
-              {job.company && <p className="small muted">{job.company}</p>}
+              {job.company && <p className="small muted">{formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany}</p>}
               {job.company_conflict && <p className="small muted">{job.company_note}</p>}
               <p className="small muted">{job.kind} · {job.types.join(' / ') || '类型待确认'}{job.graduation_years.length ? ` · ${job.graduation_years.join(' / ')} 届` : ''}</p>
-              {job.classification_note?.startsWith('仅核实') && <span className="tag">详情待核对</span>}
+              {(job.listing_facts?.detail_pending || job.classification_note?.startsWith('仅核实')) && <span className="tag">详情待核对</span>}
               {talk && <p className="small table-talk">宣讲 {talkDateLabel(talk)} · {talk.school} · {talk.venue}{cityTalks.length > 1 ? ' · 详情查看更多' : ''}</p>}
             </th>
             <td><div className="table-location" title={locationSummary(job)}>{locationSummary(job)}</div></td>
@@ -49,12 +49,12 @@ export function JobTable({ jobs, city, personal, ready, now, onDetail, onRead, o
               {publicationText(job, now)}
               <p className="small muted">
                 {job.date_label || '发布'} · {job.source_name}
-                {!!job.duplicate_sources?.length && (
+                {!!duplicateSourceNames(job).length && (
                   <span
                     className="channel-pill-table"
-                    title={`同步收录渠道：${[job.source_name, ...job.duplicate_sources.map((s) => s.source_name || s.source || s.title)].filter(Boolean).join('、')}`}
+                    title={`同步收录渠道：${[job.source_name, ...duplicateSourceNames(job)].filter(Boolean).join('、')}`}
                   >
-                    +{job.duplicate_sources.length}渠道
+                    +{duplicateSourceNames(job).length}渠道
                   </span>
                 )}
               </p>

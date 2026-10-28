@@ -5,21 +5,26 @@ import re
 ASSET = re.compile(r'/job-assets/(?:detail-[0-9a-f]{2}|search|index|coverage)-([0-9a-f]{20})\.json')
 MAX_ASSET_BYTES = 25 * 1024 * 1024
 CHUNK_BYTES = 4 * 1024 * 1024
+FIRST_INDEX_BYTES = 256 * 1024
 
 
 def asset_paths(snapshot):
+    browse = snapshot.get('browse_index') or {}
     return {*snapshot['detail_shards'].values(), snapshot['search_url'],
             *snapshot.get('index_shards', []), *snapshot.get('search_shards', []),
+            *browse.get('shards', []), *browse.get('search_shards', []),
             *([snapshot['coverage_url']] if snapshot.get('coverage_url') else [])}
 
 
-def chunks(rows, budget=CHUNK_BYTES):
+def chunks(rows, budget=CHUNK_BYTES, *, first_budget=None):
     batch, size = [], 32
+    limit = first_budget if first_budget is not None else budget
     for row in rows:
         length = len(json.dumps(row, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) + 1
-        if batch and size + length > budget:
+        if batch and size + length > limit:
             yield batch
             batch, size = [], 32
+            limit = budget
         batch.append(row)
         size += length
     if batch:

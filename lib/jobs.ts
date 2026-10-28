@@ -2,6 +2,7 @@ import { PROVINCE_CITIES, citiesInText, workplaceEvidence } from './cities.ts';
 import { assessOpportunityValidity, deadlineTime } from './opportunity-validity.ts';
 import { positionMatches } from './eligibility.ts';
 import { PERSONAL_DETAIL_FIELDS, validatePersonalDetails, mergePersonalRecords } from './personal-records.ts';
+import employerBrands from '../config/employer-brands.json' with { type: 'json' };
 
 export function shanghaiDay(value: string | number): string {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -92,6 +93,17 @@ export type TalkEvent = {
 };
 
 export type Job = {
+  listing_facts?: {
+    version: 1;
+    salary?: { min: number; max: number | null; raw: string };
+    salary_display?: { cleanTitle: string; salary: string | null };
+    selection_notice?: boolean;
+    long_term?: boolean;
+    change_dates?: string[];
+    position_change_dates?: string[];
+    source_names?: string[];
+    detail_pending?: boolean;
+  };
   id: string;
   title: string;
   company: string;
@@ -151,6 +163,8 @@ export type Job = {
   positions?: PositionRequirement[];
   position_matches?: PositionRequirement[];
   employment_type?: 'full_time' | 'internship' | 'part_time' | 'unknown';
+  employer_brand?: string;
+  company_department?: string;
   availability_evidence?: { kind: 'open' | 'long_term'; text: string; checked_at?: string | null; url?: string; verified: boolean } | null;
   position_count?: number;
   sample_positions?: string[];
@@ -186,6 +200,7 @@ export type Source = {
   errors?: { url: string; reason: string }[];
 };
 export type Snapshot = {
+  browse_index?: { version: number; count: number; shards: string[]; search_shards: string[] };
   schema_version: number;
   generated_at: string;
   last_success_at: string | null;
@@ -259,6 +274,8 @@ export const defaultFilters: Filters = {
   major: '',
 };
 
+export const UNKNOWN_SECTOR = '单位性质未明确';
+
 export function selectedWorkCities(filters: Filters): string[] {
   return filters.workCities ?? (filters.city === '全部城市' ? [] : [filters.city]);
 }
@@ -295,6 +312,32 @@ export function normalizeCompanyName(name?: string | null): string {
     .replace(/\((?:中国|集团|有限|股份|分公司|有限责任).*?\)/g, '')
     .replace(/(?:有限责任公司|股份有限公司|有限公司|集团有限公司|集团)(?=(?:[\u4e00-\u9fa5]{2,10}?(?:分行|支行|分公司|中心|办事处))?$)/g, '');
 }
+const departmentPattern = new RegExp(employerBrands.department_pattern);
+export function employerBrand(sourceId?: string): string {
+  return (employerBrands.sources as Record<string, string>)[sourceId || ''] || '';
+}
+export function employerGroupName(job: Job): string {
+  return departmentPattern.test(job.company || '') ? employerBrand(job.source_id) || job.company : job.company;
+}
+export function formatCompanyDisplay(company?: string | null, title?: string | null, sourceId?: string): { displayCompany: string; monogram: string } {
+  const rawComp = (company ?? '').trim();
+  const rawTitle = (title ?? '').trim();
+  const brand = employerBrand(sourceId);
+  const displayCompany = brand && rawComp && departmentPattern.test(rawComp) && !rawComp.includes(brand)
+    ? `${brand} · ${rawComp}` : rawComp || brand;
+
+  const monogramBase = displayCompany || rawTitle;
+  const norm = normalizeCompanyName(monogramBase);
+  const monogram = (norm.length >= 2 ? norm.slice(0, 2) : monogramBase.slice(0, 2)) || '招';
+
+  return { displayCompany: displayCompany || '企业名称待核实', monogram };
+}
+export function eventDisplayTitle(job: Job): string {
+  return job.company ? formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany : job.title || '校园活动';
+}
+export function resolveJobId(jobs: Job[], identifier: string): Job | undefined {
+  return jobs.find((job) => job.id === identifier) || jobs.find((job) => job.duplicate_ids?.includes(identifier));
+}
 export function normalizeTitleCore(title: string): string {
   if (!title) return '';
   return title
@@ -307,6 +350,8 @@ export function normalizeTitleCore(title: string): string {
     .replace(/(20\d{2})年$/, '$1');
 }
 export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
+  // The optional browsing index is already merged with this same function.
+  if (jobs.length && jobs.every((job) => job.listing_facts?.version === 1)) return jobs;
   const groups = new Map<string, Job>();
   for (const job of jobs) {
     const company = job.company?.trim() ?? '';
@@ -707,6 +752,10 @@ export type SalaryRange = {
 };
 
 export function parseSalaryRange(job: Job): SalaryRange | null {
+  if (job.listing_facts?.version === 1) {
+    const salary = job.listing_facts.salary;
+    return salary ? { ...salary, max: salary.max ?? Number.POSITIVE_INFINITY } : null;
+  }
   const title = job.title;
   const excerpt = job.excerpt || '';
   let salaryContext = title;
@@ -807,6 +856,37 @@ export function salaryThreshold(salaryFilter: string): number {
   }
 }
 
+export function hasSelectionNotice(job: Job): boolean {
+  if (job.listing_facts?.version === 1) return !!job.listing_facts.selection_notice;
+  const body = (job.body || job.excerpt || '').slice(0, 1000);
+  return job.recent_change?.type === 'selection_stage' ||
+    /(?:笔试|面试|初试|复试).*(?:安排|通知|名单|公示|复审)|(?:拟录用|录取公示|录用名单)/.test(job.title || '') ||
+    (/(?:笔试|面试|初试|复试).*(?:安排|通知|名单|公示|复审)|(?:拟录用|录取公示|录用名单)/.test(body) &&
+     !/(?:具体安排|时间地点|相关安排|时间)?另行通知|流程[：:\s]/.test(body));
+}
+
+export function hasLongTermText(job: Job): boolean {
+  return job.listing_facts?.version === 1 ? !!job.listing_facts.long_term :
+    /长期|常态|常年|招满为止/.test((job.title || '') + (job.body || job.excerpt || '').slice(0, 1000));
+}
+
+export function duplicateSourceNames(job: Job): string[] {
+  return job.listing_facts?.version === 1 ? job.listing_facts.source_names || [] :
+    (job.duplicate_sources || []).map((source) => source.source_name || source.source || source.title || '');
+}
+
+export function meaningfulChangeDates(job: Job): string[] {
+  if (job.listing_facts?.version === 1) return job.listing_facts.change_dates || [];
+  return (job.timeline || []).filter((e) => e.type !== 'published' && e.type !== 'source_repost' &&
+    e.title !== '岗位表就绪' && e.detail !== '招聘公告正文或附件内容已同步最新变动' &&
+    !/就绪|首次提取/.test(e.title + (e.detail || ''))).map((e) => e.date);
+}
+
+export function positionChangeDates(job: Job): string[] {
+  return job.listing_facts?.version === 1 ? job.listing_facts.position_change_dates || [] :
+    (job.timeline || []).filter((e) => e.type === 'positions_updated' && e.title !== '岗位表就绪').map((e) => e.date);
+}
+
 export function getLifecycleStage(
   job: Job,
   now = Date.now(),
@@ -832,12 +912,7 @@ export function getLifecycleStage(
   }
 
   const title = job.title || '';
-  const bodySlice = (job.body || job.excerpt || '').slice(0, 1000);
-  const isSelectionNotice =
-    job.recent_change?.type === 'selection_stage' ||
-    /(?:笔试|面试|初试|复试).*(?:安排|通知|名单|公示|复审)|(?:拟录用|录取公示|录用名单)/.test(title) ||
-    (/(?:笔试|面试|初试|复试).*(?:安排|通知|名单|公示|复审)|(?:拟录用|录取公示|录用名单)/.test(bodySlice) &&
-      !/(?:具体安排|时间地点|相关安排|时间)?另行通知|流程[：:\s]/.test(bodySlice));
+  const isSelectionNotice = hasSelectionNotice(job);
 
   if (isSelectionNotice) {
     return {
@@ -888,7 +963,7 @@ export function getLifecycleStage(
   }
 
   // When job.deadline is null:
-  if (/长期|常态|常年|招满为止/.test(title + bodySlice)) {
+  if (hasLongTermText(job)) {
     return {
       stage: 'accepting',
       label: '长期招募中',
@@ -1067,18 +1142,7 @@ export function hasRecentJobChange(j: Job, now = Date.now()): boolean {
       !isGenericBoilerplate &&
       isRecentDate(j.recent_change.date, now),
   );
-  const hasRecentTimeline = Boolean(
-    j.timeline &&
-      j.timeline.some(
-        (e) =>
-          e.type !== 'published' &&
-          e.type !== 'source_repost' &&
-          e.title !== '岗位表就绪' &&
-          e.detail !== '招聘公告正文或附件内容已同步最新变动' &&
-          !/就绪|首次提取/.test(e.title + (e.detail || '')) &&
-          isRecentDate(e.date, now),
-      ),
-  );
+  const hasRecentTimeline = meaningfulChangeDates(j).some((date) => isRecentDate(date, now));
   const stage = getLifecycleStage(j, now).stage;
   const isRecentJob = isRecentDate(j.updated_at || j.published_at || j.first_seen_at, now);
   return (
@@ -1143,7 +1207,13 @@ export function filterJobs(
         !(f.includeUncertain && j.graduation_years.length === 0)
       )
         return false;
-      if (f.sector !== '全部' && !j.sectors.includes(f.sector)) return false;
+      if (f.sector !== '全部') {
+        if ([UNKNOWN_SECTOR, '综合（高校 / 平台公告）', '综合'].includes(f.sector)) {
+          if (j.sectors.some((sector) => !['综合', '综合（高校 / 平台公告）', UNKNOWN_SECTOR].includes(sector))) return false;
+        } else if (!j.sectors.includes(f.sector)) {
+          return false;
+        }
+      }
       if (f.direction !== '全部' && !j.directions.includes(f.direction))
         return false;
       if (
@@ -1166,7 +1236,7 @@ export function filterJobs(
         if (f.changeType === '有变更' && !hasChange) return false;
         if (f.changeType === '截止延期' && (stage !== 'extended' || !isRecentJob) && !(j.recent_change?.type === 'deadline_extended' && hasRecentChangeObj)) return false;
         if (f.changeType === '补录招募' && (stage !== 'supplemental' || !isRecentJob) && !(j.recent_change?.type === 'supplemental' && hasRecentChangeObj)) return false;
-        if (f.changeType === '岗位调整' && !(j.recent_change?.type === 'positions_updated' && hasRecentChangeObj) && !(j.timeline?.some((e) => e.type === 'positions_updated' && e.title !== '岗位表就绪' && isRecentDate(e.date, now)))) return false;
+        if (f.changeType === '岗位调整' && !(j.recent_change?.type === 'positions_updated' && hasRecentChangeObj) && !positionChangeDates(j).some((date) => isRecentDate(date, now))) return false;
         if (f.changeType === '考核阶段' && (stage !== 'selection' || !isRecentJob) && !(j.recent_change?.type === 'selection_stage' && hasRecentChangeObj)) return false;
       }
       if (f.radarFocus && f.radarFocus !== 'none') {
@@ -1187,6 +1257,7 @@ export function filterJobs(
           const searchable = [
             j.title,
             j.company,
+            employerBrand(j.source_id),
             ...(j.talk_events?.map((event) => `${event.city ?? ''} ${event.school} ${event.venue} ${event.date}`) ?? []),
             j.excerpt,
             j.education,

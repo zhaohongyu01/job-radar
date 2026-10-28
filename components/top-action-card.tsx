@@ -8,7 +8,7 @@ import {
   Clock3,
 } from 'lucide-react';
 import type { Job, Personal, Filters } from '@/lib/jobs';
-import { personalFor, getDeadlineCountdown } from '@/lib/jobs';
+import { personalFor, getDeadlineCountdown, eventDisplayTitle } from '@/lib/jobs';
 import { buildActionQueue } from '@/lib/workspace';
 import { PersonalReminders } from '@/components/personal-reminders';
 
@@ -51,7 +51,7 @@ export function TopActionCard({
           onClick={() => onView('saved')}
           title="查看待投递机会清单"
         >
-          <span className="top-stat-num">{ready ? queue.length : '—'}</span>
+          <span className="top-stat-val">{ready ? queue.length : '—'}</span>
           <span className="top-stat-lbl">
             待投递 <ArrowUpRight size={11} />
           </span>
@@ -66,7 +66,7 @@ export function TopActionCard({
           onClick={() => onView('applied')}
           title="查看已投递记录"
         >
-          <span className="top-stat-num">{ready ? appliedCount : '—'}</span>
+          <span className="top-stat-val">{ready ? appliedCount : '—'}</span>
           <span className="top-stat-lbl">
             已投递 <CheckCheck size={11} />
           </span>
@@ -74,16 +74,16 @@ export function TopActionCard({
       </div>
 
       <div className="top-action-cue">
-        {topUrgent ? (
+        {!ready ? <output>完整索引加载后显示求职安排</output> : topUrgent ? (
           <div className="top-cue-urgent">
             <span className="top-cue-tag">优先投递</span>
             <button
               type="button"
               className="top-cue-job-btn"
               onClick={() => onDetail(topUrgent)}
-              title={`点击查看「${topUrgent.company || topUrgent.title}」详情`}
+              title={`点击查看「${eventDisplayTitle(topUrgent)}」详情`}
             >
-              <strong className="top-cue-company">{topUrgent.company || topUrgent.title}</strong>
+              <strong className="top-cue-company">{eventDisplayTitle(topUrgent)}</strong>
               <span className="top-cue-title">{topUrgent.title}</span>
               <small className="top-cue-time">
                 <Clock3 size={11} />
@@ -118,6 +118,6 @@ export function TopActionCard({
           </div>
         )}
       </div>
-    </div><PersonalReminders jobs={jobs} personal={personal} now={now} onDetail={onDetail} /></div>
+    </div>{ready && <PersonalReminders jobs={jobs} personal={personal} now={now} onDetail={onDetail} />}</div>
   );
 }

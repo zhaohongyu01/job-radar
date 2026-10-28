@@ -1,5 +1,5 @@
 'use client';
-import { loadSnapshotParts } from '../lib/snapshot-loader';
+import { loadSnapshotParts, loadIndexSnapshot } from '../lib/snapshot-loader';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radar,
@@ -48,9 +48,11 @@ import {
   mergeDuplicateOpportunities,
   selectedWorkCities,
   workCitiesLabel,
+  formatCompanyDisplay,
+  resolveJobId,
 } from '@/lib/jobs';
 import type { Job, Snapshot, Personal, Filters, PersonalRecord } from '@/lib/jobs';
-import { restoreBrowsing } from '@/lib/browsing';
+import { restoreBrowsing, parseUrlState, formatUrlQuery } from '@/lib/browsing';
 import type { ViewMode } from '@/lib/browsing';
 import { JobTable } from '@/components/job-table';
 import { groupJobs } from '@/lib/grouping';
@@ -132,6 +134,8 @@ export default function Home() {
   const [data, setData] = useState<Snapshot | null>(null),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(true);
+  const [previewData, setPreviewData] = useState<Snapshot | null>(null);
+  const [linkedJobId, setLinkedJobId] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(defaultFilters),
     [personal, setPersonal] = useState<Personal>({}),
     [ready, setReady] = useState(false),
@@ -175,12 +179,39 @@ export default function Home() {
   const detailsPromise = useRef<Record<string, Promise<Record<string, Job>>>>({});
   const [searchIndex, setSearchIndex] = useState<Record<string, string> | null>(null);
   const [searchError, setSearchError] = useState('');
+  const [progressiveProgress, setProgressiveProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const dataRef = useRef<Snapshot | null>(null);
+  const activeSnapshot = useRef<Snapshot | null>(null);
+  const refreshController = useRef<AbortController | null>(null);
+  const refreshRequest = useRef(0);
+  const missingLink = useRef<string | null>(null);
+
+  const activateSnapshot = useCallback((snapshot: Snapshot | null) => {
+    activeSnapshot.current = snapshot;
+    detailCache.current = {};
+    detailsPromise.current = {};
+    ++detailRequest.current;
+    setSelected(null);
+    setDetailLoading(false);
+    setDetailError('');
+    setSearchIndex(null);
+    setSearchError('');
+  }, []);
 
   const refresh = useCallback(async () => {
+    const request = ++refreshRequest.current;
+    refreshController.current?.abort();
+    const controller = new AbortController();
+    refreshController.current = controller;
+    const current = () => request === refreshRequest.current && !controller.signal.aborted;
+    let previewActivated = false;
     setLoading(true);
     setError('');
+    setProgressiveProgress(null);
+    setPreviewData(null);
+    if (!dataRef.current) activateSnapshot(null);
     try {
-      const r = await fetch('/jobs.json', { cache: 'no-store' });
+      const r = await fetch('/jobs.json', { cache: 'no-store', signal: controller.signal });
       if (!r.ok) throw Error('招聘信息暂时无法读取，请稍后重试。');
       const origin = r.headers.get('x-job-radar-data-origin') || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'local' : 'site');
       const json = (await r.json()) as Snapshot;
@@ -191,28 +222,40 @@ export default function Home() {
         !Array.isArray(json.sources)
       )
         throw Error('招聘数据格式异常。');
-      if (json.index_shards?.length) {
-        const parts = await loadSnapshotParts<{ jobs: Job[] }>(json.index_shards, 'index');
-        if (parts.some((part) => !Array.isArray(part.jobs))) throw Error('招聘数据分片格式异常。');
-        json.jobs = parts.flatMap((part) => part.jobs);
-        if (json.jobs.length !== json.index_count || new Set(json.jobs.map((job) => job.id)).size !== json.jobs.length)
-          throw Error('招聘数据分片不完整，请刷新重试。');
+      if (json.index_shards?.length || json.browse_index?.version === 1) {
+        json.jobs = await loadIndexSnapshot(json, controller.signal, (jobs, total) => {
+          if (!current()) return;
+          setProgressiveProgress({ loaded: jobs.length, total });
+          if (!dataRef.current) {
+            if (!previewActivated) {
+              activateSnapshot(json);
+              previewActivated = true;
+            }
+            setPreviewData({ ...json, jobs });
+          }
+        });
       }
-      detailCache.current = {};
-      detailsPromise.current = {};
-      ++detailRequest.current;
-      setSelected(null);
-      setDetailLoading(false);
-      setSearchIndex(null);
-      setSearchError('');
+      if (!current()) return;
+      if (new Set(json.jobs.map((job) => job.id)).size !== json.jobs.length) throw Error('招聘数据包含重复记录。');
+      if (!previewActivated) activateSnapshot(json);
+      // A cold preview and its completed index share one detail-request generation.
+      dataRef.current = json;
       setDataOrigin(origin);
       setData(json);
+      setPreviewData(null);
     } catch (e) {
+      if (!current()) return;
+      setPreviewData(null);
+      if (previewActivated) activateSnapshot(null);
       setError(e instanceof Error ? e.message : '读取失败');
     } finally {
-      setLoading(false);
+      if (current()) {
+        setProgressiveProgress(null);
+        setLoading(false);
+        refreshController.current = null;
+      }
     }
-  }, []);
+  }, [activateSnapshot]);
 
   const save = useCallback((next: Personal) => {
     try {
@@ -236,7 +279,9 @@ export default function Home() {
   }, [setRead]);
 
   const openDetail = useCallback(
-    async (job: Job) => {
+    async (job: Job, linkId = job.id) => {
+      setLinkedJobId(linkId);
+      missingLink.current = null;
       const request = ++detailRequest.current;
       setDetailError('');
       setDetailLoading(false);
@@ -252,13 +297,14 @@ export default function Home() {
       );
       if (cached) { markRead(cached); return; }
       if (job.body) { markRead(job); return; }
-      const url = data?.detail_shards?.[job.id.slice(0, 2)] ?? data?.details_url;
+      const snapshot = activeSnapshot.current;
+      const url = snapshot?.detail_shards?.[job.id.slice(0, 2)] ?? snapshot?.details_url;
       if (!url) { setDetailError('这条公告的详情暂未生成，请打开原公告核对。'); return; }
       const pending = detailsPromise.current;
       setDetailLoading(true);
       try {
         if (!pending[url]) {
-          pending[url] = fetch(url, { cache: data?.detail_shards ? 'force-cache' : 'no-store' }).then(
+          pending[url] = fetch(url, { cache: snapshot?.detail_shards ? 'force-cache' : 'no-store' }).then(
             async (response) => {
               if (!response.ok) throw Error('完整公告暂时无法读取。');
               const payload = (await response.json()) as {
@@ -293,7 +339,7 @@ export default function Home() {
         if (request === detailRequest.current) setDetailLoading(false);
       }
     },
-    [data, markRead],
+    [markRead],
   );
 
   // Browser storage is read after hydration; SSR has no access to this device state.
@@ -307,12 +353,14 @@ export default function Home() {
       } catch {
         // A blocked preference store must not prevent browsing or personal-record loading.
       }
-      try {
-        const restored = restoreBrowsing(JSON.parse(localStorage.getItem(BROWSING_STORAGE) || 'null'));
-        setFilters(restored.filters);
-        setViewMode(restored.viewMode);
-        setGroupCompanies(restored.groupCompanies);
-      } catch { /* Invalid preferences fall back without affecting saved records. */ }
+      let restored = restoreBrowsing(null);
+      try { restored = restoreBrowsing(JSON.parse(localStorage.getItem(BROWSING_STORAGE) || 'null')); }
+      catch { /* A shared link still works when preferences cannot be read. */ }
+      const urlState = parseUrlState(window.location.search);
+      setLinkedJobId(urlState.jobId || null);
+      setFilters(urlState.filters ? restoreBrowsing({ filters: urlState.filters }).filters : restored.filters);
+      setViewMode(restored.viewMode);
+      setGroupCompanies(restored.groupCompanies);
       try {
         const records = validatePersonal(JSON.parse(localStorage.getItem(STORAGE) || '{}'));
         personalRef.current = records;
@@ -329,8 +377,51 @@ export default function Home() {
     return () => {
       clearTimeout(initialRead);
       clearInterval(timer);
+      refreshController.current?.abort();
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!ready || !linkedJobId) return;
+    const snapshot = data || previewData;
+    const found = snapshot && resolveJobId(snapshot.jobs, linkedJobId);
+    if (found && selected?.id !== found.id) {
+      const timer = setTimeout(() => void openDetail(found, linkedJobId), 0);
+      return () => clearTimeout(timer);
+    }
+    else if (!found && data && !loading && missingLink.current !== linkedJobId) {
+      const timer = setTimeout(() => {
+        missingLink.current = linkedJobId;
+        setNotice('这条链接对应的机会暂不在当前索引中，请查看原公告或稍后刷新；链接已保留。');
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [ready, linkedJobId, data, previewData, selected?.id, loading, openDetail]);
+
+  useEffect(() => {
+    if (!ready || typeof window === 'undefined') return;
+    const newQuery = formatUrlQuery(filters, linkedJobId);
+    const currentSearch = window.location.search;
+    if (currentSearch !== newQuery) {
+      const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
+      window.history.replaceState({ jobId: linkedJobId }, '', newUrl);
+    }
+  }, [ready, filters, linkedJobId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onPopState = () => {
+      const urlState = parseUrlState(window.location.search);
+      ++detailRequest.current;
+      setSelected(null);
+      setDetailLoading(false);
+      setLinkedJobId(urlState.jobId || null);
+      setFilters(urlState.filters ? restoreBrowsing({ filters: urlState.filters }).filters : { ...defaultFilters });
+      setPage(1);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -400,6 +491,9 @@ export default function Home() {
   }, []);
 
   const allJobs = useMemo(() => mergeDuplicateOpportunities(data?.jobs ?? []), [data]);
+  const previewJobs = useMemo(() => !data && filters.view === 'all' && !(filters.query.trim() && previewData?.search_url)
+    ? filterJobs(mergeDuplicateOpportunities(previewData?.jobs || []), filters, personal, since, now).slice(0, 10) : [],
+    [data, previewData, filters, personal, since, now]);
   const savedCount = allJobs.filter((job) => personalFor(job, personal).saved).length;
   const appliedCount = allJobs.filter((job) => personalFor(job, personal).applied).length;
 
@@ -407,15 +501,16 @@ export default function Home() {
   useEffect(() => {
     if (!needsSearch || !data?.search_url || searchIndex) return;
     const controller = new AbortController();
-    loadSnapshotParts<{ jobs: Record<string, string> }>([data.search_url, ...(data.search_shards ?? [])], 'search', controller.signal)
+    const paths = data.browse_index?.version === 1 ? data.browse_index.search_shards : [data.search_url, ...(data.search_shards ?? [])];
+    loadSnapshotParts<{ jobs: Record<string, string> }>(paths, 'search', controller.signal)
       .then((parts) => {
         if (parts.some((part) => !part.jobs || Array.isArray(part.jobs) || typeof part.jobs !== 'object'))
           throw Error('全文索引格式异常。');
         const jobs = Object.assign({}, ...parts.map((part) => part.jobs)) as Record<string, string>;
         if (data.jobs.some((j) => typeof jobs[j.id] !== 'string'))
           throw Error('全文索引不完整，请点击刷新重试。');
-        if (!controller.signal.aborted) setSearchIndex(jobs);
-      }).catch((e) => { if (!controller.signal.aborted) setSearchError(e.message); });
+        if (!controller.signal.aborted && data === dataRef.current) setSearchIndex(jobs);
+      }).catch((e) => { if (!controller.signal.aborted && data === dataRef.current) setSearchError(e.message); });
     return () => controller.abort();
   }, [needsSearch, data, searchIndex]);
 
@@ -601,15 +696,20 @@ export default function Home() {
   const copyJob = (job: Job) => {
     const { cleanTitle, salary } = extractSalary(job);
     const salaryText = salary ? ` (${salary})` : '';
-    const companyText = job.company ? `\n【企业】${job.company}` : '';
+    const comp = formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany;
+    const companyText = comp && comp !== '企业名称待核实' ? `\n【企业】${comp}` : '';
     const loc = locationSummary(job);
     const locText = loc ? `\n【地点】${loc}` : '';
     const deadlineText = job.deadline ? `\n【截止】${date(job.deadline, true)}` : '';
     const url = externalUrl(job.application_url || job.source_url) || '';
-    const urlText = url ? `\n【链接】${url}` : '';
-    const content = `【岗位】${cleanTitle}${salaryText}${companyText}${locText}${deadlineText}${urlText}\n—— 来自职讯雷达`;
+    const urlText = url ? `\n【来源】${url}` : '';
+    const shareUrl = typeof window !== 'undefined'
+      ? `${window.location.origin}${window.location.pathname}?job=${job.id}`
+      : '';
+    const shareText = shareUrl ? `\n【直达链接】${shareUrl}` : '';
+    const content = `【岗位】${cleanTitle}${salaryText}${companyText}${locText}${deadlineText}${urlText}${shareText}\n—— 来自职讯雷达`;
     navigator.clipboard.writeText(content).then(() => {
-      setNotice(`已复制「${cleanTitle}」的招聘信息，可直接粘贴分享！`);
+      setNotice(`已复制「${cleanTitle}」的招聘信息与直达链接，可直接粘贴分享！`);
     }).catch(() => {
       setNotice('复制失败，请手动选择复制。');
     });
@@ -681,10 +781,10 @@ export default function Home() {
               发现机会
             </button>
             <button className="app-nav-item" aria-current={filters.view === 'saved' ? 'page' : undefined} onClick={() => openView('saved')}>
-              我的收藏 <span className="app-nav-count">{savedCount}</span>
+              我的收藏 <span className="app-nav-count">{data ? savedCount : '—'}</span>
             </button>
             <button className="app-nav-item" aria-current={filters.view === 'applied' ? 'page' : undefined} onClick={() => openView('applied')}>
-              投递记录 <span className="app-nav-count">{appliedCount}</span>
+              投递记录 <span className="app-nav-count">{data ? appliedCount : '—'}</span>
             </button>
           </nav>
           <div className="app-bar-actions">
@@ -720,7 +820,7 @@ export default function Home() {
               jobs={allJobs}
               personal={personal}
               now={now}
-              ready={ready}
+              ready={ready && !!data}
               activeView={filters.view}
               onDetail={(job) => void openDetail(job)}
               onView={openView}
@@ -754,7 +854,7 @@ export default function Home() {
 
         {error && (
           <div className="inline-alert is-danger" role="alert">
-            <span>{error} {data ? '（已保留上次读取的结果）' : ''}</span>
+            <span>{error} {data ? '（已保留上次完整结果）' : '（未完成的预览已撤下，请重试）'}</span>
             <button className="btn btn-secondary btn-sm" onClick={() => void refresh()}>
               重试
             </button>
@@ -789,7 +889,7 @@ export default function Home() {
                 <span>我的安排<small>待投递 · 宣讲日程</small></span>
                 <ChevronDown size={16} />
               </summary>
-              <ActionRail coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready} onDetail={(job) => void openDetail(job)} onView={openView} />
+              <ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} />
             </details>
 
             <div className="search-row">
@@ -835,7 +935,7 @@ export default function Home() {
               <span className="hint-tail">支持企业、岗位、专业全文搜索</span>
             </div>
 
-            <PersonalRadar
+            {data && <PersonalRadar
               key={presetRevision}
               now={now}
               currentFilters={filters}
@@ -861,7 +961,7 @@ export default function Home() {
                 }
                 setPage(1);
               }}
-            />
+            />}
 
             {filters.view !== 'all' && (
               <p className="note-line">
@@ -873,13 +973,22 @@ export default function Home() {
             <div className="result-bar">
               <div className="result-bar-left">
                 <div className="result-count" aria-live="polite">
-                  {searchPending ? (
+                  {!data ? (
+                    <output className={loading ? 'progressive-pill' : undefined}>
+                      {loading ? progressiveProgress ? `已加载 ${progressiveProgress.loaded.toLocaleString()} / ${progressiveProgress.total.toLocaleString()} 条，完整结果仍在加载` : '正在加载完整索引…' : '索引未完成，请重试加载'}
+                    </output>
+                  ) : searchPending ? (
                     <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output>
                   ) : (
                     <>
                       <div className="result-count-main">
                         <span className="result-count-num">{filtered.length}</span>
                         <span className="result-count-unit">条机会</span>
+                        {progressiveProgress && (
+                          <span className="progressive-pill" title="更新完成前保留上次完整结果">
+                            正在更新 {progressiveProgress.loaded.toLocaleString()} / {progressiveProgress.total.toLocaleString()} 条
+                          </span>
+                        )}
                       </div>
                       <span>（{filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}）</span>
                       {filters.type === '校招' && filters.year !== '全部' && (
@@ -1021,7 +1130,7 @@ export default function Home() {
                         onClick={() => change('locationScope', option.scope)}
                       >
                         {option.label}
-                        <span className="seg-count">{option.count}</span>
+                        <span className="seg-count">{data ? option.count : '…'}</span>
                       </button>
                     ))}
                   </fieldset>
@@ -1030,8 +1139,36 @@ export default function Home() {
 
               <div className="filter-chips" aria-label="已选筛选条件">
                 <span>当前筛选</span>
+                {filters.workCities && filters.workCities.length > 0 ? (
+                  filters.workCities.map((c) => (
+                    <button
+                      key={`workCity-${c}`}
+                      className="filter-chip"
+                      onClick={() => {
+                        const nextCities = (filters.workCities || []).filter((item) => item !== c);
+                        const nextCity = nextCities.length === 1 ? nextCities[0] : '全部城市';
+                        setFilters({ ...filters, city: nextCity, workCities: nextCities });
+                        setPage(1);
+                      }}
+                      aria-label={`移除城市：${c}`}
+                    >
+                      {c}
+                      <X size={12} />
+                    </button>
+                  ))
+                ) : filters.city !== '全部城市' ? (
+                  <button
+                    key="city"
+                    className="filter-chip"
+                    onClick={() => change('city', '全部城市')}
+                    aria-label={`移除城市：${filters.city}`}
+                  >
+                    {filters.city}
+                    <X size={12} />
+                  </button>
+                ) : null}
                 {([
-                  ['city', filters.city, '全部城市'], ['type', filters.type, '全部'],
+                  ['type', filters.type, '全部'],
                   ...(filters.type === '校招' ? [['year', filters.year === '全部' ? '全部' : `${filters.year}届`, '全部']] : []),
                   ['sector', filters.sector, '全部'], ['direction', filters.direction, '全部'],
                   ['salary', filters.salary, '全部'], ['education', filters.education, ''],
@@ -1068,9 +1205,11 @@ export default function Home() {
             )}
 
             {loading && !data ? (
-              <div className="opp-list" aria-label="正在读取">
-                <div className="opp-skeleton" />
-                <div className="opp-skeleton" />
+              <div className="opp-list" aria-label="首批预览" aria-busy="true">
+                <output className="plan-caption">首批卡片预览；计数、收藏列表和日程会在完整索引就绪后显示。</output>
+                {previewJobs.map((job) => <JobCard key={job.id} job={job} filters={filters} personal={personal} ready={ready} now={now} since={since}
+                  onDetail={(candidate) => void openDetail(candidate)} onRead={markRead} onReadChange={setRead} onToggle={toggle} onCopy={copyJob} />)}
+                {!previewJobs.length && <><div className="opp-skeleton" /><div className="opp-skeleton" /></>}
               </div>
             ) : (
               <>
@@ -1127,7 +1266,7 @@ export default function Home() {
                       <div key={group.id}>{content}</div>
                     );
                   })}
-                  {!filtered.length && !loading && !searchPending && (
+                  {data && !filtered.length && !loading && !searchPending && !error && (
                     <Empty className="empty-state">
                       <Search size={30} />
                       <EmptyTitle className="text-lg">
@@ -1150,6 +1289,8 @@ export default function Home() {
                           setFilters({
                             ...defaultFilters,
                             city: filters.city,
+                            workCities: filters.workCities,
+                            includeRelatedTalks: filters.includeRelatedTalks,
                             view: filters.view,
                             locationScope: filters.locationScope,
                             type: '全部',
@@ -1191,7 +1332,7 @@ export default function Home() {
             </details>
 
             <p className="foot-note">
-              {data?.sources.length ?? 0} 个来源 ·
+              {data ? `${data.sources.length} 个来源 ·` : '完整索引尚未就绪 ·'}
               当前按公告聚合，部分公告包含多个岗位。标签由文字提取，未知资格不会当作“不符合”。
               <button
                 className="text-btn"
@@ -1202,7 +1343,7 @@ export default function Home() {
               </button>
             </p>
           </section>
-          <div className="plan-desktop"><ActionRail coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
+          <div className="plan-desktop"><ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
         </div>
       </main>
 
@@ -1241,6 +1382,7 @@ export default function Home() {
         detailError={detailError}
         onClose={() => {
           ++detailRequest.current;
+          setLinkedJobId(null);
           setSelected(null);
           setDetailLoading(false);
         }}

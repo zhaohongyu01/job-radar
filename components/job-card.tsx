@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import {
   externalUrl,
-  displayJobTitle,
   sdeiPositionListUrl,
   getDeadlineCountdown,
   getLifecycleStage,
@@ -26,41 +25,17 @@ import {
   locationSummary,
   personalFor,
   selectedWorkCities,
+  formatCompanyDisplay,
+  duplicateSourceNames,
 } from '@/lib/jobs';
 import type { Job, Personal, Filters } from '@/lib/jobs';
 import { HighlightText } from '@/components/highlight-text';
 import { TalkEvents } from '@/components/talk-events';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
 import { positionMatches } from '@/lib/eligibility';
+import { extractSalary } from '@/lib/salary-display';
 
-export function extractSalary(job: Job): {
-  cleanTitle: string;
-  salary: string | null;
-} {
-  let cleanTitle = displayJobTitle(job);
-  let salary: string | null = null;
-  const titleSalaryRegex =
-    /(?:[（(])?(\d+(?:\.\d+)?(?:k|K|万|元)?\s*[-~至–]\s*\d+(?:\.\d+)?(?:k|K|万|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天)?)(?:[)）])?$/;
-  const match = cleanTitle.match(titleSalaryRegex);
-  if (match) {
-    salary = match[1].trim();
-    cleanTitle = cleanTitle.replace(titleSalaryRegex, '').trim();
-  } else {
-    const excerptMatch = job.excerpt?.match(
-      /薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]+)/,
-    );
-    if (
-      excerptMatch &&
-      /\d/.test(excerptMatch[1]) &&
-      excerptMatch[1].length <= 24
-    ) {
-      // Keep the numeric pay expression; adjacent benefit prose belongs in
-      // the announcement, not the narrow salary badge on a phone.
-      salary = excerptMatch[1].match(/^\d+(?:\.\d+)?(?:[kK万wW元])?(?:\s*[-~至–]\s*\d+(?:\.\d+)?(?:[kK万wW元])?)?(?:元)?(?:\/(?:小时|月|年|天|日))?(?:·\d+薪)?/)?.[0] || null;
-    }
-  }
-  return { cleanTitle: cleanTitle || job.title, salary };
-}
+export { extractSalary } from '@/lib/salary-display';
 
 export function cleanExcerpt(excerpt: string | null | undefined): string {
   if (!excerpt) return '';
@@ -142,7 +117,11 @@ export function JobCard({
   onCopy: (job: Job) => void;
 }) {
   const workCities = selectedWorkCities(filters);
+  const hasCityFilter = workCities.length > 0;
   const locationScopes = workCities.map((city) => locationMatch(job, city));
+  const matchedCityLabel = workCities.filter((_, index) => locationScopes[index] === 'exact').join(' / ');
+  const possibleCityLabel = workCities.filter((_, index) => locationScopes[index] === 'possible').join(' / ');
+  const talkCityLabel = [...new Set(job.talk_events?.filter((event) => workCities.includes(event.city || '') && event.status !== 'cancelled' && Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now).map((event) => event.city))].join(' / ');
   const location = !workCities.length || locationScopes.includes('exact') ? 'exact' : locationScopes.includes('possible') ? 'possible' : 'unknown';
   const hasSelectedCityTalk =
     Boolean(filters.includeRelatedTalks && job.talk_events?.some((event) => workCities.includes(event.city || '') && event.status !== 'cancelled' && Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now));
@@ -164,7 +143,7 @@ export function JobCard({
       : null) ||
     (stageInfo.stage === 'supplemental' ? '补录 / 追加招聘批次进行中' : null) ||
     (stageInfo.stage === 'selection' ? '发布考核选拔或录用进展通知' : null);
-  const monogramSource = job.company || cleanTitle;
+  const { displayCompany, monogram } = formatCompanyDisplay(job.company, cleanTitle, job.source_id);
   const isNew = !!since && Date.parse(job.first_seen_at) > Date.parse(since);
   const showStage = !['accepting', 'expired', 'expiring_soon'].includes(stageInfo.stage);
   const deadlineState = expired
@@ -231,19 +210,19 @@ export function JobCard({
       }
     >
       <header className="opp-head">
-        <div className="opp-logo" data-tone={monogramTone(monogramSource)} aria-hidden="true">
-          {monogramSource.slice(0, 2)}
+        <div className="opp-logo" data-tone={monogramTone(monogram)} aria-hidden="true">
+          {monogram}
         </div>
         <div className="opp-identity">
           <p className="opp-company">
             {unread && <span className="opp-unread-dot" title="未读" />}
-            <span className="opp-company-name">{job.company || '企业名称待核实'}</span>
-            {job.sectors[0] && <span className="opp-sector">{job.sectors[0]}</span>}
+            <span className="opp-company-name">{displayCompany}</span>
+            {job.sectors[0] && <span className="opp-sector">{job.sectors[0] === '综合' ? '单位性质未明确' : job.sectors[0]}</span>}
             {job.kind === '具体岗位' && <span className="opp-tag-sm">具体岗位</span>}
             {job.provenance === '第三方线索' && <span className="opp-sector">第三方线索</span>}
-            {!!job.duplicate_sources?.length && (
-              <span className="opp-tag-sm" title={`已同步 ${job.duplicate_sources.length + 1} 个官方渠道`}>
-                {job.duplicate_sources.length + 1} 渠道同步
+            {!!duplicateSourceNames(job).length && (
+              <span className="opp-tag-sm" title={`已同步 ${duplicateSourceNames(job).length + 1} 个官方渠道`}>
+                {duplicateSourceNames(job).length + 1} 渠道同步
               </span>
             )}
           </p>
@@ -302,14 +281,14 @@ export function JobCard({
             </li>
           )}
         </ul>
-        {filters.city !== '全部城市' && (
+        {hasCityFilter && (
           <p className={'opp-loc-note' + (location === 'exact' ? ' is-exact' : '')}>
             {location === 'exact'
-              ? `工作地含${filters.city}`
+              ? `工作地含${matchedCityLabel}`
               : hasSelectedCityTalk
-                ? `宣讲地在${filters.city}，工作地需另核对`
+                ? `宣讲地在${talkCityLabel}，工作地需另核对`
                 : location === 'possible'
-                  ? `覆盖全省 / 全国，${filters.city}岗位待核实`
+                  ? `覆盖全省 / 全国，${possibleCityLabel}岗位待核实`
                   : '工作地点尚未明确'}
           </p>
         )}
@@ -430,8 +409,8 @@ export function JobCard({
             </span>
             <span>
               {job.source_name}
-              {!!job.duplicate_sources?.length &&
-                ` · ${job.duplicate_sources.length + 1} 渠道收录`}{' '}
+              {!!duplicateSourceNames(job).length &&
+                ` · ${duplicateSourceNames(job).length + 1} 渠道收录`}{' '}
               · {job.date_label || '发布'} {publicationText(job, now)}
             </span>
             <button

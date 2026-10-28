@@ -4,10 +4,23 @@
 .backup-import-sheet [data-slot="sheet-header"] { padding-right: 28px; }
 .backup-import-sheet .application-tracker { overflow-wrap: anywhere; }
 .agenda-controls { display: grid; gap: 8px; margin: 12px 0; }
+.agenda-primary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 8px; }
+.agenda-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.agenda-quick button { padding: 4px 9px; border: 1px solid var(--border, #ddd); border-radius: 20px; font-size: 12px; }
+.agenda-quick button[aria-pressed="true"] { background: var(--primary, #205941); color: var(--primary-foreground, #fff); border-color: transparent; }
+.agenda-more summary { cursor: pointer; font-size: 12px; padding: 5px 0; color: var(--muted-foreground, #59655e); }
+.agenda-advanced { display: grid; gap: 8px; padding-top: 8px; }
+.agenda-active { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 11px; overflow-wrap: anywhere; }
+.agenda-active button { color: var(--primary, #205941); text-decoration: underline; }
+.agenda-controls button:focus-visible, .agenda-more summary:focus-visible { outline: 2px solid var(--primary, #205941); outline-offset: 2px; }
 .agenda-controls label { display: grid; gap: 4px; font-size: 12px; color: var(--muted-foreground, #59655e); }
 .agenda-controls input:not([type="checkbox"]), .agenda-controls select { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border, #ddd); border-radius: 7px; background: var(--card, #fff); color: inherit; }
 .agenda-controls label.check-row { display: flex; align-items: center; gap: 6px; }
 .agenda-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0; }
+.agenda.is-expanded { min-height: 0; align-content: start; }
+.plan-card:not(.plan-next) .plan-link { color: var(--brand, #205941); border-color: var(--line, #ddd); }
+.plan-card:not(.plan-next) .plan-link:hover { color: var(--ink, #20251f); }
+.plan-card:not(.plan-next) .plan-link:disabled { opacity: .5; cursor: default; }
 .agenda-event { min-width: 0; display: grid; gap: 4px; }
 .agenda-event > small { font-size: 11px; color: var(--muted-foreground, #68756d); }
 .agenda-event-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 11px; }

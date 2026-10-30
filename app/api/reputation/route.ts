@@ -9,8 +9,11 @@ export async function GET(request: Request): Promise<Response> {
   const cache = (globalThis as typeof globalThis & { caches?: CacheStorage & { default?: Cache } }).caches?.default;
   const key = new Request(`${new URL(request.url).origin}/api/reputation?file=${encodeURIComponent(file)}`);
   try {
-    const cached = await cache?.match(key);
-    if (cached) return cached;
+    let cached: Response | undefined;
+    try { cached = await cache?.match(key); } catch { /* Optional edge-cache failure must not block the source. */ }
+    // Cache API responses have immutable headers. Vinext appends route headers
+    // after GET returns, so returning the cached object itself crashes on hits.
+    if (cached) return new Response(cached.body, cached);
     // Both fixed GitHub delivery paths share one deadline. Some edge locations
     // cannot read raw.githubusercontent.com even while the public branch exists.
     const signal = AbortSignal.timeout(5000);

@@ -207,3 +207,26 @@ await test('read-only delivery route cannot proxy arbitrary URLs and fails clean
     assert.equal((await GET(new Request('https://example.org/api/reputation'))).status, 503);
   } finally { globalThis.fetch = original; }
 });
+
+await test('edge cache hits return mutable route headers and cache failures still read the fixed source', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalCache = Object.getOwnPropertyDescriptor(globalThis, 'caches');
+  const cached = await originalFetch(`data:application/json,${encodeURIComponent(JSON.stringify(index()))}`);
+  try {
+    Object.defineProperty(globalThis, 'caches', { configurable: true, value: { default: { match: async () => cached.clone() } } });
+    globalThis.fetch = async () => { throw Error('A cache hit must not contact GitHub'); };
+    for (let i = 0; i < 3; i++) {
+      const response = await GET(new Request('https://example.org/api/reputation'));
+      assert.equal(response.status, 200);
+      response.headers.set('Vary', 'Accept'); // The Workers route framework does this after GET returns.
+      assert.equal(validateReputationIndex(await response.json()).entities.length, 1);
+    }
+    Object.defineProperty(globalThis, 'caches', { configurable: true, value: { default: { match: async () => { throw Error('cache unavailable'); } } } });
+    globalThis.fetch = async () => Response.json(index());
+    assert.equal((await GET(new Request('https://example.org/api/reputation'))).status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCache) Object.defineProperty(globalThis, 'caches', originalCache);
+    else Reflect.deleteProperty(globalThis, 'caches');
+  }
+});

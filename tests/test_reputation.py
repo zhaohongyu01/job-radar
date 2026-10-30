@@ -203,6 +203,8 @@ class ReputationPublishingTests(unittest.TestCase):
             api = FakeGitHub(old)
             result = publisher.publish(directory, DELIVERY, api)
             self.assertEqual(result['enterprises'], 2)
+            self.assertEqual(result['with_content'], 0)  # These publication fixtures carry no evidence.
+            self.assertEqual(result['scored'], 0)
             updates = [body for path, method, body in api.calls if path == '/git/trees'][0]['tree']
             merged = json.loads(updates[0]['content'])
             self.assertEqual(merged['entities'][0]['collected_at'], '2026-10-28T00:00:00Z')

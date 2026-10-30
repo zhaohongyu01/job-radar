@@ -85,8 +85,15 @@ _CAMPUS = [(rule, re.compile(rule['venue_pattern'])) for rule in CAMPUS_RULES]
 def resolve_event_city(school, venue):
     if re.search(r'线上|直播|空中宣讲|腾讯会议|网络会议', venue):
         return None, {'method': 'unknown', 'reason': 'online'}
-    explicit = cities_in_text(venue)
     matches = [rule for rule, pattern in _CAMPUS if (rule['school'] == school or rule['school'] in venue) and pattern.search(venue)]
+    # Verified campus labels can be homonyms of other cities (Tongji's 四平
+    # campus is in Shanghai). Strip only the exact label under its school rule;
+    # a separate explicit 四平市 address still conflicts and remains unresolved.
+    location_text = venue
+    for rule in matches:
+        for label in rule.get('campus_labels', []):
+            location_text = location_text.replace(label, '')
+    explicit = cities_in_text(location_text)
     inferred = {rule['city'] for rule in matches}
     if len(explicit) > 1 or len(inferred) > 1 or (explicit and inferred and set(explicit) != inferred):
         return None, {'method': 'unknown', 'reason': 'conflicting_locations'}

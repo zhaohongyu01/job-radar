@@ -1,7 +1,7 @@
 """Public calendar adapters. Never derive work cities from a campus venue."""
 import datetime as dt
 import re
-from urllib.parse import urljoin, urlencode
+from urllib.parse import urljoin, urlencode, urlsplit
 from bs4 import BeautifulSoup
 
 
@@ -97,3 +97,35 @@ def js91_calendar(payload, source, page_size=20):
             'structured': {'fairDate': date, 'fairStartTime': start, 'fairEndTime': end,
                 'schoolName': source['school_name'], 'fairAddress': row.get('jbdd') or ''}})
     return items, max(1, (total + page_size - 1) // page_size)
+
+
+def tongji_calendar(payload, base):
+    """Tongji's anonymous calendar, including explicit online/physical mode."""
+    page = payload.get('object') or {}
+    if payload.get('state') != 1 or not isinstance(page.get('list'), list):
+        raise ValueError('Tongji public calendar unavailable; refuse login/error response')
+    total, count = page.get('totalPage'), page.get('count')
+    if type(total) is not int or total < 0 or type(count) is not int or count < len(page['list']):
+        raise ValueError('Tongji calendar pagination changed')
+    items = []
+    for row in page['list']:
+        identifier, start = row.get('id') or '', row.get('startTime') or ''
+        end, title = row.get('endTime') or '', row.get('title') or ''
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', identifier) or not title or not re.fullmatch(r'20\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', start):
+            raise ValueError('Tongji calendar identity/date missing')
+        dt.datetime.fromisoformat(start)
+        if end:
+            if not re.fullmatch(r'20\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', end) or dt.datetime.fromisoformat(end) < dt.datetime.fromisoformat(start):
+                raise ValueError('Tongji calendar end date invalid')
+        url = urljoin(base, row.get('url') or '')
+        if urlsplit(url).scheme != 'https' or urlsplit(url).hostname not in {'tj91.tongji.edu.cn', 'tjjyzx.tongji.edu.cn'}:
+            raise ValueError('Tongji calendar link left the official source')
+        venue = row.get('fieldExport') or row.get('place') or ''
+        if row.get('fairTypeName') in {'空宣', '空中宣讲会', '线上'}:
+            venue = '线上宣讲 · ' + venue
+        items.append({'identity': 'tongji-calendar:' + identifier, 'url': url, 'title': title,
+            'published_at': None, 'kind': '宣讲会', 'calendar_only': True,
+            'structured': {'fairDate': start[:10], 'fairStartTime': start[11:16],
+                'fairEndTime': end[11:16] if end and end[:10] == start[:10] else None,
+                'schoolName': '同济大学', 'fairAddress': venue}})
+    return items, max(1, total)

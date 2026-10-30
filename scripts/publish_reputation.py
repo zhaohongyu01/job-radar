@@ -112,18 +112,30 @@ def publish(directory, delivery, api, seed_directory=None):
         api.request('/git/refs/heads/' + delivery['branch'], 'PATCH', {'sha': commit['sha'], 'force': False})
     else:
         api.request('/git/refs', 'POST', {'ref': 'refs/heads/' + delivery['branch'], 'sha': commit['sha']})
-    return {'published': True, 'enterprises': len(merged['entities']), 'branch': delivery['branch']}
+    rows = merged['entities']
+    return {'published': True, 'enterprises': len(rows), 'branch': delivery['branch'],
+            'with_content': sum(any(row.get(key, 0) for key in ('experience_count', 'interview_count', 'question_count', 'unattributed_count')) for row in rows),
+            'experiences': sum(row.get('experience_count', 0) for row in rows),
+            'interviews': sum(row.get('interview_count', 0) for row in rows),
+            'questions': sum(row.get('question_count', 0) for row in rows),
+            'unattributed': sum(row.get('unattributed_count', 0) for row in rows),
+            'scored': sum(row.get('score') is not None for row in rows)}
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--public-dir', required=True)
+    parser.add_argument('--report', type=Path)
     args = parser.parse_args()
     token = os.environ.get('GITHUB_TOKEN')
     if not token:
         parser.error('GITHUB_TOKEN is required only for workflow publication')
     delivery = json.loads((ROOT / 'config/reputation-delivery.json').read_text(encoding='utf-8'))
-    print(json.dumps(publish(Path(args.public_dir), delivery, GitHub(delivery['repository'], token), ROOT / 'public/reputation')))
+    result = publish(Path(args.public_dir), delivery, GitHub(delivery['repository'], token), ROOT / 'public/reputation')
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+    print(json.dumps(result))
 
 
 if __name__ == '__main__':

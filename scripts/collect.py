@@ -27,7 +27,7 @@ from bs4 import BeautifulSoup
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 from city_registry import (CITIES, PROVINCE_CITIES, CODE_CITY, cities_in_text,
                            work_cities, resolve_event_city, resolve_event_school, collection_cities)
-from external_calendars import nankai_calendar, nankai_event, pku_calendar, js91_calendar, public_calendar_source
+from external_calendars import nankai_calendar, nankai_event, pku_calendar, js91_calendar, tongji_calendar, public_calendar_source
 from opportunity_facts import employment_type, availability_evidence
 from employer_identity import employer_identity
 
@@ -145,6 +145,9 @@ SOURCES.extend([
      'url': 'https://nuist.91job.org.cn/sub-station/lectureList?xxdm=10300',
      'adapter': 'js91_talks', 'channel': 'talks', 'school_name': '南京信息工程大学', 'school_code': '10300', 'allow_empty_pages': True},
 ])
+SOURCES.append({'id': 'tongji-talks', 'name': '同济大学 · 宣讲日历',
+    'url': 'https://tj91.tongji.edu.cn/frontpage/tongji/html/recruitmentFairList.html',
+    'school_name': '同济大学', 'adapter': 'tongji_talks', 'channel': 'talks', 'allow_empty_pages': True})
 SOURCES.append({'id': 'sdnu-graduate-talks', 'name': '山东师范大学研究生就业网 · 宣讲通知',
     'url': 'http://www.yjsjy.sdnu.edu.cn/xyzp.htm', 'adapter': 'sdnu_graduate', 'channel': 'talks'})
 for code, host, school_name in [('sdjzu', 'sdjzu', '山东建筑大学'), ('sdjt', 'sdjt', '山东交通学院'),
@@ -284,7 +287,7 @@ for _source in SOURCES:
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 SOURCE_PACKS = {
     'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'upc'],
+    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'upc'],
     'universities-b': _sdei_source_ids,
     'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
     'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
@@ -2725,7 +2728,7 @@ def run(args):
                         print(source['id'], 'deferred 0 0', flush=True)
                         continue
         try:
-            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks','js91_talks'}
+            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks','js91_talks','tongji_talks'}
             first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
@@ -2749,7 +2752,7 @@ def run(args):
             # Live inventories need a complete single-run view for withdrawal
             # detection; SDU follows opaque next-page links; OfferJack has cities.
             resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv',
-                                                 'nankai_talks', 'pku_talks', 'bysjy_talks', 'js91_talks'}
+                                                 'nankai_talks', 'pku_talks', 'bysjy_talks', 'js91_talks', 'tongji_talks'}
                          or source['id'] in {'nankai', 'jinan'})
             # BYSJY exposes only a look-ahead row, not an exact last-page number.
             # Its first-page "total=2" must never reset a deeper saved cursor.
@@ -2829,6 +2832,11 @@ def run(args):
                         payload = json.loads(fetch('https://scc.pku.edu.cn/f/recruitmentFair/ajax_frontRecruitfair',
                             form={'pageNo': page, 'pageSize': 20, 'fairType': 1}, referer=source['url']))
                         found, total = pku_calendar(payload, source['url'])
+                    elif source.get('adapter')=='tongji_talks':
+                        payload = json.loads(fetch('https://tj91.tongji.edu.cn/f/recruitmentFair/ajax_frontRecruitfair',
+                            form={'pageNo': page, 'pageSize': 20, 'fairType': ''}, referer=source['url']))
+                        found, total = tongji_calendar(payload, source['url'])
+                        source['_total_items'] = payload['object']['count']
                     elif source.get('adapter')=='bysjy_talks':
                         query = urllib.parse.urlencode({'start': (page-1)*20, 'count': 21,
                             'k': '', 'address': '', 'professionals': '', 'career_type': '',

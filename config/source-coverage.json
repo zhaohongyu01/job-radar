@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "verified_on": "2026-10-26",
+  "verified_on": "2026-10-30",
   "note": "城市仅描述来源或校区所在地，不用于推断岗位工作地；计划清单不等于全市高校总数。",
   "sources": [
     {
@@ -792,7 +792,9 @@
       "source_id": "scau-talks",
       "channel": "calendar",
       "school": "华南农业大学",
-      "cities": ["广州"],
+      "cities": [
+        "广州"
+      ],
       "scope": "school_feed",
       "connected": true,
       "verified_on": "2026-10-30"
@@ -801,7 +803,9 @@
       "source_id": "sztu-talks",
       "channel": "calendar",
       "school": "深圳技术大学",
-      "cities": ["深圳"],
+      "cities": [
+        "深圳"
+      ],
       "scope": "school_feed",
       "connected": true,
       "verified_on": "2026-10-30"
@@ -810,7 +814,20 @@
       "source_id": "nuist-talks",
       "channel": "calendar",
       "school": "南京信息工程大学",
-      "cities": ["南京"],
+      "cities": [
+        "南京"
+      ],
+      "scope": "school_feed",
+      "connected": true,
+      "verified_on": "2026-10-30"
+    },
+    {
+      "source_id": "tongji-talks",
+      "channel": "calendar",
+      "school": "同济大学",
+      "cities": [
+        "上海"
+      ],
       "scope": "school_feed",
       "connected": true,
       "verified_on": "2026-10-30"
@@ -842,7 +859,9 @@
     {
       "coverage_key": "sjtu-calendar",
       "school": "上海交通大学",
-      "cities": ["上海"],
+      "cities": [
+        "上海"
+      ],
       "channel": "calendar",
       "status": "blocked",
       "url": "https://www.job.sjtu.edu.cn/career/xjhxx?nrdm=zcxjh1",
@@ -851,11 +870,13 @@
     {
       "coverage_key": "hdu-calendar",
       "school": "杭州电子科技大学",
-      "cities": ["杭州"],
+      "cities": [
+        "杭州"
+      ],
       "channel": "calendar",
       "status": "planned",
       "url": "https://job.hdu.edu.cn/teachin",
-      "reason": "2026-10-30正常公开列表无日程行，尚未验证非空日期及分页结构；未计入已接入来源"
+      "reason": "2026-10-30正常浏览器已显示非空日程；原始HTML仅含动态占位，尚无稳定无浏览器列表适配，未计入已接入来源"
     }
   ]
 }

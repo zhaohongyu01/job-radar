@@ -11,18 +11,42 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const cached = await cache?.match(key);
     if (cached) return cached;
-    const upstream = await fetch(`https://raw.githubusercontent.com/${delivery.repository}/${delivery.branch}/${delivery.directory}/${file}`,
-      { signal: AbortSignal.timeout(5000), redirect: 'error' });
-    if (!upstream.ok) return Response.json({ error: 'Reputation update unavailable' }, { status: 503 });
-    const body = await upstream.text();
-    if (body.length > 2000000) throw Error('Oversized reputation asset');
-    JSON.parse(body);
+    // Both fixed GitHub delivery paths share one deadline. Some edge locations
+    // cannot read raw.githubusercontent.com even while the public branch exists.
+    const signal = AbortSignal.timeout(5000);
+    const locations = [
+      `https://raw.githubusercontent.com/${delivery.repository}/${delivery.branch}/${delivery.directory}/${file}`,
+      `https://api.github.com/repos/${delivery.repository}/contents/${delivery.directory}/${file}?ref=${delivery.branch}`,
+    ];
+    let body: string | undefined;
+    for (const location of locations) {
+      try {
+        // Workers supports manual/follow only. A manual non-2xx response is
+        // rejected below, so redirects can never turn this into an open proxy.
+        const upstream = await fetch(location, { signal, redirect: 'manual', headers: {
+          'User-Agent': 'JobRadar-Public-Reputation', 'Accept': 'application/vnd.github.raw+json',
+        } });
+        if (!upstream.ok) {
+          console.warn('reputation_upstream_http', new URL(location).hostname, upstream.status);
+          continue;
+        }
+        const candidate = await upstream.text();
+        if (candidate.length > 2000000) throw Error('Oversized reputation asset');
+        JSON.parse(candidate);
+        body = candidate;
+        break;
+      } catch (error) {
+        console.warn('reputation_upstream_unavailable', new URL(location).hostname, error instanceof Error ? error.message : 'unknown');
+      }
+    }
+    if (body === undefined) return Response.json({ error: 'Reputation update unavailable' }, { status: 503 });
     const response = new Response(body, { headers: { 'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': file === 'index.json' ? 'public, max-age=300, s-maxage=300' : 'public, max-age=31536000, immutable',
       'X-Content-Type-Options': 'nosniff' } });
     try { await cache?.put(key, response.clone()); } catch { /* Cache availability does not invalidate data. */ }
     return response;
-  } catch {
+  } catch (error) {
+    console.warn('reputation_delivery_unavailable', error instanceof Error ? error.message : 'unknown');
     return Response.json({ error: 'Reputation update unavailable' }, { status: 503 });
   }
 }

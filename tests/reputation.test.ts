@@ -170,6 +170,19 @@ await test('read-only delivery route cannot proxy arbitrary URLs and fails clean
     const response = await GET(new Request('https://example.org/api/reputation?file=index.json'));
     assert.equal(response.status, 200); assert.match(response.headers.get('cache-control')!, /max-age=300/);
     assert.match(requests[0], /^https:\/\/raw\.githubusercontent\.com\/zhaohongyu01\/job-radar\/reputation-data\/public\/reputation\/index.json$/);
+    let fallbackCalls = 0;
+    const deadlines: AbortSignal[] = [];
+    globalThis.fetch = async (input, init) => {
+      fallbackCalls++; deadlines.push(init!.signal!);
+      assert.equal(init?.redirect, 'manual'); // Cloudflare Workers rejects redirect: 'error'.
+      assert.equal(new Headers(init?.headers).get('user-agent'), 'JobRadar-Public-Reputation');
+      if (fallbackCalls === 1) return new Response('unavailable', { status: 503 });
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      assert.match(url, /^https:\/\/api\.github\.com\/repos\/zhaohongyu01\/job-radar\/contents\/public\/reputation\/index.json\?ref=reputation-data$/);
+      return Response.json(index());
+    };
+    assert.equal((await GET(new Request('https://example.org/api/reputation'))).status, 200);
+    assert.equal(fallbackCalls, 2); assert.equal(deadlines[0], deadlines[1]);
     globalThis.fetch = async () => new Response('not available', { status: 404 });
     assert.equal((await GET(new Request('https://example.org/api/reputation'))).status, 503);
     globalThis.fetch = async () => new Response('<html>challenge</html>');

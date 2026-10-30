@@ -42,6 +42,10 @@ jobs:
         run: timeout 195s python scripts/collect_reputation.py --budget 180 --limit 30 --queue data/reputation/queue.json
       - name: Build attributed opinion summaries and bounded scores
         run: node --experimental-strip-types scripts/build_reputation.mjs data/reputation/state.json data/reputation/public
+      - name: Publish data branch without deploying the website
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/publish_reputation.py --public-dir data/reputation/public --report data/reputation/publication-report.json
       - name: Report actual source coverage
         if: ${{ always() && hashFiles('data/reputation/report.json') != '' }}
         run: |
@@ -54,7 +58,14 @@ jobs:
           index_path = Path('data/reputation/public/index.json')
           if index_path.exists():
               rows = json.loads(index_path.read_text())['entities']
-              lines += [f"累计保留 {len(rows)} 家资料；其中有综合参考分 {sum(row['score'] is not None for row in rows)} 家。公开页为部分收录，不等于全平台覆盖。"]
+              lines += [f"本机状态包含 {len(rows)} 家资料（不是数据分支累计覆盖）。"]
+          published_path = Path('data/reputation/publication-report.json')
+          if published_path.exists():
+              published = json.loads(published_path.read_text())
+              if published.get('published'):
+                  lines += [f"发布后累计 {published['enterprises']} 家资料、{published['with_content']} 家有内容；确认员工体验 {published['experiences']} 条、面经 {published['interviews']} 条、求助 {published['questions']} 条、归属待核对 {published['unattributed']} 条、综合分 {published['scored']} 家。公开页为部分收录，不等于全平台覆盖。"]
+          if report.get('errors') or report.get('failures'):
+              lines += ['部分页面不可用；已保留旧记录及原读取时间，任务成功不代表全部来源读取成功。']
           if report['errors']:
               print('::warning::Some reputation pages were unavailable; prior evidence has been retained. See collection report.')
           queue_path = Path('data/reputation/queue.json')
@@ -64,10 +75,6 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
               output.write('\n\n'.join(lines) + '\n')
           PY
-      - name: Publish data branch without deploying the website
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/publish_reputation.py --public-dir data/reputation/public
       - uses: actions/cache/save@v4
         if: ${{ always() && hashFiles('data/reputation/state.json') != '' }}
         with:
@@ -79,6 +86,7 @@ jobs:
           name: employer-reputation-report
           path: |
             data/reputation/report.json
+            data/reputation/publication-report.json
             data/reputation/queue.json
             data/reputation/public/index.json
           retention-days: 7

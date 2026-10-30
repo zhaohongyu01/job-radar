@@ -1170,13 +1170,15 @@ export function hasRecentJobChange(j: Job, now = Date.now()): boolean {
   );
 }
 
-export function filterJobs(
+function matchingJobs(
   jobs: Job[],
   f: Filters,
   personal: Personal,
   since: string | null,
   now = Date.now(),
 ) {
+  const workCities = selectedWorkCities(f);
+  const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return jobs
     .filter((j) => {
       const p = personalFor(j, personal);
@@ -1198,7 +1200,6 @@ export function filterJobs(
       if (f.view === 'all' && !isDomestic(j)) return false;
       if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
       if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
-      const workCities = selectedWorkCities(f);
       const matches = workCities.map((city) => locationMatch(j, city));
       const location = matches.includes('exact') ? 'exact' : matches.includes('possible') ? 'possible' : matches.includes('unknown') ? 'unknown' : 'none';
       const talkInCity = Boolean(f.includeRelatedTalks && f.locationScope === 'exact' && j.talk_events?.some((event) =>
@@ -1270,7 +1271,6 @@ export function filterJobs(
         }
       }
       if (f.query.trim()) {
-        const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
         if (keywords.length) {
           const searchable = [
             j.title,
@@ -1301,50 +1301,44 @@ export function filterJobs(
       )
         return false;
       return true;
-    })
-    .sort((a, b) => {
-      if (f.view === 'planned') return comparePendingApplications(a, b);
-      if (f.sort === 'deadline_asc') {
-        const aExp = isExpired(a, now);
-        const bExp = isExpired(b, now);
-        if (aExp !== bExp) return aExp ? 1 : -1;
-
-        const aTime = a.deadline ? Date.parse(a.deadline) : Number.POSITIVE_INFINITY;
-        const bTime = b.deadline ? Date.parse(b.deadline) : Number.POSITIVE_INFINITY;
-
-        if (Number.isFinite(aTime) && Number.isFinite(bTime)) {
-          return (
-            aTime - bTime ||
-            publicationDate(b, now).localeCompare(publicationDate(a, now)) ||
-            a.id.localeCompare(b.id)
-          );
-        }
-        if (Number.isFinite(aTime) !== Number.isFinite(bTime)) {
-          return Number.isFinite(aTime) ? -1 : 1;
-        }
-        return (
-          publicationDate(b, now).localeCompare(publicationDate(a, now)) ||
-          a.id.localeCompare(b.id)
-        );
-      }
-
-      if (f.sort === 'salary_desc') {
-        const aRange = parseSalaryRange(a);
-        const bRange = parseSalaryRange(b);
-        const aSal = aRange ? (Number.isFinite(aRange.max) ? aRange.max : aRange.min) : -1;
-        const bSal = bRange ? (Number.isFinite(bRange.max) ? bRange.max : bRange.min) : -1;
-        if (aSal !== bSal) return bSal - aSal;
-        return (
-          publicationDate(b, now).localeCompare(publicationDate(a, now)) ||
-          a.id.localeCompare(b.id)
-        );
-      }
-
-      return (
-        publicationDate(b, now).localeCompare(publicationDate(a, now)) ||
-        a.id.localeCompare(b.id)
-      );
     });
+}
+
+/** Same eligibility rules as the visible list, without sorting discarded rows. */
+export function countMatchingJobs(jobs: Job[], f: Filters, personal: Personal, since: string | null, now = Date.now()): number {
+  return matchingJobs(jobs, f, personal, since, now).length;
+}
+
+export function filterJobs(jobs: Job[], f: Filters, personal: Personal, since: string | null, now = Date.now()): Job[] {
+  const matches = matchingJobs(jobs, f, personal, since, now);
+  // Parse dates and salaries once per matching row instead of once per comparison.
+  // This cache belongs to this call: edits, clock changes and new snapshots cannot
+  // leave stale sort keys behind.
+  const keys = new Map(matches.map(job => {
+    const range = f.sort === 'salary_desc' ? parseSalaryRange(job) : null;
+    const plannedTime = f.view === 'planned' ? deadlineTime(job.deadline) : NaN;
+    return [job, {
+      published: f.view === 'planned' ? '' : publicationDate(job, now),
+      expired: f.sort === 'deadline_asc' && isExpired(job, now),
+      deadline: f.view === 'planned'
+        ? Number.isFinite(plannedTime) ? plannedTime : Number.MAX_SAFE_INTEGER
+        : job.deadline ? Date.parse(job.deadline) : Number.POSITIVE_INFINITY,
+      salary: range ? Number.isFinite(range.max) ? range.max : range.min : -1,
+    }] as const;
+  }));
+  return matches.sort((a, b) => {
+    const ak = keys.get(a)!, bk = keys.get(b)!;
+    if (f.view === 'planned') return ak.deadline - bk.deadline || a.id.localeCompare(b.id);
+    if (f.sort === 'deadline_asc') {
+      if (ak.expired !== bk.expired) return ak.expired ? 1 : -1;
+      if (Number.isFinite(ak.deadline) && Number.isFinite(bk.deadline)) {
+        return ak.deadline - bk.deadline || bk.published.localeCompare(ak.published) || a.id.localeCompare(b.id);
+      }
+      if (Number.isFinite(ak.deadline) !== Number.isFinite(bk.deadline)) return Number.isFinite(ak.deadline) ? -1 : 1;
+    }
+    if (f.sort === 'salary_desc' && ak.salary !== bk.salary) return bk.salary - ak.salary;
+    return bk.published.localeCompare(ak.published) || a.id.localeCompare(b.id);
+  });
 }
 export function validatePersonal(input: unknown): Personal {
   if (!input || typeof input !== 'object' || Array.isArray(input))

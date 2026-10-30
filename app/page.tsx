@@ -41,6 +41,7 @@ import {
 import {
   defaultFilters,
   filterJobs,
+  countMatchingJobs,
   validatePersonal,
   externalUrl,
   personalFor,
@@ -649,13 +650,13 @@ function HomeContent() {
           : scope === 'possible'
             ? '全省 / 全国待核实'
             : '地点未明确',
-      count: filterJobs(
+      count: countMatchingJobs(
         searchableJobs,
         { ...filters, locationScope: scope },
         personal,
         since,
         now,
-      ).length,
+      ),
     }),
   ) : [], [searchableJobs, filters, personal, since, now]);
 

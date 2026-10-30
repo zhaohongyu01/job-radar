@@ -192,6 +192,17 @@
       "city": "南京",
       "evidence_url": "https://webs.nuist.edu.cn/_s159/2023/0326/c8422a217787/page.psp",
       "verified_on": "2026-10-30"
+    },
+    {
+      "id": "tongji-shanghai-campuses",
+      "school": "同济大学",
+      "venue_pattern": "四平校区|嘉定校区|沪西校区|沪北校区",
+      "city": "上海",
+      "evidence_url": "https://tj91.tongji.edu.cn/",
+      "verified_on": "2026-10-30",
+      "campus_labels": [
+        "四平校区"
+      ]
     }
   ]
 }

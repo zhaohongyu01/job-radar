@@ -1,0 +1,29 @@
+{
+  "state": 1,
+  "object": {
+    "totalPage": 18,
+    "count": 354,
+    "list": [
+      {
+        "id": "5EF7228693CB587AE0632084A8C07BF7",
+        "title": "海军研究院二所",
+        "startTime": "2026-10-30 10:30:00",
+        "endTime": "2026-10-30 11:00:00",
+        "fieldExport": "四平校区-大学生活动中心205会议室",
+        "place": "四平校区-大学生活动中心205会议室",
+        "fairTypeName": "线下",
+        "url": "https://tjjyzx.tongji.edu.cn/jyfw/sys/jypubapp/*default/index.do?type=xjhxq;dwdm=d76eed7855c94f62ba839190b8a48820;xjhbh=5EF7228693CB587AE0632084A8C07BF7#/xjhxq"
+      },
+      {
+        "id": "4551df60bc6a4bf4bd13a014db1464c6",
+        "title": "晓禾教育科技（武汉）有限公司",
+        "startTime": "2026-10-30 14:30:00",
+        "endTime": "2026-10-30 16:30:00",
+        "fieldExport": "见详情页面",
+        "place": "见详情页面",
+        "fairTypeName": "空宣",
+        "url": "https://tjjyzx.tongji.edu.cn/jyfw/sys/jypubapp/*default/index.do?type=xjhxq;dwdm=1b39f88850f04cc586ec6617e74cab11;xjhbh=4551df60bc6a4bf4bd13a014db1464c6#/xjhxq"
+      }
+    ]
+  }
+}

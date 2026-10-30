@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   filterJobs,
+  countMatchingJobs,
   defaultFilters,
   validatePersonal,
   externalUrl,
@@ -356,6 +357,29 @@ void test('filterJobs multi-mode sorting operates correctly', () => {
   // Sort by salary_desc: highest salary first
   const salarySorted = filterJobs([jobSoon, jobLater, jobNoDeadline], { ...defaultFilters, sort: 'salary_desc' }, {}, null, baseTime);
   assert.deepEqual(salarySorted.map((j) => j.id), ['later', 'nodeadline', 'soon']);
+});
+
+void test('count-only filtering shares every city/personal rule and sort keys respect clock changes', () => {
+  const at = Date.parse('2026-10-30T12:00:00+08:00');
+  const rows = [
+    { ...job, id: 'dated', published_at: '2026-10-30', deadline: '2026-10-31', cities: ['北京'], location_evidence: ['工作地点：北京'] },
+    { ...job, id: 'future', published_at: '2026-10-31', deadline: null, cities: ['上海'], location_evidence: ['工作地点：上海'] },
+    { ...job, id: 'bad', published_at: 'invalid', deadline: 'invalid', cities: [], location_evidence: [] },
+    { ...job, id: 'expired', published_at: '2026-10-29', deadline: '2026-10-29', cities: ['北京'], location_evidence: ['工作地点：北京'] },
+  ];
+  const personal = { dated: { saved: true }, future: { hidden: true }, bad: { applied: true } };
+  for (const view of ['all', 'saved', 'planned', 'applied', 'hidden', 'pipeline']) {
+    for (const locationScope of ['exact', 'possible', 'unknown'] as const) {
+      for (const sort of ['newest', 'deadline_asc', 'salary_desc'] as const) {
+        const filters = { ...defaultFilters, view, workCities: ['北京', '上海'], locationScope, sort, showExpired: true };
+        assert.equal(countMatchingJobs(rows, filters, personal, null, at), filterJobs(rows, filters, personal, null, at).length);
+      }
+    }
+  }
+  const filters = { ...defaultFilters, city: '全部城市', workCities: [], showExpired: true };
+  assert.equal(filterJobs(rows, filters, {}, null, at)[0].id, 'dated');
+  assert.equal(filterJobs(rows, filters, {}, null, at + 86400000)[0].id, 'future');
+  assert.deepEqual(rows.map(row => row.id), ['dated', 'future', 'bad', 'expired']);
 });
 
 void test('unknown employer sectors remain accessible without relabelling them as enterprises', () => {

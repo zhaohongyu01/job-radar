@@ -382,6 +382,18 @@ void test('count-only filtering shares every city/personal rule and sort keys re
   assert.deepEqual(rows.map(row => row.id), ['dated', 'future', 'bad', 'expired']);
 });
 
+void test('deadline calendar days use Beijing midnight across zones, leap days and exact expiry', () => {
+  const at = Date.parse('2026-10-30T23:59:30+08:00');
+  assert.equal(getDeadlineCountdown('2026-10-30', at)?.daysLeft, 0);
+  assert.equal(getDeadlineCountdown('2026-10-31', at)?.daysLeft, 1);
+  assert.equal(getDeadlineCountdown('2026-11-01T00:01:00+08:00', at)?.daysLeft, 2);
+  assert.equal(getDeadlineCountdown('2026-10-31T16:01:00Z', at)?.daysLeft, 2);
+  assert.equal(getDeadlineCountdown('2028-03-01', Date.parse('2028-02-28T20:00:00+08:00'))?.daysLeft, 2);
+  assert.equal(getDeadlineCountdown('2026-10-30T23:59:30+08:00', at)?.urgency, 'expired');
+  assert.equal(getDeadlineCountdown('invalid', at), null);
+  assert.equal(getDeadlineCountdown('2026-02-30', at), null);
+});
+
 void test('unknown employer sectors remain accessible without relabelling them as enterprises', () => {
   const generalJob = { ...job, id: 'general', title: '复旦大学辅导员招聘', sectors: ['综合'] };
   const enterpriseJob = { ...job, id: 'enterprise', title: '华为技术招聘', sectors: ['企业 / 其他'] };

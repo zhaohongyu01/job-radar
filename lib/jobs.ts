@@ -736,13 +736,11 @@ export function getDeadlineCountdown(
   if (diffMs <= 0) {
     return { daysLeft: 0, text: '已截止', urgency: 'expired' };
   }
-  const targetMidnight = new Date(
-    new Date(target).toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }),
-  ).setHours(0, 0, 0, 0);
-  const nowMidnight = new Date(
-    new Date(now).toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }),
-  ).setHours(0, 0, 0, 0);
-  const daysLeft = Math.max(0, Math.round((targetMidnight - nowMidnight) / 86400000));
+  // Recruitment dates use Beijing time (UTC+8). Calendar-day ordinals avoid
+  // constructing two Intl formatters for every card/radar candidate, and do
+  // not depend on the visitor's system timezone or daylight-saving changes.
+  const shanghaiDayNumber = (timestamp: number) => Math.floor((timestamp + 8 * 3600000) / 86400000);
+  const daysLeft = Math.max(0, shanghaiDayNumber(target) - shanghaiDayNumber(now));
 
   if (daysLeft === 0) {
     return { daysLeft: 0, text: '今日截止', urgency: 'urgent' };

@@ -10,6 +10,7 @@ import { currentReputationScore, dedupeEvidence, filterByReputation, matchReputa
 import type { Dimension, Evidence, ReputationEntity, ReputationIndex } from '../lib/reputation.ts';
 import { loadReputationFile } from '../lib/reputation-loader.ts';
 import { GET } from '../app/api/reputation/route.ts';
+import { mergeReputationHistory } from '../lib/reputation-history.ts';
 
 const now = Date.parse('2026-10-29T04:00:00Z'), at = new Date(now).toISOString();
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -31,6 +32,21 @@ function index(entities = [entity()], generated = at): ReputationIndex {
     entities: entities.map(({ records, ...metadata }) => ({ ...metadata, ...summarizeReputation(records, Date.parse(generated)),
       file: `entity-${metadata.id.split(':')[1]}-${hash(JSON.stringify({ ...metadata, records })).slice(0, 20)}.json` })) };
 }
+
+await test('publication history unions partial pages, deduplicates fresh reads and preserves unseen source dates', () => {
+  const oldDate = '2026-10-01T00:00:00Z';
+  const previous = entity('1', { collected_at: oldDate, records: [evidence(1, { collected_at: oldDate }), evidence(2, { collected_at: oldDate })] });
+  const incoming = entity('1', { records: [evidence(2), evidence(3, { kind: 'interview', signals: [] })] });
+  const result = mergeReputationHistory(previous, incoming);
+  assert.equal(result.records.length, 3);
+  assert.equal(result.records.find(row => row.id === evidence(1).id)?.collected_at, oldDate);
+  assert.equal(result.records.find(row => row.id === evidence(2).id)?.collected_at, at);
+  assert.equal(previous.records.length, 2);
+  assert.throws(() => mergeReputationHistory(previous, entity('2')), /身份/);
+  assert.throws(() => mergeReputationHistory(previous, entity('1', { legal_name: '另一企业' })), /身份/);
+  const legacy = mergeReputationHistory(previous, entity('1', { records: [] }));
+  assert.ok(legacy.records.every(row => row.attribution === 'uncertain' && row.signals.length === 0));
+});
 
 await test('scores require ten known accounts per dimension and three dimensions, with small-sample smoothing', () => {
   assert.equal(summarizeReputation(entity().records.slice(0, 9), now).score, null);

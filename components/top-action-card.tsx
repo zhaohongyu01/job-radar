@@ -46,9 +46,9 @@ export function TopActionCard({
       <div className="top-action-stats">
         <button
           type="button"
-          className={`top-stat-btn ${activeView === 'saved' ? 'is-active' : ''}`}
+          className={`top-stat-btn ${activeView === 'planned' ? 'is-active' : ''}`}
           disabled={!ready}
-          onClick={() => onView('saved')}
+          onClick={() => onView('planned')}
           title="查看待投递机会清单"
         >
           <span className="top-stat-val">{ready ? queue.length : '—'}</span>
@@ -96,7 +96,7 @@ export function TopActionCard({
               <button
                 type="button"
                 className="top-cue-all-link"
-                onClick={() => onView('saved')}
+                onClick={() => onView('planned')}
                 title="查看全部收藏待投递机会"
               >
                 全部 {queue.length} 个待投 <ArrowUpRight size={11} />

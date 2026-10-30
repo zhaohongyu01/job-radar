@@ -1,0 +1,8 @@
+{
+  "scau": {"code": 1, "data": [{"career_talk_id": "725589", "meet_name": "北京港源建筑装饰工程有限公司", "meet_day": "2026-10-30", "meet_time": "19:30", "address": "教二205", "is_yun": "0", "career_state": "0"}]},
+  "sztu": {"code": 1, "data": [{"career_talk_id": "729338", "meet_name": "世运电路2027届储干校园招聘宣讲会", "meet_day": "2026-11-02", "meet_time": "16:00", "address": "C-5教学楼205教室", "is_yun": "0", "career_state": "0"}]},
+  "nuist": {"success": true, "code": 200, "result": {"total": 97, "records": [
+    {"xjhid": "1000000000341805", "xjhmc": "姚品国际2026年校园招聘空中宣讲会", "jbrq": "2026-10-30", "jbdd": "空中宣讲会", "jbxx": "南京信息工程大学", "kssjd": "2026-10-30 15:00-15:30", "xjhzt": "0", "xjlbdm": "0"},
+    {"xjhid": "1000000000342208", "xjhmc": "公开宣讲安排", "jbrq": "2026-11-02", "jbdd": "创业园1号楼108宣讲室", "jbxx": "南京信息工程大学", "kssjd": "2026-11-02 14:30—16:30", "xjhzt": "0", "xjlbdm": "1"}
+  ]}}
+}

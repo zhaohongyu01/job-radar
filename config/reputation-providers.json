@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "providers": {
+    "nowcoder": { "label": "牛客", "enabled": true, "status": "partial", "checked_at": "2026-10-30", "evidence_url": "https://www.nowcoder.com/robots.txt", "description": "已接公开企业页，部分内容可读取；面经、求助与员工体验分别展示。" },
+    "kanzhun": { "label": "看准", "enabled": false, "status": "product_changed", "checked_at": "2026-10-30", "evidence_url": "https://www.kanzhun.com/", "description": "当前官网为婚恋交友产品，未取得原企业点评服务的可用读取渠道；下方仅为历史评价检索。" },
+    "maimai": { "label": "脉脉", "enabled": false, "status": "access_restricted", "checked_at": "2026-10-30", "evidence_url": "https://maimai.cn/robots.txt", "description": "当前自建采集器读取内容页受限，尚未取得授权评价数据渠道；下方仅为人工检索。" }
+  }
+}

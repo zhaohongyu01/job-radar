@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { restoreBrowsing, parseUrlState, formatUrlQuery } from '../lib/browsing.ts';
 import { defaultFilters, filterJobs, isUnread, mergePersonal, personalFor, validatePersonal, selectedWorkCities, UNKNOWN_SECTOR } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
+import { mergePersonalRecords } from '../lib/personal-records.ts';
 
 const job = {
   id: '0123456789abcdef0123', title: '财务', company: '某单位', kind: '具体岗位',
@@ -32,7 +33,9 @@ void test('legacy records and folded sources retain expected reading state', () 
   assert.throws(() => validatePersonal({ [job.id]: { readAt: true } }));
   const existing = { [job.id]: { saved: true, readAt: '2026-09-02T00:00:00.000Z' } };
   assert.equal(isUnread(job, mergePersonal(existing, validatePersonal({ [job.id]: { saved: false } }))), false);
-  assert.equal(isUnread(job, mergePersonal(existing, validatePersonal({ [job.id]: { readAt: null } }))), true);
+  const importedUnread = validatePersonal({ [job.id]: { readAt: null } });
+  assert.equal(isUnread(job, mergePersonal(existing, importedUnread)), false);
+  assert.equal(isUnread(job, mergePersonalRecords(existing, importedUnread, true)), true);
 });
 void test('browsing preferences restore all filters without letting malformed fields through', () => {
   const filters = { ...defaultFilters, city: '青岛', type: '社招', sector: '保险', query: '审计', onlyUnread: true, salary: '10K以上', sort: 'deadline_asc' as const };

@@ -26,8 +26,8 @@ from campus_talks import (SDU_CALENDAR, sdu_calendar, sdu_recruitment_body, bysj
 from bs4 import BeautifulSoup
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 from city_registry import (CITIES, PROVINCE_CITIES, CODE_CITY, cities_in_text,
-                           work_cities, resolve_event_city, collection_cities)
-from external_calendars import nankai_calendar, nankai_event, pku_calendar, public_calendar_source
+                           work_cities, resolve_event_city, resolve_event_school, collection_cities)
+from external_calendars import nankai_calendar, nankai_event, pku_calendar, js91_calendar, public_calendar_source
 from opportunity_facts import employment_type, availability_evidence
 from employer_identity import employer_identity
 
@@ -141,12 +141,16 @@ SOURCES.extend([
     {'id': 'pku-talks', 'name': '北京大学 · 官方招聘日历',
      'url': 'https://scc.pku.edu.cn/frontpage/pku/html/recruitmentFairList.html?fairType=1',
      'adapter': 'pku_talks', 'channel': 'talks', 'school_name': '北京大学', 'allow_empty_pages': True},
+    {'id': 'nuist-talks', 'name': '南京信息工程大学 · 官方宣讲日历',
+     'url': 'https://nuist.91job.org.cn/sub-station/lectureList?xxdm=10300',
+     'adapter': 'js91_talks', 'channel': 'talks', 'school_name': '南京信息工程大学', 'school_code': '10300', 'allow_empty_pages': True},
 ])
 SOURCES.append({'id': 'sdnu-graduate-talks', 'name': '山东师范大学研究生就业网 · 宣讲通知',
     'url': 'http://www.yjsjy.sdnu.edu.cn/xyzp.htm', 'adapter': 'sdnu_graduate', 'channel': 'talks'})
-for code, school_name in [('sdjzu', '山东建筑大学'), ('sdjt', '山东交通学院')]:
+for code, host, school_name in [('sdjzu', 'sdjzu', '山东建筑大学'), ('sdjt', 'sdjt', '山东交通学院'),
+                              ('scau', 'hnnydx', '华南农业大学'), ('sztu', 'sztu', '深圳技术大学')]:
     SOURCES.append({'id': code + '-talks', 'name': school_name + ' · 宣讲日历',
-        'url': f'https://{code}.bysjy.com.cn/module/careers', 'school_name': school_name,
+        'url': f'https://{host}.bysjy.com.cn/module/careers', 'school_name': school_name,
         'adapter': 'bysjy_talks', 'channel': 'talks', 'allow_empty_pages': True})
 SDEI_SCHOOLS = [
     ('jobsdufe', '山东财经大学'), ('ujn', '济南大学'), ('sdut', '山东理工大学'), ('qlu', '齐鲁工业大学'),
@@ -280,7 +284,7 @@ for _source in SOURCES:
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 SOURCE_PACKS = {
     'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'upc'],
+    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'upc'],
     'universities-b': _sdei_source_ids,
     'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
     'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
@@ -2274,8 +2278,11 @@ def extract_talk_event(job):
     venue = field('fairAddress', '举办地点')
     if not school:
         return None
+    publishing_school = school
+    school = resolve_event_school(publishing_school, venue)
     city, city_resolution = resolve_event_city(school, venue)
     return {'id': job['id'], 'date': date,
+            **({'source_school': publishing_school} if school != publishing_school else {}),
             'start_time': start[0] if start else None, 'end_time': end or None,
             'school': school[:80], 'venue': venue, 'city': city, 'city_resolution': city_resolution,
             'url': job.get('source_url', ''), 'status': 'cancelled' if cancelled else 'scheduled',
@@ -2718,7 +2725,7 @@ def run(args):
                         print(source['id'], 'deferred 0 0', flush=True)
                         continue
         try:
-            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks'}
+            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks','js91_talks'}
             first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
@@ -2742,7 +2749,7 @@ def run(args):
             # Live inventories need a complete single-run view for withdrawal
             # detection; SDU follows opaque next-page links; OfferJack has cities.
             resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv',
-                                                 'nankai_talks', 'pku_talks', 'bysjy_talks'}
+                                                 'nankai_talks', 'pku_talks', 'bysjy_talks', 'js91_talks'}
                          or source['id'] in {'nankai', 'jinan'})
             # BYSJY exposes only a look-ahead row, not an exact last-page number.
             # Its first-page "total=2" must never reset a deeper saved cursor.
@@ -2830,6 +2837,11 @@ def run(args):
                             referer=source['url'], extra_headers={'X-Requested-With': 'XMLHttpRequest'}))
                         rows = bysjy_calendar(payload, source)
                         found, total = rows[:20], page+1 if len(rows)>20 else page
+                    elif source.get('adapter')=='js91_talks':
+                        payload = fetch_json_post(urllib.parse.urljoin(source['url'], '/web/wsjysc/lbxq/getXjhPageList'),
+                            {'current': page, 'size': 20, 'xxxs': '', 'fbsj': '', 'ssxx': source['school_code'],
+                             'keyword': '', 'xxdm': source['school_code']}, referer=source['url'])
+                        found, total = js91_calendar(payload, source)
                     elif source.get('adapter')=='sdei':
                         found,total=sdei_list(source,page)
                     elif source.get('adapter')=='sdei_news':

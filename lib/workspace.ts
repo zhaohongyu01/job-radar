@@ -1,4 +1,4 @@
-import { defaultFilters, isExpired, personalFor } from './jobs.ts';
+import { defaultFilters, personalFor, isPendingApplication, comparePendingApplications } from './jobs.ts';
 import type { Filters, Job, Personal, TalkEvent } from './jobs.ts';
 
 /** Personal lists start without discovery restrictions, so saved jobs cannot disappear. */
@@ -14,23 +14,7 @@ export function personalViewFilters(view: Filters['view']): Filters {
 }
 
 export function buildActionQueue(jobs: Job[], personal: Personal, now: number) {
-  return jobs
-    .filter((job) => {
-      const record = personalFor(job, personal);
-      return (
-        record.saved &&
-        !record.applied &&
-        !record.hidden &&
-        !isExpired(job, now)
-      );
-    })
-    .sort((a, b) => {
-      const deadline = (job: Job) =>
-        job.deadline && Number.isFinite(Date.parse(job.deadline))
-          ? Date.parse(job.deadline)
-          : Number.MAX_SAFE_INTEGER;
-      return deadline(a) - deadline(b) || a.id.localeCompare(b.id);
-    });
+  return jobs.filter(job => isPendingApplication(job, personalFor(job, personal), now)).sort(comparePendingApplications);
 }
 
 export function upcomingTalks(

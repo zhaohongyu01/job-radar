@@ -76,6 +76,7 @@ export type ChangeTypeFilter = '全部' | '有变更' | '截止延期' | '补录
 
 export type TalkEvent = {
   id: string;
+  source_school?: string;
   date: string;
   start_time?: string | null;
   end_time?: string | null;
@@ -220,7 +221,7 @@ export type PersonalRecord = { saved?: boolean; applied?: boolean; hidden?: bool
   application_stage?: 'planned' | 'applied' | 'test' | 'interview' | 'offer' | 'rejected' | 'withdrawn';
   applied_at?: string | null; next_action_at?: string | null; next_action_note?: string; notes?: string; personal_updated_at?: string | null };
 export type Personal = Record<string, PersonalRecord>;
-export type SortOrder = 'newest' | 'deadline_asc' | 'salary_desc';
+export type SortOrder = 'newest' | 'deadline_asc' | 'salary_desc' | 'reputation_desc' | 'employer_intent_desc';
 export type RadarFocus = 'none' | 'today' | 'supplement' | 'urgent' | 'change';
 export type Filters = {
   city: string;
@@ -247,6 +248,9 @@ export type Filters = {
   employmentType?: 'all' | 'full_time' | 'internship' | 'part_time';
   validity?: 'all' | 'confirmed_open' | 'long_term' | 'unconfirmed';
   major?: string;
+  reputationMin?: 'all' | '3' | '4';
+  includeUnrated?: boolean;
+  applicationStage?: 'all' | NonNullable<PersonalRecord['application_stage']>;
 };
 export const defaultFilters: Filters = {
   city: '济南',
@@ -272,6 +276,9 @@ export const defaultFilters: Filters = {
   employmentType: 'all',
   validity: 'all',
   major: '',
+  reputationMin: 'all',
+  includeUnrated: true,
+  applicationStage: 'all',
 };
 
 export const UNKNOWN_SECTOR = '单位性质未明确';
@@ -639,6 +646,13 @@ export function isUnread(job: Job, personal: Personal) {
   const readAt = personalFor(job, personal).readAt;
   if (!readAt) return true;
   return Date.parse(job.updated_at) > Date.parse(readAt);
+}
+export function isPendingApplication(job: Job, record: PersonalRecord, now: number): boolean {
+  return !!record.saved && !record.applied && !record.hidden && !isExpired(job, now);
+}
+export function comparePendingApplications(a: Job, b: Job): number {
+  const time = (job: Job) => Number.isFinite(deadlineTime(job.deadline)) ? deadlineTime(job.deadline) : Number.MAX_SAFE_INTEGER;
+  return time(a) - time(b) || a.id.localeCompare(b.id);
 }
 export function mergePersonal(current: Personal, imported: Personal): Personal {
   return mergePersonalRecords(current, imported);
@@ -1166,6 +1180,10 @@ export function filterJobs(
   return jobs
     .filter((j) => {
       const p = personalFor(j, personal);
+      if (f.view === 'planned' && !isPendingApplication(j, p, now)) return false;
+      if (f.view === 'pipeline' && (p.hidden || !(p.saved || p.applied || p.application_stage))) return false;
+      if (f.view === 'pipeline' && f.applicationStage && f.applicationStage !== 'all' &&
+          (p.application_stage || (p.applied ? 'applied' : 'planned')) !== f.applicationStage) return false;
       if (f.view === 'all' && j.talk_attached_to) return false;
       if (f.onlyUnread && !isUnread(j, personal)) return false;
       if (
@@ -1177,7 +1195,7 @@ export function filterJobs(
       if (f.view === 'all' && p.hidden) return false;
       if (!f.showExpired && isExpired(j, now)) return false;
       if (f.kind !== '全部' && j.kind !== f.kind) return false;
-      if (!isDomestic(j)) return false;
+      if (f.view === 'all' && !isDomestic(j)) return false;
       if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
       if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
       const workCities = selectedWorkCities(f);
@@ -1285,6 +1303,7 @@ export function filterJobs(
       return true;
     })
     .sort((a, b) => {
+      if (f.view === 'planned') return comparePendingApplications(a, b);
       if (f.sort === 'deadline_asc') {
         const aExp = isExpired(a, now);
         const bExp = isExpired(b, now);

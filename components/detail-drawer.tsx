@@ -16,6 +16,7 @@ import type { PersonalRecord } from '@/lib/jobs';
 import { ApplicationTracker } from '@/components/application-tracker';
 import { formatDate, OutLink } from '@/components/job-card';
 import { TalkEvents } from '@/components/talk-events';
+import { EmployerEntry } from '@/components/employer-workspace';
 
 export function DetailDrawer({
   selected,
@@ -46,7 +47,7 @@ export function DetailDrawer({
   onToggle: (job: Job, key: 'saved' | 'applied' | 'hidden') => void;
   onCopy: (job: Job) => void;
   setNotice: (msg: string) => void;
-  onPersonalSave: (job: Job, record: PersonalRecord) => boolean;
+  onPersonalSave: (job: Job, patch: PersonalRecord, expected?: PersonalRecord) => boolean | Promise<boolean>;
 }) {
   const [positionSearch, setPositionSearch] = useState({ jobId: '', value: '' });
   const positionFilter = positionSearch.jobId === selected?.id ? positionSearch.value : '';
@@ -88,7 +89,7 @@ export function DetailDrawer({
               <div className="flex flex-wrap items-center gap-2 mb-1">
                 {selected.company && (
                   <span className="opp-company-name font-semibold text-sm">
-                    {formatCompanyDisplay(selected.company, selected.title, selected.source_id).displayCompany}
+                    <EmployerEntry job={selected} name={formatCompanyDisplay(selected.company, selected.title, selected.source_id).displayCompany} />
                   </span>
                 )}
                 <span className="eyebrow">

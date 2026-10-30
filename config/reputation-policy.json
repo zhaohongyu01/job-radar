@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "recent_days": 365,
+  "max_source_age_days": 7,
+  "minimum_contributors": 10,
+  "prior_weight": 5,
+  "prior_score": 3,
+  "dimensions": {
+    "pay": { "label": "薪酬福利", "weight": 0.3 },
+    "worklife": { "label": "工时休假", "weight": 0.3 },
+    "growth": { "label": "成长发展", "weight": 0.25 },
+    "management": { "label": "管理氛围", "weight": 0.15 }
+  },
+  "minimum_scored_dimensions": 3
+}

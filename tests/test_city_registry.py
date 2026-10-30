@@ -4,7 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from city_registry import CITIES, cities_in_text, collection_cities, resolve_event_city, CODE_CITY
+from city_registry import CITIES, cities_in_text, collection_cities, resolve_event_city, resolve_event_school, CODE_CITY
 from generate_city_registry import generated
 
 
@@ -30,6 +30,19 @@ class CityRegistryTests(unittest.TestCase):
         self.assertIsNone(resolve_event_city('未知学校', '西校区')[0])
         self.assertIsNone(resolve_event_city('山东理工大学', '线上宣讲 西校区')[0])
         self.assertIsNone(resolve_event_city('山东理工大学', '北京 西校区')[0])
+
+    def test_reposted_calendar_uses_explicit_hosting_campus_not_publishing_university(self):
+        venue = '山东大学趵突泉校区梦迪音乐厅'
+        self.assertEqual(resolve_event_school('山东第二医科大学', venue), '山东大学')
+        self.assertEqual(resolve_event_city('山东第二医科大学', venue)[0], '济南')
+        self.assertEqual(resolve_event_school('山东第二医科大学', '西校区大厅'), '山东第二医科大学')
+        self.assertIsNone(resolve_event_city('未知学校', '北京 山东大学趵突泉校区')[0])
+
+    def test_new_pku_venue_rules_preserve_online_and_conflict_boundaries(self):
+        self.assertEqual(resolve_event_city('北京大学', '百周年纪念讲堂四季庭院')[0], '北京')
+        self.assertEqual(resolve_event_city('北京大学', '城市与环境学院大厅及西侧走廊')[0], '北京')
+        self.assertIsNone(resolve_event_city('未知学校', '百周年纪念讲堂')[0])
+        self.assertIsNone(resolve_event_city('北京大学', '线上直播 百周年纪念讲堂')[0])
 
 
 if __name__ == '__main__':

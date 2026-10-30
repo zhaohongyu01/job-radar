@@ -1,0 +1,322 @@
+{
+  "schema_version": 1,
+  "provider": "nowcoder",
+  "user_agent": "JobRadarReputation/0.1 (+https://github.com/zhaohongyu01/job-radar)",
+  "min_interval_seconds": 1.5,
+  "timeout_seconds": 10,
+  "max_response_bytes": 2500000,
+  "cache_hours": 48,
+  "budget_seconds": 180,
+  "max_enterprises": 30,
+  "pinned_names": {
+    "海尔": [
+      "海尔集团"
+    ]
+  },
+  "enterprises": [
+    {
+      "id": 147,
+      "expected_names": [
+        "小米",
+        "小米集团"
+      ]
+    },
+    {
+      "id": 958,
+      "expected_names": [
+        "联想",
+        "联想集团"
+      ]
+    },
+    {
+      "id": 1129,
+      "expected_names": [
+        "海信集团"
+      ]
+    },
+    {
+      "id": 677,
+      "expected_names": [
+        "海尔"
+      ]
+    },
+    {
+      "id": 2545,
+      "expected_names": [
+        "宇视科技"
+      ]
+    },
+    {
+      "id": 183,
+      "expected_names": [
+        "昆仑万维"
+      ]
+    },
+    {
+      "id": 2275,
+      "expected_names": [
+        "卓望公司"
+      ]
+    },
+    {
+      "id": 258583,
+      "expected_names": [
+        "云智研发公司"
+      ]
+    },
+    {
+      "id": 904,
+      "expected_names": [
+        "微盟"
+      ]
+    },
+    {
+      "id": 1131,
+      "expected_names": [
+        "Flow++"
+      ]
+    },
+    {
+      "id": 925,
+      "expected_names": [
+        "浪潮"
+      ]
+    },
+    {
+      "id": 12462,
+      "expected_names": [
+        "matrixport公司"
+      ]
+    },
+    {
+      "id": 303438,
+      "expected_names": [
+        "北京水木星洲科技有限责任公司"
+      ]
+    },
+    {
+      "id": 9735,
+      "expected_names": [
+        "MetaApp"
+      ]
+    },
+    {
+      "id": 5906,
+      "expected_names": [
+        "新氧"
+      ]
+    },
+    {
+      "id": 1154,
+      "expected_names": [
+        "中国银行"
+      ]
+    },
+    {
+      "id": 1682,
+      "expected_names": [
+        "南京银行"
+      ]
+    },
+    {
+      "id": 4242,
+      "expected_names": [
+        "中国人民银行"
+      ]
+    },
+    {
+      "id": 1012,
+      "expected_names": [
+        "中国建设银行"
+      ]
+    },
+    {
+      "id": 1182,
+      "expected_names": [
+        "花旗银行"
+      ]
+    },
+    {
+      "id": 4684,
+      "expected_names": [
+        "中国农业发展银行"
+      ]
+    },
+    {
+      "id": 2182,
+      "expected_names": [
+        "江苏银行"
+      ]
+    },
+    {
+      "id": 12628,
+      "expected_names": [
+        "亿联银行"
+      ]
+    },
+    {
+      "id": 3339,
+      "expected_names": [
+        "苏州银行"
+      ]
+    },
+    {
+      "id": 10396,
+      "expected_names": [
+        "四川银行"
+      ]
+    },
+    {
+      "id": 1161,
+      "expected_names": [
+        "北京银行"
+      ]
+    },
+    {
+      "id": 2401,
+      "expected_names": [
+        "中原银行"
+      ]
+    },
+    {
+      "id": 8677,
+      "expected_names": [
+        "深势科技"
+      ]
+    },
+    {
+      "id": 3188,
+      "expected_names": [
+        "鸿合科技"
+      ]
+    },
+    {
+      "id": 2511,
+      "expected_names": [
+        "乐言科技"
+      ]
+    },
+    {
+      "id": 9082,
+      "expected_names": [
+        "趣丸科技"
+      ]
+    },
+    {
+      "id": 1518,
+      "expected_names": [
+        "趣链科技"
+      ]
+    },
+    {
+      "id": 13364,
+      "expected_names": [
+        "玳数科技"
+      ]
+    },
+    {
+      "id": 1187,
+      "expected_names": [
+        "驭势科技"
+      ]
+    },
+    {
+      "id": 31041,
+      "expected_names": [
+        "南航科技"
+      ]
+    },
+    {
+      "id": 30628,
+      "expected_names": [
+        "拓界科技"
+      ]
+    },
+    {
+      "id": 3074,
+      "expected_names": [
+        "迪普科技"
+      ]
+    },
+    {
+      "id": 10723,
+      "expected_names": [
+        "即构科技"
+      ]
+    },
+    {
+      "id": 1643,
+      "expected_names": [
+        "嘉银科技"
+      ]
+    },
+    {
+      "id": 167,
+      "expected_names": [
+        "欢聚集团"
+      ]
+    },
+    {
+      "id": 1815,
+      "expected_names": [
+        "超星集团"
+      ]
+    },
+    {
+      "id": 4433,
+      "expected_names": [
+        "舜宇集团"
+      ]
+    },
+    {
+      "id": 1105,
+      "expected_names": [
+        "台达集团"
+      ]
+    },
+    {
+      "id": 9123,
+      "expected_names": [
+        "东风汽车集团"
+      ]
+    },
+    {
+      "id": 1163,
+      "expected_names": [
+        "南瑞集团"
+      ]
+    },
+    {
+      "id": 175,
+      "expected_names": [
+        "58集团"
+      ]
+    },
+    {
+      "id": 10785,
+      "expected_names": [
+        "牧原集团"
+      ]
+    },
+    {
+      "id": 2968,
+      "expected_names": [
+        "德国大陆集团"
+      ]
+    },
+    {
+      "id": 6744,
+      "expected_names": [
+        "正泰集团"
+      ]
+    },
+    {
+      "id": 9140,
+      "expected_names": [
+        "满帮集团"
+      ]
+    }
+  ],
+  "max_pages": 2,
+  "discovery_limit": 3
+}

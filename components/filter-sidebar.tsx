@@ -32,17 +32,20 @@ function Choice({
   options: string[];
   onChange: (v: string) => void;
 }) {
+  const text = (option: string) => label === '企业体验参考'
+    ? ({ all: '不限参考分', '3': '3分及以上', '4': '4分及以上' } as Record<string, string>)[option] || option
+    : ({ all: '全部', full_time: '全职', internship: '实习', part_time: '兼职', confirmed_open: '近期核验在招', long_term: '原文长期招聘', unconfirmed: '有效性待核实' } as Record<string, string>)[option] || option;
   return (
     <div className="field">
       <span className="field-label">{label}</span>
       <Select value={value} onValueChange={(v) => onChange(v ?? '全部')}>
         <SelectTrigger className="field-select" aria-label={label}>
-          <SelectValue>{({ all: '全部', full_time: '全职', internship: '实习', part_time: '兼职', confirmed_open: '近期核验在招', long_term: '原文长期招聘', unconfirmed: '有效性待核实' } as Record<string, string>)[value] || value}</SelectValue>
+          <SelectValue>{text(value)}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           {options.map((v) => (
             <SelectItem key={v} value={v}>
-              {({ all: '全部', full_time: '全职', internship: '实习', part_time: '兼职', confirmed_open: '近期核验在招', long_term: '原文长期招聘', unconfirmed: '有效性待核实' } as Record<string, string>)[v] || v}
+              {text(v)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -252,13 +255,17 @@ export function FilterSidebar({
         <Toggle label="同时看本城宣讲关联机会（工作地另核）" checked={Boolean(filters.includeRelatedTalks)} onChange={(value) => onChange('includeRelatedTalks', value)} />
         <Choice label="招聘有效性" value={filters.validity || 'all'} options={['all', 'confirmed_open', 'long_term', 'unconfirmed']}
           onChange={(value) => onChange('validity', value as Filters['validity'])} />
+        <Choice label="企业体验参考" value={filters.reputationMin || 'all'} options={['all', '3', '4']}
+          onChange={value => onChange('reputationMin', value as Filters['reputationMin'])} />
+        <Toggle label="保留评分不足的企业" checked={filters.includeUnrated !== false} onChange={value => onChange('includeUnrated', value)} />
+        <p className="filter-help">体验参考分来自近一年公开员工体验的规则归纳，非平台官方评分；集团参考不直接套用到子公司。</p>
         <p className="filter-help">
           默认只保留国内或地点未明确的机会；仅海外岗位自动排除。默认不限专业，可在搜索框输入专业名称；公告未写明的资格需查看原文。
         </p>
       </details>
       <div className="rail-foot">
         <h3>我的记录</h3>
-        <p>仅存当前浏览器，可导出后在其他设备导入。</p>
+        <p>岗位、活动与企业意向仅存当前浏览器，可导出后在其他设备导入。</p>
         <div className="rail-foot-actions">
           <button className="btn btn-secondary btn-sm" onClick={onExport} disabled={!ready}>
             <Download />

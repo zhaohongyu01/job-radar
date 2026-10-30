@@ -42,7 +42,7 @@ def university_coverage(snapshot, events, definitions=None):
         if event.get('school') in schools:
             row = schools[event['school']]
             row['upcoming_talks'] += 1
-            row['unknown_venues'] += int(not event.get('city'))
+            row['unknown_venues'] += int(not event.get('city') and event.get('mode') != 'online')
     for job in snapshot.get('jobs', []):
         event = job.get('talk_event') or {}
         if job.get('kind') == '宣讲会' and event.get('school') in schools:
@@ -76,6 +76,8 @@ def audit(snapshot, now=None):
     events = {}
     for job in jobs:
         for event in job.get('talk_events') or ([job['talk_event']] if job.get('talk_event') else []):
+            if event.get('status') == 'cancelled':
+                continue
             try:
                 end = dt.datetime.fromisoformat(f"{event['date']}T{event.get('end_time') or '23:59'}:00+08:00")
             except (KeyError, ValueError):
@@ -107,7 +109,8 @@ def audit(snapshot, now=None):
         'source_statuses': dict(Counter(s['status'] for s in sources)),
         'pending_details': sum(s['pending_details'] or 0 for s in sources),
         'upcoming_talks': len(events),
-        'talk_cities': dict(Counter(e.get('city') or '地点待核实' for e in events.values())),
+            'talk_cities': dict(Counter(e.get('city') or ('线上不限城市' if e.get('mode') == 'online' else '地点待核实') for e in events.values())),
+            'online_talks': sum(event.get('mode') == 'online' for event in events.values()),
         'warnings': warnings, 'sources': sources, 'universities': universities}
 
 

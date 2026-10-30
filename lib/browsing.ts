@@ -1,21 +1,24 @@
 import { defaultFilters, UNKNOWN_SECTOR } from './jobs.ts';
 import type { Filters } from './jobs.ts';
 import { normalizeCity } from './cities.ts';
+import { employerFromId } from './employers.ts';
 
 const ENUMS = {
   type: ['全部', '校招', '社招'],
   sector: ['全部', '企业 / 其他', '国企', '事业单位', '公务员', '银行', '保险', UNKNOWN_SECTOR],
   direction: ['全部', '财务 / 经济', '管理 / 职能', '技术 / 研发', '市场 / 销售'],
-  locationScope: ['exact', 'possible', 'unknown'], view: ['all', 'saved', 'applied', 'hidden'],
+  locationScope: ['exact', 'possible', 'unknown'], view: ['all', 'saved', 'applied', 'hidden', 'planned', 'pipeline'],
+  applicationStage: ['all', 'planned', 'applied', 'test', 'interview', 'offer', 'rejected', 'withdrawn'],
   provenance: ['全部', '高校 / 政府', '第三方线索'], kind: ['全部', '具体岗位', '招聘公告'],
   salary: ['全部', '6K以上', '8K以上', '10K以上', '15K以上', '20K以上'],
-  sort: ['newest', 'deadline_asc', 'salary_desc'],
+  sort: ['newest', 'deadline_asc', 'salary_desc', 'reputation_desc', 'employer_intent_desc'],
+  reputationMin: ['all', '3', '4'],
   changeType: ['全部', '有变更', '截止延期', '补录招募', '岗位调整', '考核阶段'],
   radarFocus: ['none', 'today', 'supplement', 'urgent', 'change'],
   employmentType: ['all', 'full_time', 'internship', 'part_time'],
   validity: ['all', 'confirmed_open', 'long_term', 'unconfirmed'],
 } as const;
-const BOOLEANS = ['includeUncertain', 'showExpired', 'onlyNew', 'onlyUnread', 'includeRelatedTalks'] as const;
+const BOOLEANS = ['includeUncertain', 'showExpired', 'onlyNew', 'onlyUnread', 'includeRelatedTalks', 'includeUnrated'] as const;
 const TEXT = ['query', 'education', 'major'] as const;
 const legacySector = (value: unknown) => value === '综合' || value === '综合（高校 / 平台公告）' ? UNKNOWN_SECTOR : value;
 const cityName = (value: unknown) => typeof value === 'string' && /^[\u4e00-\u9fff]{2,24}$/.test(value)
@@ -54,10 +57,12 @@ export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: V
   return result;
 }
 
-export function parseUrlState(search: string): { filters?: Partial<Filters>; jobId?: string } {
+export function parseUrlState(search: string): { filters?: Partial<Filters>; jobId?: string; employerId?: string } {
   if (!search) return {};
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  const result: { filters?: Partial<Filters>; jobId?: string } = {};
+  const result: { filters?: Partial<Filters>; jobId?: string; employerId?: string } = {};
+  const employerId = params.get('employer');
+  if (employerId) { try { result.employerId = employerFromId(employerId).id; } catch { /* Invalid shared identity is ignored. */ } }
 
   const jobId = params.get('job');
   if (jobId && /^[a-zA-Z0-9_-]{8,64}$/.test(jobId)) {
@@ -65,7 +70,7 @@ export function parseUrlState(search: string): { filters?: Partial<Filters>; job
   }
 
   const known = ['f', 'q', 'city', 'cities', 'year', ...Object.keys(ENUMS), ...BOOLEANS, ...TEXT];
-  if (!result.jobId && !known.some((key) => params.has(key))) return result;
+  if (!result.jobId && !result.employerId && !known.some((key) => params.has(key))) return result;
   // A shared URL is a complete snapshot of conditions, not a patch to this device.
   const fields: Record<string, unknown> = { ...defaultFilters };
   for (const key of Object.keys(ENUMS)) if (params.has(key)) fields[key] = params.get(key);
@@ -86,10 +91,11 @@ export function parseUrlState(search: string): { filters?: Partial<Filters>; job
   return result;
 }
 
-export function formatUrlQuery(filters: Filters, jobId?: string | null): string {
+export function formatUrlQuery(filters: Filters, jobId?: string | null, employerId?: string | null): string {
   const params = new URLSearchParams({ f: '1' });
   const normalized = restoreBrowsing({ filters: { ...defaultFilters, ...filters } }).filters;
   if (jobId) params.set('job', jobId);
+  if (employerId) params.set('employer', employerFromId(employerId).id);
   if (normalized.workCities) {
     params.set('cities', normalized.workCities.join(','));
   } else if (normalized.city !== defaultFilters.city) {

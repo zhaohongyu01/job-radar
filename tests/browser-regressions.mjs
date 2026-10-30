@@ -17,6 +17,7 @@ if (output) mkdirSync(output, { recursive: true });
 const A = 'aaaaaaaaaaaaaaaaaaa1', B = 'bbbbbbbbbbbbbbbbbbb2', OLD = 'ccccccccccccccccccc3';
 const p1 = '/job-assets/index-00000000000000000001.json';
 const p2 = '/job-assets/index-00000000000000000002.json';
+const warm1 = '/job-assets/index-00000000000000000008.json', warm2 = '/job-assets/index-00000000000000000009.json';
 const detail = '/job-assets/detail-aa-00000000000000000003.json';
 const nextDetail = '/job-assets/detail-aa-00000000000000000004.json';
 const lean1 = '/job-assets/index-00000000000000000005.json', lean2 = '/job-assets/index-00000000000000000006.json';
@@ -30,6 +31,7 @@ const results = [];
 
 async function setup(options = {}) {
   const context = await browser.newContext({ viewport: options.viewport || { width: 1440, height: 1000 } });
+  await context.route(/\/(?:api\/reputation(?:\?|$)|reputation\/)/, route => route.fulfill({ status: 503, json: { error: 'isolated fixture' } }));
   await context.addInitScript((preferences) => {
     localStorage.setItem('job-radar-browsing-v1', JSON.stringify(preferences));
     localStorage.setItem('job-radar-agenda-v1', JSON.stringify({ city: '全部城市', school: '', range: 'all', mode: 'all', eventType: 'all', includeOnline: true }));
@@ -44,7 +46,7 @@ async function setup(options = {}) {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('**/jobs.json', (route) => route.fulfill({ json: {
     schema_version: 3, generated_at: options.generated || '2026-10-28T10:00:00+08:00', last_success_at: '2026-10-28T10:00:00+08:00',
-    index_count: 2, index_shards: [p1, p2], jobs: [], cities: ['济南', '青岛', '北京', '上海'], schedule_enabled: true,
+    index_count: 2, index_shards: options.nextIndex ? [warm1, warm2] : [p1, p2], jobs: [], cities: ['济南', '青岛', '北京', '上海'], schedule_enabled: true,
     ...(projection ? { search_url: searchPath, browse_index: { version: options.browseVersion || 1, count: projection.jobs.length, shards: [lean1, lean2], search_shards: [searchPath] } } : {}),
     detail_shards: { aa: options.detailPath || detail }, sources: [{ id: 'fixture', name: '回归来源', status: 'ok', pages: 1, parsed: 2, cached: 0 }],
   } }));
@@ -61,8 +63,8 @@ async function setup(options = {}) {
       if (options.searchGate) await options.searchGate.promise;
       return route.fulfill({ json: { jobs: Object.fromEntries(rows.map(row => [row.id, row.excerpt || ''])) } });
     }
-    if (path === p1) return route.fulfill({ json: { jobs: [rows[0]] } });
-    if (path === p2) {
+    if ([p1, warm1].includes(path)) return route.fulfill({ json: { jobs: [rows[0]] } });
+    if ([p2, warm2].includes(path)) {
       if (options.second) await options.second.promise;
       return route.fulfill(options.failSecond ? { status: 503, body: 'unavailable' }
         : { json: { jobs: [options.duplicate ? rows[0] : rows[1]] } });
@@ -165,6 +167,7 @@ try {
     const gate = deferred();
     options.second = gate;
     options.failSecond = true;
+    options.nextIndex = true; // Changed content must declare new immutable asset hashes.
     options.rows = [{ ...jobA, title: '未完成更新不得出现' }, jobB];
     await page.getByRole('button', { name: '重新读取招聘数据' }).click();
     await page.locator('.progressive-pill').waitFor();
@@ -176,6 +179,14 @@ try {
     assert.match(await page.getByRole('alert').first().innerText(), /上次完整结果/);
     assert.equal(await page.locator('.result-count-num').innerText(), '2');
     assert.equal(await page.locator('.opp-card').count(), 2);
+  });
+  await run('unchanged immutable index is reused on refresh without re-reading shards', {}, async ({ page, requests }) => {
+    await complete(page);
+    assert.equal(requests.filter(path => [p1, p2].includes(path)).length, 2);
+    await page.getByRole('button', { name: '重新读取招聘数据' }).click();
+    await page.waitForFunction(() => !document.querySelector('button[aria-label="重新读取招聘数据"]')?.disabled);
+    assert.equal(await page.locator('.opp-card').count(), 2);
+    assert.equal(requests.filter(path => [p1, p2].includes(path)).length, 2);
   });
   const oldDetailGate = deferred(), oldDetailStarted = deferred();
   await run('new snapshot details replace old cache and ignore late old responses', {}, async ({ page, options }) => {

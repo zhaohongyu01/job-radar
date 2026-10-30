@@ -1,6 +1,10 @@
 import type { Job, Snapshot } from './jobs.ts';
 import { validateBrowsingJob } from './browse-index.ts';
 
+/** One validated immutable index per page, sharing the same jobs array already
+ * held by the view. A new snapshot never accumulates a second retained cache. */
+export type SnapshotIndexCache = { signature: string; jobs: Job[] };
+
 // Preview callbacks must validate before publishing; their errors abort the load.
 export async function loadSnapshotParts<T>(
   paths: string[],
@@ -32,12 +36,16 @@ export async function loadIndexSnapshot(
   snapshot: Snapshot,
   signal?: AbortSignal,
   onPreview?: (jobs: Job[], total: number) => void,
+  cache?: { current: SnapshotIndexCache | null },
 ): Promise<Job[]> {
   const browse = snapshot.browse_index?.version === 1 ? snapshot.browse_index : undefined;
   const expected = browse?.count ?? snapshot.index_count;
   const paths = browse?.shards ?? snapshot.index_shards;
   if (!Number.isSafeInteger(expected) || expected! < 1 || !paths?.length || (browse && !browse.search_shards?.length))
     throw Error('招聘数据索引声明异常。');
+  const signature = JSON.stringify([browse?.version || 0, expected, paths]);
+  signal?.throwIfAborted();
+  if (cache?.current?.signature === signature) return cache.current.jobs;
   const seen = new Set<string>();
   const accumulated: Job[] = [];
   await loadSnapshotParts<{ jobs: Job[] }>(paths, 'index', signal, (batch) => {
@@ -59,5 +67,7 @@ export async function loadIndexSnapshot(
     onPreview?.([...accumulated], expected!);
   });
   if (accumulated.length !== expected) throw Error('招聘数据分片不完整，请刷新重试。');
+  signal?.throwIfAborted();
+  if (cache) cache.current = { signature, jobs: accumulated };
   return accumulated;
 }

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { publicationText, externalUrl, getDeadlineCountdown, isExpired, isUnread, locationSummary, personalFor, formatCompanyDisplay, duplicateSourceNames } from '@/lib/jobs';
 import type { Job, Personal } from '@/lib/jobs';
 import { talkDateLabel, talkEventsForCity } from '@/lib/talk-events';
+import { EmployerEntry } from '@/components/employer-workspace';
 
 export function JobTable({ jobs, city, personal, ready, now, onDetail, onRead, onReadChange, onToggle }: {
   jobs: Job[];
@@ -38,7 +39,7 @@ export function JobTable({ jobs, city, personal, ready, now, onDetail, onRead, o
           return <tr key={job.id} className={expired ? 'expired' : undefined}>
             <th scope="row">
               <button className="job-title table-title" onClick={() => onDetail(job)}>{job.title}</button>
-              {job.company && <p className="small muted">{formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany}</p>}
+              {job.company && <p className="small muted"><EmployerEntry job={job} name={formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany} /></p>}
               {job.company_conflict && <p className="small muted">{job.company_note}</p>}
               <p className="small muted">{job.kind} · {job.types.join(' / ') || '类型待确认'}{job.graduation_years.length ? ` · ${job.graduation_years.join(' / ')} 届` : ''}</p>
               {(job.listing_facts?.detail_pending || job.classification_note?.startsWith('仅核实')) && <span className="tag">详情待核对</span>}

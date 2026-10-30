@@ -1,5 +1,6 @@
 'use client';
 import { loadSnapshotParts, loadIndexSnapshot } from '../lib/snapshot-loader';
+import type { SnapshotIndexCache } from '../lib/snapshot-loader';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Radar,
@@ -68,14 +69,28 @@ import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
 import type { CoverageReport } from '@/lib/city-coverage';
 import { createBackup, validateBackup, writeBackup } from '@/lib/personal-backup';
 import type { PersonalBackup } from '@/lib/personal-backup';
-import { personalConflicts, mergePersonalRecords } from '@/lib/personal-records';
+import { APPLICATION_STAGES, personalConflicts, mergePersonalRecords } from '@/lib/personal-records';
+import { commitPersonalRecords, patchPersonalRecord, readPersonalRecords, withPersonalLock } from '@/lib/personal-store';
 import { EVENT_PERSONAL_STORAGE, validateEventPersonal } from '@/lib/agenda';
+import { EmployerWorkspace, useEmployerRecords, useEmployerReputation, useEmployerNavigation } from '@/components/employer-workspace';
+import { filterByReputation } from '@/lib/reputation';
+import { ApplicationOverview } from '@/components/application-overview';
+import { ReputationCoverage } from '@/components/reputation-coverage';
+import { employerFromId, employerLabel } from '@/lib/employers';
+import { employerRecordConflicts, mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
 
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
 const STORAGE = 'quancheng-personal-v1',
   VISIT = 'quancheng-last-visit-v1';
 const PAGE_SIZE_STORAGE = 'job-radar-page-size-v1';
 const PAGE_SIZES = [20, 50, 100];
+
+function personalStatusText(record: PersonalRecord) {
+  const flags = ([['saved', '收藏'], ['applied', '已投递'], ['hidden', '隐藏']] as const)
+    .map(([key, label]) => `${label}：${typeof record[key] === 'boolean' ? record[key] ? '是' : '否' : '未记录'}`);
+  const read = Object.hasOwn(record, 'readAt') ? record.readAt ? `已读 ${date(record.readAt, true)}` : '未读' : '未记录';
+  return [...flags, `阅读：${read}`].join(' · ');
+}
 
 function ResultsPagination({
   page, pageSize, total, position, onPageChange, onPageSizeChange, grouped = false,
@@ -131,6 +146,13 @@ function ResultsPagination({
 }
 
 export default function Home() {
+  return <EmployerWorkspace><HomeContent /></EmployerWorkspace>;
+}
+
+function HomeContent() {
+  const employerRecords = useEmployerRecords();
+  const reputation = useEmployerReputation();
+  const { register: registerEmployerCatalog, selectId: selectEmployerId, requestedId: requestedEmployerId, missing: missingEmployer } = useEmployerNavigation();
   const [data, setData] = useState<Snapshot | null>(null),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(true);
@@ -153,9 +175,17 @@ export default function Home() {
     [detailError, setDetailError] = useState('');
   const [dataOrigin, setDataOrigin] = useState('site');
   const [importPreview, setImportPreview] = useState<PersonalBackup | null>(null);
+  const [importing, setImporting] = useState(false);
   const [presetRevision, setPresetRevision] = useState(0);
   const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
   const coverage = coverageReport?.as_of === data?.generated_at ? coverageReport : null;
+  const reputationEnabled = !!data;
+  const enableReputation = reputation.enable;
+  useEffect(() => {
+    if (!reputationEnabled) return;
+    const timer = setTimeout(enableReputation, 0);
+    return () => clearTimeout(timer);
+  }, [reputationEnabled, enableReputation]);
   useEffect(() => {
     const url = data?.coverage_url;
     if (!url || !/^\/job-assets\/coverage-[0-9a-f]{20}\.json$/.test(url)) return;
@@ -172,15 +202,17 @@ export default function Home() {
   const searchRef = useRef<HTMLInputElement>(null);
   const discoveryFilters = useRef<Filters>(defaultFilters);
   const resultsTopRef = useRef<HTMLDivElement>(null);
-  const personalRef = useRef<Personal>({});
   const preferencesWarning = useRef(false);
   const detailCache = useRef<Record<string, Job>>({});
   const detailRequest = useRef(0);
   const detailsPromise = useRef<Record<string, Promise<Record<string, Job>>>>({});
   const [searchIndex, setSearchIndex] = useState<Record<string, string> | null>(null);
   const [searchError, setSearchError] = useState('');
+  const [searchAttempt, setSearchAttempt] = useState(0);
+  const previousSearchQuery = useRef('');
   const [progressiveProgress, setProgressiveProgress] = useState<{ loaded: number; total: number } | null>(null);
   const dataRef = useRef<Snapshot | null>(null);
+  const indexCache = useRef<SnapshotIndexCache | null>(null);
   const activeSnapshot = useRef<Snapshot | null>(null);
   const refreshController = useRef<AbortController | null>(null);
   const refreshRequest = useRef(0);
@@ -233,10 +265,12 @@ export default function Home() {
             }
             setPreviewData({ ...json, jobs });
           }
-        });
+        }, indexCache);
       }
       if (!current()) return;
       if (new Set(json.jobs.map((job) => job.id)).size !== json.jobs.length) throw Error('招聘数据包含重复记录。');
+      // A successful legacy inline snapshot replaces the sharded generation too.
+      if (!json.index_shards?.length && json.browse_index?.version !== 1) indexCache.current = null;
       if (!previewActivated) activateSnapshot(json);
       // A cold preview and its completed index share one detail-request generation.
       dataRef.current = json;
@@ -257,26 +291,46 @@ export default function Home() {
     }
   }, [activateSnapshot]);
 
-  const save = useCallback((next: Personal) => {
+  const syncPersonal = useCallback(() => {
     try {
-      localStorage.setItem(STORAGE, JSON.stringify(next));
-      personalRef.current = next;
+      const next = readPersonalRecords(localStorage);
       setPersonal(next);
-      return true;
     } catch {
-      setNotice('保存失败，浏览器存储不可用或已满。请先导出记录。');
-      return false;
+      setNotice('个人记录暂时无法读取，已保留当前显示；请先保留备份。');
     }
   }, []);
 
+  const save = useCallback(async (update: (latest: Personal) => Personal): Promise<boolean> => {
+    try {
+      await withPersonalLock(() => commitPersonalRecords(localStorage, update));
+      syncPersonal();
+      return true;
+    } catch (error) {
+      syncPersonal();
+      setNotice(error instanceof Error ? error.message : '保存失败，浏览器存储不可用或已满。请先导出记录。');
+      return false;
+    }
+  }, [syncPersonal]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const changed = (event: StorageEvent) => { if (event.key === STORAGE || event.key === null) syncPersonal(); };
+    window.addEventListener('storage', changed);
+    window.addEventListener('focus', syncPersonal);
+    return () => { window.removeEventListener('storage', changed); window.removeEventListener('focus', syncPersonal); };
+  }, [ready, syncPersonal]);
+
   const setRead = useCallback((job: Job, read: boolean) => {
-    const current = personalRef.current;
-    save({ ...current, [job.id]: { ...personalFor(job, current), readAt: read ? new Date().toISOString() : null } });
+    void save((latest) => {
+      const stamp = new Date().toISOString();
+      return patchPersonalRecord(latest, job, { readAt: read ? stamp : null }, stamp);
+    });
   }, [save]);
 
   const markRead = useCallback((job: Job) => {
-    if (isUnread(job, personalRef.current)) setRead(job, true);
-  }, [setRead]);
+    void save((latest) => isUnread(job, latest)
+      ? patchPersonalRecord(latest, job, { readAt: new Date().toISOString() }, new Date().toISOString()) : latest);
+  }, [save]);
 
   const openDetail = useCallback(
     async (job: Job, linkId = job.id) => {
@@ -357,13 +411,13 @@ export default function Home() {
       try { restored = restoreBrowsing(JSON.parse(localStorage.getItem(BROWSING_STORAGE) || 'null')); }
       catch { /* A shared link still works when preferences cannot be read. */ }
       const urlState = parseUrlState(window.location.search);
+      selectEmployerId(urlState.employerId || null);
       setLinkedJobId(urlState.jobId || null);
       setFilters(urlState.filters ? restoreBrowsing({ filters: urlState.filters }).filters : restored.filters);
       setViewMode(restored.viewMode);
       setGroupCompanies(restored.groupCompanies);
       try {
         const records = validatePersonal(JSON.parse(localStorage.getItem(STORAGE) || '{}'));
-        personalRef.current = records;
         setPersonal(records);
         const old = localStorage.getItem(VISIT);
         setSince(old && !Number.isNaN(Date.parse(old)) ? old : null);
@@ -379,7 +433,7 @@ export default function Home() {
       clearInterval(timer);
       refreshController.current?.abort();
     };
-  }, [refresh]);
+  }, [refresh, selectEmployerId]);
 
   useEffect(() => {
     if (!ready || !linkedJobId) return;
@@ -400,18 +454,19 @@ export default function Home() {
 
   useEffect(() => {
     if (!ready || typeof window === 'undefined') return;
-    const newQuery = formatUrlQuery(filters, linkedJobId);
+    const newQuery = formatUrlQuery(filters, linkedJobId, requestedEmployerId);
     const currentSearch = window.location.search;
     if (currentSearch !== newQuery) {
       const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
       window.history.replaceState({ jobId: linkedJobId }, '', newUrl);
     }
-  }, [ready, filters, linkedJobId]);
+  }, [ready, filters, linkedJobId, requestedEmployerId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onPopState = () => {
       const urlState = parseUrlState(window.location.search);
+      selectEmployerId(urlState.employerId || null);
       ++detailRequest.current;
       setSelected(null);
       setDetailLoading(false);
@@ -421,7 +476,7 @@ export default function Home() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, []);
+  }, [selectEmployerId]);
 
   useEffect(() => {
     if (!ready) return;
@@ -457,21 +512,19 @@ export default function Home() {
   }, []);
 
   const toggle = (job: Job, key: 'saved' | 'applied' | 'hidden') => {
-    const old = personalFor(job, personalRef.current);
-    const record: PersonalRecord = { ...old, [key]: !old[key], personal_updated_at: new Date().toISOString() };
-    if (key === 'applied') {
-      record.application_stage = record.applied ? 'applied' : 'planned';
-      record.applied_at = record.applied ? old.applied_at || new Date().toISOString() : null;
-    }
-    const next = {
-      ...personalRef.current,
-      [job.id]: record,
-    };
-    save(next);
+    void save((latest) => {
+      const old = personalFor(job, latest), stamp = new Date().toISOString();
+      const patch: PersonalRecord = { [key]: !old[key] };
+      if (key === 'applied') {
+        patch.application_stage = patch.applied ? 'applied' : 'planned';
+        patch.applied_at = patch.applied ? old.applied_at || stamp : null;
+      }
+      return patchPersonalRecord(latest, job, patch, stamp);
+    });
   };
 
   const openView = (view: Filters['view']) => {
-    if (view === filters.view) return;
+    if (view === filters.view && view === 'all') return;
     if (filters.view === 'all') discoveryFilters.current = filters;
     setFilters(view === 'all' ? { ...discoveryFilters.current, view: 'all' } : personalViewFilters(view));
     setPage(1);
@@ -490,29 +543,52 @@ export default function Home() {
     return () => window.removeEventListener('keydown', focusSearch);
   }, []);
 
-  const allJobs = useMemo(() => mergeDuplicateOpportunities(data?.jobs ?? []), [data]);
+  const allJobs = useMemo(() => mergeDuplicateOpportunities(data?.jobs ?? []), [data?.jobs]);
+  const employerCatalogReady = !!data;
+  useEffect(() => { registerEmployerCatalog({ jobs: allJobs, complete: employerCatalogReady, onDetail: job => { void openDetail(job); } }); }, [allJobs, openDetail, registerEmployerCatalog, employerCatalogReady]);
   const previewJobs = useMemo(() => !data && filters.view === 'all' && !(filters.query.trim() && previewData?.search_url)
     ? filterJobs(mergeDuplicateOpportunities(previewData?.jobs || []), filters, personal, since, now).slice(0, 10) : [],
     [data, previewData, filters, personal, since, now]);
-  const savedCount = allJobs.filter((job) => personalFor(job, personal).saved).length;
-  const appliedCount = allJobs.filter((job) => personalFor(job, personal).applied).length;
+  const [savedCount, appliedCount] = useMemo(() => {
+    let saved = 0, applied = 0;
+    for (const job of allJobs) {
+      const record = personalFor(job, personal);
+      if (record.saved) saved++;
+      if (record.applied) applied++;
+    }
+    return [saved, applied];
+  }, [allJobs, personal]);
 
   const needsSearch = !!filters.query.trim() && !!data?.search_url;
   useEffect(() => {
     if (!needsSearch || !data?.search_url || searchIndex) return;
     const controller = new AbortController();
     const paths = data.browse_index?.version === 1 ? data.browse_index.search_shards : [data.search_url, ...(data.search_shards ?? [])];
-    loadSnapshotParts<{ jobs: Record<string, string> }>(paths, 'search', controller.signal)
-      .then((parts) => {
-        if (parts.some((part) => !part.jobs || Array.isArray(part.jobs) || typeof part.jobs !== 'object'))
-          throw Error('全文索引格式异常。');
-        const jobs = Object.assign({}, ...parts.map((part) => part.jobs)) as Record<string, string>;
-        if (data.jobs.some((j) => typeof jobs[j.id] !== 'string'))
-          throw Error('全文索引不完整，请点击刷新重试。');
-        if (!controller.signal.aborted && data === dataRef.current) setSearchIndex(jobs);
-      }).catch((e) => { if (!controller.signal.aborted && data === dataRef.current) setSearchError(e.message); });
-    return () => controller.abort();
-  }, [needsSearch, data, searchIndex]);
+    const timer = setTimeout(() => {
+      setSearchError('');
+      void loadSnapshotParts<{ jobs: Record<string, string> }>(paths, 'search', controller.signal)
+        .then((parts) => {
+          if (parts.some((part) => !part.jobs || Array.isArray(part.jobs) || typeof part.jobs !== 'object'))
+            throw Error('全文索引格式异常。');
+          const jobs = Object.assign({}, ...parts.map((part) => part.jobs)) as Record<string, string>;
+          if (data.jobs.some((j) => typeof jobs[j.id] !== 'string'))
+            throw Error('全文索引不完整，请点击刷新重试。');
+          if (!controller.signal.aborted && data === dataRef.current) setSearchIndex(jobs);
+        }).catch((e) => { if (!controller.signal.aborted && data === dataRef.current) setSearchError(e.message); });
+    }, 0);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [needsSearch, data, searchIndex, searchAttempt]);
+
+  useEffect(() => {
+    const query = filters.query.trim(), previous = previousSearchQuery.current;
+    previousSearchQuery.current = query;
+    if (query !== previous && searchError) {
+      setSearchError('');
+      // A new nonempty word retries a failed fetch, but normal typing does not
+      // cancel or redownload an already-running/full cached text index.
+      if (previous && query) setSearchAttempt((attempt) => attempt + 1);
+    }
+  }, [filters.query, searchError]);
 
   const searchPending = needsSearch && !searchIndex;
   const searchableJobs = useMemo(() => {
@@ -521,17 +597,19 @@ export default function Home() {
     return base.map((j) => (needsSearch ? { ...j, search_text: searchIndex?.[j.id] ?? '' } : j));
   }, [allJobs, needsSearch, searchIndex, searchPending]);
 
-  const filtered = useMemo(
+  const baseFiltered = useMemo(
     () => filterJobs(searchableJobs, filters, personal, since, now),
     [searchableJobs, filters, personal, since, now],
   );
+  const filtered = useMemo(() => filterByReputation(baseFiltered, filters, reputation.index, employerRecords, now),
+    [baseFiltered, filters, reputation.index, employerRecords, now]);
 
   const radarScopeJobs = useMemo(
     () =>
       filters.radarFocus === 'none'
         ? filtered
-        : filterJobs(searchableJobs, { ...filters, radarFocus: 'none' }, personal, since, now),
-    [searchableJobs, filters, personal, since, now, filtered],
+        : filterByReputation(filterJobs(searchableJobs, { ...filters, radarFocus: 'none' }, personal, since, now), filters, reputation.index, employerRecords, now),
+    [searchableJobs, filters, personal, since, now, filtered, reputation.index, employerRecords],
   );
 
   const activeFilterCount = useMemo(() => {
@@ -555,12 +633,14 @@ export default function Home() {
     if (filters.showExpired !== defaultFilters.showExpired) count++;
     if (filters.salary !== defaultFilters.salary) count++;
     if (filters.sort !== defaultFilters.sort) count++;
+    if (filters.reputationMin !== defaultFilters.reputationMin) count++;
+    if (filters.includeUnrated !== defaultFilters.includeUnrated) count++;
     if (filters.changeType !== defaultFilters.changeType) count++;
     if (filters.radarFocus !== defaultFilters.radarFocus) count++;
     return count;
   }, [filters]);
 
-  const locationOptions = (['exact', 'possible', 'unknown'] as const).map(
+  const locationOptions = useMemo(() => selectedWorkCities(filters).length ? (['exact', 'possible', 'unknown'] as const).map(
     (scope) => ({
       scope,
       label:
@@ -577,7 +657,7 @@ export default function Home() {
         now,
       ).length,
     }),
-  );
+  ) : [], [searchableJobs, filters, personal, since, now]);
 
   const groups = useMemo(() => groupJobs(filtered, groupCompanies), [filtered, groupCompanies]);
   const pages = Math.max(1, Math.ceil(groups.length / pageSize));
@@ -615,18 +695,18 @@ export default function Home() {
     returnToResults();
   };
 
-  const newCount = (data?.jobs ?? []).filter(
+  const newCount = useMemo(() => (data?.jobs ?? []).filter(
     (j) =>
       since &&
       (Date.parse(j.first_seen_at) > Date.parse(since) ||
         Date.parse(j.updated_at) > Date.parse(since)),
-  ).length;
+  ).length, [data?.jobs, since]);
 
-  const dueCount = buildActionQueue(allJobs, personal, now).filter(
+  const dueCount = useMemo(() => buildActionQueue(allJobs, personal, now).filter(
     (job) => job.deadline && Date.parse(job.deadline) - now < 7 * 86400000,
-  ).length;
+  ).length, [allJobs, personal, now]);
 
-  const years = [
+  const years = useMemo(() => [
     '全部',
     ...Array.from(
       new Set([
@@ -637,7 +717,7 @@ export default function Home() {
       .filter((y) => y >= '2024' && y <= '2030')
       .sort()
       .reverse(),
-  ];
+  ], [data?.jobs]);
 
   const stale =
     !!data?.last_success_at &&
@@ -645,7 +725,7 @@ export default function Home() {
 
   const exportPersonal = () => {
     try {
-    const content = JSON.stringify(createBackup(personal, localStorage), null, 2);
+    const content = JSON.stringify(createBackup(readPersonalRecords(localStorage), localStorage), null, 2);
     if (new TextEncoder().encode(content).length > 5000000) throw Error('备份超过当前 5 MB 导入上限，请先减少不需要的备注或记录后导出；未截断任何数据。');
     const blob = new Blob(
       [content],
@@ -673,24 +753,31 @@ export default function Home() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const confirmImport = (preferImported: boolean) => {
-    if (!importPreview) return;
+  const confirmImport = async (preferImported: boolean) => {
+    if (!importPreview || importing) return;
+    setImporting(true);
     try {
-      const records = mergePersonalRecords(personalRef.current, importPreview.records, preferImported);
-      const currentEvents = validateEventPersonal(JSON.parse(localStorage.getItem(EVENT_PERSONAL_STORAGE) || '{}'));
-      const events = { ...currentEvents };
-      for (const [id, record] of Object.entries(importPreview.event_records || {})) {
-        const old = events[id];
-        if (!old || (old.updated_at && record.updated_at ? old.updated_at <= record.updated_at : preferImported)) events[id] = record;
-      }
-      const validated = validateBackup({ ...importPreview, records, event_records: events });
-      writeBackup(validated, localStorage);
-      personalRef.current = records; setPersonal(records);
+      const validated = await withPersonalLock(() => {
+        const records = mergePersonalRecords(readPersonalRecords(localStorage), importPreview.records, preferImported);
+        const currentEvents = validateEventPersonal(JSON.parse(localStorage.getItem(EVENT_PERSONAL_STORAGE) || '{}'));
+        const events = { ...currentEvents };
+        for (const [id, record] of Object.entries(importPreview.event_records || {})) {
+          const old = events[id];
+          if (!old || (old.updated_at && record.updated_at ? old.updated_at <= record.updated_at : preferImported)) events[id] = record;
+        }
+        const employers = importPreview.employer_records === undefined ? undefined
+          : mergeEmployerRecords(readEmployerRecords(localStorage), importPreview.employer_records, preferImported);
+        const validated = validateBackup({ ...importPreview, records, event_records: events, employer_records: employers });
+        writeBackup(validated, localStorage);
+        return validated;
+      });
+      syncPersonal();
       if (validated.browsing) { setFilters(validated.browsing.filters); setViewMode(validated.browsing.viewMode); setGroupCompanies(validated.browsing.groupCompanies); }
       window.dispatchEvent(new Event('job-radar-local-workspace-change'));
       setPresetRevision((value) => value + 1);
       setImportPreview(null); setNotice('备份已合并；个人记录、活动及设置已保存。');
     } catch (error) { setNotice(error instanceof Error ? error.message : '导入未完成'); }
+    finally { setImporting(false); }
   };
 
   const copyJob = (job: Job) => {
@@ -783,6 +870,8 @@ export default function Home() {
             <button className="app-nav-item" aria-current={filters.view === 'saved' ? 'page' : undefined} onClick={() => openView('saved')}>
               我的收藏 <span className="app-nav-count">{data ? savedCount : '—'}</span>
             </button>
+            <button className="app-nav-item" aria-current={filters.view === 'planned' ? 'page' : undefined} onClick={() => openView('planned')}>待投递</button>
+            <button className="app-nav-item" aria-current={filters.view === 'pipeline' ? 'page' : undefined} onClick={() => openView('pipeline')}>投递进度</button>
             <button className="app-nav-item" aria-current={filters.view === 'applied' ? 'page' : undefined} onClick={() => openView('applied')}>
               投递记录 <span className="app-nav-count">{data ? appliedCount : '—'}</span>
             </button>
@@ -804,7 +893,7 @@ export default function Home() {
               {filters.type === '校招' && filters.year !== '全部' ? ` · ${filters.year}届` : ''}
             </p>
             <h1 className="page-title">
-              {filters.view === 'all' ? '发现机会' : filters.view === 'saved' ? '我的收藏' : '投递记录'}
+              {({ all: '发现机会', saved: '我的收藏', planned: '待投递', pipeline: '投递进度', applied: '投递记录', hidden: '不感兴趣' } as Record<string, string>)[filters.view] || '发现机会'}
             </h1>
             <p className="page-lede">
               {filters.view === 'all'
@@ -832,7 +921,7 @@ export default function Home() {
               {data && !data.schedule_enabled && <span className="text-muted">（未启用定时）</span>}
               <button
                 className="icon-btn"
-                onClick={() => void refresh()}
+                onClick={() => { reputation.retry(); void refresh(); }}
                 disabled={loading}
                 aria-label="重新读取招聘数据"
                 title="重新读取招聘数据"
@@ -860,6 +949,9 @@ export default function Home() {
             </button>
           </div>
         )}
+        {data && missingEmployer && <output className="inline-alert">这个企业暂不在当前索引中，企业链接已保留，可刷新后再查看。
+          <button type="button" className="text-btn" onClick={() => selectEmployerId(null)}>关闭企业链接</button>
+        </output>}
 
         {data && stale && (
           <div className="inline-alert is-warn">
@@ -966,10 +1058,12 @@ export default function Home() {
             {filters.view !== 'all' && (
               <p className="note-line">
                 <Info size={15} />
-                <span>个人列表默认不限城市，并保留已截止记录；返回「发现机会」会恢复之前的筛选。投递后请手动标记状态。</span>
+                <span>{filters.view === 'planned' ? '待投递仅含已收藏、未投递、未隐藏且未截止的机会，按截止时间排列。' : '个人列表默认不限城市，并保留已截止记录。'}返回「发现机会」会恢复之前的筛选。投递后请手动标记状态。</span>
               </p>
             )}
 
+            {filters.view === 'pipeline' && <ApplicationOverview jobs={allJobs} personal={personal} stage={filters.applicationStage}
+              onStage={stage => { setFilters({ ...personalViewFilters('pipeline'), applicationStage: stage }); setPage(1); }} />}
             <div className="result-bar">
               <div className="result-bar-left">
                 <div className="result-count" aria-live="polite">
@@ -978,7 +1072,8 @@ export default function Home() {
                       {loading ? progressiveProgress ? `已加载 ${progressiveProgress.loaded.toLocaleString()} / ${progressiveProgress.total.toLocaleString()} 条，完整结果仍在加载` : '正在加载完整索引…' : '索引未完成，请重试加载'}
                     </output>
                   ) : searchPending ? (
-                    <output>{searchError || '正在读取全文索引，完成后显示搜索结果…'}</output>
+                    searchError ? <div role="alert"><span>{searchError}</span>{' '}<button className="btn btn-secondary btn-sm" onClick={() => { setSearchError(''); setSearchAttempt((attempt) => attempt + 1); }}>重试全文搜索</button></div>
+                      : <output>正在读取全文索引，完成后显示搜索结果…</output>
                   ) : (
                     <>
                       <div className="result-count-main">
@@ -1065,12 +1160,14 @@ export default function Home() {
               <div className="result-tools">
                 <Select value={filters.sort} onValueChange={(v) => change('sort', v as Filters['sort'])}>
                   <SelectTrigger className="sort-trigger" aria-label="排序方式">
-                    <SelectValue>{filters.sort === 'deadline_asc' ? '即将截止优先' : filters.sort === 'salary_desc' ? '薪资从高到低' : '最新发布'}</SelectValue>
+                    <SelectValue>{filters.sort === 'deadline_asc' ? '即将截止优先' : filters.sort === 'salary_desc' ? '薪资从高到低' : filters.sort === 'reputation_desc' ? '企业体验参考优先' : filters.sort === 'employer_intent_desc' ? '我的企业意向优先' : '最新发布'}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="newest">最新发布</SelectItem>
                     <SelectItem value="deadline_asc">即将截止优先</SelectItem>
                     <SelectItem value="salary_desc">薪资从高到低</SelectItem>
+                    <SelectItem value="reputation_desc">企业体验参考优先</SelectItem>
+                    <SelectItem value="employer_intent_desc">我的企业意向优先</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -1174,15 +1271,22 @@ export default function Home() {
                   ['salary', filters.salary, '全部'], ['education', filters.education, ''],
                   ['provenance', filters.provenance, '全部'], ['kind', filters.kind, '全部'],
                   ['changeType', filters.changeType, '全部'],
+                  ['reputationMin', filters.reputationMin || 'all', 'all'],
                 ] as [keyof Filters, string, string][]).filter(([, value, empty]) => value !== empty).map(([key, value, empty]) => (
                   <button key={key} className="filter-chip" onClick={() => change(key, empty)} aria-label={`移除筛选：${value}`}>
-                    {value}
+                    {key === 'reputationMin' ? `体验参考≥${value}分` : value}
                     <X size={12} />
                   </button>
                 ))}
+                {filters.reputationMin !== 'all' && filters.includeUnrated === false && <button type="button" className="filter-chip" onClick={() => change('includeUnrated', true)}>仅看样本充分的企业<X size={12} /></button>}
                 <button className="text-btn" onClick={resetFilters}>恢复默认</button>
               </div>
             </div>
+            {(filters.reputationMin !== 'all' || filters.sort === 'reputation_desc') && <output className="note-line">
+              {reputation.index ? '仅对准确名称匹配且近期样本充足的企业应用参考分；集团参考不套用到子公司或部门。'
+                : '口碑索引暂未就绪，口碑条件尚未应用；当前继续展示岗位筛选结果。'}
+              {reputation.error && <button className="text-btn" onClick={reputation.retry}>重试口碑</button>}
+            </output>}
 
             {filters.onlyNew && !since && (
               <p className="note-line">
@@ -1391,22 +1495,31 @@ export default function Home() {
         onToggle={toggle}
         onCopy={copyJob}
         setNotice={setNotice}
-        onPersonalSave={(job, record) => save({ ...personalRef.current, [job.id]: record })}
+        onPersonalSave={(job, patch, expected) => save((latest) => patchPersonalRecord(latest, job, patch, new Date().toISOString(), expected))}
       />
 
-      <Sheet open={!!importPreview} onOpenChange={(open) => { if (!open) setImportPreview(null); }}>
+      <Sheet open={!!importPreview} onOpenChange={(open) => { if (!open && !importing) setImportPreview(null); }}>
         <SheetContent className="backup-import-sheet">
           <SheetHeader><SheetTitle>确认合并个人备份</SheetTitle><SheetDescription>验证完成后统一保存；可在合并前先导出当前浏览器备份。</SheetDescription></SheetHeader>
           {importPreview && <div className="application-tracker">
             <p>岗位记录 {Object.keys(importPreview.records).length} 条，活动记录 {Object.keys(importPreview.event_records || {}).length} 条。</p>
-            <p>有 {personalConflicts(personal, importPreview.records).length} 条备注或投递阶段缺少可比较的更新时间；请选择冲突处理方式。已有明确时间的内容采用较新记录。</p>
+            {!!importPreview.employer_records && <p>企业个人记录 {Object.keys(importPreview.employer_records).length} 条，包含意向评分与备注。</p>}
+            <p>有 {personalConflicts(personal, importPreview.records).length} 条个人状态或备注缺少可区分新旧的更新时间；请选择冲突处理方式。可比较时间的记录采用较新状态。</p>
             {personalConflicts(personal, importPreview.records).slice(0, 20).map((id) => <details key={id}><summary>{allJobs.find((job) => job.id === id || job.duplicate_ids?.includes(id))?.title || id}</summary>
-              <p>本机：{personal[id].application_stage || '阶段未填写'} · {personal[id].notes || personal[id].next_action_note || '无备注'}</p>
-              <p>备份：{importPreview.records[id].application_stage || '阶段未填写'} · {importPreview.records[id].notes || importPreview.records[id].next_action_note || '无备注'}</p>
+              <p>本机：{personalStatusText(personal[id])}<br />{personal[id].application_stage ? APPLICATION_STAGES[personal[id].application_stage] : '阶段未填写'} · {personal[id].notes || personal[id].next_action_note || '无备注'}</p>
+              <p>备份：{personalStatusText(importPreview.records[id])}<br />{importPreview.records[id].application_stage ? APPLICATION_STAGES[importPreview.records[id].application_stage] : '阶段未填写'} · {importPreview.records[id].notes || importPreview.records[id].next_action_note || '无备注'}</p>
             </details>)}
-            <button className="btn btn-outline" onClick={exportPersonal}>先导出本机备份</button>
-            <button className="btn btn-primary" onClick={() => confirmImport(false)}>合并，保留本机冲突备注</button>
-            <button className="btn btn-outline" onClick={() => confirmImport(true)}>合并，冲突以备份为准</button>
+            {!!importPreview.employer_records && <>
+              <p>企业评分有 {employerRecordConflicts(employerRecords, importPreview.employer_records).length} 条时间相同的冲突；其余采用较新记录，清空评分也会保留。</p>
+              {employerRecordConflicts(employerRecords, importPreview.employer_records).slice(0, 20).map(id => <details key={id}>
+                <summary>{employerLabel(employerFromId(id))}</summary>
+                <p>本机：我的 {employerRecords[id].rating ?? '未评分'} · {employerRecords[id].notes || '无备注'}</p>
+                <p>备份：我的 {importPreview.employer_records![id].rating ?? '未评分'} · {importPreview.employer_records![id].notes || '无备注'}</p>
+              </details>)}
+            </>}
+            <button className="btn btn-outline" disabled={importing} onClick={exportPersonal}>先导出本机备份</button>
+            <button className="btn btn-primary" disabled={importing} onClick={() => void confirmImport(false)}>合并，保留本机冲突状态</button>
+            <button className="btn btn-outline" disabled={importing} onClick={() => void confirmImport(true)}>合并，冲突以备份为准</button>
           </div>}
         </SheetContent>
       </Sheet>
@@ -1420,6 +1533,7 @@ export default function Home() {
             </SheetDescription>
           </SheetHeader>
           <div className="detail-body">
+            <ReputationCoverage />
             <div className="apply-panel">
               <h3>
                 {data?.schedule_enabled

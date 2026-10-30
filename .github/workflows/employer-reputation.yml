@@ -1,0 +1,84 @@
+name: Employer Reputation Pipeline
+
+on:
+  schedule:
+    - cron: '30 22 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: job-radar-employer-reputation
+  cancel-in-progress: false
+
+jobs:
+  reputation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install small HTML parser dependency
+        run: python -m pip install beautifulsoup4==4.14.3 soupsieve==2.8.3 typing_extensions==4.15.0
+      - uses: actions/cache/restore@v4
+        with:
+          path: data/reputation/state.json
+          key: employer-reputation-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: employer-reputation-v1-
+      - name: Read public opportunities without waiting for recruitment collection
+        continue-on-error: true
+        run: timeout 55s python scripts/prepare_reputation_jobs.py
+      - name: Prioritize public employers with aging and rotation
+        run: node --experimental-strip-types scripts/build_reputation_queue.mjs data/reputation/jobs.json data/reputation/state.json data/reputation/queue.json
+      - name: Collect public employer pages within separate time budget
+        run: timeout 195s python scripts/collect_reputation.py --budget 180 --limit 30 --queue data/reputation/queue.json
+      - name: Build attributed opinion summaries and bounded scores
+        run: node --experimental-strip-types scripts/build_reputation.mjs data/reputation/state.json data/reputation/public
+      - name: Report actual source coverage
+        if: ${{ always() && hashFiles('data/reputation/report.json') != '' }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads(Path('data/reputation/report.json').read_text())
+          lines = ['## 企业口碑独立采集',
+                   f"用时 {report['elapsed_seconds']} 秒；请求 {report['requests']} 次；尝试 {report['attempted']} 家；成功读取 {report['successes']} 家；失败页面 {report['failures']} 个；缓存跳过 {report['cached']} 家。"]
+          index_path = Path('data/reputation/public/index.json')
+          if index_path.exists():
+              rows = json.loads(index_path.read_text())['entities']
+              lines += [f"累计保留 {len(rows)} 家资料；其中有综合参考分 {sum(row['score'] is not None for row in rows)} 家。公开页为部分收录，不等于全平台覆盖。"]
+          if report['errors']:
+              print('::warning::Some reputation pages were unavailable; prior evidence has been retained. See collection report.')
+          queue_path = Path('data/reputation/queue.json')
+          if queue_path.exists():
+              queue = json.loads(queue_path.read_text())
+              lines += [f"公开岗位输入 {queue['input_opportunities']} 条；匹配到已登记评价页 {queue['matched_enterprises']} 家；尚待核对来源对应 {queue['unmatched_enterprises']} 个企业范围。这不是已取得评价的企业数。"]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('\n\n'.join(lines) + '\n')
+          PY
+      - name: Publish data branch without deploying the website
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/publish_reputation.py --public-dir data/reputation/public
+      - uses: actions/cache/save@v4
+        if: ${{ always() && hashFiles('data/reputation/state.json') != '' }}
+        with:
+          path: data/reputation/state.json
+          key: employer-reputation-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && hashFiles('data/reputation/report.json') != '' }}
+        with:
+          name: employer-reputation-report
+          path: |
+            data/reputation/report.json
+            data/reputation/queue.json
+            data/reputation/public/index.json
+          retention-days: 7

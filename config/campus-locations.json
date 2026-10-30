@@ -152,6 +152,46 @@
       "city": "北京",
       "evidence_url": "https://scc.pku.edu.cn/frontpage/pku/html/recruitmentFairList.html?fairType=1",
       "verified_on": "2026-10-26"
+    },
+    {
+      "id": "pku-centennial-hall",
+      "school": "北京大学",
+      "venue_pattern": "百周年纪念(?:大)?讲堂",
+      "city": "北京",
+      "evidence_url": "https://pkuhall.pku.edu.cn/fzhz/lxwm/index.htm",
+      "verified_on": "2026-10-30"
+    },
+    {
+      "id": "pku-urban-environment-hall",
+      "school": "北京大学",
+      "venue_pattern": "城市与环境学院(?:大厅|大楼|楼)",
+      "city": "北京",
+      "evidence_url": "https://ues.pku.edu.cn/",
+      "verified_on": "2026-10-30"
+    },
+    {
+      "id": "scau-tianhe-teaching-buildings",
+      "school": "华南农业大学",
+      "venue_pattern": "第[一二三四五六]教学楼|教[一二三四五六]|华山学生活动中心",
+      "city": "广州",
+      "evidence_url": "https://hnnydx.bysjy.com.cn/",
+      "verified_on": "2026-10-30"
+    },
+    {
+      "id": "sztu-pingshan-classrooms",
+      "school": "深圳技术大学",
+      "venue_pattern": "C[-－][1-9]教学楼|坪山校区",
+      "city": "深圳",
+      "evidence_url": "https://sztu.bysjy.com.cn/",
+      "verified_on": "2026-10-30"
+    },
+    {
+      "id": "nuist-nanjing-enterprise-park",
+      "school": "南京信息工程大学",
+      "venue_pattern": "创业园1号楼10[18]宣讲室",
+      "city": "南京",
+      "evidence_url": "https://webs.nuist.edu.cn/_s159/2023/0326/c8422a217787/page.psp",
+      "verified_on": "2026-10-30"
     }
   ]
 }

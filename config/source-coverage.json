@@ -787,6 +787,33 @@
       ],
       "scope": "school_feed",
       "connected": true
+    },
+    {
+      "source_id": "scau-talks",
+      "channel": "calendar",
+      "school": "华南农业大学",
+      "cities": ["广州"],
+      "scope": "school_feed",
+      "connected": true,
+      "verified_on": "2026-10-30"
+    },
+    {
+      "source_id": "sztu-talks",
+      "channel": "calendar",
+      "school": "深圳技术大学",
+      "cities": ["深圳"],
+      "scope": "school_feed",
+      "connected": true,
+      "verified_on": "2026-10-30"
+    },
+    {
+      "source_id": "nuist-talks",
+      "channel": "calendar",
+      "school": "南京信息工程大学",
+      "cities": ["南京"],
+      "scope": "school_feed",
+      "connected": true,
+      "verified_on": "2026-10-30"
     }
   ],
   "planned": [
@@ -799,7 +826,7 @@
       "channel": "calendar",
       "status": "blocked",
       "url": "https://career.upc.edu.cn/career/xjhxx",
-      "reason": "官方接口明确要求登录"
+      "reason": "2026-10-30复核：公开页面正常，但页面实际调用的宣讲列表接口返回403并明确要求登录；不将其当作空日历"
     },
     {
       "coverage_key": "fudan-calendar",
@@ -811,6 +838,24 @@
       "status": "blocked",
       "url": "https://career.fudan.edu.cn/",
       "reason": "官方公开页依赖接口认证，尚未取得无需认证的日程来源"
+    },
+    {
+      "coverage_key": "sjtu-calendar",
+      "school": "上海交通大学",
+      "cities": ["上海"],
+      "channel": "calendar",
+      "status": "blocked",
+      "url": "https://www.job.sjtu.edu.cn/career/xjhxx?nrdm=zcxjh1",
+      "reason": "2026-10-30公开页面的实际列表请求返回403并明确要求登录；主页少量展示不足以证明完整覆盖"
+    },
+    {
+      "coverage_key": "hdu-calendar",
+      "school": "杭州电子科技大学",
+      "cities": ["杭州"],
+      "channel": "calendar",
+      "status": "planned",
+      "url": "https://job.hdu.edu.cn/teachin",
+      "reason": "2026-10-30正常公开列表无日程行，尚未验证非空日期及分页结构；未计入已接入来源"
     }
   ]
 }

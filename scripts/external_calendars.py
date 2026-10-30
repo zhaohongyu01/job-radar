@@ -1,7 +1,7 @@
 """Public calendar adapters. Never derive work cities from a campus venue."""
 import datetime as dt
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlencode
 from bs4 import BeautifulSoup
 
 
@@ -67,3 +67,33 @@ def pku_calendar(payload, base):
                 'fairEndTime': end[11:16] if end and end[:10] == start[:10] else None,
                 'schoolName': '北京大学', 'fairAddress': row.get('fieldExport') or ''}})
     return items, max(1, int(page.get('totalPage') or 1))
+
+
+def js91_calendar(payload, source, page_size=20):
+    """Normalize the verified anonymous school calendar, without private contacts."""
+    page = payload.get('result') or {}
+    if payload.get('code') != 200 or payload.get('success') is not True or not isinstance(page.get('records'), list):
+        raise ValueError('School public calendar unavailable; refuse error/login response')
+    total = page.get('total')
+    if type(total) is not int or total < len(page['records']) or len(page['records']) > page_size:
+        raise ValueError('School calendar pagination changed')
+    items = []
+    for row in page['records']:
+        identifier, date, title = str(row.get('xjhid') or ''), row.get('jbrq') or '', row.get('xjhmc') or ''
+        if not identifier.isdigit() or not title or not re.fullmatch(r'20\d{2}-\d{2}-\d{2}', date) or row.get('jbxx') != source['school_name']:
+            raise ValueError('School calendar identity/date/school changed')
+        dt.date.fromisoformat(date)
+        schedule = row.get('kssjd') or ''
+        if re.findall(r'20\d{2}-\d{2}-\d{2}', schedule) not in ([], [date]):
+            raise ValueError('School calendar conflicting dates')
+        times = re.findall(r'(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d', schedule)
+        if not times:
+            raise ValueError('School calendar start time missing')
+        start = dt.time.fromisoformat(times[0].zfill(5)).isoformat(timespec='minutes')
+        end = times[1].zfill(5) if len(times) > 1 else None
+        items.append({'identity': f"js91:{source['school_code']}:{identifier}",
+            'url': urljoin(source['url'], '/sub-station/lectureDetail') + '?' + urlencode({'xxdm': source['school_code'], 'xjhid': identifier}),
+            'title': title, 'published_at': None, 'kind': '宣讲会', 'calendar_only': True,
+            'structured': {'fairDate': date, 'fairStartTime': start, 'fairEndTime': end,
+                'schoolName': source['school_name'], 'fairAddress': row.get('jbdd') or ''}})
+    return items, max(1, (total + page_size - 1) // page_size)

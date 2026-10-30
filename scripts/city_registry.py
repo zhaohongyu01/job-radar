@@ -86,7 +86,7 @@ def resolve_event_city(school, venue):
     if re.search(r'线上|直播|空中宣讲|腾讯会议|网络会议', venue):
         return None, {'method': 'unknown', 'reason': 'online'}
     explicit = cities_in_text(venue)
-    matches = [rule for rule, pattern in _CAMPUS if rule['school'] == school and pattern.search(venue)]
+    matches = [rule for rule, pattern in _CAMPUS if (rule['school'] == school or rule['school'] in venue) and pattern.search(venue)]
     inferred = {rule['city'] for rule in matches}
     if len(explicit) > 1 or len(inferred) > 1 or (explicit and inferred and set(explicit) != inferred):
         return None, {'method': 'unknown', 'reason': 'conflicting_locations'}
@@ -95,3 +95,9 @@ def resolve_event_city(school, venue):
     if len(inferred) == 1:
         return next(iter(inferred)), {'method': 'campus', 'rule_id': matches[0]['id']}
     return None, {'method': 'unknown', 'reason': 'unverified_venue'}
+
+
+def resolve_event_school(publishing_school, venue):
+    """A university reposting an event is not necessarily its hosting school."""
+    explicit = {rule['school'] for rule, pattern in _CAMPUS if rule['school'] in venue and pattern.search(venue)}
+    return next(iter(explicit)) if len(explicit) == 1 else publishing_school

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadIndexSnapshot, loadSnapshotParts } from '../lib/snapshot-loader.ts';
+import type { SnapshotIndexCache } from '../lib/snapshot-loader.ts';
 import type { Snapshot } from '../lib/jobs.ts';
 import { fixtureJob } from './fixtures/job.ts';
 
@@ -29,6 +30,25 @@ await test('snapshot parts retain order, bound concurrency and reject missing pa
 const paths = Array.from({ length: 3 }, (_, i) => `/job-assets/index-${(i + 1).toString(16).padStart(20, '0')}.json`);
 const snapshot = (count = 3): Snapshot => ({ schema_version: 3, generated_at: '2026-10-28T10:00:00+08:00',
   last_success_at: null, schedule_enabled: true, cities: [], sources: [], jobs: [], index_count: count, index_shards: paths });
+
+await test('a page cache reuses only a fully validated immutable index and retains no extra snapshot generations', async () => {
+  const previous = globalThis.fetch, cache: { current: SnapshotIndexCache | null } = { current: null };
+  let calls = 0;
+  const rows = paths.map((_, i) => fixtureJob({ id: `cached-${i}` }));
+  try {
+    globalThis.fetch = async input => { calls++; const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      return Response.json({ jobs: [rows[paths.indexOf(path)]] }); };
+    const first = await loadIndexSnapshot(snapshot(), undefined, undefined, cache);
+    assert.equal(calls, 3);
+    const again = await loadIndexSnapshot({ ...snapshot(), generated_at: '2026-10-30T00:00:00Z' }, undefined, undefined, cache);
+    assert.equal(first, again); assert.equal(calls, 3);
+    const abort = new AbortController(); abort.abort();
+    await assert.rejects(loadIndexSnapshot(snapshot(), abort.signal, undefined, cache));
+    globalThis.fetch = async () => Response.json({ jobs: [rows[0]] });
+    await assert.rejects(loadIndexSnapshot({ ...snapshot(), index_shards: [...paths].reverse() }, undefined, undefined, cache));
+    assert.equal(cache.current!.jobs, first);
+  } finally { globalThis.fetch = previous; }
+});
 
 await test('index previews use separate arrays and complete only after every record validates', async () => {
   const previous = globalThis.fetch;

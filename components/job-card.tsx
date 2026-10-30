@@ -34,6 +34,8 @@ import { TalkEvents } from '@/components/talk-events';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
 import { positionMatches } from '@/lib/eligibility';
 import { extractSalary } from '@/lib/salary-display';
+import { EmployerEntry } from '@/components/employer-workspace';
+import { APPLICATION_STAGES } from '@/lib/personal-records';
 
 export { extractSalary } from '@/lib/salary-display';
 
@@ -125,8 +127,9 @@ export function JobCard({
   const location = !workCities.length || locationScopes.includes('exact') ? 'exact' : locationScopes.includes('possible') ? 'possible' : 'unknown';
   const hasSelectedCityTalk =
     Boolean(filters.includeRelatedTalks && job.talk_events?.some((event) => workCities.includes(event.city || '') && event.status !== 'cancelled' && Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now));
-  const saved = personalFor(job, personal).saved;
-  const applied = personalFor(job, personal).applied;
+  const personalRecord = personalFor(job, personal);
+  const saved = personalRecord.saved;
+  const applied = personalRecord.applied;
   const expired = isExpired(job, now);
   const unread = isUnread(job, personal);
   const countdown = getDeadlineCountdown(job.deadline, now);
@@ -146,6 +149,17 @@ export function JobCard({
   const { displayCompany, monogram } = formatCompanyDisplay(job.company, cleanTitle, job.source_id);
   const isNew = !!since && Date.parse(job.first_seen_at) > Date.parse(since);
   const showStage = !['accepting', 'expired', 'expiring_soon'].includes(stageInfo.stage);
+  const validity = assessOpportunityValidity(job, now);
+  const showValidityChip =
+    job.kind !== '宣讲会' &&
+    (validity.status !== 'unconfirmed' || Boolean(filters.validity && filters.validity !== 'all'));
+  const hasBadges = Boolean(
+    showValidityChip ||
+    (job.employment_type && job.employment_type !== 'unknown') ||
+    showStage ||
+    isNew ||
+    applied
+  );
   const deadlineState = expired
     ? 'is-closed'
     : countdown?.urgency === 'urgent'
@@ -216,9 +230,10 @@ export function JobCard({
         <div className="opp-identity">
           <p className="opp-company">
             {unread && <span className="opp-unread-dot" title="未读" />}
-            <span className="opp-company-name">{displayCompany}</span>
+            <span className="opp-company-name"><EmployerEntry job={job} name={displayCompany} /></span>
             {job.sectors[0] && <span className="opp-sector">{job.sectors[0] === '综合' ? '单位性质未明确' : job.sectors[0]}</span>}
             {job.kind === '具体岗位' && <span className="opp-tag-sm">具体岗位</span>}
+            {(filters.view === 'pipeline' || filters.view === 'planned') && <span className="opp-tag-sm">我的进度：{APPLICATION_STAGES[personalRecord.application_stage || (applied ? 'applied' : 'planned')]}</span>}
             {job.provenance === '第三方线索' && <span className="opp-sector">第三方线索</span>}
             {!!duplicateSourceNames(job).length && (
               <span className="opp-tag-sm" title={`已同步 ${duplicateSourceNames(job).length + 1} 个官方渠道`}>
@@ -259,11 +274,22 @@ export function JobCard({
 
       <div className="opp-body">
         <ul className="opp-facts">
-          <li title={locationSummary(job)}>
+          <li title={locationSummary(job)} className="opp-fact-location">
             <MapPin />
             {job.cities.length > 4
               ? `${job.cities.slice(0, 3).join(' / ')} 等 ${job.cities.length} 城市`
               : locationSummary(job)}
+            {hasCityFilter && (
+              <span className={'opp-loc-note' + (location === 'exact' ? ' is-exact' : '')}>
+                {location === 'exact'
+                  ? `工作地含${matchedCityLabel}`
+                  : hasSelectedCityTalk
+                    ? `宣讲地在${talkCityLabel}，工作地需另核对`
+                    : location === 'possible'
+                      ? `覆盖全省 / 全国，${possibleCityLabel}岗位待核实`
+                      : '工作地点尚未明确'}
+              </span>
+            )}
           </li>
           <li>
             <GraduationCap />
@@ -281,22 +307,21 @@ export function JobCard({
             </li>
           )}
         </ul>
-        {hasCityFilter && (
-          <p className={'opp-loc-note' + (location === 'exact' ? ' is-exact' : '')}>
-            {location === 'exact'
-              ? `工作地含${matchedCityLabel}`
-              : hasSelectedCityTalk
-                ? `宣讲地在${talkCityLabel}，工作地需另核对`
-                : location === 'possible'
-                  ? `覆盖全省 / 全国，${possibleCityLabel}岗位待核实`
-                  : '工作地点尚未明确'}
-          </p>
-        )}
-
-        {(showStage || isNew || applied || job.kind !== '宣讲会') && (
+        {hasBadges && (
           <div className="opp-badges">
-            {job.kind !== '宣讲会' && <span className="chip" title={`${assessOpportunityValidity(job, now).reason}；最近核验：${assessOpportunityValidity(job, now).checkedAt || '未知'}`}>{assessOpportunityValidity(job, now).label}</span>}
-            {job.employment_type && job.employment_type !== 'unknown' && <span className="chip">{({ full_time: '全职', internship: '实习', part_time: '兼职' })[job.employment_type]}</span>}
+            {showValidityChip && (
+              <span
+                className={`chip ${validity.status === 'confirmed_open' ? 'chip-brand' : ''}`}
+                title={`${validity.reason}；最近核验：${validity.checkedAt || '未知'}`}
+              >
+                {validity.label}
+              </span>
+            )}
+            {job.employment_type && job.employment_type !== 'unknown' && (
+              <span className="chip">
+                {({ full_time: '全职', internship: '实习', part_time: '兼职' })[job.employment_type]}
+              </span>
+            )}
             {showStage && (
               <span className={`chip ${stageInfo.badgeClass}`}>{stageInfo.badge}</span>
             )}

@@ -139,18 +139,23 @@ def parse_page(document, enterprise_id, channel, collected_at, now=None):
         raise ValueError('public_post_list_missing')
     rows = [row for app in apps for row in app['postList']]
     records, excluded = [], 0
+    exclusion_counts = {}
+    def exclude(reason):
+        nonlocal excluded
+        excluded += 1
+        exclusion_counts[reason] = exclusion_counts.get(reason, 0) + 1
     for row in rows:
         content = row.get('contentData') or {}
         if not isinstance(content, dict):
-            excluded += 1
+            exclude('invalid_content')
             continue
         tag = row.get('evaluateSubscript') or {}
         if tag.get('companyId') and str(tag['companyId']) != str(enterprise_id):
-            excluded += 1  # Cross-company recommended content is not this firm's experience.
+            exclude('other_company')  # Recommended posts are not this firm's evidence.
             continue
         text, title = redact(clean(content.get('content'))), redact(clean(content.get('title')))
         if not text or not title or content.get('recommendAd') or content.get('staffAnswer') or PROMO.search(title + text) or re.search(r'内推|网申|投递入口|招聘开启|招人|捞人', title):
-            excluded += 1
+            exclude('empty_or_promotional')
             continue
         content_id, uuid = str(content.get('id') or row.get('contentId') or ''), content.get('uuid')
         if uuid and re.fullmatch(r'[a-f0-9]{32}', str(uuid)):
@@ -158,7 +163,7 @@ def parse_page(document, enterprise_id, channel, collected_at, now=None):
         elif re.fullmatch(r'\d{1,22}', content_id):
             identity, url = content_id, f'{ORIGIN}/discuss/{content_id}'
         else:
-            excluded += 1
+            exclude('missing_public_identity')
             continue
         firsthand = is_experience(title, text)
         kind = 'interview' if channel == 'interview' else 'experience' if firsthand else 'question'
@@ -184,7 +189,7 @@ def parse_page(document, enterprise_id, channel, collected_at, now=None):
         'id': f'nowcoder:{enterprise_id}', 'provider': 'nowcoder', 'names': names,
         'name': clean(info.get('simpleName') or info.get('companyName')), 'legal_name': clean(info.get('companyName')),
         'source_url': f'{ORIGIN}/enterprise/{enterprise_id}/{channel}', 'records': records,
-        'channel': channel, 'excluded': excluded, 'public_rows': len(rows), 'partial': True,
+        'channel': channel, 'excluded': excluded, 'exclusion_counts': exclusion_counts, 'public_rows': len(rows), 'partial': True,
     }
 
 
@@ -374,6 +379,11 @@ def collect(config, state, state_path, budget, limit, force=False):
                     previous_records[row['id']] = row
                 page['records'] = sorted(previous_records.values(), key=lambda row: row.get('published_at') or '', reverse=True)[:120]
                 page['last_success_at'] = stamp()
+                report.setdefault('page_diagnostics', []).append({
+                    'enterprise': key, 'channel': channel, 'public_rows': page['public_rows'],
+                    'excluded': page['excluded'], 'exclusion_counts': page.get('exclusion_counts', {}),
+                    'retained_records': len(page['records']), 'pagination_status': page['pagination_status'],
+                })
                 channels[channel] = page
                 successes += 1
                 consecutive_blocks = 0

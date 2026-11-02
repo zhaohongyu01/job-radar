@@ -8,6 +8,10 @@ import collect_reputation as c
 from tests.test_reputation import document, AT, CONFIG, FakePublicClient
 
 class QualityTests(unittest.TestCase):
+    def test_exclusion_diagnostics_account_for_public_rows_without_exporting_raw_text(self):
+        page = c.parse_page(document(), 1, 'discussion', AT)
+        self.assertEqual(sum(page['exclusion_counts'].values()), page['excluded'])
+        self.assertNotIn('author', str(page['exclusion_counts']))
     def test_discovery_diversity_does_not_turn_branch_names_into_company_aliases(self):
         rows = [{'name': name} for name in ['示例保险股份有限公司山东分公司', '示例保险股份有限公司河北分公司', '第二科技有限公司', '第三公司']]
         candidates = c.discovery_candidates(rows, {}, 200000)

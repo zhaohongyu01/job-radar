@@ -42,8 +42,8 @@ jobs:
       - name: Bound collection to two sources without publication
         env:
           NO_PROXY: '*'
-          no_proxy: '*'
         run: |
+          export no_proxy="$NO_PROXY"
           python3 scripts/ci_collect.py collect --sources nankai,hdu-talks \
             --data-dir data/source-validation --public-dir data/source-validation/public \
             --pages 5 --days 30 --refresh-hours 72 --probe-budget 0 \

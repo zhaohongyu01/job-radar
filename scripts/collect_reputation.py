@@ -231,6 +231,24 @@ class PublicClient:
         self.robot.parse(text.splitlines())
 
 
+def discovery_candidates(rows, history, now):
+    """Diversify a tiny search budget; family keys never become identity aliases."""
+    def family(name):
+        return re.sub(r'(?:股份)?有限公司.*$|(?:集团)?(?:[^\s]{2,6}省)?分公司.*$|支公司.*$', '', name)
+    recent = {family(name) for name, entry in history.items() if now - entry.get('attempt_epoch', 0) <= 86400}
+    candidates, seen = [], set()
+    for row in rows:
+        name = row.get('name')
+        if not isinstance(name, str) or not 2 <= len(name) <= 160:
+            continue
+        key = family(name) or name
+        if key in seen or key in recent:
+            continue
+        seen.add(key)
+        candidates.append(row)
+    return candidates
+
+
 def discover_enterprises(config, state, client):
     """Search candidates are untrusted until their exact source name matches."""
     known = {str(seed['id']) for seed in config['enterprises']}
@@ -241,7 +259,7 @@ def discover_enterprises(config, state, client):
             known.add(key)
     outcomes = []
     history = state.setdefault('discovery_history', {})
-    candidates = [row for row in config.get('_needs_mapping', []) if time.time() - history.get(row.get('name'), {}).get('attempt_epoch', 0) > 86400]
+    candidates = discovery_candidates(config.get('_needs_mapping', []), history, time.time())
     original_deadline = client.deadline
     client.deadline = min(original_deadline, time.monotonic() + 25)
     for candidate in candidates[:config.get('discovery_limit', 0)]:

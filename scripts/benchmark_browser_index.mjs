@@ -13,7 +13,7 @@ const base = process.env.JOB_RADAR_BROWSER_URL || 'http://127.0.0.1:3000';
 assert.ok(['localhost', '127.0.0.1'].includes(new URL(base).hostname));
 const { chromium } = createRequire(import.meta.url)(process.env.JOB_RADAR_PLAYWRIGHT || 'playwright');
 const root = dirname(resolve(input)), raw = readFileSync(input), snapshot = JSON.parse(raw);
-const paths = snapshot.browse_index?.version === 1 ? snapshot.browse_index.shards : snapshot.index_shards;
+const paths = [1, 2].includes(snapshot.browse_index?.version) ? snapshot.browse_index.shards : snapshot.index_shards;
 assert.ok(paths?.length, 'A sharded snapshot is required');
 const assets = new Map(paths.map(path => {
   assert.match(path, /^\/job-assets\/index-[a-f0-9]{20}\.json$/);

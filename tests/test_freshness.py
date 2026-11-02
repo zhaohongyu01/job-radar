@@ -99,6 +99,30 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(prioritize_details([past, upcoming], {})[0], upcoming)
         self.assertNotEqual(listing_signature(upcoming), listing_signature(dict(upcoming, structured={**upcoming['structured'], 'fairAddress': '新报告厅'})))
 
+    def test_old_due_details_get_bounded_recovery_slots_without_discarding_new_work(self):
+        now = dt.datetime(2026, 11, 2, 12, tzinfo=c.TZ)
+        fresh = [{'url': f'https://example.test/new/{n}', 'published_at': '2026-11-02',
+                  'detail_queued_at': now.isoformat()} for n in range(9)]
+        backlog = [{'url': f'https://example.test/old/{n}', 'published_at': '2026-09-01',
+                    'detail_queued_at': f'2026-10-{20+n:02}T12:00:00+08:00', 'detail_failures': 2} for n in range(3)]
+        scheduled = prioritize_details(fresh + list(reversed(backlog)), {}, now)
+        self.assertEqual(scheduled[:4], fresh[:4])
+        self.assertEqual(scheduled[4], backlog[0])
+        self.assertEqual(scheduled[9], backlog[1])
+        self.assertEqual({i['url'] for i in scheduled}, {i['url'] for i in fresh + backlog})
+        self.assertEqual(len(scheduled), 12)
+
+    def test_invalid_pages_wait_a_day_but_transient_failures_keep_short_backoff(self):
+        now = dt.datetime(2026, 11, 2, 12, tzinfo=c.TZ)
+        for error in [ValueError('empty detail'), c.urllib.error.HTTPError('https://example.test', 404, '', {}, None)]:
+            item = {'url': 'https://example.test'}
+            defer_detail(item, now, error)
+            self.assertFalse(retry_due(item, now + dt.timedelta(hours=3)))
+            self.assertTrue(retry_due(item, now + dt.timedelta(hours=25)))
+        item = {'url': 'https://example.test'}
+        defer_detail(item, now, TimeoutError('network'))
+        self.assertTrue(retry_due(item, now + dt.timedelta(hours=3)))
+
     def test_audit_does_not_confuse_new_snapshot_with_fresh_sources_or_future_dates(self):
         now = dt.datetime(2026, 10, 22, 12, tzinfo=c.TZ)
         event = {'id': 'event', 'date': '2026-10-23', 'city': '济南', 'school': '大学', 'venue': '报告厅'}

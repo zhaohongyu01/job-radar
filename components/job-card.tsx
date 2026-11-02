@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import {
   AlertCircle,
   ArrowUpRight,
@@ -36,6 +36,7 @@ import { positionMatches } from '@/lib/eligibility';
 import { extractSalary } from '@/lib/salary-display';
 import { EmployerEntry } from '@/components/employer-workspace';
 import { APPLICATION_STAGES } from '@/lib/personal-records';
+import { cardSummaryFor } from '@/lib/card-summary';
 
 export { extractSalary } from '@/lib/salary-display';
 
@@ -134,7 +135,11 @@ export function JobCard({
   const unread = isUnread(job, personal);
   const countdown = getDeadlineCountdown(job.deadline, now);
   const { cleanTitle, salary } = extractSalary(job);
-  const excerptText = cleanExcerpt(job.excerpt);
+  const summary = cardSummaryFor(job);
+  const excerptText = summary.text;
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const summaryId = useId();
+  const summaryLabel = { company: '单位介绍', responsibilities: '岗位职责', notice: '招聘说明' }[summary.kind];
   const stageInfo = getLifecycleStage(job, now);
   const changeAlert =
     (job.recent_change?.detail &&
@@ -394,9 +399,20 @@ export function JobCard({
         )}
         {job.company_conflict && <p className="opp-note">{job.company_note}</p>}
         {excerptText && (
-          <p className="opp-excerpt" title="点击标题查看完整招聘详情">
-            <HighlightText text={excerptText} query={filters.query} />
-          </p>
+          <div className="opp-summary">
+            <p id={summaryId} className={`opp-excerpt${summaryExpanded ? ' is-expanded' : ''}`}>
+              <strong className="opp-summary-label">{summaryLabel}：</strong>
+              <HighlightText text={excerptText} query={filters.query} />
+            </p>
+            <div className="opp-summary-actions">
+              {Array.from(excerptText).length > 64 && <button type="button" aria-expanded={summaryExpanded} aria-controls={summaryId}
+                onClick={() => setSummaryExpanded(value => !value)}>{summaryExpanded ? '收起' : `展开${summaryLabel}`}</button>}
+              {summary.source_url && <a href={externalUrl(summary.source_url)} target="_blank" rel="noreferrer"
+                title="介绍摘自同名单位的另一份来源公告，未据此更新本岗位核验时间">
+                介绍来源{summary.source_published_at ? ` · ${summary.source_published_at.slice(0, 10)}` : ''} ↗
+              </a>}
+            </div>
+          </div>
         )}
         <TalkEvents
           job={job}

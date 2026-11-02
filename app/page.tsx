@@ -1,5 +1,5 @@
 'use client';
-import { loadSnapshotParts, loadIndexSnapshot } from '../lib/snapshot-loader';
+import { loadSnapshotParts, loadIndexSnapshot, supportedBrowseIndex } from '../lib/snapshot-loader';
 import type { SnapshotIndexCache } from '../lib/snapshot-loader';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -255,7 +255,7 @@ function HomeContent() {
         !Array.isArray(json.sources)
       )
         throw Error('招聘数据格式异常。');
-      if (json.index_shards?.length || json.browse_index?.version === 1) {
+      if (json.index_shards?.length || supportedBrowseIndex(json)) {
         json.jobs = await loadIndexSnapshot(json, controller.signal, (jobs, total) => {
           if (!current()) return;
           setProgressiveProgress({ loaded: jobs.length, total });
@@ -271,7 +271,7 @@ function HomeContent() {
       if (!current()) return;
       if (new Set(json.jobs.map((job) => job.id)).size !== json.jobs.length) throw Error('招聘数据包含重复记录。');
       // A successful legacy inline snapshot replaces the sharded generation too.
-      if (!json.index_shards?.length && json.browse_index?.version !== 1) indexCache.current = null;
+      if (!json.index_shards?.length && !supportedBrowseIndex(json)) indexCache.current = null;
       if (!previewActivated) activateSnapshot(json);
       // A cold preview and its completed index share one detail-request generation.
       dataRef.current = json;
@@ -564,7 +564,7 @@ function HomeContent() {
   useEffect(() => {
     if (!needsSearch || !data?.search_url || searchIndex) return;
     const controller = new AbortController();
-    const paths = data.browse_index?.version === 1 ? data.browse_index.search_shards : [data.search_url, ...(data.search_shards ?? [])];
+    const paths = supportedBrowseIndex(data) ? data.browse_index!.search_shards : [data.search_url, ...(data.search_shards ?? [])];
     const timer = setTimeout(() => {
       setSearchError('');
       void loadSnapshotParts<{ jobs: Record<string, string> }>(paths, 'search', controller.signal)

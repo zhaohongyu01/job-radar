@@ -47,7 +47,7 @@ async function setup(options = {}) {
   await page.route('**/jobs.json', (route) => route.fulfill({ json: {
     schema_version: 3, generated_at: options.generated || '2026-10-28T10:00:00+08:00', last_success_at: '2026-10-28T10:00:00+08:00',
     index_count: 2, index_shards: options.nextIndex ? [warm1, warm2] : [p1, p2], jobs: [], cities: ['济南', '青岛', '北京', '上海'], schedule_enabled: true,
-    ...(projection ? { search_url: searchPath, browse_index: { version: options.browseVersion || 1, count: projection.jobs.length, shards: [lean1, lean2], search_shards: [searchPath] } } : {}),
+    ...(projection ? { search_url: searchPath, browse_index: { version: options.browseVersion || 2, count: projection.jobs.length, shards: [lean1, lean2], search_shards: [searchPath] } } : {}),
     detail_shards: { aa: options.detailPath || detail }, sources: [{ id: 'fixture', name: '回归来源', status: 'ok', pages: 1, parsed: 2, cached: 0 }],
   } }));
   await page.route('**/job-assets/**', async (route) => {
@@ -101,6 +101,23 @@ async function run(name, options, check) {
 }
 
 try {
+  for (const width of [390, 1440]) await run(`company overview replaces table metadata and expands without a detail request at ${width}px`, {
+    lightweight: true, viewport: { width, height: 1000 },
+    rows: [{ ...jobA, company: '摘要回归有限公司', body: '单位名称：摘要回归有限公司\n岗位职责：负责技术研发以及客户服务，参与方案设计与测试维护，推动产品交付。' },
+      { ...jobB, company: '摘要回归有限公司', source_url: 'https://example.org/company-intro', body: '公司简介：摘要回归有限公司成立于2010年，专注工业设备研发和技术服务。' + '这是隔离测试的单位介绍内容，不代表真实企业事实。'.repeat(9) + '\n岗位职责：这段不进入介绍。' }],
+  }, async ({ page, requests }) => {
+    await complete(page);
+    const card = page.locator('.opp-card').filter({ hasText: jobA.title });
+    assert.match(await card.locator('.opp-excerpt').innerText(), /单位介绍：摘要回归有限公司成立/);
+    assert.doesNotMatch(await card.locator('.opp-excerpt').innerText(), /单位名称：|这段不进入介绍/);
+    assert.equal(await card.getByRole('link', { name: /介绍来源/ }).getAttribute('href'), 'https://example.org/company-intro');
+    const before = requests.length;
+    await card.getByRole('button', { name: '展开单位介绍' }).click();
+    assert.equal(await card.getByRole('button', { name: '收起', exact: true }).getAttribute('aria-expanded'), 'true');
+    assert.equal(requests.length, before);
+    assert.equal(requests.some(path => /detail-|search-/.test(path)), false);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  });
   const searchGate = deferred();
   await run('lightweight list defers full text and details while preserving tail salary and search', {
     lightweight: true, searchGate,

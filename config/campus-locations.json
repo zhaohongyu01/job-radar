@@ -203,6 +203,30 @@
       "campus_labels": [
         "四平校区"
       ]
+    },
+    {
+      "id": "hdu-xiasha-6-7",
+      "school": "杭州电子科技大学",
+      "venue_pattern": "第[67六七](?:教研楼|教学科研楼)|下沙校区",
+      "city": "杭州",
+      "evidence_url": "https://ee.hdu.edu.cn/2021/1224/c13565a150913/page.htm",
+      "verified_on": "2026-11-02"
+    },
+    {
+      "id": "hdu-xiasha-3",
+      "school": "杭州电子科技大学",
+      "venue_pattern": "第[3三]教研楼",
+      "city": "杭州",
+      "evidence_url": "https://mat.hdu.edu.cn/2024/1219/c12403a273888/page.htm",
+      "verified_on": "2026-11-02"
+    },
+    {
+      "id": "hdu-xiasha-12",
+      "school": "杭州电子科技大学",
+      "venue_pattern": "第(?:12|十二)教研楼",
+      "city": "杭州",
+      "evidence_url": "https://hum.hdu.edu.cn/2026/0325/c12203a290617/page.htm",
+      "verified_on": "2026-11-02"
     }
   ]
 }

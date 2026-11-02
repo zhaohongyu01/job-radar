@@ -267,6 +267,14 @@ class PublicQueueInputTests(unittest.TestCase):
         with patch.object(queue_input.urllib.request, 'urlopen', side_effect=fetch):
             self.assertEqual(queue_input.download('https://example.test')['jobs'][0]['id'], 'job-1')
         self.assertEqual(len(calls), 2)
+        for version in (1, 2):
+            calls.clear()
+            snapshot['browse_index'] = dict(version=version, count=1, shards=[file])
+            snapshot['index_shards'] = ['/do-not-fetch-canonical.json']
+            with patch.object(queue_input.urllib.request, 'urlopen', side_effect=fetch):
+                self.assertEqual(queue_input.download('https://example.test')['jobs'][0]['id'], 'job-1')
+            self.assertEqual(calls, ['https://example.test/jobs.json', 'https://example.test' + file])
+        snapshot.pop('browse_index')
         snapshot['index_shards'] = ['/job-assets/index-' + '0' * 20 + '.json']
         with patch.object(queue_input.urllib.request, 'urlopen', side_effect=fetch), self.assertRaisesRegex(ValueError, 'checksum'):
             queue_input.download('https://example.test')

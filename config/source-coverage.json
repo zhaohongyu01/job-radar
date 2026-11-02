@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "verified_on": "2026-10-30",
+  "verified_on": "2026-11-02",
   "note": "城市仅描述来源或校区所在地，不用于推断岗位工作地；计划清单不等于全市高校总数。",
   "sources": [
     {
@@ -831,6 +831,17 @@
       "scope": "school_feed",
       "connected": true,
       "verified_on": "2026-10-30"
+    },
+    {
+      "source_id": "hdu-talks",
+      "channel": "calendar",
+      "school": "杭州电子科技大学",
+      "cities": [
+        "杭州"
+      ],
+      "scope": "school_feed",
+      "connected": true,
+      "verified_on": "2026-11-02"
     }
   ],
   "planned": [
@@ -868,15 +879,15 @@
       "reason": "2026-10-30公开页面的实际列表请求返回403并明确要求登录；主页少量展示不足以证明完整覆盖"
     },
     {
-      "coverage_key": "hdu-calendar",
-      "school": "杭州电子科技大学",
+      "coverage_key": "zjut-calendar",
+      "school": "浙江工业大学",
       "cities": [
         "杭州"
       ],
       "channel": "calendar",
-      "status": "planned",
-      "url": "https://job.hdu.edu.cn/teachin",
-      "reason": "2026-10-30正常浏览器已显示非空日程；原始HTML仅含动态占位，尚无稳定无浏览器列表适配，未计入已接入来源"
+      "status": "blocked",
+      "url": "https://zjut.jysd.com/teachin",
+      "reason": "2026-11-02复核：公开日历非空，但该域robots.txt明确Disallow:/；未接入，不当作空日历"
     }
   ]
 }

@@ -3,6 +3,7 @@ import { assessOpportunityValidity, deadlineTime } from './opportunity-validity.
 import { positionMatches } from './eligibility.ts';
 import { PERSONAL_DETAIL_FIELDS, validatePersonalDetails, mergePersonalRecords } from './personal-records.ts';
 import employerBrands from '../config/employer-brands.json' with { type: 'json' };
+import type { CardSummaryMeta } from './card-summary.ts';
 
 export function shanghaiDay(value: string | number): string {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -94,6 +95,7 @@ export type TalkEvent = {
 };
 
 export type Job = {
+  card_summary?: CardSummaryMeta;
   listing_facts?: {
     version: 1;
     salary?: { min: number; max: number | null; raw: string };
@@ -1275,7 +1277,10 @@ function matchingJobs(
             j.company,
             employerBrand(j.source_id),
             ...(j.talk_events?.map((event) => `${event.city ?? ''} ${event.school} ${event.venue} ${event.date}`) ?? []),
-            j.excerpt,
+            // Version-2 browsing excerpts are display summaries (which may be
+            // attributed to another exact-name company announcement). Search
+            // continues to use this job's complete canonical text, not that bio.
+            j.card_summary ? '' : j.excerpt,
             j.education,
             ...(j.directions ?? []),
             ...(j.sectors ?? []),

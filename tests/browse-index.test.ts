@@ -102,6 +102,7 @@ await test('builder retains canonical assets and history, preserves full search 
     assert.equal(report.network_requests, 0);
     const first = readFileSync(join(root, 'jobs.json'));
     const metadata = JSON.parse(first.toString()) as Snapshot;
+    assert.equal(metadata.browse_index?.version, 2);
     assert.equal(metadata.generated_at, original.generated_at);
     assert.deepEqual(metadata.index_shards, original.index_shards);
     assert.deepEqual(readFileSync(join(root, original.index_shards[0])), bytes);
@@ -128,12 +129,15 @@ await test('corrupt canonical input refuses projection and leaves entry metadata
 await test('client prefers supported browsing contract, falls back for future versions, and rejects incomplete facts', async () => {
   const old = '/job-assets/index-00000000000000000001.json', lean = '/job-assets/index-00000000000000000002.json';
   const metadata = { schema_version: 3, jobs: [], sources: [], index_count: 1, index_shards: [old],
-    browse_index: { version: 1, count: 1, shards: [lean], search_shards: ['/job-assets/search-00000000000000000003.json'] } } as unknown as Snapshot;
+    browse_index: { version: 2, count: 1, shards: [lean], search_shards: ['/job-assets/search-00000000000000000003.json'] } } as unknown as Snapshot;
   const projected = projectBrowsingJobs([rich]).jobs;
   const previous = globalThis.fetch, requested: string[] = [];
   try {
     globalThis.fetch = async (path) => { assert.equal(typeof path, 'string'); requested.push(path as string); return new Response(JSON.stringify({ jobs: path === lean ? projected : [rich] })); };
     assert.deepEqual(await loadIndexSnapshot(metadata), projected);
+    assert.deepEqual(requested, [lean]);
+    requested.length = 0;
+    assert.deepEqual(await loadIndexSnapshot({ ...metadata, browse_index: { ...metadata.browse_index!, version: 1 } }), projected);
     assert.deepEqual(requested, [lean]);
     requested.length = 0;
     assert.deepEqual(await loadIndexSnapshot({ ...metadata, browse_index: { ...metadata.browse_index!, version: 99 } }), [rich]);

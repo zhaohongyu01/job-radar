@@ -5,6 +5,10 @@ import { validateBrowsingJob } from './browse-index.ts';
  * held by the view. A new snapshot never accumulates a second retained cache. */
 export type SnapshotIndexCache = { signature: string; jobs: Job[] };
 
+export function supportedBrowseIndex(snapshot: Pick<Snapshot, 'browse_index'>): Snapshot['browse_index'] {
+  return snapshot.browse_index && [1, 2].includes(snapshot.browse_index.version) ? snapshot.browse_index : undefined;
+}
+
 // Preview callbacks must validate before publishing; their errors abort the load.
 export async function loadSnapshotParts<T>(
   paths: string[],
@@ -38,7 +42,7 @@ export async function loadIndexSnapshot(
   onPreview?: (jobs: Job[], total: number) => void,
   cache?: { current: SnapshotIndexCache | null },
 ): Promise<Job[]> {
-  const browse = snapshot.browse_index?.version === 1 ? snapshot.browse_index : undefined;
+  const browse = supportedBrowseIndex(snapshot);
   const expected = browse?.count ?? snapshot.index_count;
   const paths = browse?.shards ?? snapshot.index_shards;
   if (!Number.isSafeInteger(expected) || expected! < 1 || !paths?.length || (browse && !browse.search_shards?.length))

@@ -27,7 +27,7 @@ from bs4 import BeautifulSoup
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 from city_registry import (CITIES, PROVINCE_CITIES, CODE_CITY, cities_in_text,
                            work_cities, resolve_event_city, resolve_event_school, collection_cities)
-from external_calendars import nankai_calendar, nankai_event, pku_calendar, js91_calendar, tongji_calendar, public_calendar_source
+from external_calendars import nankai_calendar, nankai_event, pku_calendar, js91_calendar, tongji_calendar, jysd_calendar, check_jysd_robots, public_calendar_source
 from opportunity_facts import employment_type, availability_evidence
 from employer_identity import employer_identity
 
@@ -148,6 +148,9 @@ SOURCES.extend([
 SOURCES.append({'id': 'tongji-talks', 'name': '同济大学 · 宣讲日历',
     'url': 'https://tj91.tongji.edu.cn/frontpage/tongji/html/recruitmentFairList.html',
     'school_name': '同济大学', 'adapter': 'tongji_talks', 'channel': 'talks', 'allow_empty_pages': True})
+SOURCES.append({'id': 'hdu-talks', 'name': '杭州电子科技大学 · 宣讲日历',
+    'url': 'https://job.hdu.edu.cn/teachin', 'school_name': '杭州电子科技大学',
+    'adapter': 'jysd_talks', 'channel': 'talks'})
 SOURCES.append({'id': 'sdnu-graduate-talks', 'name': '山东师范大学研究生就业网 · 宣讲通知',
     'url': 'http://www.yjsjy.sdnu.edu.cn/xyzp.htm', 'adapter': 'sdnu_graduate', 'channel': 'talks'})
 for code, host, school_name in [('sdjzu', 'sdjzu', '山东建筑大学'), ('sdjt', 'sdjt', '山东交通学院'),
@@ -287,7 +290,7 @@ for _source in SOURCES:
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 SOURCE_PACKS = {
     'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'upc'],
+    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'hdu-talks', 'upc'],
     'universities-b': _sdei_source_ids,
     'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
     'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
@@ -2729,6 +2732,8 @@ def run(args):
                         continue
         try:
             api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks','js91_talks','tongji_talks'}
+            if source.get('adapter') == 'jysd_talks':
+                calendar_robots = check_jysd_robots(fetch, source, DEFAULT_USER_AGENT)
             first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
@@ -2752,7 +2757,7 @@ def run(args):
             # Live inventories need a complete single-run view for withdrawal
             # detection; SDU follows opaque next-page links; OfferJack has cities.
             resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv',
-                                                 'nankai_talks', 'pku_talks', 'bysjy_talks', 'js91_talks', 'tongji_talks'}
+                                                 'nankai_talks', 'pku_talks', 'bysjy_talks', 'js91_talks', 'tongji_talks', 'jysd_talks'}
                          or source['id'] in {'nankai', 'jinan'})
             # BYSJY exposes only a look-ahead row, not an exact last-page number.
             # Its first-page "total=2" must never reset a deeper saved cursor.
@@ -2837,6 +2842,11 @@ def run(args):
                             form={'pageNo': page, 'pageSize': 20, 'fairType': ''}, referer=source['url']))
                         found, total = tongji_calendar(payload, source['url'])
                         source['_total_items'] = payload['object']['count']
+                    elif source.get('adapter')=='jysd_talks':
+                        page_url = source['url'] if page == 1 else f'https://job.hdu.edu.cn/teachin/index/do1/job.hdu.edu.cn/domain/hdu/page/{page}'
+                        if calendar_robots and not calendar_robots.can_fetch(DEFAULT_USER_AGENT, page_url):
+                            raise PermissionError('Calendar robots denies collection')
+                        found, total = jysd_calendar(first if page == 1 else fetch(page_url), source)
                     elif source.get('adapter')=='bysjy_talks':
                         query = urllib.parse.urlencode({'start': (page-1)*20, 'count': 21,
                             'k': '', 'address': '', 'professionals': '', 'career_type': '',
@@ -2917,7 +2927,7 @@ def run(args):
                     if item.get('identity',item['url']) not in known:
                         known.add(item.get('identity',item['url']))
                         if item.get('is_active_listing') or not item['published_at'] or item['published_at']>=cutoff:
-                            items.append(dict(item, detail_queued_at=next((old.get('detail_queued_at') for old in queues.get(source['id'], []) if old.get('url') == item['url']), now)))
+                            items.append(dict(item, detail_queued_at=next((old.get('detail_queued_at') for old in queues.get(source['id'], []) if old.get('url') == item['url']), None) or now))
                 if source.get('adapter') == 'sdnu_graduate':
                     status['coverage'] = '已读取研究生校园招聘最新列表页；旧通知未追溯'
                     break
@@ -3070,6 +3080,7 @@ def run(args):
                             item[field] = old_item[field]
             for queued in queues.get(source['id'], []):
                 if queued['url'] not in item_urls:
+                    queued = dict(queued, detail_queued_at=queued.get('detail_queued_at') or now)
                     items.append(queued)
                     item_urls.add(queued['url'])
             cached=0
@@ -3250,7 +3261,7 @@ def run(args):
 
             def record_detail_failure(item, error):
                 if not item.get('is_probe'):
-                    defer_detail(item, dt.datetime.now(TZ))
+                    defer_detail(item, dt.datetime.now(TZ), error)
                 # Transport failures do not invalidate a previously readable page.
                 # Only an explicit missing page or invalid detail body hides it.
                 invalid_detail = (isinstance(error, ValueError) or

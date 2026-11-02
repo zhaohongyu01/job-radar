@@ -8,6 +8,14 @@ import collect_reputation as c
 from tests.test_reputation import document, AT, CONFIG, FakePublicClient
 
 class QualityTests(unittest.TestCase):
+    def test_discovery_diversity_does_not_turn_branch_names_into_company_aliases(self):
+        rows = [{'name': name} for name in ['示例保险股份有限公司山东分公司', '示例保险股份有限公司河北分公司', '第二科技有限公司', '第三公司']]
+        candidates = c.discovery_candidates(rows, {}, 200000)
+        self.assertEqual(candidates, [rows[0], rows[2], rows[3]])
+        self.assertEqual(c.discovery_candidates(rows, {rows[0]['name']: {'attempt_epoch': 190000}}, 200000), rows[2:])
+        self.assertEqual(c.discovery_candidates(rows, {rows[0]['name']: {'attempt_epoch': 1}}, 200000), candidates)
+        self.assertEqual(rows[0]['name'], '示例保险股份有限公司山东分公司')
+
     def test_attribution_requires_explicit_target_and_quarantines_transitions(self):
         self.assertEqual(c.attribution_for('体验', '我在示例科技工作了两年。', ['示例科技']), 'target')
         for text in ['我在这里工作了两年。', '示例科技不错，我在其他企业工作了两年。', '从前公司离职后入职慢脚了。', '相比前公司，示例科技福利很好。']:

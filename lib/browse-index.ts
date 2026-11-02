@@ -2,10 +2,12 @@ import type { Job } from './jobs.ts';
 import { duplicateSourceNames, hasLongTermText, hasSelectionNotice, meaningfulChangeDates,
   mergeDuplicateOpportunities, parseSalaryRange, positionChangeDates } from './jobs.ts';
 import { extractSalary } from './salary-display.ts';
+import { buildCardSummaries, extractCardSummary, validateCardSummary } from './card-summary.ts';
 
 /** Build with the same domain functions used by legacy browsers. Full records
  * remain canonical; only the optional browsing projection is abbreviated. */
-export function projectBrowsingJobs(input: Job[]) {
+export function projectBrowsingJobs(input: Job[], fullText: Readonly<Record<string, string>> = {}) {
+  const summaries = buildCardSummaries(input, fullText);
   const merged = mergeDuplicateOpportunities(structuredClone(input));
   const excerpts: Record<string, string> = {};
   const jobs = merged.map((job): Job => {
@@ -28,15 +30,23 @@ export function projectBrowsingJobs(input: Job[]) {
     excerpts[job.id] = job.excerpt || '';
     const result = { ...job, listing_facts };
     for (const field of ['body', 'timeline', 'duplicate_sources', 'classification_note'] as const) delete result[field];
-    // Only the visual two-line preview is shortened. Search receives the original
-    // excerpt, and all detail fields remain in the canonical detail assets.
+    // Version 2 keeps one display string, avoiding a second copy of the source
+    // preview in every row. Original excerpts stay in canonical assets/search;
+    // salary/stage/change facts above always use the original source record.
     result.excerpt = Array.from(job.excerpt || '').slice(0, 120).join('');
+    const summary = summaries.get(job.id) || extractCardSummary(job);
+    if (summary.kind !== 'notice') {
+      const { text, ...metadata } = summary;
+      result.excerpt = text;
+      result.card_summary = metadata;
+    }
     return result;
   });
   return { jobs, excerpts };
 }
 
 export function validateBrowsingJob(job: Job): void {
+  if (job.card_summary !== undefined) validateCardSummary({ ...job.card_summary, text: job.excerpt });
   const f = job.listing_facts;
   const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((v) => typeof v === 'string');
   if (!f || f.version !== 1 || !['selection_notice', 'long_term', 'detail_pending'].every((key) => f[key as keyof typeof f] === undefined || typeof f[key as keyof typeof f] === 'boolean') ||

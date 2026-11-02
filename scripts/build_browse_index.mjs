@@ -52,7 +52,10 @@ export function buildBrowseIndex(directory) {
     return part.jobs;
   }));
   if (rows.some((row) => typeof search[row.id] !== 'string')) throw Error('Canonical search incomplete');
-  const { jobs, excerpts } = projectBrowsingJobs(rows);
+  // The already-loaded canonical search assets contain the complete source
+  // text. Extract introductions/responsibilities offline, without fetching
+  // detail shards on first render or changing canonical filter/search fields.
+  const { jobs, excerpts } = projectBrowsingJobs(rows, search);
   jobs.forEach(validateBrowsingJob);
   mkdirSync(resolve(root, 'job-assets'), { recursive: true });
   if (!within(root, realpathSync(resolve(root, 'job-assets')))) throw Error('Asset directory escaped input directory');
@@ -75,7 +78,7 @@ export function buildBrowseIndex(directory) {
     .map((job) => [job.id, `${search[job.id]}\n${excerpts[job.id]}`]);
   const searchShards = [snapshot.search_url, ...(snapshot.search_shards || []),
     ...splitRows(supplements).map((batch) => asset('search', { jobs: Object.fromEntries(batch) }))];
-  const next = { ...snapshot, browse_index: { version: 1, count: jobs.length, shards, search_shards: searchShards } };
+  const next = { ...snapshot, browse_index: { version: 2, count: jobs.length, shards, search_shards: searchShards } };
   const bytes = JSON.stringify(next);
   // All immutable assets exist before publishing the entry point. Canonical
   // index/detail/search paths and collection timestamps remain unchanged.

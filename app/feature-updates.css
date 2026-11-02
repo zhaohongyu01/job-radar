@@ -723,6 +723,14 @@
   line-height: 1.5;
 }
 
+.opp-summary-label { font-weight: 600; color: var(--ink-2); }
+.opp-excerpt.is-expanded { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.opp-summary-actions { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; }
+.opp-summary-actions:empty { display: none; }
+.opp-summary-actions button, .opp-summary-actions a { color: var(--brand); padding: 3px 0; text-decoration: none; }
+.opp-summary-actions button:hover, .opp-summary-actions a:hover { text-decoration: underline; }
+.opp-summary-actions button:focus-visible, .opp-summary-actions a:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
 /* 企业口碑入口保持卡片密度；完整面板仅在打开时加载。 */
 .employer-entry {
   display: inline-flex;

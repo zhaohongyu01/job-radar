@@ -35,8 +35,8 @@ def download(site, budget=40):
 
     snapshot = json.loads(read('/jobs.json'))
     browse = snapshot.get('browse_index') or {}
-    paths = browse.get('shards') if browse.get('version') == 1 else snapshot.get('index_shards')
-    expected = browse.get('count') if browse.get('version') == 1 else snapshot.get('index_count')
+    paths = browse.get('shards') if browse.get('version') in (1, 2) else snapshot.get('index_shards')
+    expected = browse.get('count') if browse.get('version') in (1, 2) else snapshot.get('index_count')
     if paths:
         if not isinstance(expected, int) or not 1 <= expected <= 200000 or len(paths) > 128:
             raise ValueError('Invalid public index declaration')

@@ -12,7 +12,7 @@ import { agendaEntries, defaultAgenda } from '../lib/agenda.ts';
 export function auditBrowseIndex(directory) {
   const load = (path) => JSON.parse(readFileSync(join(directory, path)));
   const snapshot = load('jobs.json'), browse = snapshot.browse_index;
-  assert.equal(browse?.version, 1);
+  assert.ok([1, 2].includes(browse?.version));
   const canonical = snapshot.index_shards?.length ? snapshot.index_shards.flatMap(path => load(path).jobs) : snapshot.jobs;
   const before = mergeDuplicateOpportunities(structuredClone(canonical));
   const after = browse.shards.flatMap(path => load(path).jobs);

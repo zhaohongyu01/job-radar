@@ -1,8 +1,85 @@
 """Public calendar adapters. Never derive work cities from a campus venue."""
 import datetime as dt
+import base64
 import re
+import zlib
+import urllib.error
+import urllib.robotparser
 from urllib.parse import urljoin, urlencode, urlsplit
 from bs4 import BeautifulSoup
+
+
+def check_jysd_robots(fetch, source, user_agent='*'):
+    origin = 'https://job.hdu.edu.cn'
+    if source.get('id') != 'hdu-talks' or urlsplit(source['url']).hostname != 'job.hdu.edu.cn':
+        raise ValueError('Unverified JYSD calendar source')
+    try:
+        text = fetch(origin + '/robots.txt', timeout=6, retries=0)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return
+        raise
+    if 'user-agent' not in text.lower() or '<html' in text.lower():
+        raise ValueError('Calendar robots unavailable')
+    robot = urllib.robotparser.RobotFileParser()
+    robot.parse(text.splitlines())
+    for url in (source['url'], origin + '/teachin/index/do1/job.hdu.edu.cn/domain/hdu/page/2'):
+        if not robot.can_fetch(user_agent, url):
+            raise PermissionError('Calendar robots denies collection')
+    return robot
+
+
+def jysd_calendar(html, source):
+    """HDU's public HTML fragment: zlib/base64 packaging, never execute scripts.
+
+    Only the exact observed presentation wrapper is accepted. Authentication,
+    challenge pages and unknown wrappers fail closed instead of reporting zero.
+    """
+    if source.get('id') != 'hdu-talks' or urlsplit(source['url']).hostname != 'job.hdu.edu.cn':
+        raise ValueError('Unverified JYSD calendar source')
+    pattern = r'Base64\.decode\(unzip\("([A-Za-z0-9+/=]{1,200000})"\)\.substr\((\d{1,3})\)\)\.substr\((\d{1,3})\)\)'
+    matches = list(re.finditer(pattern, html))
+    if len(matches) != 1:
+        raise ValueError('Public calendar fragment missing or changed')
+    encoded, outer, inner = matches[0].groups()
+    if (outer, inner) != ('88', '75'):
+        raise ValueError('Public calendar wrapper changed')
+    unpack = zlib.decompressobj()
+    raw = unpack.decompress(base64.b64decode(encoded, validate=True), 1_000_001)
+    if len(raw) > 1_000_000 or not unpack.eof or unpack.unused_data:
+        raise ValueError('Public calendar fragment too large or incomplete')
+    fragment = base64.b64decode(raw[int(outer):], validate=True).decode('utf-8')[int(inner):]
+    soup = BeautifulSoup(fragment, 'html.parser')
+    rows, items = soup.select('ul.teachinList'), []
+    if not rows or len(rows) > 100:
+        raise ValueError('Public calendar rows missing or changed')
+    for row in rows:
+        cells, link = row.find_all('li', recursive=False), row.select_one('a[href]')
+        if len(cells) != 3 or not link or not re.fullmatch(r'/teachin/view/id/\d+', link['href']):
+            raise ValueError('Public calendar identity missing')
+        title, venue = link.get_text(' ', strip=True), cells[1].get_text(' ', strip=True)
+        schedule = cells[2].get_text(' ', strip=True)
+        date = re.fullmatch(r'(20\d{2}-\d{2}-\d{2}) (\d{2}:\d{2})-(\d{2}:\d{2})[（(]周.[）)]', schedule)
+        if not title or not venue or not date:
+            raise ValueError('Public calendar time/venue missing')
+        dt.date.fromisoformat(date[1])
+        if dt.time.fromisoformat(date[3]) < dt.time.fromisoformat(date[2]):
+            raise ValueError('Public calendar reversed times')
+        mode = row.select_one('.status-text')
+        mode = mode.get_text(strip=True) if mode else ''
+        if mode not in {'线上', '线下'}:
+            raise ValueError('Public calendar mode changed')
+        if mode == '线上':
+            venue = '线上宣讲 · ' + venue
+        items.append({'url': urljoin(source['url'], link['href']), 'title': title,
+            'published_at': None, 'kind': '宣讲会', 'calendar_only': True,
+            'structured': {'fairDate': date[1], 'fairStartTime': date[2], 'fairEndTime': date[3],
+                'schoolName': source['school_name'], 'fairAddress': venue}})
+    pages = [int(m[1]) for link in soup.select('a[href]')
+             if (m := re.fullmatch(r'/teachin/index/do1/job\.hdu\.edu\.cn/domain/hdu/page/(\d+)', link['href']))]
+    if not pages:
+        raise ValueError('Public calendar pagination missing')
+    return items, max(pages)
 
 
 def nankai_calendar(html, base):

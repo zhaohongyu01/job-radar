@@ -72,9 +72,11 @@ async function run(name, options, check) {
 }
 try {
   await run('research panel is lazy and shows no invented external score or source requests', {}, async ({ page, requests }) => {
-    assert.ok(!requests.some(url => url.includes('/employer-drawer.')));
+    // Dev serves employer-drawer.tsx; production emits employer-drawer-HASH.js.
+    const isDrawer = url => /\/employer-drawer(?:\.|-)[^/]*(?:\?|$)/.test(url);
+    assert.ok(!requests.some(isDrawer));
     await open(page);
-    assert.ok(requests.some(url => url.includes('/employer-drawer.')));
+    assert.ok(requests.some(isDrawer));
     assert.match(await panel(page).innerText(), /评价不足 · 暂无综合分/);
     assert.equal(await panel(page).locator('.employer-source-links a').count(), 3);
     for (const link of await panel(page).locator('.employer-source-links a').all()) {

@@ -46,6 +46,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/publish_reputation.py --public-dir data/reputation/public --report data/reputation/publication-report.json
+      - name: Audit actual active-employer evidence gaps
+        run: node --experimental-strip-types scripts/audit_employer_coverage.mjs data/reputation/jobs.json data/reputation/public/index.json data/reputation/employer-coverage.json
       - name: Report actual source coverage
         if: ${{ always() && hashFiles('data/reputation/report.json') != '' }}
         run: |
@@ -69,6 +71,10 @@ jobs:
           if report['errors']:
               print('::warning::Some reputation pages were unavailable; prior evidence has been retained. See collection report.')
           queue_path = Path('data/reputation/queue.json')
+          coverage_path = Path('data/reputation/employer-coverage.json')
+          if coverage_path.exists():
+              coverage = json.loads(coverage_path.read_text())
+              lines += [f"在招企业范围 {coverage['active_employers']} 个；输入完整：{coverage['input_complete']}；评价缺口分类：{json.dumps(coverage['gaps'], ensure_ascii=False)}。集团参考不算精确企业评价，面经不算员工体验。"]
           if queue_path.exists():
               queue = json.loads(queue_path.read_text())
               lines += [f"公开岗位输入 {queue['input_opportunities']} 条；匹配到已登记评价页 {queue['matched_enterprises']} 家；尚待核对来源对应 {queue['unmatched_enterprises']} 个企业范围。这不是已取得评价的企业数。"]
@@ -88,5 +94,6 @@ jobs:
             data/reputation/report.json
             data/reputation/publication-report.json
             data/reputation/queue.json
+            data/reputation/employer-coverage.json
             data/reputation/public/index.json
           retention-days: 7

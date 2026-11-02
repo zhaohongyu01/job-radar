@@ -20,19 +20,23 @@ from city_registry import resolve_event_city
 SOURCE = next(row for row in c.SOURCES if row['id'] == 'hdu-talks')
 
 
-def document(page=1):
+def document(page=1, outer=88, inner=75):
     # Exact publicly observed wrapper, synthetic names and stable test dates.
     rows = ''.join(f'<ul class="infoList teachinList"><li><span class="status-text">{mode}</span>'
         f'<a href="/teachin/view/id/{page}{index}">示例单位{index}</a></li><li>{venue}</li>'
         '<li>2026-11-03 14:00-16:30（周二）</li></ul>' for index, (mode, venue) in
         enumerate([('线下', '第6教研楼中105'), ('线上', '线上宣讲')]))
     rows += '<a href="/teachin/index/do1/job.hdu.edu.cn/domain/hdu/page/44">44</a>'
-    payload = 'x' * 88 + base64.b64encode(('x' * 75 + rows).encode()).decode()
+    payload = 'x' * outer + base64.b64encode(('x' * inner + rows).encode()).decode()
     encoded = base64.b64encode(zlib.compress(payload.encode())).decode()
-    return f'<script>$(this).replaceWith(Base64.decode(unzip("{encoded}").substr(88)).substr(75));</script>'
+    return f'<script>$(this).replaceWith(Base64.decode(unzip("{encoded}").substr({outer})).substr({inner}));</script>'
 
 
 class HduCalendarTests(unittest.TestCase):
+    def test_independent_per_response_literal_offsets_preserve_events(self):
+        baseline = jysd_calendar(document(), SOURCE)
+        for outer, inner in [(71, 39), (79, 69), (0, 0), (999, 999)]:
+            self.assertEqual(jysd_calendar(document(outer=outer, inner=inner), SOURCE), baseline)
     def test_physical_and_online_are_distinct_without_inventing_job_cities(self):
         items, pages = jysd_calendar(document(), SOURCE)
         self.assertEqual(pages, 44)

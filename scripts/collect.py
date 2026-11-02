@@ -2743,7 +2743,7 @@ def run(args):
                 calendar_robots = check_jysd_robots(fetch, source, DEFAULT_USER_AGENT)
             if source.get('adapter') == 'public_home_calendar':
                 check_home_calendar_robots(fetch, source, DEFAULT_USER_AGENT)
-            first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
+            first=fetch(source['url'], **({'timeout': 6, 'retries': 0} if source['id'] == 'nankai' else {})) if source.get('adapter') not in api_adapters else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
             items=[]
@@ -2753,6 +2753,8 @@ def run(args):
             offerjack_cities=([args.target_city] if args.target_city else collection_cities()) if is_offerjack else []
             offerjack_query_limit=(getattr(args,'offerjack_pages',0) or 1000) if is_offerjack else 0
             page_budget=offerjack_query_limit*len(offerjack_cities) if is_offerjack else args.pages
+            if source['id'] == 'nankai':
+                page_budget = min(page_budget, 2)  # newest page + one resumed page; reserve detail time
             if head_only:
                 page_budget = 2 if source.get('channel') in {'announcements', 'talks'} else 1
                 if source.get('adapter') == 'sdu_talks':
@@ -2898,7 +2900,7 @@ def run(args):
                         found,total=wonder_list(html,source['url'])
                     elif source['id']=='nankai':
                         area=f'/sel_area/{args.nankai_area}' if args.nankai_area else ''
-                        html=first if page==1 else fetch(f'https://career.nankai.edu.cn/correcruit/index{area}/p/{page}.html')
+                        html=first if page==1 else fetch(f'https://career.nankai.edu.cn/correcruit/index{area}/p/{page}.html', timeout=6, retries=0)
                         found,total=nankai_list(html,source['url'])
                     elif source['id']=='sdu':
                         html=first if page==1 else fetch(next_page)

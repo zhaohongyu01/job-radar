@@ -124,13 +124,18 @@ def jysd_calendar(html, source):
     if len(matches) != 1:
         raise ValueError('Public calendar fragment missing or changed')
     encoded, outer, inner = matches[0].groups()
-    if (outer, inner) != ('88', '75'):
-        raise ValueError('Public calendar wrapper changed')
+    # Prefix lengths are randomized per response; they are literal offsets,
+    # not a new script format. Never evaluate JS or search for guessed offsets.
     unpack = zlib.decompressobj()
     raw = unpack.decompress(base64.b64decode(encoded, validate=True), 1_000_001)
     if len(raw) > 1_000_000 or not unpack.eof or unpack.unused_data:
         raise ValueError('Public calendar fragment too large or incomplete')
-    fragment = base64.b64decode(raw[int(outer):], validate=True).decode('utf-8')[int(inner):]
+    if int(outer) >= len(raw):
+        raise ValueError('Public calendar outer offset outside fragment')
+    decoded = base64.b64decode(raw[int(outer):], validate=True).decode('utf-8')
+    if int(inner) >= len(decoded):
+        raise ValueError('Public calendar inner offset outside fragment')
+    fragment = decoded[int(inner):]
     soup = BeautifulSoup(fragment, 'html.parser')
     rows, items = soup.select('ul.teachinList'), []
     if not rows or len(rows) > 100:

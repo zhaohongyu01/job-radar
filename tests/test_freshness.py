@@ -17,6 +17,28 @@ from audit_freshness import audit
 
 
 class FreshnessTests(unittest.TestCase):
+    def test_nankai_reserves_detail_time_instead_of_reading_five_list_pages(self):
+        calls = []
+        source = next(s for s in c.SOURCES if s['id'] == 'nankai')
+        def fetch(url, **kwargs):
+            if '/index' in url:
+                calls.append((url, kwargs))
+                return '<html>list</html>'
+            return '<div class="zpnr">' + '真实岗位招聘要求与职责。' * 20 + '</div>'
+        def listing(html, base):
+            return [{'url': f'https://career.nankai.edu.cn/correcruit/content/id/{len(calls)}.html',
+                     'title': '示例招聘', 'published_at': c.dt.datetime.now(c.TZ).date().isoformat()}], 50
+        with TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            args = SimpleNamespace(data_dir=directory, public_dir=directory, sources='nankai', pages=5,
+                days=30, refresh_hours=72, nankai_area=0, target_city='', offerjack_pages=1, probe_budget=0, state_only=True)
+            with patch.object(c, 'fetch', side_effect=fetch), patch.object(c, 'nankai_list', side_effect=listing):
+                c.run(args)
+            state = json.loads((Path(directory) / 'state.json').read_text(encoding='utf-8'))
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(all(k['timeout'] == 6 and k['retries'] == 0 for _, k in calls))
+            self.assertGreater(state['sources']['nankai']['parsed'], 0)
+            self.assertFalse(state['sources']['nankai']['list_complete'])
+
     def setUp(self):
         self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self.enterContext(contextlib.redirect_stderr(io.StringIO()))

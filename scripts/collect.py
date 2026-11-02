@@ -224,7 +224,7 @@ SOURCES.append({'id': 'offerjack', 'name': 'Jacky学长校招 · 公开招聘线
 # announcements, while bank sites also publish social recruitment.
 SOURCES.extend([
     {'id': 'sdei-news', 'name': '山东省大学生就业服务平台 · 招聘速递',
-     'url': 'https://gxjy.sdei.edu.cn/channel.jsp?classid=96', 'adapter': 'sdei_news',
+     'url': 'https://gxjy.sdei.edu.cn/JobFairs/channel?classId=96', 'adapter': 'sdei_news',
      'scope': '山东及全国', 'recruitment_types': ['校招', '社招', '事业单位'],
      'sectors': ['综合'], 'trust': '官方原始来源', 'source_family': '山东省大学生就业服务平台'},
     {'id': 'boc-recruitment', 'name': '中国银行 · 官方招聘公告',
@@ -763,26 +763,23 @@ def sdei_list(source, page):
 def sdei_news_list(page, page_size=50):
     """Read the province-wide public 招聘速递 feed.
 
-    The hub renders this list through a public GBK JSON endpoint.  It is
+    The hub renders this list through its public JobFairs JSON endpoint. It is
     separate from each university's school feed and therefore catches
     province-level public institution and enterprise announcements that are
-    not present in the 17 school views above.
+    not present in individual school views.
     """
-    endpoint = 'https://gxjy.sdei.edu.cn/getArticleList.jsp'
-    referer = 'https://gxjy.sdei.edu.cn/channel.jsp?classid=96'
-    form = {
-        'fType': '', 'ref': '0', 'jg': '', 'isremove': '0',
-        'counts': str(page_size), 'divid': 'channelArticle', 'classids': '96',
-        'showNum': str(page_size), 'pagenum': str(page), 'artStr': '',
-        'timestamps': str(int(time.time() * 1000)),
-    }
+    referer = 'https://gxjy.sdei.edu.cn/JobFairs/channel?classId=96'
+    endpoint = 'https://gxjy.sdei.edu.cn/JobFairs/channel/ajaxList?' + urllib.parse.urlencode({
+        'classId': 96, 'pageNum': page, 'pageSize': page_size})
     # This hub is independent from school feeds. A stalled request must not
     # spend two 18-second attempts before the other regional sources can run.
-    payload = json.loads(fetch(endpoint, form=form, referer=referer, timeout=8, retries=0))
-    rows = payload.get('rows') or '[]'
-    if isinstance(rows, str):
-        rows = json.loads(rows)
-    if not isinstance(rows, list):
+    payload = json.loads(fetch(endpoint, referer=referer, timeout=8, retries=0))
+    data = payload.get('data')
+    if payload.get('code') != 0 or not isinstance(data, dict) or str(data.get('classId')) != '96':
+        raise ValueError('province recruitment feed returned invalid channel')
+    rows = data.get('articleList')
+    total_pages = int(data.get('totalPages') or 1)
+    if not isinstance(rows, list) or int(data.get('pageNum') or page) != page or not 1 <= total_pages <= 10000:
         raise ValueError('province recruitment feed returned invalid rows')
     items = []
     base = 'https://html.gxjy.sdei.edu.cn/'
@@ -790,18 +787,30 @@ def sdei_news_list(page, page_size=50):
         if not isinstance(row, dict):
             continue
         title = clean(str(row.get('title') or ''))
-        href = safe_url(row.get('urlRead') or '', base)
+        href = safe_url(row.get('siteurl') or '', base)
         if not title or not href:
             continue
+        # Keep the old canonical URL and sdei-news:id identity even though
+        # the new hub emits HTTP links. Dates come from the original path,
+        # never today's crawl time; details can supply the original date too.
+        parts = urllib.parse.urlsplit(href)
+        published = None
+        if parts.hostname == 'html.gxjy.sdei.edu.cn':
+            href = urllib.parse.urlunsplit(parts._replace(scheme='https'))
+            date = re.search(r'^/html/(\d{4})/(\d{2})/(\d{2})/', parts.path)
+            if date:
+                try:
+                    published = dt.date(*map(int, date.groups())).isoformat()
+                except ValueError:
+                    pass
         items.append({
             'identity': f"sdei-news:{row.get('id') or href}",
             'url': href,
             'title': title,
-            'published_at': str(row.get('pubdate') or '')[:10] or None,
+            'published_at': published,
             'kind': '招聘公告',
         })
-    total_pages = int(payload.get('totalPage') or 1)
-    return items, max(1, total_pages)
+    return items, total_pages
 
 
 def official_bank_list(html, base, source):

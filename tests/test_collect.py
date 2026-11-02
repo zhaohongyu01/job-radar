@@ -222,24 +222,37 @@ class CollectionTests(unittest.TestCase):
         self.assertNotIn('济南',job['cities'])
 
     def test_province_recruitment_feed_parses_public_json_pages(self):
-        payload=json.dumps({
-            'total': 2,
-            'totalPage': 3,
-            'rows': json.dumps([
+        payload=json.dumps({'code': 0, 'data': {
+            'classId': 96, 'totalPages': 3, 'pageNum': 1,
+            'articleList': [
                 {'id': 207402, 'title': '济南市事业单位公开招聘公告',
-                 'urlRead': '/html/2026/09/07/207402.html', 'pubdate': '2026-09-07'},
+                 'siteurl': 'http://html.gxjy.sdei.edu.cn/html/2026/09/07/207402.html'},
                 {'id': 207403, 'title': '某银行2027校园招聘',
-                 'urlRead': '/html/2026/09/08/207403.html', 'pubdate': '2026-09-08'},
-            ], ensure_ascii=False),
-        }, ensure_ascii=False)
+                 'siteurl': '/html/2026/09/08/207403.html'},
+            ]}}, ensure_ascii=False)
         with patch.object(c, 'fetch', return_value=payload) as fetch:
             items, pages=c.sdei_news_list(1)
         self.assertEqual(fetch.call_args.kwargs['timeout'], 8)
         self.assertEqual(fetch.call_args.kwargs['retries'], 0)
+        self.assertIn('/JobFairs/channel/ajaxList?', fetch.call_args.args[0])
+        self.assertNotIn('form', fetch.call_args.kwargs)
         self.assertEqual(pages, 3)
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0]['url'], 'https://html.gxjy.sdei.edu.cn/html/2026/09/07/207402.html')
         self.assertEqual(items[1]['identity'], 'sdei-news:207403')
+        self.assertEqual(items[0]['published_at'], '2026-09-07')
+
+    def test_province_feed_rejects_wrong_channel_or_page_and_never_invents_dates(self):
+        data = {'classId': 96, 'totalPages': 2, 'pageNum': 1, 'articleList': [
+            {'id': 1, 'title': '无日期公告', 'siteurl': '/notice/1'},
+            {'id': 2, 'title': '无效日期公告', 'siteurl': '/html/2026/02/30/2.html'}]}
+        with patch.object(c, 'fetch', return_value=json.dumps({'code': 0, 'data': data})):
+            rows, _ = c.sdei_news_list(1)
+        self.assertTrue(all(row['published_at'] is None for row in rows))
+        for changes in [{'classId': 99}, {'pageNum': 2}, {'articleList': None}, {'totalPages': -1}]:
+            with patch.object(c, 'fetch', return_value=json.dumps({'code': 0, 'data': dict(data, **changes)})):
+                with self.assertRaises(ValueError):
+                    c.sdei_news_list(1)
 
     def test_official_bank_list_filters_result_notices_and_reads_pagination(self):
         html='''

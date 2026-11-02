@@ -296,8 +296,10 @@ for _source in SOURCES:
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 SOURCE_PACKS = {
     'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'hdu-talks', 'upc-talks-public', 'sjtu-campus-events', 'upc'],
-    'universities-b': _sdei_source_ids,
+    'universities-a': ['nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'hdu-talks', 'upc-talks-public', 'sjtu-campus-events', 'upc'],
+    # Same-state bounded Cloud/NAS trial: 9 vs 44 recovered Nankai details.
+    # Ownership is exclusive; compact NAS baselines include its pending queue.
+    'universities-b': _sdei_source_ids + ['nankai'],
     'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
     'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
     'public-leads': ['wondercv', 'offerjack'],

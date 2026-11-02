@@ -18,6 +18,9 @@ from audit_freshness import audit
 
 class FreshnessTests(unittest.TestCase):
     def test_nankai_reserves_detail_time_instead_of_reading_five_list_pages(self):
+        self.assertIn('nankai', c.SOURCE_PACKS['universities-b'])
+        self.assertNotIn('nankai', c.SOURCE_PACKS['universities-a'])
+        self.assertIn('nankai-talks', c.SOURCE_PACKS['universities-a'])
         calls = []
         source = next(s for s in c.SOURCES if s['id'] == 'nankai')
         def fetch(url, **kwargs):

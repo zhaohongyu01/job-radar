@@ -12,6 +12,7 @@ on:
         options:
           - recovery
           - freshness
+          - sdnu-calendar
         default: recovery
 permissions:
   contents: read
@@ -42,12 +43,12 @@ jobs:
         run: python3 -m pip install --index-url https://mirrors.aliyun.com/pypi/simple --timeout 10 --retries 0 beautifulsoup4==4.14.3 soupsieve==2.8.3 typing_extensions==4.15.0
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.validation_target == 'freshness' && 'collector-baseline' || 'collector-shard-universities-a' }}
+          name: ${{ (inputs.validation_target == 'freshness' || inputs.validation_target == 'sdnu-calendar') && 'collector-baseline' || 'collector-shard-universities-a' }}
           run-id: ${{ inputs.baseline_run_id }}
           github-token: ${{ github.token }}
           path: data/source-validation
       - name: Bound collection to two sources without publication
-        if: ${{ inputs.validation_target != 'freshness' }}
+        if: ${{ inputs.validation_target != 'freshness' && inputs.validation_target != 'sdnu-calendar' }}
         env:
           NO_PROXY: '*'
         run: |
@@ -66,6 +67,9 @@ jobs:
             --data-dir data/source-validation --public-dir data/source-validation/public \
             --pages 2 --days 30 --refresh-hours 72 --probe-budget 0 --freshness-first \
             --detail-timeout 6 --detail-retries 0 --source-budget 30 --shard-budget 75
+      - name: Check one SDNU public calendar list on the normal node route
+        if: ${{ inputs.validation_target == 'sdnu-calendar' }}
+        run: python3 scripts/diagnose_sdnu_calendar.py --state data/source-validation/state.json --report data/source-validation/ci-report.json
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:

@@ -11,16 +11,28 @@ permissions:
   actions: read
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: cloud
+            runner: '["ubuntu-latest"]'
+          - node: nas
+            runner: '["self-hosted", "linux", "job-radar-nas"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: actions/setup-python@v5
+        if: ${{ matrix.node == 'cloud' }}
         with:
           python-version: '3.12'
-      - run: python -m pip install beautifulsoup4==4.14.3 soupsieve==2.8.3 typing_extensions==4.15.0
+      - if: ${{ matrix.node == 'cloud' }}
+        run: python3 -m pip install beautifulsoup4==4.14.3 soupsieve==2.8.3 typing_extensions==4.15.0
+      - if: ${{ matrix.node == 'nas' }}
+        run: python3 -m pip install --index-url https://mirrors.aliyun.com/pypi/simple --timeout 10 --retries 0 beautifulsoup4==4.14.3 soupsieve==2.8.3 typing_extensions==4.15.0
       - uses: actions/download-artifact@v4
         with:
           name: collector-shard-universities-a
@@ -28,14 +40,17 @@ jobs:
           github-token: ${{ github.token }}
           path: data/source-validation
       - name: Bound collection to two sources without publication
+        env:
+          NO_PROXY: '*'
+          no_proxy: '*'
         run: |
-          python scripts/ci_collect.py collect --sources nankai,hdu-talks \
+          python3 scripts/ci_collect.py collect --sources nankai,hdu-talks \
             --data-dir data/source-validation --public-dir data/source-validation/public \
             --pages 5 --days 30 --refresh-hours 72 --probe-budget 0 \
             --detail-timeout 6 --detail-retries 0 --source-budget 60 --shard-budget 130
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
-          name: source-recovery-validation
+          name: source-recovery-validation-${{ matrix.node }}
           path: data/source-validation/ci-report.json
           retention-days: 3

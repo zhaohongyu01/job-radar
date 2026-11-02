@@ -28,7 +28,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Probe public source without collection or publication
-        run: python3 scripts/diagnose_nankai.py --output "$RUNNER_TEMP/nankai-network-report.json"
+        run: python3 scripts/diagnose_nankai.py --detail-ids 120317,96666 --output "$RUNNER_TEMP/nankai-network-report.json"
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:

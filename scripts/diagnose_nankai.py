@@ -7,7 +7,6 @@ import argparse
 import datetime as dt
 from html.parser import HTMLParser
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -107,7 +106,9 @@ def urllib_probe(url, timeout):
                 'time_total': round(time.monotonic() - started, 3)}, b''
 
 
-def run(budget=90):
+def run(budget=90, detail_ids=()):
+    if len(detail_ids) > 2 or any(not identifier.isdigit() for identifier in detail_ids):
+        raise ValueError('At most two numeric Nankai detail IDs')
     started = time.monotonic()
     report = {'schema_version': 1, 'checked_at': dt.datetime.now(dt.timezone.utc).isoformat(),
               'proxy_configured': bool(urllib.request.getproxies().get('https')), 'requests': []}
@@ -134,7 +135,7 @@ def run(budget=90):
             discovered[mode] = links or discovered.get(mode, [])
         except Exception as error:
             values = {'http_code': 0, 'error': type(error).__name__}
-        values.update(stage=stage, mode=mode)
+        values.update(stage=stage, mode=mode, source_path=urllib.parse.urlsplit(url).path)
         report['requests'].append(values)
         blocked = values.get('http_code') in (403, 420, 429)
         return values
@@ -145,7 +146,8 @@ def run(budget=90):
     working = next((row['mode'] for row in report['requests'] if row['stage'] == 'list' and
                     row.get('http_code') == 200 and row.get('list_links', 0) > 0), None)
     if working:
-        for url in discovered[working][:2]:
+        urls = [f'{ORIGIN}/correcruit/content/id/{identifier}.html' for identifier in detail_ids] or discovered[working][:2]
+        for url in urls:
             read(url, working, 'detail')
         read(CALENDAR, working, 'calendar')
     report['stopped_after_rejection'] = blocked
@@ -159,8 +161,9 @@ def run(budget=90):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--detail-ids', default='', help='Up to two known failing numeric IDs, comma separated')
     args = parser.parse_args()
-    report = run()
+    report = run(detail_ids=tuple(filter(None, args.detail_ids.split(','))))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(report, ensure_ascii=False))

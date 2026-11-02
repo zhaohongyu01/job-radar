@@ -6,5 +6,9 @@
     "haier-campus": "海尔集团",
     "haier-social": "海尔集团"
   },
-  "department_pattern": "(?:营销中心|研发中心|制造中心|运营中心|供应链|管理中心|事业部|分部|分中心|业务部|中国区|华东区|华北区|华南区)$"
+  "department_pattern": "(?:营销中心|研发中心|制造中心|运营中心|供应链|管理中心|事业部|分部|分中心|业务部|中国区|华东区|华北区|华南区)$",
+  "reference_sources": {
+    "taiping-campus": "中国太平",
+    "taiping-social": "中国太平"
+  }
 }

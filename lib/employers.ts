@@ -20,6 +20,9 @@ function profile(scope: EmployerScope, name: string, source = '', brand?: string
 export function resolveEmployer(job: Pick<Job, 'id' | 'company' | 'source_id' | 'source_name' | 'company_conflict'>): EmployerProfile | null {
   const name = canonical(job.company || '');
   const brand = employerBrand(job.source_id);
+  // Reference-only source affiliations must not change existing entity IDs,
+  // department scopes or personal records. Matching a brand remains unscored.
+  const referenceBrand = (brands.reference_sources as Record<string, string>)[job.source_id];
   // A fair/joint announcement is not one employer. Do not create a shared
   // rating for several organisations merely because the text ends in 公司.
   if (/[、;；|｜]|\s[&+/]\s|等\d+家|多家企业|联合招聘/.test(name)) return null;
@@ -31,8 +34,8 @@ export function resolveEmployer(job: Pick<Job, 'id' | 'company' | 'source_id' | 
   // Abbreviations, conflicting names and departments remain scoped to their
   // original source until an explicit identity mapping can disambiguate them.
   if (!job.company_conflict && /(?:有限责任公司|股份有限公司|有限公司|股份公司|分公司|分行|支行)$/.test(name))
-    return profile('name', name, '', brand || undefined);
-  return profile('source', name, canonical(job.source_id || job.source_name || job.id).slice(0, 120), brand || undefined);
+    return profile('name', name, '', brand || referenceBrand || undefined);
+  return profile('source', name, canonical(job.source_id || job.source_name || job.id).slice(0, 120), brand || referenceBrand || undefined);
 }
 
 export function employerFromId(id: string): EmployerProfile {

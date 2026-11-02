@@ -6,8 +6,28 @@ import { commitEmployerPatch, EMPLOYER_PERSONAL_STORAGE, employerRecordConflicts
   mergeEmployerRecords, readEmployerRecords, validateEmployerRecords } from '../lib/employer-personal.ts';
 import { createBackup, PERSONAL_STORAGE, validateBackup, writeBackup } from '../lib/personal-backup.ts';
 import type { EmployerRecord } from '../lib/employer-personal.ts';
+import { matchReputation, currentReputationScore, summarizeReputation } from '../lib/reputation.ts';
+import type { ReputationIndex } from '../lib/reputation.ts';
 
 const entity = resolveEmployer(fixtureJob({ company: '示例科技有限公司' }))!;
+await test('official insurance group reference preserves pre-existing branch identity and never guesses by name', () => {
+  const job = fixtureJob({ company: '太平财险云南分公司', source_id: 'taiping-social' });
+  const profile = resolveEmployer(job)!;
+  assert.equal(profile.id, 'employer:v1:' + JSON.stringify(['name', '', job.company]));
+  assert.equal(profile.name, job.company);
+  assert.equal(profile.brand, '中国太平');
+  assert.equal(resolveEmployer({ ...job, source_id: 'unverified-source' })?.brand, undefined);
+  const now = Date.parse('2026-11-02T00:00:00Z');
+  const index: ReputationIndex = { schema_version: 2, policy_version: 1, generated_at: new Date(now).toISOString(), entities: [{
+    ...summarizeReputation([], now), id: 'nowcoder:4270', provider: 'nowcoder', name: '中国太平',
+    legal_name: '中国太平保险集团有限责任公司', names: ['中国太平'], source_url: 'https://www.nowcoder.com/enterprise/4270/discussion',
+    collected_at: new Date(now).toISOString(), status: 'partial', partial: true, file: 'entity-4270-00000000000000000000.json',
+    score: 4.8, valid_until: new Date(now + 86400000).toISOString(),
+  }] };
+  const match = matchReputation(profile, index);
+  assert.equal(match?.reference, true);
+  assert.equal(currentReputationScore(match, now), null);
+});
 const earlier = '2026-10-28T00:00:00Z', later = '2026-10-29T00:00:00Z';
 const record: EmployerRecord = { rating: 4, notes: '确认双休再投递', updated_at: later };
 function memory() {

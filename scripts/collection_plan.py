@@ -19,10 +19,11 @@ def listing_signature(item):
     return hashlib.sha256(json.dumps(facts, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def scan_plan(definitions, priority, freshness_first=False):
+def scan_plan(definitions, priority, freshness_first=False, backfill_priority=None):
     if not freshness_first:
         return [(source, False) for source in definitions]
     schools = [source for source in definitions if source.get('adapter') == 'sdei']
+    backfill_priority = backfill_priority or priority
     announcements = sorted((s for s in schools if s.get('channel') == 'announcements'), key=priority)
     talks = sorted((s for s in schools if s.get('channel') == 'talks'), key=priority)
     positions = sorted((s for s in schools if s.get('channel') == 'positions'), key=priority)
@@ -37,8 +38,8 @@ def scan_plan(definitions, priority, freshness_first=False):
         others = [source for source in others if source['id'] != 'nankai']
         return ([(source, True) for source in heads[:4]] + [(source, False) for source in nankai] +
                 [(source, True) for source in heads[4:]] +
-                [(source, False) for source in others + sorted(schools, key=priority)])
-    return [(source, True) for source in heads] + [(source, False) for source in others + sorted(schools, key=priority)]
+                [(source, False) for source in others + sorted(schools, key=backfill_priority)])
+    return [(source, True) for source in heads] + [(source, False) for source in others + sorted(schools, key=backfill_priority)]
 
 
 def retry_due(item, now):

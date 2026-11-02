@@ -232,8 +232,10 @@ class CollectionTests(unittest.TestCase):
                  'urlRead': '/html/2026/09/08/207403.html', 'pubdate': '2026-09-08'},
             ], ensure_ascii=False),
         }, ensure_ascii=False)
-        with patch.object(c, 'fetch', return_value=payload):
+        with patch.object(c, 'fetch', return_value=payload) as fetch:
             items, pages=c.sdei_news_list(1)
+        self.assertEqual(fetch.call_args.kwargs['timeout'], 8)
+        self.assertEqual(fetch.call_args.kwargs['retries'], 0)
         self.assertEqual(pages, 3)
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0]['url'], 'https://html.gxjy.sdei.edu.cn/html/2026/09/07/207402.html')

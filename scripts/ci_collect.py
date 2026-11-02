@@ -295,6 +295,10 @@ def write_report(data_dir, code, state, error='', source_filter=None, pack_name=
             label = '共享冷却跳过' if not source.get('errors') or source.get('request_diagnostic', {}).get('stage') == 'shared_cooldown' else '请求被拒绝'
         lines.append(f"| {name} | {label} | {source.get('pages', 0)} | {source.get('parsed', 0)} | {source.get('cached', 0)} | {source.get('probed', 0)} | {source.get('detail_failed', 0)} | {source.get('detail_skipped', 0)} | {source.get('pending_details', 0)} | {source.get('elapsed_seconds', 0)} | {len(source.get('errors', []))} |")
     for source in sources:
+        if source.get('head_scan_pages'):
+            lines.extend(['', f"{source['name']}：最近最新页巡检 {source.get('head_scan_at', '时间未记录')}，"
+                          f"{source['head_scan_pages']} 页、该巡检解析 {source.get('head_scan_parsed', 0)} 条；"
+                          f"历史回补状态 {source.get('backfill_status', '尚未执行')}。"])
         if source.get('errors'):
             lines.extend(['', f"### {source['name']}", source.get('coverage', '')])
             for issue in source['errors'][:3]:
@@ -664,7 +668,13 @@ def collect(args):
     is_single_explicit_source = bool(len(selected) == 1)
 
     freshness_first = bool(getattr(args, 'freshness_first', False))
-    plan = scan_plan(definitions, source_priority, freshness_first)
+    completed_heads = {}
+    def backfill_priority(source):
+        # Head reads update last_list_read_at every round. Reusing that clock
+        # for history keeps the same early schools first forever under budget.
+        last_backfill = baseline.get('sources', {}).get(source['id'], {}).get('last_backfill_attempt_at') or ''
+        return (last_backfill, source_priority(source))
+    plan = scan_plan(definitions, source_priority, freshness_first, backfill_priority)
     heads_remaining = sum(head for _, head in plan)
     head_deadline = time.monotonic() + max(0, (deadline - time.monotonic()) * 0.70)
     for definition, head_only in plan:
@@ -739,7 +749,7 @@ def collect(args):
                         status['list_complete'] = prior_source['list_complete']
                     if 'blocked_until' in prior_source:
                         status['blocked_until'] = prior_source['blocked_until']
-                    if freshness_first and prior_source.get('head_scan_at'):
+                    if identifier in completed_heads:
                         status = dict(prior_source, backfill_status='deferred')
                     result = dict(prior, sources={identifier: status}, last_run_at=now)
                     combine_states(result)
@@ -754,10 +764,14 @@ def collect(args):
                 dt.datetime.fromisoformat(prior_source['source_retry_after']) > dt.datetime.now(TZ))
         except (ValueError, TypeError):
             pass
-        if budget <= 1 or len(host_rejections.get(host, set())) >= 2 or retry_deferred:
+        # Leave a useful minimum turn for worker startup, list I/O and a
+        # checkpoint. Do not launch a backfill with the final few seconds.
+        minimum_budget = max(1.0, min(10.0, float(getattr(args, 'source_budget', 180)) / 2)) if freshness_first and not head_only else 1.0
+        insufficient_budget = budget <= minimum_budget
+        if insufficient_budget or len(host_rejections.get(host, set())) >= 2 or retry_deferred:
             now = dt.datetime.now(TZ).isoformat(timespec='seconds')
             is_host_blocked = len(host_rejections.get(host, set())) >= 2
-            reason = '分片达到软截止；下次继续' if budget <= 1 else '同主机多个订阅被拒绝，暂停本轮请求并保留历史'
+            reason = ('分片达到软截止；最新页巡检下轮继续' if head_only else '剩余时间不足以安全启动历史回补；保留断点，下轮继续') if insufficient_budget else '同主机多个订阅被拒绝，暂停本轮请求并保留历史'
             talks_deferred = definition.get('channel') == 'talks' and talks_remaining <= 1 and not is_host_blocked
             if talks_deferred:
                 reason = '宣讲会增量采集达到本轮180秒预算；保留历史及续采队列，下轮继续'
@@ -773,7 +787,7 @@ def collect(args):
             if is_host_blocked:
                 status['blocked_until'] = (dt.datetime.now(TZ) + dt.timedelta(hours=4)).isoformat(timespec='seconds')
                 host_blocked_until[host] = status['blocked_until']
-            if freshness_first and not head_only and not is_host_blocked and prior_source.get('head_scan_at'):
+            if not head_only and not is_host_blocked and identifier in completed_heads:
                 status = dict(prior_source, backfill_status='deferred', backfill_note=reason)
             result = dict(prior, sources={identifier:status}, last_run_at=now)
         else:
@@ -782,7 +796,24 @@ def collect(args):
             worker_args.head_only = head_only
             result = run_source(definition, prior, worker_args, budget)
             result_status = result['sources'][identifier]
+            if head_only and result_status.get('pages', 0) > 0 and result_status.get('status') in {'ok', 'partial'}:
+                result_status['head_scan_pages'] = result_status['pages']
+                result_status['head_scan_parsed'] = result_status.get('parsed', 0)
+                completed_heads[identifier] = dict(result_status)
+            elif not head_only and identifier in completed_heads:
+                head = completed_heads[identifier]
+                result_status['head_scan_at'] = head.get('head_scan_at')
+                result_status['head_scan_pages'] = head['head_scan_pages']
+                result_status['head_scan_parsed'] = head['head_scan_parsed']
+                result_status['backfill_status'] = result_status.get('status')
+                if result_status.get('status') == 'failed':
+                    # A failed historical turn does not erase this run's
+                    # successful newest-page read. Keep errors and pending.
+                    result_status['status'] = 'partial'
+                    result_status['coverage'] = '本轮最新页已巡检；历史回补未完成：' + result_status.get('coverage', '')
             executed_at = dt.datetime.now(TZ)
+            if freshness_first and not head_only and definition.get('adapter') == 'sdei':
+                result_status['last_backfill_attempt_at'] = executed_at.isoformat(timespec='seconds')
             result_status['last_execution_at'] = executed_at.isoformat(timespec='seconds')
             if result_status.get('pages', 0) > 0:
                 result_status['last_list_read_at'] = executed_at.isoformat(timespec='seconds')
@@ -790,7 +821,7 @@ def collect(args):
                 result_status['source_retry_after'] = None
             elif prior_source.get('last_list_read_at'):
                 result_status['last_list_read_at'] = prior_source['last_list_read_at']
-            if not result_status.get('pages', 0) and result_status.get('status') in {'failed', 'partial'}:
+            if not result_status.get('pages', 0) and result_status.get('status') in {'failed', 'partial'} and identifier not in completed_heads:
                 failures = int(prior_source.get('consecutive_list_failures') or 0) + 1
                 result_status['consecutive_list_failures'] = failures
                 if failures >= 2:

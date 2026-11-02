@@ -17,6 +17,122 @@ from audit_freshness import audit
 
 
 class FreshnessTests(unittest.TestCase):
+    def test_backfill_rotates_across_rounds_without_changing_head_coverage(self):
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            stamp = c.dt.datetime.now(c.TZ).isoformat(timespec='seconds')
+            ids = ['lyu-positions', 'ujn-positions']
+            ci.atomic_json(directory / 'state.json', {'jobs': {}, 'sources': {}, 'pending': {}, 'last_run_at': stamp})
+            args = SimpleNamespace(data_dir=directory, sources=','.join(ids), source_pack='',
+                freshness_first=True, shard_budget=300, source_budget=30, deep_scan=False)
+            backfills, head_rounds = [], []
+            for _ in range(2):
+                clock, heads = [0.0], []
+                def worker(source, prior, args, budget):
+                    if args.head_only:
+                        heads.append(source['id'])
+                    else:
+                        backfills.append(source['id'])
+                        clock[0] = 294.0
+                    status = dict(source, status='ok', pages=1, parsed=1, cached=0,
+                        last_attempt_at=stamp, last_success_at=stamp, errors=[], list_complete=False)
+                    for field in c.PAGINATION_FIELDS:
+                        if field in prior.get('sources', {}).get(source['id'], {}):
+                            status[field] = prior['sources'][source['id']][field]
+                    if args.head_only:
+                        status['head_scan_at'] = stamp
+                    return {'jobs': {}, 'sources': {source['id']: status},
+                        'pending': {source['id']: []}, 'last_run_at': stamp}
+                with patch.object(ci.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(ci, 'run_source', side_effect=worker):
+                    ci.collect(args)
+                head_rounds.append(heads)
+            self.assertEqual(len(backfills), 2)
+            self.assertEqual(set(backfills), set(ids))
+            self.assertEqual(head_rounds[0], head_rounds[1])
+            self.assertEqual(set(head_rounds[0]), set(ids))
+            state = ci.read_json(directory / 'state.json')
+            self.assertTrue(all(state['sources'][sid].get('last_backfill_attempt_at') for sid in ids))
+
+    def test_historical_head_timestamp_never_masks_two_current_failures(self):
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            stamp = c.dt.datetime.now(c.TZ).isoformat(timespec='seconds')
+            sid = 'lyu-positions'
+            ci.atomic_json(directory / 'state.json', {'jobs': {}, 'sources': {sid: {
+                'head_scan_at': '2026-01-01T00:00:00+08:00', 'head_scan_pages': 1}},
+                'pending': {}, 'last_run_at': stamp})
+            def worker(source, prior, args, budget):
+                status = dict(source, status='failed', pages=0, parsed=0, cached=0,
+                    last_attempt_at=stamp, errors=[{'reason': '当前列表超时'}], coverage='当前列表超时')
+                return {'jobs': {}, 'sources': {sid: status}, 'pending': {sid: []}, 'last_run_at': stamp}
+            args = SimpleNamespace(data_dir=directory, sources=sid, source_pack='',
+                freshness_first=True, shard_budget=300, source_budget=30, deep_scan=False)
+            with patch.object(ci, 'run_source', side_effect=worker):
+                ci.collect(args)
+            status = ci.read_json(directory / 'state.json')['sources'][sid]
+            self.assertEqual(status['status'], 'failed')
+            self.assertTrue(status.get('source_retry_after'))
+
+    def test_failed_backfill_keeps_current_head_evidence_and_does_not_cool_next_head(self):
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            stamp = c.dt.datetime.now(c.TZ).isoformat(timespec='seconds')
+            sid = 'lyu-positions'
+            pending = [{'url': 'https://example.test/pending', 'title': '待补岗位'}]
+            ci.atomic_json(directory / 'state.json', {'jobs': {}, 'sources': {},
+                'pending': {sid: pending}, 'last_run_at': stamp})
+            def worker(source, prior, args, budget):
+                status = dict(source, status='ok' if args.head_only else 'failed',
+                    pages=1 if args.head_only else 0, parsed=8 if args.head_only else 0,
+                    cached=0, last_attempt_at=stamp, last_success_at=stamp,
+                    errors=[] if args.head_only else [{'reason': '历史回补超时'}],
+                    coverage='最新页已读取' if args.head_only else '预算耗尽',
+                    list_complete=False)
+                if args.head_only:
+                    status['head_scan_at'] = stamp
+                return {'jobs': {}, 'sources': {sid: status}, 'pending': {sid: pending}, 'last_run_at': stamp}
+            args = SimpleNamespace(data_dir=directory, sources=sid, source_pack='',
+                freshness_first=True, shard_budget=300, source_budget=30, deep_scan=False)
+            with patch.object(ci, 'run_source', side_effect=worker):
+                ci.collect(args)
+            state = ci.read_json(directory / 'state.json')
+            status = state['sources'][sid]
+            self.assertEqual(status['status'], 'partial')
+            self.assertEqual(status['backfill_status'], 'failed')
+            self.assertEqual(status['head_scan_pages'], 1)
+            self.assertEqual(status['head_scan_parsed'], 8)
+            self.assertEqual(status['head_scan_at'], stamp)
+            self.assertIn('历史回补超时', str(status['errors']))
+            self.assertFalse(status.get('source_retry_after'))
+            self.assertEqual(state['pending'][sid], pending)
+
+    def test_final_six_seconds_do_not_start_backfill_or_erase_head_and_queue(self):
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            stamp = c.dt.datetime.now(c.TZ).isoformat(timespec='seconds')
+            sid = 'lyu-positions'
+            pending = [{'url': 'https://example.test/pending', 'title': '待补岗位'}]
+            ci.atomic_json(directory / 'state.json', {'jobs': {}, 'sources': {},
+                'pending': {sid: pending}, 'last_run_at': stamp})
+            clock = [0.0]
+            def worker(source, prior, args, budget):
+                self.assertTrue(args.head_only)
+                clock[0] = 294.0
+                status = dict(source, status='ok', pages=1, parsed=2, cached=0,
+                    last_attempt_at=stamp, last_success_at=stamp, errors=[],
+                    head_scan_at=stamp, coverage='最新页已读取', list_complete=False)
+                return {'jobs': {}, 'sources': {sid: status}, 'pending': {sid: pending}, 'last_run_at': stamp}
+            args = SimpleNamespace(data_dir=directory, sources=sid, source_pack='',
+                freshness_first=True, shard_budget=300, source_budget=30, deep_scan=False)
+            with patch.object(ci.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(ci, 'run_source', side_effect=worker) as run:
+                ci.collect(args)
+            self.assertEqual(run.call_count, 1)
+            state = ci.read_json(directory / 'state.json')
+            self.assertEqual(state['sources'][sid]['status'], 'ok')
+            self.assertEqual(state['sources'][sid]['backfill_status'], 'deferred')
+            self.assertEqual(state['sources'][sid]['head_scan_parsed'], 2)
+            self.assertEqual(state['pending'][sid], pending)
+
     def test_nas_nankai_has_one_early_bounded_turn_without_dropping_school_scans(self):
         schools = [{'id': f'school-{i}', 'adapter': 'sdei', 'channel': 'announcements'} for i in range(6)]
         nankai = {'id': 'nankai'}

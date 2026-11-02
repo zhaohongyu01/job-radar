@@ -776,7 +776,9 @@ def sdei_news_list(page, page_size=50):
         'showNum': str(page_size), 'pagenum': str(page), 'artStr': '',
         'timestamps': str(int(time.time() * 1000)),
     }
-    payload = json.loads(fetch(endpoint, form=form, referer=referer))
+    # This hub is independent from school feeds. A stalled request must not
+    # spend two 18-second attempts before the other regional sources can run.
+    payload = json.loads(fetch(endpoint, form=form, referer=referer, timeout=8, retries=0))
     rows = payload.get('rows') or '[]'
     if isinstance(rows, str):
         rows = json.loads(rows)
@@ -2632,7 +2634,8 @@ PAGINATION_FIELDS = (
     'resume_page', 'list_complete', 'total_items', 'early_exit_safe',
     'completed_history_days', 'target_history_days', 'patrol_page',
     'last_full_scan_at', 'last_patrol_at', 'coverage_warning', 'patrol_turn', 'last_list_read_at',
-    'last_execution_at', 'consecutive_list_failures', 'source_retry_after', 'head_scan_at', 'head_discovered'
+    'last_execution_at', 'consecutive_list_failures', 'source_retry_after', 'head_scan_at', 'head_discovered',
+    'head_scan_pages', 'head_scan_parsed', 'last_backfill_attempt_at'
 )
 
 

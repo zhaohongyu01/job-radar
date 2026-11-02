@@ -12,7 +12,7 @@ permissions:
 jobs:
   finalize:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Wait for the exact NAS run, then publish the current main page
         uses: actions/github-script@v7
@@ -37,5 +37,25 @@ jobs:
               await new Promise(resolve => setTimeout(resolve, 30000));
             }
             if (!finished) throw Error('NAS wait deadline reached; no page deployment dispatched');
-            await github.rest.actions.createWorkflowDispatch({...context.repo, workflow_id: 'daily-collect.yml', ref: 'main', inputs: {deploy_only: 'true'}});
-            await core.summary.addHeading('Final page publication dispatched').addRaw(`NAS ${value} succeeded. Current main deploy_only was dispatched; that workflow still needs to finish. No recruitment recollection was requested.`).write();
+            const nonce = `NAS-${value}-${context.runId}`;
+            await github.rest.actions.createWorkflowDispatch({...context.repo, workflow_id: 'daily-collect.yml', ref: 'main', inputs: {deploy_only: 'true', release_nonce: nonce}});
+            const deployDeadline = Date.now() + 8 * 60 * 1000;
+            let deployment;
+            while (Date.now() < deployDeadline) {
+              const {data} = await github.rest.actions.listWorkflowRuns({...context.repo, workflow_id: 'daily-collect.yml', branch: 'main', event: 'workflow_dispatch', per_page: 20});
+              deployment = data.workflow_runs.find(run => run.display_title === `Page finalization ${nonce}`);
+              if (deployment?.status === 'completed') break;
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+            if (!deployment || deployment.status !== 'completed' || deployment.conclusion !== 'success') throw Error('Coordinated page deployment did not succeed within its wait budget');
+            const site = 'https://sites-project.job-radar.workers.dev';
+            const read = async path => {
+              const response = await fetch(site + path, {headers: {'User-Agent': 'Mozilla/5.0 JobRadarReleaseCheck/1.0'}, signal: AbortSignal.timeout(15000)});
+              if (!response.ok) throw Error(`Live check ${path}: HTTP ${response.status}`);
+              return response.json();
+            };
+            const snapshot = await read('/jobs.json');
+            if (!(snapshot.index_count > 0) || snapshot.browse_index?.version !== 2) throw Error('Published snapshot is missing complete browsing data');
+            const index = await read('/api/reputation');
+            if (!Array.isArray(index.entities) || index.entities.length < 62) throw Error('Published reputation data is below this release baseline');
+            await core.summary.addHeading('Coordinated publication and live checks passed').addLink('Page deployment', deployment.html_url).addRaw(`\nNAS ${value} succeeded. Live snapshot ${snapshot.generated_at}: ${snapshot.index_count} opportunities; reputation source profiles: ${index.entities.length}. This verifies delivery, not full source coverage. No recruitment recollection was requested by this finalizer.`).write();

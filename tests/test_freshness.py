@@ -17,6 +17,14 @@ from audit_freshness import audit
 
 
 class FreshnessTests(unittest.TestCase):
+    def test_nas_nankai_has_one_early_bounded_turn_without_dropping_school_scans(self):
+        schools = [{'id': f'school-{i}', 'adapter': 'sdei', 'channel': 'announcements'} for i in range(6)]
+        nankai = {'id': 'nankai'}
+        plan = scan_plan(schools + [nankai], lambda source: source['id'], True)
+        self.assertEqual(plan[4], (nankai, False))
+        self.assertEqual(sum(source['id'] == 'nankai' for source, _ in plan), 1)
+        self.assertEqual(sum(head for _, head in plan), 6)
+        self.assertEqual(len(plan), 13)
     def test_nankai_reserves_detail_time_instead_of_reading_five_list_pages(self):
         self.assertIn('nankai', c.SOURCE_PACKS['universities-b'])
         self.assertNotIn('nankai', c.SOURCE_PACKS['universities-a'])

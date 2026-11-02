@@ -30,6 +30,14 @@ def scan_plan(definitions, priority, freshness_first=False):
     heads = [source for pair in zip_longest(announcements, talks) for source in pair if source]
     heads.extend(positions)
     others = [source for source in definitions if source.get('adapter') != 'sdei']
+    # NAS owns Nankai after the measured route comparison. Do not leave it
+    # behind all 54 school head scans where the shard deadline can starve it.
+    nankai = [source for source in others if source['id'] == 'nankai']
+    if nankai:
+        others = [source for source in others if source['id'] != 'nankai']
+        return ([(source, True) for source in heads[:4]] + [(source, False) for source in nankai] +
+                [(source, True) for source in heads[4:]] +
+                [(source, False) for source in others + sorted(schools, key=priority)])
     return [(source, True) for source in heads] + [(source, False) for source in others + sorted(schools, key=priority)]
 
 

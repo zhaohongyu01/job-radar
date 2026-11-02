@@ -1,0 +1,41 @@
+name: Finalize Page After NAS
+on:
+  workflow_dispatch:
+    inputs:
+      nas_run_id:
+        description: 'NAS run to finish before publishing the current page version'
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait for the exact NAS run, then publish the current main page
+        uses: actions/github-script@v7
+        env:
+          NAS_RUN_ID: ${{ inputs.nas_run_id }}
+        with:
+          script: |
+            const value = process.env.NAS_RUN_ID || '';
+            if (!/^\d{1,20}$/.test(value) || !Number.isSafeInteger(Number(value))) throw Error('Invalid NAS run ID');
+            const expected = await github.rest.actions.getWorkflow({...context.repo, workflow_id: 'nas-universities.yml'});
+            const deadline = Date.now() + 20 * 60 * 1000;
+            let finished = false;
+            while (Date.now() < deadline) {
+              const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: Number(value)});
+              if (run.workflow_id !== expected.data.id || run.head_branch !== 'main') throw Error('Expected this repository main NAS workflow');
+              if (run.status === 'completed') {
+                if (run.conclusion !== 'success') throw Error(`NAS finished with ${run.conclusion}; page finalization stopped for review`);
+                finished = true;
+                break;
+              }
+              core.info(`NAS ${value}: ${run.status}; no collection or deployment performed here`);
+              await new Promise(resolve => setTimeout(resolve, 30000));
+            }
+            if (!finished) throw Error('NAS wait deadline reached; no page deployment dispatched');
+            await github.rest.actions.createWorkflowDispatch({...context.repo, workflow_id: 'daily-collect.yml', ref: 'main', inputs: {deploy_only: 'true'}});
+            await core.summary.addHeading('Final page publication dispatched').addRaw(`NAS ${value} succeeded. Current main deploy_only was dispatched; that workflow still needs to finish. No recruitment recollection was requested.`).write();

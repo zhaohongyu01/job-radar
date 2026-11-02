@@ -14,6 +14,10 @@ class QualityTests(unittest.TestCase):
         self.assertIsNone(c.discussion_topic_path(html, '2'))
         self.assertIsNone(c.discussion_topic_path('<a href="https://evil.test/enterprise/1/discussion?evaluateSubscriptTab=1">工作强度</a>', '1'))
         self.assertIsNone(c.discussion_topic_path(html.replace('evaluateSubscriptTab=', 'private='), '1'))
+        prefixed = '<a href="/enterprise/1/discussion?evaluateSubscriptTab=13">示例科技工作强度 172人发布</a>'
+        self.assertEqual(c.discussion_topic_path(prefixed, '1', ['示例科技']), '/enterprise/1/discussion?evaluateSubscriptTab=13')
+        self.assertIsNone(c.discussion_topic_path(prefixed, '1', ['另一公司']))
+        self.assertIsNone(c.discussion_topic_path(prefixed, '2', ['示例科技']))
     def test_exclusion_diagnostics_account_for_public_rows_without_exporting_raw_text(self):
         page = c.parse_page(document(), 1, 'discussion', AT)
         self.assertEqual(sum(page['exclusion_counts'].values()), page['excluded'])

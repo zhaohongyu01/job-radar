@@ -236,7 +236,7 @@ class PublicClient:
         self.robot.parse(text.splitlines())
 
 
-def discussion_topic_path(document, identifier):
+def discussion_topic_path(document, identifier, names=()):
     """Use only an explicit public UI tab; never guess internal topic IDs."""
     candidates = []
     for link in BeautifulSoup(document, 'html.parser').select('a[href]'):
@@ -248,7 +248,8 @@ def discussion_topic_path(document, identifier):
             continue
         title = link.get_text(' ', strip=True)
         for rank, label in enumerate(['工作强度', '公司氛围', '公司福利', '成长空间']):
-            if title.startswith(label):
+            prefixes = ['', *[name for name in names if isinstance(name, str) and name]]
+            if any(re.fullmatch(re.escape(prefix) + r'\s*' + label + r'\s*(?:\d+人发布|[（(]\d+[）)])?', title) for prefix in prefixes):
                 candidates.append((rank, url.path + '?evaluateSubscriptTab=' + query['evaluateSubscriptTab'][0]))
                 break
     return min(candidates)[1] if candidates else None
@@ -377,7 +378,7 @@ def collect(config, state, state_path, budget, limit, force=False):
                 page['pagination_status'] = 'first_page_only'
                 if config.get('max_pages', 1) > 1 and page['public_rows']:
                     try:
-                        topic = discussion_topic_path(document, key) if channel == 'discussion' else None
+                        topic = discussion_topic_path(document, key, page['names']) if channel == 'discussion' else None
                         following = parse_page(client.get(topic or f'/enterprise/{key}/{channel}?page=2'), seed['id'], channel, stamp())
                         if following['legal_name'] != page['legal_name']:
                             raise ValueError('following_page_company_changed')

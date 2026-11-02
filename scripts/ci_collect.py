@@ -519,7 +519,7 @@ def recover_source(directory, definition, prior, started, code, timed_out):
     checkpoint = read_json(checkpoint_path) if checkpoint_path.exists() else {}
     if checkpoint and checkpoint.get('source', {}).get('id') != definition['id']:
         raise ValueError('Checkpoint belongs to another source')
-    incoming, verified = {}, set()
+    incoming, verified, terminal = {}, set(), set()
     journal = directory / 'progress.jsonl'
     if journal.exists():
         for line in journal.read_text(encoding='utf-8').splitlines(keepends=True):
@@ -532,8 +532,10 @@ def recover_source(directory, definition, prior, started, code, timed_out):
             incoming[job['id']] = job
             if event.get('verified'):
                 verified.add(event['url'])
+            if event.get('terminal'):
+                terminal.add(event['url'])
     pending = [item for item in checkpoint.get('pending', prior.get('pending', {}).get(definition['id'], []))
-               if item['url'] not in verified]
+               if item['url'] not in verified | terminal]
     for item in pending:
         identifier = collector.item_id(item)
         if identifier not in state['jobs'] and identifier not in incoming:
@@ -554,9 +556,10 @@ def recover_source(directory, definition, prior, started, code, timed_out):
     status = dict(checkpoint.get('source') or definition)
     reason = '来源达到总时间预算；已恢复采集进度，剩余详情下次继续' if timed_out else f'来源进程异常退出（{code}）；已恢复采集进度'
     calendar_saved = any(job.get('event_verification') == 'official_list' for job in incoming.values())
-    status.update(last_attempt_at=started, status='partial' if verified or calendar_saved else 'failed',
+    status.update(last_attempt_at=started, status='partial' if verified or terminal or calendar_saved else 'failed',
                   last_success_at=prior.get('sources', {}).get(definition['id'], {}).get('last_success_at'),
                   parsed=len(verified), pending_details=len(pending), coverage=reason)
+    status['detail_expired'] = max(status.get('detail_expired', 0), len(terminal))
     status.setdefault('errors', []).append({'url':definition['url'], 'reason':reason})
     return {'jobs':jobs, 'sources':{definition['id']:status}, 'pending':{definition['id']:pending}, 'last_run_at':now}
 

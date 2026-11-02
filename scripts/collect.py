@@ -1393,6 +1393,10 @@ def parse_sdei_position_detail(html, item, source):
     return job
 
 
+class SourceDetailExpired(ValueError):
+    """The official detail endpoint explicitly declares this information expired."""
+
+
 def parse_detail(html, item, source):
     root=Tree(html).root
     metas={n.attrs.get('name','').lower():n.attrs.get('content','') for n in root.find('meta')}
@@ -1447,6 +1451,9 @@ def parse_detail(html, item, source):
     elif source['id']=='nankai':
         contents=root.find(cls='zpnr')
         if not contents:
+            notice = BeautifulSoup(html, 'html.parser')
+            if notice.title and notice.title.get_text(strip=True) == '跳转提示' and re.search(r'操作失败[！!]?\s*该信息已过期[！!]?', notice.get_text(' ', strip=True)):
+                raise SourceDetailExpired('南开官方明确提示该信息已过期')
             raise ValueError('announcement body missing')
         body=contents[0]
         titles=root.find(cls='title1')
@@ -2642,9 +2649,9 @@ def run(args):
     queues = dict(previous.get('pending', {}))
     journal = data_dir / 'progress.jsonl'
     journal.write_text('', encoding='utf-8')
-    def persist_job(job, item, verified=True):
+    def persist_job(job, item, verified=True, terminal=False):
         with journal.open('a', encoding='utf-8') as handle:
-            handle.write(json.dumps({'job': job, 'url': item['url'], 'verified': verified}, ensure_ascii=False) + '\n')
+            handle.write(json.dumps({'job': job, 'url': item['url'], 'verified': verified, 'terminal': terminal}, ensure_ascii=False) + '\n')
     now=dt.datetime.now(TZ).isoformat(timespec='seconds')
     cutoff=(dt.datetime.now(TZ)-dt.timedelta(days=args.days)).date().isoformat()
     incoming=[]
@@ -3121,6 +3128,12 @@ def run(args):
                     deferred_details.append(item)
                     continue
                 old=previous['jobs'].get(item_id(item))
+                if (source['id'] == 'nankai' and old and old.get('listing_status') == 'withdrawn'
+                        and old.get('classification_note') == '来源已明确提示信息过期，保留历史记录。'
+                        and old.get('title') == item.get('title') and old.get('published_at') == item.get('published_at')
+                        and old.get('listing_checked_at', '') >= (dt.datetime.now(TZ) - dt.timedelta(days=7)).isoformat()):
+                    cached += 1
+                    continue
                 inline_fingerprint = inline_announcement_fingerprint(item, source)
                 unchanged_inline = bool(inline_fingerprint and old and
                     old.get('inline_announcement_fingerprint') == inline_fingerprint)
@@ -3232,6 +3245,11 @@ def run(args):
                     item['url'], timeout=detail_timeout, retries=detail_retries
                 )
                 res = parse_detail(html, item, source)
+                old = previous['jobs'].get(item.get('target_id') or item_id(item))
+                if source['id'] == 'nankai' and old and old.get('classification_note') == '来源已明确提示信息过期，保留历史记录。':
+                    # A readable page replaces the old explicit closure, but
+                    # page readability alone is not evidence of being in hire.
+                    res.update(listing_status='unconfirmed', listing_checked_at=now)
                 if item.get('target_id'):
                     res['id'] = item['target_id']
                 if item.get('identity'):
@@ -3279,6 +3297,16 @@ def run(args):
                 incoming.append(fallback)
 
             def record_detail_failure(item, error):
+                if isinstance(error, SourceDetailExpired):
+                    old = previous['jobs'].get(item.get('target_id') or item_id(item))
+                    closed = dict(old) if old else parse_detail('<div id="zoom">来源明确提示该信息已过期。</div>', item, {'id': 'fallback', 'name': source['name']})
+                    closed.update(source_id=source['id'], listing_status='withdrawn', listing_checked_at=now,
+                                  listing_missing_count=0, classification_note='来源已明确提示信息过期，保留历史记录。')
+                    persist_job(closed, item, verified=False, terminal=True)
+                    incoming.append(closed)
+                    queued_by_url.pop(item['url'], None)
+                    status['detail_expired'] = status.get('detail_expired', 0) + 1
+                    return False
                 if not item.get('is_probe'):
                     defer_detail(item, dt.datetime.now(TZ), error)
                 # Transport failures do not invalidate a previously readable page.

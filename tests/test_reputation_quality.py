@@ -8,6 +8,12 @@ import collect_reputation as c
 from tests.test_reputation import document, AT, CONFIG, FakePublicClient
 
 class QualityTests(unittest.TestCase):
+    def test_topic_discovery_uses_only_same_enterprise_public_experience_tabs(self):
+        html = '<a href="/enterprise/1/discussion?evaluateSubscriptTab=12">公司福利(5)</a><a href="/enterprise/1/discussion?evaluateSubscriptTab=13">工作强度(8)</a>'
+        self.assertEqual(c.discussion_topic_path(html, '1'), '/enterprise/1/discussion?evaluateSubscriptTab=13')
+        self.assertIsNone(c.discussion_topic_path(html, '2'))
+        self.assertIsNone(c.discussion_topic_path('<a href="https://evil.test/enterprise/1/discussion?evaluateSubscriptTab=1">工作强度</a>', '1'))
+        self.assertIsNone(c.discussion_topic_path(html.replace('evaluateSubscriptTab=', 'private='), '1'))
     def test_exclusion_diagnostics_account_for_public_rows_without_exporting_raw_text(self):
         page = c.parse_page(document(), 1, 'discussion', AT)
         self.assertEqual(sum(page['exclusion_counts'].values()), page['excluded'])

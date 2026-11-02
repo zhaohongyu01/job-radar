@@ -206,7 +206,7 @@ class PublicClient:
         self.robot = None
 
     def get(self, path):
-        if not re.fullmatch(r'/robots\.txt|/enterprise/\d+/(?:discussion|interview)(?:\?page=\d+)?', path):
+        if not re.fullmatch(r'/robots\.txt|/enterprise/\d+/(?:discussion|interview)(?:\?(?:page|evaluateSubscriptTab)=\d+)?', path):
             raise ValueError('unapproved_source_path')
         remaining = self.deadline - time.monotonic()
         pause = max(0, self.config['min_interval_seconds'] - (time.monotonic() - self.last))
@@ -234,6 +234,24 @@ class PublicClient:
             raise ValueError('robots_not_available')
         self.robot = urllib.robotparser.RobotFileParser()
         self.robot.parse(text.splitlines())
+
+
+def discussion_topic_path(document, identifier):
+    """Use only an explicit public UI tab; never guess internal topic IDs."""
+    candidates = []
+    for link in BeautifulSoup(document, 'html.parser').select('a[href]'):
+        url = urllib.parse.urlsplit(urllib.parse.urljoin(ORIGIN, link['href']))
+        query = urllib.parse.parse_qs(url.query)
+        if (url.scheme != 'https' or url.netloc != 'www.nowcoder.com' or
+                url.path != f'/enterprise/{identifier}/discussion' or set(query) != {'evaluateSubscriptTab'} or
+                len(query['evaluateSubscriptTab']) != 1 or not query['evaluateSubscriptTab'][0].isdigit()):
+            continue
+        title = link.get_text(' ', strip=True)
+        for rank, label in enumerate(['工作强度', '公司氛围', '公司福利', '成长空间']):
+            if title.startswith(label):
+                candidates.append((rank, url.path + '?evaluateSubscriptTab=' + query['evaluateSubscriptTab'][0]))
+                break
+    return min(candidates)[1] if candidates else None
 
 
 def discovery_candidates(rows, history, now):
@@ -359,11 +377,15 @@ def collect(config, state, state_path, budget, limit, force=False):
                 page['pagination_status'] = 'first_page_only'
                 if config.get('max_pages', 1) > 1 and page['public_rows']:
                     try:
-                        following = parse_page(client.get(f'/enterprise/{key}/{channel}?page=2'), seed['id'], channel, stamp())
+                        topic = discussion_topic_path(document, key) if channel == 'discussion' else None
+                        following = parse_page(client.get(topic or f'/enterprise/{key}/{channel}?page=2'), seed['id'], channel, stamp())
+                        if following['legal_name'] != page['legal_name']:
+                            raise ValueError('following_page_company_changed')
                         old_ids = {row['id'] for row in page['records']}
                         new_rows = [row for row in following['records'] if row['id'] not in old_ids]
                         page['pages_read'] = 2
                         page['pagination_status'] = 'advanced' if new_rows else 'repeated_or_empty'
+                        page['second_page_mode'] = 'public_experience_topic' if topic else 'pagination'
                         page['records'].extend(new_rows)
                     except Exception as error:
                         page['pagination_status'] = 'unavailable'
@@ -383,6 +405,7 @@ def collect(config, state, state_path, budget, limit, force=False):
                     'enterprise': key, 'channel': channel, 'public_rows': page['public_rows'],
                     'excluded': page['excluded'], 'exclusion_counts': page.get('exclusion_counts', {}),
                     'retained_records': len(page['records']), 'pagination_status': page['pagination_status'],
+                    'second_page_mode': page.get('second_page_mode'),
                 })
                 channels[channel] = page
                 successes += 1

@@ -24,6 +24,7 @@ from city_registry import cities_in_text
 ROOT = Path(__file__).resolve().parents[1]
 ORIGIN = 'https://www.nowcoder.com'
 CHANNELS = ('discussion', 'interview')
+NORMALIZER_VERSION = 4
 PROMO = re.compile(r'内推码|推荐码|加群|扫码|课程推广|\breferral\b|内推链接', re.I)
 FIRSTHAND = re.compile(r'(?:我|本人)(?:曾|之前)?在.{0,30}(?:工作|上班|实习|任职|待过|待了)|实习期间|工作了|干过|待过|离职(?:了|前|后)')
 EXPERIENCE_TITLE = re.compile(r'实习体验|工作体验|工作感悟|入职体验|就职体验|离职感想')
@@ -145,13 +146,24 @@ def parse_page(document, enterprise_id, channel, collected_at, now=None):
         excluded += 1
         exclusion_counts[reason] = exclusion_counts.get(reason, 0) + 1
     for row in rows:
-        content = row.get('contentData') or {}
+        content = row.get('contentData')
+        variant = 'contentData'
+        if content is None and isinstance(row.get('momentData'), dict):
+            variant = 'momentData'
+            # Public dynamic posts use this documented-in-page variant. Keep
+            # the same identity, author hash and original time conventions.
+            content = dict(row['momentData'])
+            content['authorId'] = content.get('userId')
+            content['createTime'] = content.get('createdAt')
         if not isinstance(content, dict):
             exclude('invalid_content')
             continue
         tag = row.get('evaluateSubscript') or {}
         if tag.get('companyId') and str(tag['companyId']) != str(enterprise_id):
             exclude('other_company')  # Recommended posts are not this firm's evidence.
+            continue
+        if content.get('beMyOnly'):
+            exclude('restricted_content')
             continue
         text, title = redact(clean(content.get('content'))), redact(clean(content.get('title')))
         if not text or not title or content.get('recommendAd') or content.get('staffAnswer') or PROMO.search(title + text) or re.search(r'内推|网申|投递入口|招聘开启|招人|捞人', title):
@@ -160,7 +172,7 @@ def parse_page(document, enterprise_id, channel, collected_at, now=None):
         content_id, uuid = str(content.get('id') or row.get('contentId') or ''), content.get('uuid')
         if uuid and re.fullmatch(r'[a-f0-9]{32}', str(uuid)):
             identity, url = str(uuid), f'{ORIGIN}/feed/main/detail/{uuid}'
-        elif re.fullmatch(r'\d{1,22}', content_id):
+        elif variant == 'contentData' and re.fullmatch(r'\d{1,22}', content_id):
             identity, url = content_id, f'{ORIGIN}/discuss/{content_id}'
         else:
             exclude('missing_public_identity')
@@ -341,6 +353,7 @@ def collect(config, state, state_path, budget, limit, force=False):
                         row['attribution'] = 'uncertain'
                         row['signals'] = []  # Old excerpts cannot prove full-post attribution.
         state['normalizer_version'] = 3
+    state['normalizer_version'] = NORMALIZER_VERSION
     started = time.monotonic()
     client = PublicClient(config, started + budget)
     report = {'started_at': stamp(), 'requests': 0, 'attempted': 0, 'successes': 0, 'failures': 0, 'cached': 0, 'errors': []}
@@ -363,20 +376,28 @@ def collect(config, state, state_path, budget, limit, force=False):
         now = time.time()
         if old.get('retry_after', 0) > now:
             continue
-        if not force and old.get('status') == 'ok' and old.get('last_success_epoch', 0) + config['cache_hours'] * 3600 > now:
+        if not force and old.get('normalizer_version') == NORMALIZER_VERSION and old.get('status') == 'ok' and old.get('last_success_epoch', 0) + config['cache_hours'] * 3600 > now:
             report['cached'] += 1
             continue
-        entry = {**old, 'last_attempt_at': stamp()}
+        entry = {**old, 'last_attempt_at': stamp(), 'normalizer_version': NORMALIZER_VERSION}
         channels = dict(old.get('channels', {}))
         report['attempted'] += 1
         successes = 0
         for channel in CHANNELS:
             try:
-                document = client.get(f'/enterprise/{key}/{channel}')
+                # A source-confirmed UI tab can be read directly when the
+                # generic page intermittently returns a client-only shell.
+                # It replaces the first request; it never adds a third page.
+                topic_id = seed.get('discussion_topic') if channel == 'discussion' else None
+                if topic_id is not None and (isinstance(topic_id, bool) or not isinstance(topic_id, int) or not 0 < topic_id < 10**10):
+                    raise ValueError('invalid_configured_topic')
+                path = f'/enterprise/{key}/{channel}' + (f'?evaluateSubscriptTab={topic_id}' if topic_id else '')
+                document = client.get(path)
                 page = parse_page(document, seed['id'], channel, stamp())
                 page['pages_read'] = 1
                 page['pagination_status'] = 'first_page_only'
-                if config.get('max_pages', 1) > 1 and page['public_rows']:
+                page['first_page_mode'] = 'public_experience_topic' if topic_id else 'generic'
+                if not topic_id and config.get('max_pages', 1) > 1 and page['public_rows']:
                     try:
                         topic = discussion_topic_path(document, key, page['names']) if channel == 'discussion' else None
                         following = parse_page(client.get(topic or f'/enterprise/{key}/{channel}?page=2'), seed['id'], channel, stamp())
@@ -407,6 +428,7 @@ def collect(config, state, state_path, budget, limit, force=False):
                     'excluded': page['excluded'], 'exclusion_counts': page.get('exclusion_counts', {}),
                     'retained_records': len(page['records']), 'pagination_status': page['pagination_status'],
                     'second_page_mode': page.get('second_page_mode'),
+                    'first_page_mode': page['first_page_mode'],
                 })
                 channels[channel] = page
                 successes += 1

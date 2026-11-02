@@ -8,6 +8,73 @@ import collect_reputation as c
 from tests.test_reputation import document, AT, CONFIG, FakePublicClient
 
 class QualityTests(unittest.TestCase):
+    def moment_document(self, **changes):
+        state = c.extract_state(document())
+        row = state['app']['random-app-key']['postList'][0]
+        old = row.pop('contentData')
+        row['momentData'] = {**old, 'uuid': 'a' * 32, 'createdAt': old['createTime'],
+            'userId': old['authorId'], 'ip4Location': '北京', **changes}
+        return '<script>window.__INITIAL_STATE__=' + json.dumps(state) + '</script>'
+
+    def test_public_moments_preserve_source_identity_date_and_same_account_hash(self):
+        old = c.parse_page(document(), 1, 'discussion', AT)['records'][0]
+        row = c.parse_page(self.moment_document(editTime=1, showTime=1), 1, 'discussion', AT)['records'][0]
+        self.assertEqual(row['url'], 'https://www.nowcoder.com/feed/main/detail/' + 'a' * 32)
+        self.assertEqual(row['published_at'], old['published_at'])
+        self.assertEqual(row['contributor'], old['contributor'])
+        self.assertEqual(row['city'], '济南')
+        self.assertEqual(row['attribution'], 'uncertain')
+        self.assertEqual(row['signals'], [])
+        self.assertNotIn('userId', row)
+        self.assertNotIn('ip4Location', row)
+
+    def test_moment_questions_and_interviews_never_become_employee_scores(self):
+        doc = self.moment_document(title='浪潮加班严重吗？', content='想问工作地点：济南。福利很好吗？')
+        row = c.parse_page(doc, 1, 'discussion', AT)['records'][0]
+        self.assertEqual(row['kind'], 'question')
+        self.assertEqual(row['signals'], [])
+        row = c.parse_page(self.moment_document(), 1, 'interview', AT)['records'][0]
+        self.assertEqual(row['kind'], 'interview')
+        self.assertEqual(row['signals'], [])
+
+    def test_restricted_or_unlinkable_moments_cannot_become_public_evidence(self):
+        for changes in [{'beMyOnly': True}, {'uuid': None}, {'uuid': 'not-a-public-id'}]:
+            page = c.parse_page(self.moment_document(**changes), 1, 'discussion', AT)
+            self.assertEqual(page['records'], [])
+        raw = self.moment_document().replace('"companyId": 1}', '"companyId": 2}')
+        self.assertEqual(c.parse_page(raw, 1, 'discussion', AT)['records'], [])
+
+    def test_confirmed_topic_replaces_first_read_without_exceeding_page_budget(self):
+        config = dict(CONFIG, max_pages=2, enterprises=[dict(id=1, expected_names=['示例科技'], discussion_topic=13)])
+        paths = []
+        class Client(FakePublicClient):
+            def get(self, path):
+                paths.append(path)
+                return super().get(path)
+        with TemporaryDirectory() as tmp, patch.object(c, 'PublicClient', Client):
+            state, _ = c.collect(config, {}, Path(tmp)/'state.json', 30, 1)
+        self.assertIn('/enterprise/1/discussion?evaluateSubscriptTab=13', paths)
+        self.assertNotIn('/enterprise/1/discussion', paths)
+        self.assertEqual(sum('/discussion' in path for path in paths), 1)
+        self.assertEqual(state['enterprises']['1']['channels']['discussion']['first_page_mode'], 'public_experience_topic')
+
+    def test_normalizer_refresh_keeps_failure_cooldown_and_reuses_new_cache(self):
+        with TemporaryDirectory() as tmp, patch.object(c, 'PublicClient', FakePublicClient):
+            p = Path(tmp)/'state.json'
+            state, _ = c.collect(CONFIG, {}, p, 30, 30)
+            state['enterprises']['1']['normalizer_version'] = 3
+            state['enterprises']['2']['normalizer_version'] = 3
+            state['enterprises']['2']['retry_after'] = time.time() + 3600
+            previous = copy.deepcopy(state['enterprises']['2']['channels'])
+            state, report = c.collect(CONFIG, state, p, 30, 30)
+            self.assertEqual(report['attempted'], 1)
+            self.assertEqual(report['cached'], 5)
+            self.assertEqual(state['enterprises']['1']['normalizer_version'], 4)
+            self.assertEqual(state['enterprises']['2']['channels'], previous)
+            _, report = c.collect(CONFIG, state, p, 30, 30)
+            self.assertEqual(report['attempted'], 0)
+            self.assertEqual(report['cached'], 6)
+
     def test_topic_discovery_uses_only_same_enterprise_public_experience_tabs(self):
         html = '<a href="/enterprise/1/discussion?evaluateSubscriptTab=12">公司福利(5)</a><a href="/enterprise/1/discussion?evaluateSubscriptTab=13">工作强度(8)</a>'
         self.assertEqual(c.discussion_topic_path(html, '1'), '/enterprise/1/discussion?evaluateSubscriptTab=13')

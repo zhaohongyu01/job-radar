@@ -2764,7 +2764,7 @@ def run(args):
                 calendar_robots = check_jysd_robots(fetch, source, DEFAULT_USER_AGENT)
             if source.get('adapter') == 'public_home_calendar':
                 check_home_calendar_robots(fetch, source, DEFAULT_USER_AGENT)
-            first=fetch(source['url'], **({'timeout': 6, 'retries': 0} if source['id'] == 'nankai' else {})) if source.get('adapter') not in api_adapters else ''
+            first=fetch(source['url'], **({'timeout': 6, 'retries': 0} if source['id'] in {'nankai', 'sdnu-graduate-talks'} else {})) if source.get('adapter') not in api_adapters else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
             items=[]

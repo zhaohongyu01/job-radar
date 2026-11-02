@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "references": [
+    {
+      "provider": "maimai",
+      "subject": "海尔集团",
+      "names": ["海尔集团"],
+      "kind": "interview",
+      "title": "面试海尔集团产品研发岗难度不小",
+      "excerpt": "家电产品的前沿技术趋势",
+      "url": "https://maimai.cn/article/detail?efid=KvsUmbTAqJYbP7hmgWCVYA&fid=1857746318",
+      "published_on": "2024-12-17",
+      "checked_on": "2026-11-02",
+      "method": "manual_public_read"
+    }
+  ]
+}

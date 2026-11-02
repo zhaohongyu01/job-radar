@@ -1,0 +1,45 @@
+name: Source Network Diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      detail_ids:
+        description: '可选：最多两个日志失败的南开详情数字ID，逗号分隔；留空读取最新两条'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-network-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    name: Nankai on ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: cloud
+            runner: '["ubuntu-latest"]'
+          - node: nas
+            runner: '["self-hosted", "linux", "job-radar-nas"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Probe public source without collection or publication
+        env:
+          DIAGNOSTIC_DETAIL_IDS: ${{ inputs.detail_ids }}
+        run: python3 scripts/diagnose_nankai.py --detail-ids "$DIAGNOSTIC_DETAIL_IDS" --output "$RUNNER_TEMP/nankai-network-report.json"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: nankai-network-${{ matrix.node }}
+          path: ${{ runner.temp }}/nankai-network-report.json
+          if-no-files-found: error
+          retention-days: 3

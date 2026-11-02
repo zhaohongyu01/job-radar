@@ -4,6 +4,21 @@ import { useEmployerReputation } from '@/components/employer-workspace';
 import { matchReputation, REPUTATION_DIMENSIONS, REPUTATION_PROVIDERS, summarizeReputation, summarizeReputationEntity } from '@/lib/reputation';
 import type { ReputationEntity } from '@/lib/reputation';
 import type { EmployerProfile } from '@/lib/employers';
+import { employerPublicReferences } from '@/lib/reputation-references';
+
+export function PublicEmployerReferences({ profile }: { profile: EmployerProfile }) {
+  const rows = employerPublicReferences(profile);
+  if (!rows.length) return null;
+  return <section className="employer-section" aria-label="人工核对的公开面经参考">
+    <h3>公开面经参考</h3>
+    <p className="small muted">人工核对的历史文章，不代表平台全量评价，不计员工评分；集团资料不代表具体子公司或部门。</p>
+    {rows.map(row => <article className="reputation-record" key={row.url}>
+      <a href={row.url} target="_blank" rel="noopener noreferrer">{row.title} ↗</a>
+      <p>原文提及：“{row.excerpt}”</p>
+      <p className="small muted">脉脉公开文章 · 发布 {row.published_on} · 人工核对 {row.checked_on} · {row.subject}范围参考</p>
+    </article>)}
+  </section>;
+}
 
 const day = (value: string | null) => value ? new Date(value).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '日期未明确';
 const kindLabels = { experience: '员工体验', interview: '面经', question: '求助讨论' };

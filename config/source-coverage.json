@@ -842,6 +842,28 @@
       "scope": "school_feed",
       "connected": true,
       "verified_on": "2026-11-02"
+    },
+    {
+      "source_id": "upc-talks-public",
+      "channel": "calendar",
+      "school": "中国石油大学（华东）",
+      "cities": [
+        "青岛"
+      ],
+      "scope": "public_home_window",
+      "connected": true,
+      "verified_on": "2026-11-02"
+    },
+    {
+      "source_id": "sjtu-campus-events",
+      "channel": "calendar",
+      "school": "上海交通大学",
+      "cities": [
+        "上海"
+      ],
+      "scope": "public_home_window",
+      "connected": true,
+      "verified_on": "2026-11-02"
     }
   ],
   "planned": [
@@ -854,7 +876,7 @@
       "channel": "calendar",
       "status": "blocked",
       "url": "https://career.upc.edu.cn/career/xjhxx",
-      "reason": "2026-10-30复核：公开页面正常，但页面实际调用的宣讲列表接口返回403并明确要求登录；不将其当作空日历"
+      "reason": "2026-11-02已接入学校首页公开活动窗口；完整宣讲列表接口仍需认证，窗口外活动未覆盖"
     },
     {
       "coverage_key": "fudan-calendar",
@@ -865,7 +887,7 @@
       "channel": "calendar",
       "status": "blocked",
       "url": "https://career.fudan.edu.cn/",
-      "reason": "官方公开页依赖接口认证，尚未取得无需认证的日程来源"
+      "reason": "2026-11-02复核：就业网robots明确拒绝通用爬虫；未接入该域完整日历，保留待补来源"
     },
     {
       "coverage_key": "sjtu-calendar",
@@ -876,7 +898,7 @@
       "channel": "calendar",
       "status": "blocked",
       "url": "https://www.job.sjtu.edu.cn/career/xjhxx?nrdm=zcxjh1",
-      "reason": "2026-10-30公开页面的实际列表请求返回403并明确要求登录；主页少量展示不足以证明完整覆盖"
+      "reason": "2026-11-02已接入学校首页公开活动窗口；完整宣讲列表接口仍需认证，窗口外活动未覆盖"
     },
     {
       "coverage_key": "zjut-calendar",

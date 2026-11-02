@@ -1,12 +1,94 @@
 """Public calendar adapters. Never derive work cities from a campus venue."""
 import datetime as dt
 import base64
+import json
 import re
 import zlib
 import urllib.error
 import urllib.robotparser
 from urllib.parse import urljoin, urlencode, urlsplit
 from bs4 import BeautifulSoup
+
+
+PUBLIC_HOME_CALENDARS = {
+    'upc-talks-public': 'https://career.upc.edu.cn',
+    'sjtu-campus-events': 'https://www.job.sjtu.edu.cn',
+}
+
+
+def check_home_calendar_robots(fetch, source, user_agent):
+    origin = PUBLIC_HOME_CALENDARS.get(source['id'])
+    if not origin or source['url'] != origin + '/career/index':
+        raise ValueError('Unverified school homepage calendar')
+    try:
+        text = fetch(origin + '/robots.txt', timeout=6, retries=0)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return
+        raise
+    if 'user-agent' not in text.lower() or '<html' in text.lower():
+        raise ValueError('School homepage robots unavailable')
+    robot = urllib.robotparser.RobotFileParser()
+    robot.parse(text.splitlines())
+    if not robot.can_fetch(user_agent, source['url']):
+        raise PermissionError('School homepage robots denies collection')
+
+
+def public_home_calendar(document, source):
+    """A finite public homepage window, never pretend it is the full calendar."""
+    origin = PUBLIC_HOME_CALENDARS.get(source['id'])
+    if not origin or source['url'] != origin + '/career/index':
+        raise ValueError('Unverified school homepage calendar')
+    soup = BeautifulSoup(document, 'html.parser')
+    items = []
+
+    def path_from(node, kind):
+        match = re.fullmatch(r'windowOpen\((".*")\)', node.get('onclick', ''))
+        path = json.loads(match[1]).replace('\\/', '/') if match else ''
+        if not re.fullmatch(r'/career/' + kind + r'/view/\d+', path):
+            raise ValueError('Homepage event path missing or changed')
+        return origin + path
+
+    def add(url, title, date, start, venue, online=False):
+        dt.date.fromisoformat(date)
+        dt.time.fromisoformat(start)
+        if not title or not venue or not re.fullmatch(r'20\d{2}-\d{2}-\d{2}', date):
+            raise ValueError('Homepage event facts missing')
+        items.append({'url': url, 'title': title, 'published_at': None, 'kind': '宣讲会',
+            'calendar_only': True, 'structured': {'fairDate': date, 'fairStartTime': start,
+                'schoolName': source['school_name'], 'fairAddress': ('线上宣讲 · ' if online else '') + venue}})
+
+    if source['id'] == 'upc-talks-public':
+        headings = [x.get_text(strip=True) for x in soup.select('.jyxx-center-right-title-left h1')]
+        sections = soup.select('.jyxx-center-right-content')
+        if headings[:2] != ['宣讲会', '空中宣讲'] or len(sections) < 2:
+            raise ValueError('School public calendar window changed')
+        for index, section in enumerate(sections[:2]):
+            for row in section.select('.jyxx-center-right-content-ul-li'):
+                parent = row.find_parent('li', onclick=True)
+                day, month, title = [row.select_one(selector) for selector in
+                    ('.jyxx-center-right-content-ul-li-left-day', '.jyxx-center-right-content-ul-li-left-month', 'h2')]
+                paragraphs = row.select('.jyxx-center-right-content-ul-li-right p')
+                if parent is None or None in (day, month, title) or len(paragraphs) != 2:
+                    raise ValueError('School public calendar row missing')
+                clock = re.fullmatch(r'时间[：:]\s*(\d{2}:\d{2})', paragraphs[1].get_text(strip=True))
+                if not clock:
+                    raise ValueError('School public calendar clock missing')
+                date = month.get_text(strip=True).replace('/', '-') + '-' + day.get_text(strip=True).zfill(2)
+                add(path_from(parent, 'xjhxx'), title.get_text(strip=True), date, clock[1],
+                    paragraphs[0].get_text(' ', strip=True), index == 1)
+    else:
+        for row in soup.select('.inviteSxhList'):
+            title = row.select_one('.sxhzbf')
+            address = row.select_one('.sxhAddress')
+            parts = address.find_all('div', recursive=False) if address else []
+            clock = re.fullmatch(r'举办日期[：:]\s*(20\d{2}-\d{2}-\d{2}) (\d{2}:\d{2})', parts[0].get_text(strip=True)) if len(parts) == 3 else None
+            if not title or not clock:
+                raise ValueError('School public campus event time missing')
+            add(path_from(row, 'zphxx'), title.get_text(strip=True), clock[1], clock[2], parts[2].get_text(strip=True))
+    if not 1 <= len(items) <= 50 or len({item['url'] for item in items}) != len(items):
+        raise ValueError('School public calendar window missing or repeated')
+    return items, 1
 
 
 def check_jysd_robots(fetch, source, user_agent='*'):

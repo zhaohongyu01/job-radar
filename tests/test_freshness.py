@@ -123,6 +123,17 @@ class FreshnessTests(unittest.TestCase):
         defer_detail(item, now, TimeoutError('network'))
         self.assertTrue(retry_due(item, now + dt.timedelta(hours=3)))
 
+    def test_route_outages_do_not_increment_content_failures_or_cool_valid_urls_for_days(self):
+        now = dt.datetime(2026, 11, 2, 12, tzinfo=c.TZ)
+        item = {'url': 'https://example.test', 'detail_failures': 2}
+        error = c.urllib.error.URLError(OSError(101, 'Network is unreachable'))
+        for _ in range(8):
+            defer_detail(item, now, error)
+        self.assertEqual(item['detail_failures'], 2)
+        self.assertEqual(item['detail_transport_failures'], 8)
+        self.assertFalse(retry_due(item, now + dt.timedelta(hours=3)))
+        self.assertTrue(retry_due(item, now + dt.timedelta(hours=5)))
+
     def test_audit_does_not_confuse_new_snapshot_with_fresh_sources_or_future_dates(self):
         now = dt.datetime(2026, 10, 22, 12, tzinfo=c.TZ)
         event = {'id': 'event', 'date': '2026-10-23', 'city': '济南', 'school': '大学', 'venue': '报告厅'}

@@ -38,6 +38,7 @@ class HduCalendarTests(unittest.TestCase):
         self.assertEqual(pages, 44)
         physical, online = [c.calendar_record(item, SOURCE) for item in items]
         self.assertEqual(physical['talk_event']['city'], '杭州')
+        self.assertEqual(physical['talk_event']['event_type'], 'talk')
         self.assertEqual(physical['talk_event']['start_time'], '14:00')
         self.assertEqual(physical['talk_event']['end_time'], '16:30')
         self.assertIsNone(physical['published_at'])

@@ -227,6 +227,22 @@
       "city": "杭州",
       "evidence_url": "https://hum.hdu.edu.cn/2026/0325/c12203a290617/page.htm",
       "verified_on": "2026-11-02"
+    },
+    {
+      "id": "upc-qingdao-campuses",
+      "school": "中国石油大学（华东）",
+      "venue_pattern": "唐岛湾校区|古镇口校区",
+      "city": "青岛",
+      "evidence_url": "https://xcb.upc.edu.cn/2026/0104/c19875a481679/page.htm",
+      "verified_on": "2026-11-02"
+    },
+    {
+      "id": "sjtu-minhang",
+      "school": "上海交通大学",
+      "venue_pattern": "闵行校区",
+      "city": "上海",
+      "evidence_url": "https://gk.sjtu.edu.cn/Data/List/bxdd",
+      "verified_on": "2026-11-02"
     }
   ]
 }

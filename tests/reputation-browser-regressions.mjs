@@ -57,6 +57,7 @@ const alternateRaw = JSON.stringify(alternateEntity), alternateFile = `entity-ma
 files.set(alternateFile, alternateRaw);
 const { records: alternateRecords, ...alternateMeta } = alternateEntity;
 const multiSource = { ...index, schema_version: 2, entities: [...metadata, { ...alternateMeta, ...summarizeReputationEntity(alternateEntity, now, alternateRecords), file: alternateFile }] };
+const haierReferenceJob = fixtureJob({ id: 'ddddddddddddddddddd4', title: '公开参考回归岗位', company: '海尔集团', source_id: 'haier-campus' });
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 const results = [], panel = page => page.locator('.employer-sheet:visible');
 const complete = page => page.locator('.result-count-num').waitFor({ timeout: 60000 });
@@ -102,6 +103,19 @@ async function run(name, options, check) {
   } finally { await state?.context.close(); }
 }
 try {
+  for (const width of [390, 1440]) await run(`curated public interview remains separate from scores and never crawls its source at ${width}px`,
+    { width, jobs: [haierReferenceJob], index: { ...index, entities: [] } }, async ({ page, requests }) => {
+      await open(page, haierReferenceJob);
+      const reference = panel(page).getByRole('region', { name: '人工核对的公开面经参考' });
+      await reference.waitFor();
+      assert.match(await reference.innerText(), /2024-12-17/);
+      assert.match(await reference.innerText(), /不计员工评分/);
+      assert.match(await reference.innerText(), /集团资料不代表具体子公司或部门/);
+      assert.ok((await reference.locator('a').getAttribute('href')).startsWith('https://maimai.cn/article/detail?'));
+      assert.ok(!requests.some(url => url.startsWith('https://maimai.cn/')));
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      if (output) await page.screenshot({ path: `${output}/curated-reference-${width}.png` });
+    });
   await run('uncertain company attribution never scores and automatically opens available interviews', { index: uncertainIndex }, async ({ page }) => {
     await open(page); await loaded(page);
     assert.match(await panel(page).locator('.reputation-evidence').innerText(), /隔离面经/);

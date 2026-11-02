@@ -27,7 +27,7 @@ from bs4 import BeautifulSoup
 from collector_runtime import bounded_read, bounded_request, pace, remaining, retry_request
 from city_registry import (CITIES, PROVINCE_CITIES, CODE_CITY, cities_in_text,
                            work_cities, resolve_event_city, resolve_event_school, collection_cities)
-from external_calendars import nankai_calendar, nankai_event, pku_calendar, js91_calendar, tongji_calendar, jysd_calendar, check_jysd_robots, public_calendar_source
+from external_calendars import nankai_calendar, nankai_event, pku_calendar, js91_calendar, tongji_calendar, jysd_calendar, check_jysd_robots, public_calendar_source, public_home_calendar, check_home_calendar_robots
 from opportunity_facts import employment_type, availability_evidence
 from employer_identity import employer_identity
 
@@ -151,6 +151,12 @@ SOURCES.append({'id': 'tongji-talks', 'name': '同济大学 · 宣讲日历',
 SOURCES.append({'id': 'hdu-talks', 'name': '杭州电子科技大学 · 宣讲日历',
     'url': 'https://job.hdu.edu.cn/teachin', 'school_name': '杭州电子科技大学',
     'adapter': 'jysd_talks', 'channel': 'talks'})
+for identifier, school, url in [
+    ('upc-talks-public', '中国石油大学（华东）', 'https://career.upc.edu.cn/career/index'),
+    ('sjtu-campus-events', '上海交通大学', 'https://www.job.sjtu.edu.cn/career/index'),
+]:
+    SOURCES.append({'id': identifier, 'name': school + ' · 校园活动（公开首页窗口）',
+        'url': url, 'school_name': school, 'adapter': 'public_home_calendar', 'channel': 'talks'})
 SOURCES.append({'id': 'sdnu-graduate-talks', 'name': '山东师范大学研究生就业网 · 宣讲通知',
     'url': 'http://www.yjsjy.sdnu.edu.cn/xyzp.htm', 'adapter': 'sdnu_graduate', 'channel': 'talks'})
 for code, host, school_name in [('sdjzu', 'sdjzu', '山东建筑大学'), ('sdjt', 'sdjt', '山东交通学院'),
@@ -290,7 +296,7 @@ for _source in SOURCES:
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 SOURCE_PACKS = {
     'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'hdu-talks', 'upc'],
+    'universities-a': ['nankai', 'nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'hdu-talks', 'upc-talks-public', 'sjtu-campus-events', 'upc'],
     'universities-b': _sdei_source_ids,
     'finance': [s['id'] for s in SOURCES if s.get('adapter') == 'official_bank' or s.get('pack') == 'finance'],
     'large-enterprises': [s['id'] for s in SOURCES if s.get('pack') == 'large-enterprises'],
@@ -2296,7 +2302,8 @@ def extract_talk_event(job):
                            'test' if re.search(r'笔试|测评|考试', job.get('title', '')) else
                            'job_fair' if re.search(r'双选会|招聘会', job.get('title', '')) else
                            'talk' if re.search(r'宣讲', job.get('title', '')) else
-                           'guidance' if re.search(r'指导|辅导', job.get('title', '')) else 'unknown'),
+                           'guidance' if re.search(r'指导|辅导', job.get('title', '')) else
+                           'talk' if job.get('kind') == '宣讲会' else 'unknown'),
             'mode': 'online' if re.search(r'线上|直播|空中宣讲|腾讯会议', venue) else 'offline' if venue else 'unknown'}
 
 
@@ -2734,6 +2741,8 @@ def run(args):
             api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks','js91_talks','tongji_talks'}
             if source.get('adapter') == 'jysd_talks':
                 calendar_robots = check_jysd_robots(fetch, source, DEFAULT_USER_AGENT)
+            if source.get('adapter') == 'public_home_calendar':
+                check_home_calendar_robots(fetch, source, DEFAULT_USER_AGENT)
             first=fetch(source['url']) if source.get('adapter') not in api_adapters else ''
             if not source.get('adapter') and source['id'] not in {'nankai','sdu'}: query,endpoint=gov_query(first)
             known=set()
@@ -2847,6 +2856,8 @@ def run(args):
                         if calendar_robots and not calendar_robots.can_fetch(DEFAULT_USER_AGENT, page_url):
                             raise PermissionError('Calendar robots denies collection')
                         found, total = jysd_calendar(first if page == 1 else fetch(page_url), source)
+                    elif source.get('adapter')=='public_home_calendar':
+                        found, total = public_home_calendar(first, source)
                     elif source.get('adapter')=='bysjy_talks':
                         query = urllib.parse.urlencode({'start': (page-1)*20, 'count': 21,
                             'k': '', 'address': '', 'professionals': '', 'career_type': '',
@@ -2930,6 +2941,10 @@ def run(args):
                             items.append(dict(item, detail_queued_at=next((old.get('detail_queued_at') for old in queues.get(source['id'], []) if old.get('url') == item['url']), None) or now))
                 if source.get('adapter') == 'sdnu_graduate':
                     status['coverage'] = '已读取研究生校园招聘最新列表页；旧通知未追溯'
+                    break
+                if source.get('adapter') == 'public_home_calendar':
+                    list_complete = False
+                    status['coverage'] = '已读学校首页公开活动窗口；不是完整日历，窗口外安排尚未取得'
                     break
                 if head_only:
                     checkpoint_status = dict(status)
@@ -3075,7 +3090,7 @@ def run(args):
                 old_item = old_pending.get(item['url'], {})
                 if (old_item.get('title') == item.get('title') and old_item.get('published_at') == item.get('published_at')
                         and listing_signature(old_item) == listing_signature(item)):
-                    for field in ('detail_retry_after', 'detail_failures'):
+                    for field in ('detail_retry_after', 'detail_failures', 'detail_transport_failures'):
                         if field in old_item:
                             item[field] = old_item[field]
             for queued in queues.get(source['id'], []):
@@ -3336,7 +3351,8 @@ def run(args):
             # Keep at most two futures in flight.  Submitting all 99 detail
             # tasks at once would make a later circuit breaker ineffective:
             # queued futures would still wait for their network timeouts.
-            pool=ThreadPoolExecutor(max_workers=2)
+            detail_workers = 1 if source['id'] == 'nankai' else 2
+            pool=ThreadPoolExecutor(max_workers=detail_workers)
             pending={}
             next_index=0
             consecutive_failures=0
@@ -3344,7 +3360,7 @@ def run(args):
 
             def fill_pending():
                 nonlocal next_index
-                while len(pending) < 2 and next_index < len(remaining):
+                while len(pending) < detail_workers and next_index < len(remaining):
                     item=remaining[next_index]
                     next_index += 1
                     pending[pool.submit(read_detail,item)] = item

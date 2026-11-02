@@ -5,6 +5,7 @@ from collections import deque
 import hashlib
 import json
 import re
+import urllib.error
 
 
 def listing_signature(item):
@@ -40,6 +41,16 @@ def retry_due(item, now):
 
 
 def defer_detail(item, now, error=None):
+    transport = isinstance(error, (TimeoutError, ConnectionError)) or (
+        isinstance(error, urllib.error.URLError) and not isinstance(error, urllib.error.HTTPError))
+    if transport:
+        # A temporary route outage is not evidence of a broken detail URL.
+        # Keep a separate bounded backoff so it cannot exile a valid item for
+        # 32–72 hours after several unsuccessful collection runs.
+        attempts = min(12, int(item.get('detail_transport_failures') or 0) + 1)
+        item['detail_transport_failures'] = attempts
+        item['detail_retry_after'] = (now + dt.timedelta(hours=min(4, 2 ** min(attempts - 1, 2)))).isoformat(timespec='seconds')
+        return
     attempts = min(12, int(item.get('detail_failures') or 0) + 1)
     item['detail_failures'] = attempts
     # A broken historical URL must not consume every later run's detail budget.

@@ -101,6 +101,8 @@ def pace(url):
     # Choose jitter once per request, not once per contention retry.
     if host == 'school.gxjy.sdei.edu.cn':
         interval = random.uniform(3.0, 4.5)
+    elif host == 'career.nankai.edu.cn':
+        interval = random.uniform(1.0, 1.5)
     elif host.endswith('.gov.cn'):
         interval = random.uniform(1.8, 2.8)
     else:

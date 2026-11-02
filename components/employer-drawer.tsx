@@ -11,7 +11,7 @@ import { locationSummary, defaultFilters, isExpired } from '@/lib/jobs';
 import { formatUrlQuery } from '@/lib/browsing';
 import { employerEvents } from '@/lib/employer-catalog';
 import { REPUTATION_PROVIDERS } from '@/lib/reputation';
-import { ReputationPanel } from '@/components/reputation-panel';
+import { ReputationPanel, PublicEmployerReferences } from '@/components/reputation-panel';
 
 type Edits = Partial<Record<'rating' | 'notes', { value: string; base: string }>>;
 const labels = { rating: '意向评分', notes: '个人备注' };
@@ -111,6 +111,7 @@ export default function EmployerDrawer({ profile, job, jobs, now, complete, onDe
         </section>
         <section className="employer-section" aria-label="外部口碑">
           <ReputationPanel profile={profile} />
+          <PublicEmployerReferences profile={profile} />
           <details className="employer-provider-status"><summary>各平台接入情况</summary>
             {Object.entries(REPUTATION_PROVIDERS).map(([id, source]) => <p key={id} className="small muted"><strong>{source.label}：</strong>{source.description}（核对 {source.checked_at}）</p>)}
           </details>

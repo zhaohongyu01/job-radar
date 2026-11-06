@@ -8,7 +8,7 @@ import { EmployerEntry } from '@/components/employer-workspace';
 
 export function JobTable({ jobs, city, personal, ready, now, onDetail, onRead, onReadChange, onToggle }: {
   jobs: Job[];
-  city: string;
+  city: string | string[];
   personal: Personal;
   ready: boolean;
   now: number;

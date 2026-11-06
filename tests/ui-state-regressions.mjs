@@ -246,6 +246,9 @@ try {
     await input.fill('甲'); await page.getByRole('alert').filter({ hasText: '数据分片读取失败' }).waitFor();
     assert.equal(searchCalls(), 1);
     await input.fill('乙'); await page.locator('.opp-card').filter({ hasText: jobB.title }).waitFor();
+    // Listing-field matches show while the index loads; wait for the debounced retry itself.
+    { const until = Date.now() + 10000; while (searchCalls() < 2 && Date.now() < until) await page.waitForTimeout(25); }
+    await page.locator('.result-count-num').waitFor();
     assert.equal(searchCalls(), 2); assert.equal(listCalls(), 1);
     await input.fill('甲'); await page.locator('.opp-card').filter({ hasText: jobA.title }).waitFor();
     assert.equal(searchCalls(), 2); assert.equal(await page.getByRole('button', { name: '重试全文搜索' }).count(), 0);

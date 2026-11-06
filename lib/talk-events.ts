@@ -1,8 +1,17 @@
 import type { Job, TalkEvent } from '@/lib/jobs';
 
-export function talkEventsForCity(job: Job, city: string, now = Date.now()): TalkEvent[] {
+/** A single city, '全部城市', or the selected work-city list (empty = all). */
+export type TalkCityScope = string | readonly string[];
+
+export function talkCities(scope: TalkCityScope): string[] {
+  if (Array.isArray(scope)) return [...scope];
+  return scope === '全部城市' ? [] : [scope as string];
+}
+
+export function talkEventsForCity(job: Job, city: TalkCityScope, now = Date.now()): TalkEvent[] {
   const events = job.talk_events ?? (job.talk_event ? [job.talk_event] : []);
-  const matching = city === '全部城市' ? events : events.filter((event) => event.city === city);
+  const cities = talkCities(city);
+  const matching = cities.length ? events.filter((event) => cities.includes(event.city || '')) : events;
   return matching.slice().sort((a, b) => {
     const aEnd = Date.parse(`${a.date}T${a.end_time || '23:59'}:00+08:00`);
     const bEnd = Date.parse(`${b.date}T${b.end_time || '23:59'}:00+08:00`);

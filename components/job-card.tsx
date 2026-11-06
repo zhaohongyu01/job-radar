@@ -18,6 +18,7 @@ import {
   sdeiPositionListUrl,
   getDeadlineCountdown,
   getLifecycleStage,
+  cardChangeAlert,
   isExpired,
   publicationText,
   isUnread,
@@ -141,16 +142,7 @@ export function JobCard({
   const summaryId = useId();
   const summaryLabel = { company: '单位介绍', responsibilities: '岗位职责', notice: '招聘说明' }[summary.kind];
   const stageInfo = getLifecycleStage(job, now);
-  const changeAlert =
-    (job.recent_change?.detail &&
-    job.recent_change.detail !== '招聘公告正文或附件内容已同步最新变动'
-      ? job.recent_change.detail
-      : null) ||
-    (stageInfo.stage === 'extended'
-      ? '报名截止时间已延期（详见原公告）'
-      : null) ||
-    (stageInfo.stage === 'supplemental' ? '补录 / 追加招聘批次进行中' : null) ||
-    (stageInfo.stage === 'selection' ? '发布考核选拔或录用进展通知' : null);
+  const changeAlert = cardChangeAlert(job, now);
   const { displayCompany, monogram } = formatCompanyDisplay(job.company, cleanTitle, job.source_id);
   const isNew = !!since && Date.parse(job.first_seen_at) > Date.parse(since);
   const showStage = !['accepting', 'expired', 'expiring_soon'].includes(stageInfo.stage);
@@ -162,8 +154,7 @@ export function JobCard({
     showValidityChip ||
     (job.employment_type && job.employment_type !== 'unknown') ||
     showStage ||
-    isNew ||
-    applied
+    isNew
   );
   const deadlineState = expired
     ? 'is-closed'
@@ -236,7 +227,7 @@ export function JobCard({
           <p className="opp-company">
             {unread && <span className="opp-unread-dot" title="未读" />}
             <span className="opp-company-name"><EmployerEntry job={job} name={displayCompany} /></span>
-            {job.sectors[0] && <span className="opp-sector">{job.sectors[0] === '综合' ? '单位性质未明确' : job.sectors[0]}</span>}
+            {job.sectors[0] && job.sectors[0] !== '综合' && <span className="opp-sector">{job.sectors[0]}</span>}
             {job.kind === '具体岗位' && <span className="opp-tag-sm">具体岗位</span>}
             {(filters.view === 'pipeline' || filters.view === 'planned') && <span className="opp-tag-sm">我的进度：{APPLICATION_STAGES[personalRecord.application_stage || (applied ? 'applied' : 'planned')]}</span>}
             {job.provenance === '第三方线索' && <span className="opp-sector">第三方线索</span>}
@@ -331,12 +322,6 @@ export function JobCard({
               <span className={`chip ${stageInfo.badgeClass}`}>{stageInfo.badge}</span>
             )}
             {isNew && <span className="chip chip-brand">新收录</span>}
-            {applied && (
-              <span className="chip chip-brand">
-                <Check />
-                已投递
-              </span>
-            )}
           </div>
         )}
 
@@ -389,11 +374,11 @@ export function JobCard({
         )}
 
         {changeAlert && (
-          <p className="opp-alert">
+          <p className={`opp-alert${changeAlert.tone === 'warning' ? ' is-warning' : ''}`}>
             <AlertCircle size={14} />
             <span>
               <strong>变更提醒：</strong>
-              {changeAlert}
+              {changeAlert.text}
             </span>
           </p>
         )}
@@ -416,7 +401,7 @@ export function JobCard({
         )}
         <TalkEvents
           job={job}
-          city={filters.city}
+          city={workCities}
           now={now}
           limit={2}
           onOpen={() => onRead(job)}
@@ -449,9 +434,7 @@ export function JobCard({
               {job.provenance === '第三方线索' ? '第三方线索 · 待核验' : '公开原始来源'}
             </span>
             <span>
-              {job.source_name}
-              {!!duplicateSourceNames(job).length &&
-                ` · ${duplicateSourceNames(job).length + 1} 渠道收录`}{' '}
+              {job.source_name}{' '}
               · {job.date_label || '发布'} {publicationText(job, now)}
             </span>
             <button

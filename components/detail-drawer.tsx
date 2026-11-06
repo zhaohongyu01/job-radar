@@ -10,8 +10,9 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary, formatCompanyDisplay } from '@/lib/jobs';
-import type { Job, Personal } from '@/lib/jobs';
+import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary, formatCompanyDisplay, selectedWorkCities } from '@/lib/jobs';
+import type { Filters, Job, Personal } from '@/lib/jobs';
+import { positionMatches } from '@/lib/eligibility';
 import type { PersonalRecord } from '@/lib/jobs';
 import { ApplicationTracker } from '@/components/application-tracker';
 import { formatDate, OutLink } from '@/components/job-card';
@@ -33,9 +34,11 @@ export function DetailDrawer({
   onCopy,
   setNotice,
   onPersonalSave,
+  filters,
 }: {
+  filters?: Filters;
   selected: Job | null;
-  city: string;
+  city: string | string[];
   now: number;
   personal: Personal;
   ready: boolean;
@@ -65,6 +68,17 @@ export function DetailDrawer({
         (p.majors ?? []).some((m) => m.toLowerCase().includes(kw)),
     );
   }, [selected?.positions, positionFilter]);
+
+  // Highlight rows that satisfy the list's education/major/city/cohort filters,
+  // only when that actually narrows the table.
+  const matchingPositions = useMemo(() => {
+    const list = selected?.positions ?? [];
+    if (!filters || !list.length) return new Set<typeof list[number]>();
+    const criteria = { cities: selectedWorkCities(filters), education: filters.education, major: filters.major || '',
+      year: filters.type === '校招' ? filters.year : '全部', includeUnknown: filters.includeUncertain };
+    const matched = list.filter((position) => positionMatches(position, criteria));
+    return new Set(matched.length < list.length ? matched : []);
+  }, [selected?.positions, filters]);
 
   const timelineEvents = useMemo(
     () => (selected ? generateJobTimeline(selected) : []),
@@ -139,13 +153,16 @@ export function DetailDrawer({
               )}
               <TalkEvents job={selected} city={city} now={now} onOpen={() => onRead(selected)} />
               <div className="detail-actions">
-                <Button
-                  variant="outline"
-                  disabled={!ready || detailLoading}
-                  onClick={() => onReadChange(selected, isUnread(selected, personal))}
-                >
-                  {isUnread(selected, personal) ? '标为已读' : '标为未读'}
-                </Button>
+                {/* Opening the drawer already marks it read; offer only the reverse. */}
+                {!isUnread(selected, personal) && (
+                  <Button
+                    variant="outline"
+                    disabled={!ready || detailLoading}
+                    onClick={() => onReadChange(selected, false)}
+                  >
+                    标为未读
+                  </Button>
+                )}
                 <Button
                   variant={personalFor(selected, personal).saved ? 'default' : 'outline'}
                   disabled={!ready}
@@ -217,156 +234,6 @@ export function DetailDrawer({
                   </p>
                 )}
               </div>
-              {!!selected.duplicate_sources?.length && (
-                <div className="channels-panel">
-                  <div className="channels-panel-header">
-                    <h3>整合全网发布渠道 ({selected.duplicate_sources.length + 1})</h3>
-                    <span className="channels-panel-badge">智能合并去重</span>
-                  </div>
-                  <p className="channels-panel-desc">
-                    系统已自动合并该单位在多所高校/官方平台发布的同一招聘信息，方便多源核对与投递：
-                  </p>
-                  <div className="channels-list">
-                    <div className="channel-card primary">
-                      <div className="channel-card-top">
-                        <span className="channel-tag primary">主来源</span>
-                        <span className="channel-name">{selected.source_name || selected.source || selected.source_id}</span>
-                        {selected.published_at && (
-                          <span className="channel-date">{selected.published_at}</span>
-                        )}
-                      </div>
-                      <div className="channel-card-title">{displayJobTitle(selected)}</div>
-                      <div className="channel-card-actions">
-                        <OutLink url={selected.source_url} onOpen={() => onRead(selected)}>
-                          查看该渠道原公告
-                        </OutLink>
-                        {selected.application_url && selected.application_url !== selected.source_url && (
-                          <OutLink primary url={selected.application_url} onOpen={() => onRead(selected)}>
-                            直达投递入口
-                          </OutLink>
-                        )}
-                      </div>
-                    </div>
-                    {selected.duplicate_sources.map((dup, idx) => (
-                      <div className="channel-card" key={`${dup.url}-${idx}`}>
-                        <div className="channel-card-top">
-                          <span className="channel-tag">同步渠道</span>
-                          <span className="channel-name">{dup.source_name || dup.source || dup.title}</span>
-                          {dup.published_at && (
-                            <span className="channel-date">{dup.published_at}</span>
-                          )}
-                        </div>
-                        <div className="channel-card-title">{dup.title || dup.source_name || dup.source}</div>
-                        <div className="channel-card-actions">
-                          <OutLink url={dup.url} onOpen={() => onRead(selected)}>
-                            查看该渠道原公告
-                          </OutLink>
-                          {dup.application_url && dup.application_url !== dup.url && (
-                            <OutLink primary url={dup.application_url} onOpen={() => onRead(selected)}>
-                              直达投递入口
-                            </OutLink>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {timelineEvents.length > 0 && (
-                <div className="drawer-timeline-section">
-                  <div className="drawer-timeline-header">
-                    <div className="timeline-header-title">
-                      <Clock size={16} className="timeline-clock-icon" />
-                      <h3>招聘全流程与变更时间线</h3>
-                    </div>
-                    {currentStage && (
-                      <span className={`tag ${currentStage.badgeClass}`}>
-                        {currentStage.badge}
-                      </span>
-                    )}
-                  </div>
-                  <div className="timeline-track">
-                    {timelineEvents.map((evt, idx) => {
-                      const isLast = idx === timelineEvents.length - 1;
-                      const isCurrent = evt.date === '当前状态';
-                      return (
-                        <div
-                          key={`${evt.date}-${evt.type}-${idx}`}
-                          className={`timeline-item ${isCurrent ? 'current' : ''}`}
-                        >
-                          <div className="timeline-marker">
-                            <span className={`timeline-dot dot-${evt.type}`} />
-                            {!isLast && <span className="timeline-line" />}
-                          </div>
-                          <div className="timeline-content">
-                            <div className="timeline-top">
-                              <span className="timeline-title">{evt.title}</span>
-                              <span className="timeline-date">{evt.date}</span>
-                            </div>
-                            <p className="timeline-detail">{evt.detail}</p>
-                            {evt.source && (
-                              <span className="timeline-source">来源渠道：{evt.source}</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              <h3>地点与资格</h3>
-              <p>
-                {selected.location_evidence.length
-                  ? selected.location_evidence.join('；')
-                  : '未提取到明确工作地点，请以岗位表为准。'}
-              </p>
-              <p className="inline-note">
-                自动整理标签可能不完整；应届资格、专业和工作经验要求请核对原文。
-              </p>
-              {((selected.attachments ?? []).length > 0 ||
-                selected.qr_attachment) && (
-                <>
-                  <h3>附件与文档</h3>
-                  {(selected.attachments ?? []).map((a, i) => (
-                    <div className="attachment" key={i}>
-                      <OutLink url={a.url}>{a.title}</OutLink>
-                      {a.parse_status === 'deferred' && (
-                        <span className="text-muted">岗位表尚未解析完整，请查看原附件</span>
-                      )}
-                      {(() => {
-                        const positions = selected.positions ?? [];
-                        const hasBoundPositionSources = positions.some((p) => Boolean(p.source_url));
-                        const isParsed = hasBoundPositionSources
-                          ? positions.some((p) => Boolean(p.source_url && a.url && p.source_url === a.url))
-                          : positions.some(
-                              (p) =>
-                                Boolean(
-                                  p.source_file &&
-                                    (a.title.includes(p.source_file) ||
-                                      p.source_file.includes(a.title) ||
-                                      (a.url && a.url.includes(p.source_file))),
-                                ),
-                            );
-                        if (isParsed) {
-                          return (
-                            <span className="attachment-parsed-badge">
-                              <FileSpreadsheet size={11} />
-                              已解析岗位表
-                            </span>
-                          );
-                        }
-                        return null;
-                      })()}
-                    </div>
-                  ))}
-                  {selected.qr_attachment && (
-                    <p className="inline-note">
-                      公告含二维码或扫码说明，未自动解析其中内容，请打开原公告查看。
-                    </p>
-                  )}
-                </>
-              )}
-
               {/* Parsed Positions Panel */}
               {(selected.positions ?? []).length > 0 && (
                 <div className="positions-panel" aria-label="岗位需求明细">
@@ -377,6 +244,9 @@ export function DetailDrawer({
                       <span className="positions-count-badge">
                         共 {selected.positions?.length} 个岗位
                       </span>
+                      {matchingPositions.size > 0 && (
+                        <span className="positions-match-note">高亮 {matchingPositions.size} 个符合当前筛选</span>
+                      )}
                     </div>
                     {(selected.positions ?? []).length > 3 && (
                       <div className="positions-filter-box">
@@ -407,7 +277,7 @@ export function DetailDrawer({
                       </thead>
                       <tbody>
                         {displayedPositions.map((pos, idx) => (
-                          <tr key={idx}>
+                          <tr key={idx} className={matchingPositions.has(pos) ? 'is-match' : undefined}>
                             <td className="pos-col-idx">{idx + 1}</td>
                             <td className="pos-col-name">
                               <span className="pos-name">{pos.name}</span>
@@ -461,10 +331,63 @@ export function DetailDrawer({
               )}
 
               <ApplicationTracker key={selected.id} job={selected} record={personalFor(selected, personal)} onSave={onPersonalSave} />
+              <h3>地点与资格</h3>
+              <p>
+                {selected.location_evidence.length
+                  ? selected.location_evidence.join('；')
+                  : '未提取到明确工作地点，请以岗位表为准。'}
+              </p>
+              <p className="inline-note">
+                自动整理标签可能不完整；应届资格、专业和工作经验要求请核对原文。
+              </p>
               <h3>公告文字</h3>
               <div className="announcement-text">
                 {selected.body || '完整公告尚未读取，请打开原公告核对。'}
               </div>
+
+              {((selected.attachments ?? []).length > 0 ||
+                selected.qr_attachment) && (
+                <>
+                  <h3>附件与文档</h3>
+                  {(selected.attachments ?? []).map((a, i) => (
+                    <div className="attachment" key={i}>
+                      <OutLink url={a.url}>{a.title}</OutLink>
+                      {a.parse_status === 'deferred' && (
+                        <span className="text-muted">岗位表尚未解析完整，请查看原附件</span>
+                      )}
+                      {(() => {
+                        const positions = selected.positions ?? [];
+                        const hasBoundPositionSources = positions.some((p) => Boolean(p.source_url));
+                        const isParsed = hasBoundPositionSources
+                          ? positions.some((p) => Boolean(p.source_url && a.url && p.source_url === a.url))
+                          : positions.some(
+                              (p) =>
+                                Boolean(
+                                  p.source_file &&
+                                    (a.title.includes(p.source_file) ||
+                                      p.source_file.includes(a.title) ||
+                                      (a.url && a.url.includes(p.source_file))),
+                                ),
+                            );
+                        if (isParsed) {
+                          return (
+                            <span className="attachment-parsed-badge">
+                              <FileSpreadsheet size={11} />
+                              已解析岗位表
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  ))}
+                  {selected.qr_attachment && (
+                    <p className="inline-note">
+                      公告含二维码或扫码说明，未自动解析其中内容，请打开原公告查看。
+                    </p>
+                  )}
+                </>
+              )}
 
               {(selected.links ?? []).length > 0 && (
                 <>
@@ -475,6 +398,113 @@ export function DetailDrawer({
                     </div>
                   ))}
                 </>
+              )}
+              {!!selected.duplicate_sources?.length && (
+                <details className="drawer-fold drawer-fold-channels">
+                  <summary>整合发布渠道（{(selected.duplicate_sources?.length ?? 0) + 1}）</summary>
+                  {!!selected.duplicate_sources?.length && (
+                    <div className="channels-panel">
+                      <div className="channels-panel-header">
+                        <h3>整合全网发布渠道 ({selected.duplicate_sources.length + 1})</h3>
+                        <span className="channels-panel-badge">智能合并去重</span>
+                      </div>
+                      <p className="channels-panel-desc">
+                        系统已自动合并该单位在多所高校/官方平台发布的同一招聘信息，方便多源核对与投递：
+                      </p>
+                      <div className="channels-list">
+                        <div className="channel-card primary">
+                          <div className="channel-card-top">
+                            <span className="channel-tag primary">主来源</span>
+                            <span className="channel-name">{selected.source_name || selected.source || selected.source_id}</span>
+                            {selected.published_at && (
+                              <span className="channel-date">{selected.published_at}</span>
+                            )}
+                          </div>
+                          <div className="channel-card-title">{displayJobTitle(selected)}</div>
+                          <div className="channel-card-actions">
+                            <OutLink url={selected.source_url} onOpen={() => onRead(selected)}>
+                              查看该渠道原公告
+                            </OutLink>
+                            {selected.application_url && selected.application_url !== selected.source_url && (
+                              <OutLink primary url={selected.application_url} onOpen={() => onRead(selected)}>
+                                直达投递入口
+                              </OutLink>
+                            )}
+                          </div>
+                        </div>
+                        {selected.duplicate_sources.map((dup, idx) => (
+                          <div className="channel-card" key={`${dup.url}-${idx}`}>
+                            <div className="channel-card-top">
+                              <span className="channel-tag">同步渠道</span>
+                              <span className="channel-name">{dup.source_name || dup.source || dup.title}</span>
+                              {dup.published_at && (
+                                <span className="channel-date">{dup.published_at}</span>
+                              )}
+                            </div>
+                            <div className="channel-card-title">{dup.title || dup.source_name || dup.source}</div>
+                            <div className="channel-card-actions">
+                              <OutLink url={dup.url} onOpen={() => onRead(selected)}>
+                                查看该渠道原公告
+                              </OutLink>
+                              {dup.application_url && dup.application_url !== dup.url && (
+                                <OutLink primary url={dup.application_url} onOpen={() => onRead(selected)}>
+                                  直达投递入口
+                                </OutLink>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </details>
+              )}
+              {timelineEvents.length > 0 && (
+                <details className="drawer-fold drawer-fold-timeline">
+                  <summary>招聘全流程与变更时间线</summary>
+                  {timelineEvents.length > 0 && (
+                    <div className="drawer-timeline-section">
+                      <div className="drawer-timeline-header">
+                        <div className="timeline-header-title">
+                          <Clock size={16} className="timeline-clock-icon" />
+                          <h3>招聘全流程与变更时间线</h3>
+                        </div>
+                        {currentStage && (
+                          <span className={`tag ${currentStage.badgeClass}`}>
+                            {currentStage.badge}
+                          </span>
+                        )}
+                      </div>
+                      <div className="timeline-track">
+                        {timelineEvents.map((evt, idx) => {
+                          const isLast = idx === timelineEvents.length - 1;
+                          const isCurrent = evt.date === '当前状态';
+                          return (
+                            <div
+                              key={`${evt.date}-${evt.type}-${idx}`}
+                              className={`timeline-item ${isCurrent ? 'current' : ''}`}
+                            >
+                              <div className="timeline-marker">
+                                <span className={`timeline-dot dot-${evt.type}`} />
+                                {!isLast && <span className="timeline-line" />}
+                              </div>
+                              <div className="timeline-content">
+                                <div className="timeline-top">
+                                  <span className="timeline-title">{evt.title}</span>
+                                  <span className="timeline-date">{evt.date}</span>
+                                </div>
+                                <p className="timeline-detail">{evt.detail}</p>
+                                {evt.source && (
+                                  <span className="timeline-source">来源渠道：{evt.source}</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </details>
               )}
               <p className="source-note">
                 首次收录 {formatDate(selected.first_seen_at, true)} · 内容版本{' '}

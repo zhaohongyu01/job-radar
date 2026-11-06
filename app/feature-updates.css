@@ -798,3 +798,135 @@
   .employer-content { padding-inline: 12px; }
   .employer-section { padding: 12px; }
 }
+
+/* 2026-11-06 usability fixes */
+.opp-alert.is-warning {
+  background: #fbeceb;
+  color: #9b2c22;
+}
+
+.employer-entry > span:first-child {
+  text-decoration: underline dotted color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+/* Company groups: newest record visible, the rest on demand */
+.opp-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+}
+
+.opp-group-more > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  color: var(--brand, #1f5140);
+  font-size: 12.5px;
+  font-weight: 550;
+  list-style: none;
+  cursor: pointer;
+}
+
+.opp-group-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.opp-group-more > summary svg {
+  transition: transform var(--dur, 160ms) var(--ease, ease);
+}
+
+.opp-group-more[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.opp-group-more:not([open]) .when-open,
+.opp-group-more[open] .when-closed {
+  display: none;
+}
+
+.pager-jump {
+  min-width: 88px;
+}
+
+/* Mobile filter sheet: always show the effect of the current conditions */
+.mobile-filter-footer {
+  position: sticky;
+  bottom: 0;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line, #e7e2d7);
+  background: var(--surface, #fffefa);
+}
+
+.mobile-filter-footer .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Phones: let the first opportunity appear sooner */
+@media (max-width: 900px) {
+  .page-lede,
+  .search-hints,
+  .collection-health {
+    display: none;
+  }
+}
+
+/* Detail drawer: history panels folded below the announcement */
+.drawer-fold {
+  margin-top: 14px;
+  border: 1px solid var(--line, #e7e2d7);
+  border-radius: 10px;
+  background: var(--surface, #fffefa);
+}
+
+.drawer-fold > summary {
+  padding: 10px 14px;
+  color: var(--ink-2, #3a3a33);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.drawer-fold > :not(summary) {
+  margin: 0 12px 12px;
+}
+
+.positions-table tr.is-match td {
+  background: color-mix(in srgb, var(--brand, #1f5140) 7%, transparent);
+}
+
+.positions-table tr.is-match .pos-name {
+  color: var(--brand, #1f5140);
+  font-weight: 650;
+}
+
+.positions-match-note {
+  color: var(--brand, #1f5140);
+  font-size: 12px;
+}
+
+/* Phone filter sheet: sorting / layout moved here from the result bar */
+.mobile-display-options {
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px 14px;
+  border-bottom: 1px solid var(--line, #e7e2d7);
+}
+
+.mobile-display-options h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .result-tools .sort-trigger,
+  .result-tools > .seg,
+  .result-toggles .toggle-merge {
+    display: none;
+  }
+}

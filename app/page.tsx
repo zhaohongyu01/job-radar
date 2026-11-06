@@ -41,7 +41,7 @@ import {
 import {
   defaultFilters,
   filterJobs,
-  countMatchingJobs,
+  countByLocationScope,
   validatePersonal,
   externalUrl,
   personalFor,
@@ -52,7 +52,9 @@ import {
   workCitiesLabel,
   formatCompanyDisplay,
   resolveJobId,
+  parseSalaryRange,
 } from '@/lib/jobs';
+import { assessOpportunityValidity } from '@/lib/opportunity-validity';
 import type { Job, Snapshot, Personal, Filters, PersonalRecord } from '@/lib/jobs';
 import { restoreBrowsing, parseUrlState, formatUrlQuery } from '@/lib/browsing';
 import type { ViewMode } from '@/lib/browsing';
@@ -133,7 +135,18 @@ function ResultsPagination({
                 <ChevronLeft size={14} /> 上一页
               </button>
             </PaginationItem>
-            <PaginationItem><span className="pager-num">{page} / {pages}</span></PaginationItem>
+            <PaginationItem>
+              {pages <= 500 ? (
+                <Select value={String(page)} onValueChange={(value) => onPageChange(Number(value))}>
+                  <SelectTrigger className="pager-jump" aria-label={`跳转页码，当前第 ${page} 页，共 ${pages} 页`}>
+                    <SelectValue>{page} / {pages}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: pages }, (_, index) => <SelectItem key={index + 1} value={String(index + 1)}>第 {index + 1} 页</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : <span className="pager-num">{page} / {pages}</span>}
+            </PaginationItem>
             <PaginationItem>
               <button className="btn btn-secondary btn-sm" disabled={page === pages} onClick={() => onPageChange(page + 1)}>
                 下一页 <ChevronRight size={14} />
@@ -415,6 +428,7 @@ function HomeContent() {
       selectEmployerId(urlState.employerId || null);
       setLinkedJobId(urlState.jobId || null);
       setFilters(urlState.filters ? restoreBrowsing({ filters: urlState.filters }).filters : restored.filters);
+      if (urlState.page) setPage(urlState.page);
       setViewMode(restored.viewMode);
       setGroupCompanies(restored.groupCompanies);
       try {
@@ -455,13 +469,13 @@ function HomeContent() {
 
   useEffect(() => {
     if (!ready || typeof window === 'undefined') return;
-    const newQuery = formatUrlQuery(filters, linkedJobId, requestedEmployerId);
+    const newQuery = formatUrlQuery(filters, linkedJobId, requestedEmployerId, page);
     const currentSearch = window.location.search;
     if (currentSearch !== newQuery) {
       const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
       window.history.replaceState({ jobId: linkedJobId }, '', newUrl);
     }
-  }, [ready, filters, linkedJobId, requestedEmployerId]);
+  }, [ready, filters, linkedJobId, requestedEmployerId, page]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -473,7 +487,7 @@ function HomeContent() {
       setDetailLoading(false);
       setLinkedJobId(urlState.jobId || null);
       setFilters(urlState.filters ? restoreBrowsing({ filters: urlState.filters }).filters : { ...defaultFilters });
-      setPage(1);
+      setPage(urlState.page || 1);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -507,17 +521,44 @@ function HomeContent() {
     setPage(1);
   };
 
+  // The search box updates instantly; the expensive filtering, URL and
+  // localStorage writes follow 250 ms after typing pauses (Enter commits now).
+  // External changes (presets, reset, history) replace the draft.
+  const [queryDraft, setQueryDraft] = useState(filters.query);
+  const [queryBase, setQueryBase] = useState(filters.query);
+  if (queryBase !== filters.query) {
+    setQueryBase(filters.query);
+    setQueryDraft(filters.query);
+  }
+  const queryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const updateQuery = (value: string, immediate = false) => {
+    setQueryDraft(value);
+    clearTimeout(queryTimer.current);
+    if (immediate) change('query', value);
+    else queryTimer.current = setTimeout(() => change('query', value), 250);
+  };
+  useEffect(() => () => clearTimeout(queryTimer.current), []);
+
+  // Reset conditions but keep the user's chosen work cities and current list.
   const resetFilters = useCallback(() => {
-    setFilters(defaultFilters);
+    setFilters((f) => ({ ...defaultFilters, city: f.city, workCities: f.workCities, view: f.view }));
     setPage(1);
   }, []);
 
   const toggle = (job: Job, key: 'saved' | 'applied' | 'hidden') => {
+    if (key === 'applied') {
+      const current = personalFor(job, personal), stage = current.application_stage;
+      if (current.applied && stage && stage !== 'planned' && stage !== 'applied' &&
+          !window.confirm(`当前投递进度为「${APPLICATION_STAGES[stage]}」。取消“已投递”会把进度改回“待投递”，确定继续？`)) return;
+    }
     void save((latest) => {
       const old = personalFor(job, latest), stamp = new Date().toISOString();
       const patch: PersonalRecord = { [key]: !old[key] };
       if (key === 'applied') {
-        patch.application_stage = patch.applied ? 'applied' : 'planned';
+        const stage = old.application_stage;
+        // Marking as applied never rolls a later stage (test/interview/offer…) back.
+        if (patch.applied) patch.application_stage = stage && stage !== 'planned' ? stage : 'applied';
+        else patch.application_stage = 'planned';
         patch.applied_at = patch.applied ? old.applied_at || stamp : null;
       }
       return patchPersonalRecord(latest, job, patch, stamp);
@@ -592,11 +633,13 @@ function HomeContent() {
   }, [filters.query, searchError]);
 
   const searchPending = needsSearch && !searchIndex;
+  // While the full-text index loads, keep matching on the listing fields (title,
+  // employer, positions…) instead of blanking the list; the count area keeps
+  // saying the result is preliminary until the index is complete.
   const searchableJobs = useMemo(() => {
-    if (searchPending) return [];
-    const base = allJobs;
-    return base.map((j) => (needsSearch ? { ...j, search_text: searchIndex?.[j.id] ?? '' } : j));
-  }, [allJobs, needsSearch, searchIndex, searchPending]);
+    if (!needsSearch || !searchIndex) return allJobs;
+    return allJobs.map((j) => ({ ...j, search_text: searchIndex[j.id] ?? '' }));
+  }, [allJobs, needsSearch, searchIndex]);
 
   const baseFiltered = useMemo(
     () => filterJobs(searchableJobs, filters, personal, since, now),
@@ -604,6 +647,19 @@ function HomeContent() {
   );
   const filtered = useMemo(() => filterByReputation(baseFiltered, filters, reputation.index, employerRecords, now),
     [baseFiltered, filters, reputation.index, employerRecords, now]);
+
+  // Snapshot-wide facts used to hide filters that currently cannot match and
+  // to explain filters that only apply to explicitly stated values.
+  const filterFacts = useMemo(() => {
+    let verified = 0, salaryKnown = 0;
+    for (const job of allJobs) {
+      const status = assessOpportunityValidity(job, now).status;
+      if (status === 'confirmed_open' || status === 'long_term') verified++;
+      if (parseSalaryRange(job)) salaryKnown++;
+    }
+    const scored = !!reputation.index?.entities.some((item) => item.score !== null && Date.parse(item.valid_until) > now);
+    return { verified, salaryKnown, total: allJobs.length, hasReputationScores: scored };
+  }, [allJobs, now, reputation.index]);
 
   const radarScopeJobs = useMemo(
     () =>
@@ -633,7 +689,6 @@ function HomeContent() {
     if (filters.includeUncertain !== defaultFilters.includeUncertain) count++;
     if (filters.showExpired !== defaultFilters.showExpired) count++;
     if (filters.salary !== defaultFilters.salary) count++;
-    if (filters.sort !== defaultFilters.sort) count++;
     if (filters.reputationMin !== defaultFilters.reputationMin) count++;
     if (filters.includeUnrated !== defaultFilters.includeUnrated) count++;
     if (filters.changeType !== defaultFilters.changeType) count++;
@@ -641,8 +696,10 @@ function HomeContent() {
     return count;
   }, [filters]);
 
-  const locationOptions = useMemo(() => selectedWorkCities(filters).length ? (['exact', 'possible', 'unknown'] as const).map(
-    (scope) => ({
+  const locationOptions = useMemo(() => {
+    if (!selectedWorkCities(filters).length) return [];
+    const counts = countByLocationScope(searchableJobs, filters, personal, since, now);
+    return (['exact', 'possible', 'unknown'] as const).map((scope) => ({
       scope,
       label:
         scope === 'exact'
@@ -650,15 +707,9 @@ function HomeContent() {
           : scope === 'possible'
             ? '全省 / 全国待核实'
             : '地点未明确',
-      count: countMatchingJobs(
-        searchableJobs,
-        { ...filters, locationScope: scope },
-        personal,
-        since,
-        now,
-      ),
-    }),
-  ) : [], [searchableJobs, filters, personal, since, now]);
+      count: counts[scope],
+    }));
+  }, [searchableJobs, filters, personal, since, now]);
 
   const groups = useMemo(() => groupJobs(filtered, groupCompanies), [filtered, groupCompanies]);
   const pages = Math.max(1, Math.ceil(groups.length / pageSize));
@@ -899,9 +950,13 @@ function HomeContent() {
             <p className="page-lede">
               {filters.view === 'all'
                 ? '聚合高校就业网、政务直聘与官方公告，追踪网申截止时间与宣讲日程。'
-                : filters.view === 'saved'
-                  ? '已收藏的机会按截止时间排列，便于优先投递即将截止的岗位。'
-                  : '记录已投递的岗位，本地保存，随时跟踪。'}
+                : ({
+                    saved: '已收藏的机会集中在这里，可随时回看或标记投递。',
+                    planned: '已收藏、未投递且未截止的机会，按截止时间排列。',
+                    pipeline: '按投递阶段查看进度与下一步安排，记录仅保存在本机。',
+                    applied: '已标记投递的岗位，本地保存，随时跟踪。',
+                    hidden: '标记为不感兴趣的机会，可在这里恢复。',
+                  } as Record<string, string>)[filters.view] || '记录仅保存在本机。'}
             </p>
           </div>
 
@@ -961,14 +1016,14 @@ function HomeContent() {
           </div>
         )}
 
-        {data && now > 0 && <DataHealth coverage={coverage} data={data} now={now} city={filters.city} visibleJobs={filtered} origin={dataOrigin} onSources={() => setSourceOpen(true)} />}
+        {data && now > 0 && <DataHealth coverage={coverage} data={data} now={now} city={selectedWorkCities(filters)} visibleJobs={filtered} origin={dataOrigin} onSources={() => setSourceOpen(true)} />}
 
         <div className="page-grid">
           <FilterSidebar
             className="filters-desktop"
             filters={filters}
             data={data}
-            years={years}
+            years={years} facts={filterFacts}
             ready={ready}
             onChange={change}
             onReset={resetFilters}
@@ -979,7 +1034,7 @@ function HomeContent() {
           <section className="results-col" id="opportunities" aria-label="招聘机会">
             <details className="plan-mobile">
               <summary>
-                <span>我的安排<small>待投递 · 宣讲日程</small></span>
+                <span>校园日程<small>宣讲会与校园活动</small></span>
                 <ChevronDown size={16} />
               </summary>
               <ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} />
@@ -992,15 +1047,16 @@ function HomeContent() {
                   ref={searchRef}
                   aria-label="搜索岗位、企业或专业"
                   placeholder="搜索企业、岗位、专业，找到你的下一站"
-                  value={filters.query}
-                  onChange={(e) => change('query', e.target.value)}
+                  value={queryDraft}
+                  onChange={(e) => updateQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') updateQuery(queryDraft, true); }}
                 />
-                {!filters.query && <kbd className="kbd">/</kbd>}
-                {filters.query && (
+                {!queryDraft && <kbd className="kbd">/</kbd>}
+                {queryDraft && (
                   <button
                     className="icon-btn"
                     aria-label="清空搜索"
-                    onClick={() => change('query', '')}
+                    onClick={() => updateQuery('', true)}
                   >
                     <X size={15} />
                   </button>
@@ -1023,7 +1079,7 @@ function HomeContent() {
             <div className="search-hints">
               <span>试着搜</span>
               {['财务', '软件工程师', '管培生', '不限专业'].map((term) => (
-                <button key={term} type="button" onClick={() => change('query', term)}>{term}</button>
+                <button key={term} type="button" onClick={() => updateQuery(term, true)}>{term}</button>
               ))}
               <span className="hint-tail">支持企业、岗位、专业全文搜索</span>
             </div>
@@ -1045,9 +1101,9 @@ function HomeContent() {
                 } else {
                   setFilters((prev) => ({ ...prev, radarFocus: focus }));
                   const focusLabels: Record<string, string> = {
-                    today: '今日新发',
-                    supplement: '新开补录',
-                    urgent: '3天内截止',
+                    today: '今日发布 / 收录',
+                    supplement: '补录机会',
+                    urgent: '3 天内截止',
                     change: '近期变更',
                   };
                   setNotice(`已聚焦「${focusLabels[focus]}」机会，再次点击标签可恢复全部`);
@@ -1074,7 +1130,7 @@ function HomeContent() {
                     </output>
                   ) : searchPending ? (
                     searchError ? <div role="alert"><span>{searchError}</span>{' '}<button className="btn btn-secondary btn-sm" onClick={() => { setSearchError(''); setSearchAttempt((attempt) => attempt + 1); }}>重试全文搜索</button></div>
-                      : <output>正在读取全文索引，完成后显示搜索结果…</output>
+                      : <output>正在读取全文索引，先显示标题/企业/岗位名称匹配的 {filtered.length} 条，完整结果稍后更新…</output>
                   ) : (
                     <>
                       <div className="result-count-main">
@@ -1103,9 +1159,9 @@ function HomeContent() {
                       {filters.radarFocus !== 'none' && (
                         <span className="focus-chip">
                           <span>
-                            {filters.radarFocus === 'today' && '今日新发'}
-                            {filters.radarFocus === 'supplement' && '新开补录'}
-                            {filters.radarFocus === 'urgent' && '3天内截止'}
+                            {filters.radarFocus === 'today' && '今日发布 / 收录'}
+                            {filters.radarFocus === 'supplement' && '补录机会'}
+                            {filters.radarFocus === 'urgent' && '3 天内截止'}
                             {filters.radarFocus === 'change' && '近期变更'}
                           </span>
                           <button
@@ -1141,7 +1197,7 @@ function HomeContent() {
                   </button>
                   <button
                     type="button"
-                    className="toggle-chip toggle-chip-sm"
+                    className="toggle-chip toggle-chip-sm toggle-merge"
                     aria-pressed={groupCompanies}
                     onClick={() => { setGroupCompanies(!groupCompanies); setPage(1); }}
                   >
@@ -1167,7 +1223,7 @@ function HomeContent() {
                     <SelectItem value="newest">最新发布</SelectItem>
                     <SelectItem value="deadline_asc">即将截止优先</SelectItem>
                     <SelectItem value="salary_desc">薪资从高到低</SelectItem>
-                    <SelectItem value="reputation_desc">企业体验参考优先</SelectItem>
+                    {(filterFacts.hasReputationScores || filters.sort === 'reputation_desc') && <SelectItem value="reputation_desc">企业体验参考优先</SelectItem>}
                     <SelectItem value="employer_intent_desc">我的企业意向优先</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1266,19 +1322,25 @@ function HomeContent() {
                   </button>
                 ) : null}
                 {([
-                  ['type', filters.type, '全部'],
-                  ...(filters.type === '校招' ? [['year', filters.year === '全部' ? '全部' : `${filters.year}届`, '全部']] : []),
-                  ['sector', filters.sector, '全部'], ['direction', filters.direction, '全部'],
-                  ['salary', filters.salary, '全部'], ['education', filters.education, ''],
-                  ['provenance', filters.provenance, '全部'], ['kind', filters.kind, '全部'],
-                  ['changeType', filters.changeType, '全部'],
-                  ['reputationMin', filters.reputationMin || 'all', 'all'],
-                ] as [keyof Filters, string, string][]).filter(([, value, empty]) => value !== empty).map(([key, value, empty]) => (
-                  <button key={key} className="filter-chip" onClick={() => change(key, empty)} aria-label={`移除筛选：${value}`}>
-                    {key === 'reputationMin' ? `体验参考≥${value}分` : value}
+                  ['type', filters.type, '全部', filters.type],
+                  ...(filters.type === '校招' ? [['year', filters.year, '全部', `${filters.year}届`]] : []),
+                  ['sector', filters.sector, '全部', filters.sector], ['direction', filters.direction, '全部', filters.direction],
+                  ['salary', filters.salary, '全部', `薪资${filters.salary}`], ['education', filters.education, '', `学历：${filters.education}`],
+                  ['major', filters.major || '', '', `专业：${filters.major}`],
+                  ['employmentType', filters.employmentType || 'all', 'all', ({ full_time: '全职', internship: '实习', part_time: '兼职' } as Record<string, string>)[filters.employmentType || ''] || ''],
+                  ['provenance', filters.provenance, '全部', filters.provenance], ['kind', filters.kind, '全部', filters.kind],
+                  ['changeType', filters.changeType, '全部', filters.changeType],
+                  ['validity', filters.validity || 'all', 'all', ({ confirmed_open: '近期核验在招', long_term: '原文长期招聘', unconfirmed: '有效性待核实' } as Record<string, string>)[filters.validity || ''] || ''],
+                  ['reputationMin', filters.reputationMin || 'all', 'all', `体验参考≥${filters.reputationMin}分`],
+                ] as [keyof Filters, string, string, string][]).filter(([, value, empty]) => value !== empty).map(([key, , empty, label]) => (
+                  <button key={key} className="filter-chip" onClick={() => change(key, empty as never)} aria-label={`移除筛选：${label}`}>
+                    {label}
                     <X size={12} />
                   </button>
                 ))}
+                {filters.showExpired && <button type="button" className="filter-chip" onClick={() => change('showExpired', false)} aria-label="移除筛选：含已截止">含已截止<X size={12} /></button>}
+                {!filters.includeUncertain && <button type="button" className="filter-chip" onClick={() => change('includeUncertain', true)} aria-label="移除筛选：不含信息未明确的公告">不含信息未明确的公告<X size={12} /></button>}
+                {filters.includeRelatedTalks && <button type="button" className="filter-chip" onClick={() => change('includeRelatedTalks', false)} aria-label="移除筛选：含本城宣讲关联">含本城宣讲关联<X size={12} /></button>}
                 {filters.reputationMin !== 'all' && filters.includeUnrated === false && <button type="button" className="filter-chip" onClick={() => change('includeUnrated', true)}>仅看样本充分的企业<X size={12} /></button>}
                 <button className="text-btn" onClick={resetFilters}>恢复默认</button>
               </div>
@@ -1321,10 +1383,10 @@ function HomeContent() {
                 <div ref={resultsTopRef} tabIndex={-1} />
                 <div className="opp-list">
                   {displayBlocks.map((group) => {
-                    const content = viewMode === 'table' ? (
+                    const renderJobs = (jobs: Job[]) => viewMode === 'table' ? (
                       <JobTable
-                        jobs={group.jobs}
-                        city={filters.city}
+                        jobs={jobs}
+                        city={selectedWorkCities(filters)}
                         personal={personal}
                         ready={ready}
                         now={now}
@@ -1334,7 +1396,7 @@ function HomeContent() {
                         onToggle={toggle}
                       />
                     ) : (
-                      group.jobs.map((job) => (
+                      jobs.map((job) => (
                         <JobCard
                           key={job.id}
                           job={job}
@@ -1351,9 +1413,11 @@ function HomeContent() {
                         />
                       ))
                     );
+                    // Groups show their newest record; the rest expand on demand so a
+                    // page of N groups never renders hundreds of cards.
                     return group.grouped ? (
-                      <details className="opp-group" key={group.id} open>
-                        <summary>
+                      <div className="opp-group" key={group.id}>
+                        <div className="opp-group-head">
                           <div className="opp-group-title">
                             <strong>{group.company}</strong>
                             <span>
@@ -1362,16 +1426,33 @@ function HomeContent() {
                           </div>
                           <div className="opp-group-count">
                             <span>{group.jobs.length} 条信息</span>
-                            <ChevronDown size={14} />
                           </div>
-                        </summary>
-                        <div className="opp-group-members">{content}</div>
-                      </details>
+                        </div>
+                        <div className="opp-group-members">{renderJobs(group.jobs.slice(0, 1))}</div>
+                        <details className="opp-group-more">
+                          <summary>
+                            <span className="when-closed">展开其余 {group.jobs.length - 1} 条</span>
+                            <span className="when-open">收起其余 {group.jobs.length - 1} 条</span>
+                            <ChevronDown size={14} />
+                          </summary>
+                          <div className="opp-group-members">{renderJobs(group.jobs.slice(1))}</div>
+                        </details>
+                      </div>
                     ) : (
-                      <div key={group.id}>{content}</div>
+                      <div key={group.id}>{renderJobs(group.jobs)}</div>
                     );
                   })}
-                  {data && !filtered.length && !loading && !searchPending && !error && (
+                  {data && !filtered.length && !loading && !searchPending && !error && filters.view !== 'all' && (
+                    <Empty className="empty-state">
+                      <Search size={30} />
+                      <EmptyTitle className="text-lg">这里还没有记录</EmptyTitle>
+                      <EmptyDescription>
+                        {filters.query.trim() ? '没有与搜索词匹配的个人记录，可清空搜索后再看。' : '在「发现机会」里收藏或标记岗位后，会出现在这里。'}
+                      </EmptyDescription>
+                      <Button variant="outline" onClick={() => openView('all')}>去发现机会</Button>
+                    </Empty>
+                  )}
+                  {data && !filtered.length && !loading && !searchPending && !error && filters.view === 'all' && (
                     <Empty className="empty-state">
                       <Search size={30} />
                       <EmptyTitle className="text-lg">
@@ -1431,8 +1512,14 @@ function HomeContent() {
                 <ChevronDown size={14} />
               </summary>
               <div className="help-fold-body">
-                <p>按来源发布 / 收录时间从新到旧排列，日期不明确的排在最后。查看详情或投递入口后标为已读，内容更新后重新提示未读。表格可左右滑动。</p>
-                <p>合并仅折叠同名企业、同届校招的信息，提前批、春招、秋招等明确批次分开展示；所有岗位和来源均保留。每组按最新一条排序，展开后逐条投递或收藏。未明确企业或届别的单独展示。</p>
+                <p>{({
+                  newest: '当前按来源发布 / 收录时间从新到旧排列，日期不明确的排在最后。',
+                  deadline_asc: '当前按截止时间由近到远排列，已截止和未写截止日期的排在后面。',
+                  salary_desc: '当前按写明的薪资从高到低排列，未写薪资的排在后面。',
+                  reputation_desc: '当前按企业体验参考分排列，没有参考分的按发布时间排在后面。',
+                  employer_intent_desc: '当前按你对企业的意向评分排列，未评分的按发布时间排在后面。',
+                } as Record<string, string>)[filters.sort]}查看详情或投递入口后标为已读，内容更新后重新提示未读。表格可左右滑动。</p>
+                <p>合并仅折叠同名企业、同届别、同招聘类型的信息，提前批、春招、秋招等明确批次分开展示；届别未写明的只与同样未写明的合并并标注。所有岗位和来源均保留，每组显示最新一条，其余可展开逐条投递或收藏。</p>
               </div>
             </details>
 
@@ -1462,11 +1549,37 @@ function HomeContent() {
             </SheetDescription>
           </SheetHeader>
           <div className="mobile-filter-scroll">
+            {/* On phones, sorting and layout live here instead of above the list. */}
+            <section className="mobile-display-options" aria-label="显示与排序">
+              <h3>显示与排序</h3>
+              <label className="field">
+                <span className="field-label">排序</span>
+                <select className="field-select" aria-label="排序方式（筛选面板）" value={filters.sort}
+                  onChange={(event) => change('sort', event.target.value as Filters['sort'])}>
+                  <option value="newest">最新发布</option>
+                  <option value="deadline_asc">即将截止优先</option>
+                  <option value="salary_desc">薪资从高到低</option>
+                  {(filterFacts.hasReputationScores || filters.sort === 'reputation_desc') && <option value="reputation_desc">企业体验参考优先</option>}
+                  <option value="employer_intent_desc">我的企业意向优先</option>
+                </select>
+              </label>
+              <div className="field">
+                <span className="field-label">显示方式</span>
+                <fieldset className="seg seg-block" aria-label="显示方式（筛选面板）">
+                  <button type="button" aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')}>卡片</button>
+                  <button type="button" aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>表格</button>
+                </fieldset>
+              </div>
+              <label className="check-row">
+                <input type="checkbox" checked={groupCompanies} onChange={(event) => { setGroupCompanies(event.target.checked); setPage(1); }} />
+                <span>合并同企业</span>
+              </label>
+            </section>
             <FilterSidebar
               className="mobile-filter-panel"
               filters={filters}
               data={data}
-              years={years}
+              years={years} facts={filterFacts}
               ready={ready}
               onChange={change}
               onReset={resetFilters}
@@ -1474,12 +1587,18 @@ function HomeContent() {
               onImport={() => fileRef.current?.click()}
             />
           </div>
+          <div className="mobile-filter-footer">
+            <button type="button" className="btn btn-primary" onClick={() => setMobileFilterOpen(false)}>
+              {data && !searchPending ? `查看 ${filtered.length} 条结果` : '查看结果'}
+            </button>
+          </div>
         </SheetContent>
       </Sheet>
 
       <DetailDrawer
         selected={selected}
-        city={filters.city}
+        filters={filters}
+        city={selectedWorkCities(filters)}
         now={now}
         personal={personal}
         ready={ready}
@@ -1593,7 +1712,7 @@ function HomeContent() {
               </article>
             ))}
             <p className="source-note">
-              当前已接入山东省平台招聘速递、中国银行和邮储银行官方招聘公告；更多银行、企业官网、事业单位和公务员专栏仍会按来源健康度逐步适配。当前没有结果不代表没有招聘。
+              以上为当前接入的公开来源及其最近巡检状态；更多银行、企业官网、事业单位和公务员专栏仍会按来源健康度逐步适配。当前没有结果不代表没有招聘。
             </p>
           </div>
         </SheetContent>

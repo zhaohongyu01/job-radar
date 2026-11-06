@@ -25,7 +25,9 @@ const cityName = (value: unknown) => typeof value === 'string' && /^[\u4e00-\u9f
   ? normalizeCity(value) || value : null;
 
 export type ViewMode = 'cards' | 'table';
-export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: ViewMode; groupCompanies: boolean } {
+/** `legacyRelatedTalks` migrates browsing state saved before that option existed;
+ * presets pass false so the same preset yields the same result before and after a reload. */
+export function restoreBrowsing(input: unknown, legacyRelatedTalks = true): { filters: Filters; viewMode: ViewMode; groupCompanies: boolean } {
   const result = { filters: { ...defaultFilters }, viewMode: 'cards' as ViewMode, groupCompanies: false };
   if (!input || typeof input !== 'object' || Array.isArray(input)) return result;
   const value = input as Record<string, unknown>;
@@ -52,15 +54,17 @@ export function restoreBrowsing(input: unknown): { filters: Filters; viewMode: V
     result.filters.city = result.filters.workCities.length === 1 ? result.filters.workCities[0] : '全部城市';
   }
   // Existing saved browsing used local talks as an alternative to work-city matching.
-  if (!Object.hasOwn(fields, 'includeRelatedTalks')) result.filters.includeRelatedTalks = true;
+  if (legacyRelatedTalks && !Object.hasOwn(fields, 'includeRelatedTalks')) result.filters.includeRelatedTalks = true;
   if (typeof fields.year === 'string' && /^(全部|20\d{2})$/.test(fields.year)) result.filters.year = fields.year;
   return result;
 }
 
-export function parseUrlState(search: string): { filters?: Partial<Filters>; jobId?: string; employerId?: string } {
+export function parseUrlState(search: string): { filters?: Partial<Filters>; jobId?: string; employerId?: string; page?: number } {
   if (!search) return {};
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  const result: { filters?: Partial<Filters>; jobId?: string; employerId?: string } = {};
+  const result: { filters?: Partial<Filters>; jobId?: string; employerId?: string; page?: number } = {};
+  const page = Number(params.get('page'));
+  if (Number.isSafeInteger(page) && page > 1 && page <= 10000) result.page = page;
   const employerId = params.get('employer');
   if (employerId) { try { result.employerId = employerFromId(employerId).id; } catch { /* Invalid shared identity is ignored. */ } }
 
@@ -91,7 +95,7 @@ export function parseUrlState(search: string): { filters?: Partial<Filters>; job
   return result;
 }
 
-export function formatUrlQuery(filters: Filters, jobId?: string | null, employerId?: string | null): string {
+export function formatUrlQuery(filters: Filters, jobId?: string | null, employerId?: string | null, page = 1): string {
   const params = new URLSearchParams({ f: '1' });
   const normalized = restoreBrowsing({ filters: { ...defaultFilters, ...filters } }).filters;
   if (jobId) params.set('job', jobId);
@@ -107,5 +111,6 @@ export function formatUrlQuery(filters: Filters, jobId?: string | null, employer
   for (const key of BOOLEANS) if (normalized[key] !== defaultFilters[key]) params.set(key, normalized[key] ? '1' : '0');
   for (const key of TEXT) if (normalized[key]) params.set(key === 'query' ? 'q' : key, normalized[key]!);
   if (normalized.year !== defaultFilters.year) params.set('year', normalized.year);
+  if (Number.isSafeInteger(page) && page > 1) params.set('page', String(page));
   return `?${params.toString()}`;
 }

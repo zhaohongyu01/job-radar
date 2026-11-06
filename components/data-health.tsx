@@ -19,17 +19,21 @@ export function DataHealth({
 }: {
   data: Snapshot;
   now: number;
-  city: string;
+  city: string | string[];
   visibleJobs: Job[];
   origin: string;
   onSources: () => void;
   coverage?: CoverageReport | null;
 }) {
   const health = useMemo(() => collectionHealth(data, now), [data, now]);
+  const cityKey = (typeof city === 'string' ? (city === '全部城市' ? [] : [city]) : city).join('|');
   const talks = useMemo(
-    () => upcomingTalks(data.jobs, {}, city, now),
-    [data.jobs, city, now],
+    () => upcomingTalks(data.jobs, {}, cityKey ? cityKey.split('|') : [], now),
+    [data.jobs, cityKey, now],
   );
+  const cityLabel = cityKey ? cityKey.split('|').join(' / ') : '全部城市';
+  // City coverage notes exist per city; show them only for a single selected city.
+  const single = cityKey && !cityKey.includes('|') ? cityKey : '';
   const latest = latestPublication(visibleJobs, now);
   return (
     <details className="collection-health">
@@ -63,13 +67,13 @@ export function DataHealth({
         </p>
         <p>
           当前筛选的最新发布：{latest || '暂无明确日期'}。
-          {city === '全部城市' ? '全部城市' : city}已收录 {talks.length}{' '}
+          {cityLabel}已收录 {talks.length}{' '}
           场后续宣讲；宣讲地点与工作地点分别核实。
         </p>
-        <p>{city === '全部城市' ? '全国城市可筛选；各城市的本地渠道接入程度不同。' : agendaCoverageMessage(coverage?.cities[city], now)}</p>
-        {coverage?.cities[city] && <p>
-          本地信息渠道 {coverage.cities[city].local_sources.length} 个，日历渠道 {coverage.cities[city].calendar_sources.length} 个；
-          计划补齐：{coverage.cities[city].planned_schools.join('、') || '尚无新增学校计划'}。已接渠道数量不等于全市完整覆盖。
+        <p>{!single ? '全国城市可筛选；各城市的本地渠道接入程度不同。' : agendaCoverageMessage(coverage?.cities[single], now)}</p>
+        {single && coverage?.cities[single] && <p>
+          本地信息渠道 {coverage.cities[single].local_sources.length} 个，日历渠道 {coverage.cities[single].calendar_sources.length} 个；
+          计划补齐：{coverage.cities[single].planned_schools.join('、') || '尚无新增学校计划'}。已接渠道数量不等于全市完整覆盖。
         </p>}
         {origin === 'local' && (
           <p>

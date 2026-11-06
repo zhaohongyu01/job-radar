@@ -63,7 +63,7 @@ export function loadRadarPresets(): RadarPreset[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed.filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string' && p.filters)
-        .map((p) => ({ ...p, filters: restoreBrowsing({ filters: p.filters }).filters }));
+        .map((p) => ({ ...p, filters: restoreBrowsing({ filters: p.filters }, false).filters }));
     }
   } catch {
     // fallback

@@ -114,10 +114,12 @@ export function FilterSidebar({
   onExport,
   onImport,
   className = '',
+  facts,
 }: {
   filters: Filters;
   data: Snapshot | null;
   years: string[];
+  facts?: { verified: number; salaryKnown: number; total: number; hasReputationScores: boolean };
   ready: boolean;
   onChange: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
   onReset: () => void;
@@ -131,6 +133,11 @@ export function FilterSidebar({
   const [cityQuery, setCityQuery] = useState('');
   const selectedCities = selectedWorkCities(filters);
   const cityOptions = Array.from(new Set([...ALL_CITIES, ...(data?.cities || []), ...selectedCities]));
+  const canAddCity = cityOptions.includes(cityQuery) && !selectedCities.includes(cityQuery);
+  const addCity = () => { if (!canAddCity) return; onChange('workCities', [...selectedCities, cityQuery]); setCityQuery(''); };
+  // Filters with no matching data stay hidden unless already active (so they can be cleared).
+  const showValidity = !facts || facts.verified > 0 || (filters.validity || 'all') !== 'all';
+  const showReputation = !facts || facts.hasReputationScores || (filters.reputationMin || 'all') !== 'all' || filters.includeUnrated === false;
   return (
     <aside className={`filter-rail ${className}`} aria-label="筛选条件">
       <div className="rail-head">
@@ -143,12 +150,12 @@ export function FilterSidebar({
       <div className="field">
         <label className="field-label" htmlFor={cityListId}>意向工作城市（可多选）</label>
         <Input id={cityListId} list={`${cityListId}-options`} value={cityQuery} placeholder="输入城市名称后添加"
-          onChange={(event) => setCityQuery(event.target.value)} />
+          onChange={(event) => setCityQuery(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCity(); } }} />
         <datalist id={`${cityListId}-options`}>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</datalist>
-        <button type="button" className="btn btn-ghost btn-sm" disabled={!cityOptions.includes(cityQuery) || selectedCities.includes(cityQuery)}
-          onClick={() => { onChange('workCities', [...selectedCities, cityQuery]); setCityQuery(''); }}>添加城市</button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={!canAddCity} onClick={addCity}>添加城市</button>
         <div className="chip-row">
-          {!selectedCities.length && <span className="chip">全部城市</span>}
+          {!selectedCities.length && <span className="filter-help">未限定城市，显示全部</span>}
           {selectedCities.map((city) => <button key={city} type="button" className="chip" aria-label={`移除工作城市${city}`}
             onClick={() => onChange('workCities', selectedCities.filter((value) => value !== city))}>{city} ×</button>)}
           {!!selectedCities.length && <button type="button" className="text-btn" onClick={() => onChange('workCities', [])}>全部城市</button>}
@@ -204,6 +211,9 @@ export function FilterSidebar({
         options={['全部', '6K以上', '8K以上', '10K以上', '15K以上', '20K以上']}
         onChange={(v) => onChange('salary', v)}
       />
+      {facts && facts.total > 0 && filters.salary !== '全部' && (
+        <small className="filter-help">仅含写明薪资的公告（全站约 {Math.round((facts.salaryKnown / facts.total) * 100)}%），未写薪资的不会出现。</small>
+      )}
       <label htmlFor={educationId} className="field">
         <span className="field-label">学历关键词</span>
         <Input
@@ -253,14 +263,16 @@ export function FilterSidebar({
           onChange={(v) => onChange('showExpired', v)}
         />
         <Toggle label="同时看本城宣讲关联机会（工作地另核）" checked={Boolean(filters.includeRelatedTalks)} onChange={(value) => onChange('includeRelatedTalks', value)} />
-        <Choice label="招聘有效性" value={filters.validity || 'all'} options={['all', 'confirmed_open', 'long_term', 'unconfirmed']}
-          onChange={(value) => onChange('validity', value as Filters['validity'])} />
-        <Choice label="企业体验参考" value={filters.reputationMin || 'all'} options={['all', '3', '4']}
-          onChange={value => onChange('reputationMin', value as Filters['reputationMin'])} />
-        <Toggle label="保留评分不足的企业" checked={filters.includeUnrated !== false} onChange={value => onChange('includeUnrated', value)} />
-        <p className="filter-help">体验参考分来自近一年公开员工体验的规则归纳，非平台官方评分；集团参考不直接套用到子公司。</p>
+        {showValidity && <Choice label="招聘有效性" value={filters.validity || 'all'} options={['all', 'confirmed_open', 'long_term', 'unconfirmed']}
+          onChange={(value) => onChange('validity', value as Filters['validity'])} />}
+        {showReputation && <>
+          <Choice label="企业体验参考" value={filters.reputationMin || 'all'} options={['all', '3', '4']}
+            onChange={value => onChange('reputationMin', value as Filters['reputationMin'])} />
+          <Toggle label="保留评分不足的企业" checked={filters.includeUnrated !== false} onChange={value => onChange('includeUnrated', value)} />
+          <p className="filter-help">体验参考分来自近一年公开员工体验的规则归纳，非平台官方评分；集团参考不直接套用到子公司。</p>
+        </>}
         <p className="filter-help">
-          默认只保留国内或地点未明确的机会；仅海外岗位自动排除。默认不限专业，可在搜索框输入专业名称；公告未写明的资格需查看原文。
+          默认只保留国内或地点未明确的机会；仅海外岗位自动排除。专业可用上方“专业关键词”按同一岗位筛选；公告未写明的资格需查看原文。
         </p>
       </details>
       <div className="rail-foot">

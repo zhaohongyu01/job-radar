@@ -137,6 +137,8 @@ try {
     assert.ok(requests.includes(searchPath));
     await card.getByRole('button', { name: '详情', exact: true }).click();
     await drawer(page).getByText('FULL_BODY_SUCCESS', { exact: true }).waitFor();
+    // Publication channels are folded below the announcement; open them to read every source.
+    await drawer(page).locator('details.drawer-fold-channels > summary').click();
     assert.match(await drawer(page).innerText(), /学校来源乙/);
   });
   const leanGate = deferred();

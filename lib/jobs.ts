@@ -901,6 +901,40 @@ export function positionChangeDates(job: Job): string[] {
     (job.timeline || []).filter((e) => e.type === 'positions_updated' && e.title !== '岗位表就绪').map((e) => e.date);
 }
 
+export type DeadlineChangeKind = 'extended' | 'clarified' | 'adjusted';
+
+/** The collector records first-known, later and earlier deadlines with the same
+ * change type; its label/detail keep the distinction. Only a later deadline is
+ * an extension. Unknown labels keep the historical "extended" meaning. */
+export function deadlineChangeKind(change?: RecentChange | null): DeadlineChangeKind | null {
+  if (change?.type !== 'deadline_extended') return null;
+  const detail = change.detail || '';
+  if (change.label === '明确截止时间' || detail.startsWith('明确报名截止时间')) return 'clarified';
+  if (change.label === '截止调整' || detail.startsWith('报名截止时间调整为')) return 'adjusted';
+  return 'extended';
+}
+
+/** Card-level reminder: only recent changes that alter what an applicant should
+ * do. Text refinements, attachments and a first-known deadline stay in the
+ * detail timeline (the deadline itself is already shown on the card). */
+export function cardChangeAlert(job: Job, now = Date.now()): { text: string; tone: 'info' | 'warning' } | null {
+  const change = job.recent_change;
+  if (change && isRecentDate(change.date, now)) {
+    const kind = deadlineChangeKind(change);
+    const first = (change.detail || '').split('；')[0].trim();
+    if (kind === 'extended' && first) return { text: first, tone: 'info' };
+    if (kind === 'adjusted') return { text: first || '报名截止时间有调整，请以原公告为准', tone: 'warning' };
+    if ((change.type === 'supplemental' || change.type === 'selection_stage') && first) return { text: first, tone: 'info' };
+    if (change.type === 'positions_updated' && first && !/为 0 个职位/.test(first) && !/就绪|首次提取/.test(change.label + first))
+      return { text: first, tone: 'info' };
+  }
+  const stage = getLifecycleStage(job, now).stage;
+  if (stage === 'extended') return { text: '报名截止时间已延期（详见原公告）', tone: 'info' };
+  if (stage === 'supplemental') return { text: '补录 / 追加招聘批次进行中', tone: 'info' };
+  if (stage === 'selection') return { text: '发布考核选拔或录用进展通知', tone: 'info' };
+  return null;
+}
+
 export function getLifecycleStage(
   job: Job,
   now = Date.now(),
@@ -937,7 +971,7 @@ export function getLifecycleStage(
     };
   }
 
-  if (job.recent_change?.type === 'deadline_extended' || /延长|延期|推迟/.test(title)) {
+  if (deadlineChangeKind(job.recent_change) === 'extended' || /延长|延期|推迟/.test(title)) {
     return {
       stage: 'extended',
       label: '截止已延期',
@@ -1170,12 +1204,24 @@ export function hasRecentJobChange(j: Job, now = Date.now()): boolean {
   );
 }
 
+function jobLocation(j: Job, workCities: string[]): 'exact' | 'possible' | 'unknown' | 'none' {
+  const matches = workCities.map((city) => locationMatch(j, city));
+  return matches.includes('exact') ? 'exact' : matches.includes('possible') ? 'possible' : matches.includes('unknown') ? 'unknown' : 'none';
+}
+
+function hasUpcomingTalkIn(j: Job, workCities: string[], now: number): boolean {
+  return Boolean(j.talk_events?.some((event) =>
+    workCities.includes(event.city || '') && event.status !== 'cancelled' && Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now,
+  ));
+}
+
 function matchingJobs(
   jobs: Job[],
   f: Filters,
   personal: Personal,
   since: string | null,
   now = Date.now(),
+  ignoreLocationScope = false,
 ) {
   const workCities = selectedWorkCities(f);
   const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -1200,12 +1246,11 @@ function matchingJobs(
       if (f.view === 'all' && !isDomestic(j)) return false;
       if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
       if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
-      const matches = workCities.map((city) => locationMatch(j, city));
-      const location = matches.includes('exact') ? 'exact' : matches.includes('possible') ? 'possible' : matches.includes('unknown') ? 'unknown' : 'none';
-      const talkInCity = Boolean(f.includeRelatedTalks && f.locationScope === 'exact' && j.talk_events?.some((event) =>
-        workCities.includes(event.city || '') && event.status !== 'cancelled' && Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now,
-      ));
-      if (workCities.length && location !== f.locationScope && !talkInCity) return false;
+      if (workCities.length && !ignoreLocationScope) {
+        const location = jobLocation(j, workCities);
+        const talkInCity = Boolean(f.includeRelatedTalks && f.locationScope === 'exact' && hasUpcomingTalkIn(j, workCities, now));
+        if (location !== f.locationScope && !talkInCity) return false;
+      }
       if (f.validity && f.validity !== 'all' && assessOpportunityValidity(j, now).status !== f.validity) return false;
       if (f.employmentType && f.employmentType !== 'all' && j.employment_type !== f.employmentType && !(f.includeUncertain && (!j.employment_type || j.employment_type === 'unknown'))) return false;
       const positions = j.position_matches || j.positions;
@@ -1253,7 +1298,7 @@ function matchingJobs(
         const hasRecentChangeObj = Boolean(j.recent_change && isRecentDate(j.recent_change.date, now));
 
         if (f.changeType === '有变更' && !hasChange) return false;
-        if (f.changeType === '截止延期' && (stage !== 'extended' || !isRecentJob) && !(j.recent_change?.type === 'deadline_extended' && hasRecentChangeObj)) return false;
+        if (f.changeType === '截止延期' && (stage !== 'extended' || !isRecentJob) && !(deadlineChangeKind(j.recent_change) === 'extended' && hasRecentChangeObj)) return false;
         if (f.changeType === '补录招募' && (stage !== 'supplemental' || !isRecentJob) && !(j.recent_change?.type === 'supplemental' && hasRecentChangeObj)) return false;
         if (f.changeType === '岗位调整' && !(j.recent_change?.type === 'positions_updated' && hasRecentChangeObj) && !positionChangeDates(j).some((date) => isRecentDate(date, now))) return false;
         if (f.changeType === '考核阶段' && (stage !== 'selection' || !isRecentJob) && !(j.recent_change?.type === 'selection_stage' && hasRecentChangeObj)) return false;
@@ -1310,6 +1355,21 @@ function matchingJobs(
 /** Same eligibility rules as the visible list, without sorting discarded rows. */
 export function countMatchingJobs(jobs: Job[], f: Filters, personal: Personal, since: string | null, now = Date.now()): number {
   return matchingJobs(jobs, f, personal, since, now).length;
+}
+
+/** Counts for the three work-location scopes in one pass; each count equals
+ * countMatchingJobs with that locationScope. */
+export function countByLocationScope(jobs: Job[], f: Filters, personal: Personal, since: string | null, now = Date.now()) {
+  const counts = { exact: 0, possible: 0, unknown: 0 };
+  const workCities = selectedWorkCities(f);
+  if (!workCities.length) return counts;
+  for (const j of matchingJobs(jobs, f, personal, since, now, true)) {
+    const location = jobLocation(j, workCities);
+    if (location === 'exact' || (f.includeRelatedTalks && hasUpcomingTalkIn(j, workCities, now))) counts.exact++;
+    if (location === 'possible') counts.possible++;
+    if (location === 'unknown') counts.unknown++;
+  }
+  return counts;
 }
 
 export function filterJobs(jobs: Job[], f: Filters, personal: Personal, since: string | null, now = Date.now()): Job[] {

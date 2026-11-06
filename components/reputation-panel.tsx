@@ -120,7 +120,7 @@ export function ReputationPanel({ profile }: { profile: EmployerProfile }) {
               {positives.length > 0 && concerns.length > 0 && ' · '}{concerns.length > 0 && <a href={concerns[0].url} target="_blank" rel="noopener noreferrer">{concerns.length}条顾虑提及 ↗</a>}</p>;
           })}
         </div>}
-        {!filtered.length && <p>当前条件没有内容。{range === 'recent' && <button className="text-btn" onClick={() => setRange('all')}>查看全部历史内容</button>}</p>}
+        {!filtered.length && <p>当前条件没有内容。{activeRange !== 'all' && <button className="text-btn" onClick={() => setRange('all')}>查看全部历史内容</button>}</p>}
         <div className="reputation-evidence">{filtered.slice(0, 40).map(row => <article key={row.id}>
           <div className="employer-section-head"><strong>{row.attribution === 'uncertain' ? '企业归属待核对' : kindLabels[row.kind]}</strong><time>{day(row.published_at)}</time></div>
           <a href={row.url} target="_blank" rel="noopener noreferrer">{row.title} ↗</a>

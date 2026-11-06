@@ -20,9 +20,11 @@ export function buildActionQueue(jobs: Job[], personal: Personal, now: number) {
 export function upcomingTalks(
   jobs: Job[],
   personal: Personal,
-  city: string,
+  city: string | readonly string[],
   now: number,
 ) {
+  // A city name, '全部城市', or the selected work-city list (empty = all cities).
+  const cities: readonly string[] = typeof city === 'string' ? (city === '全部城市' ? [] : [city]) : city;
   const parents = new Map(jobs.map((job) => [job.id, job]));
   const events = new Map<string, { job: Job; event: TalkEvent }>();
   // Prefer the recruitment record that already contains this talk over its standalone source.
@@ -41,7 +43,7 @@ export function upcomingTalks(
     for (const event of job.talk_events ??
       (job.talk_event ? [job.talk_event] : [])) {
       if (event.status === 'cancelled') continue;
-      if (city !== '全部城市' && event.city !== city) continue;
+      if (cities.length && !cities.includes(event.city || '')) continue;
       const end = Date.parse(
         `${event.date}T${event.end_time || '23:59'}:00+08:00`,
       );

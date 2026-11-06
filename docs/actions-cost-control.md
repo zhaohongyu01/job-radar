@@ -26,11 +26,11 @@ NAS 离线时，仅 `NAS Universities Pipeline` 会处于排队或等待状态�
 需要严格避免超额付费时，在 GitHub 账户 Billing 的 Actions 预算中确认超额停止使用设置。工作流代码不负责设置账单上限。
 # 复用一次已完成的采集来修复发布
 
-当采集分片全部成功、最后发布失败时，可在提交修复后手动运行 Daily Job Radar Pipeline：
+当采集分片全部成功、最后发布失败（或 NAS Runner 在产物上传完成后结单断联）时，可在手动运行 `Daily Job Radar Pipeline` 或 `NAS Universities Pipeline` 时填入 `reuse_run_id`：
 
-- `reuse_run_id` 填运行 URL 中的数字 ID（不是页面显示的 #86）。本次为 `35697829191`。
-- 不勾选 `deploy_only` 和 `baseline_diagnostic`；高校采集开关在恢复模式下不启动采集。
-- 工作流下载该轮完整基线及六个分片，用当前代码检查、重新合并并发布。缺少分片或代际不匹配会拒绝恢复。
+- `reuse_run_id` 填运行 URL 中的数字 ID（不是页面显示的 #86，例如 `42163844157`）。
+- 不勾选 `deploy_only` 和 `baseline_diagnostic`；恢复模式下跳过基线准备与分片重采，直接下载对应运行的 `collector-baseline` 与分片产物合并发布。
+- 此外，`NAS Universities Pipeline` 的 `merge-and-deploy` 会在 `collect` 因结单断联报错时先尝试拉取并校验已上传的 `collector-shard-universities-b`，产物完整时自动继续合并发布。
 - 产物保留 2 天，需在过期前操作。正常每日定时采集不受影响。
 
 列表和全文搜索现按约 4 MiB 分片，保持全部记录及字段。每个生成或发布文件检查 Workers 25 MiB 上限；异常大单条记录不会被静默删除。

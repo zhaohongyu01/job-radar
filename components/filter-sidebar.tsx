@@ -149,11 +149,13 @@ export function FilterSidebar({
       </div>
       <div className="field">
         <label className="field-label" htmlFor={cityListId}>意向工作城市（可多选）</label>
-        <Input id={cityListId} list={`${cityListId}-options`} value={cityQuery} placeholder="输入城市名称后添加"
-          onChange={(event) => setCityQuery(event.target.value)}
-          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCity(); } }} />
-        <datalist id={`${cityListId}-options`}>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</datalist>
-        <button type="button" className="btn btn-ghost btn-sm" disabled={!canAddCity} onClick={addCity}>添加城市</button>
+        <div className="city-input-row">
+          <Input id={cityListId} list={`${cityListId}-options`} value={cityQuery} placeholder="输入城市名称后添加"
+            onChange={(event) => setCityQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCity(); } }} />
+          <datalist id={`${cityListId}-options`}>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</datalist>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={!canAddCity} onClick={addCity}>添加城市</button>
+        </div>
         <div className="chip-row">
           {!selectedCities.length && <span className="filter-help">未限定城市，显示全部</span>}
           {selectedCities.map((city) => <button key={city} type="button" className="chip" aria-label={`移除工作城市${city}`}

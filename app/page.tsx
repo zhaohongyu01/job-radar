@@ -1040,48 +1040,50 @@ function HomeContent() {
               <ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} />
             </details>
 
-            <div className="search-row">
-              <div className="search-field">
-                <Search size={18} />
-                <input
-                  ref={searchRef}
-                  aria-label="搜索岗位、企业或专业"
-                  placeholder="搜索企业、岗位、专业，找到你的下一站"
-                  value={queryDraft}
-                  onChange={(e) => updateQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') updateQuery(queryDraft, true); }}
-                />
-                {!queryDraft && <kbd className="kbd">/</kbd>}
-                {queryDraft && (
-                  <button
-                    className="icon-btn"
-                    aria-label="清空搜索"
-                    onClick={() => updateQuery('', true)}
-                  >
-                    <X size={15} />
-                  </button>
-                )}
+            <div className="search-box-wrap">
+              <div className="search-row">
+                <div className="search-field">
+                  <Search size={18} />
+                  <input
+                    ref={searchRef}
+                    aria-label="搜索岗位、企业或专业"
+                    placeholder="搜索企业、岗位、专业，找到你的下一站"
+                    value={queryDraft}
+                    onChange={(e) => updateQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') updateQuery(queryDraft, true); }}
+                  />
+                  {!queryDraft && <kbd className="kbd">/</kbd>}
+                  {queryDraft && (
+                    <button
+                      className="icon-btn"
+                      aria-label="清空搜索"
+                      onClick={() => updateQuery('', true)}
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary filters-trigger"
+                  onClick={() => setMobileFilterOpen(true)}
+                  aria-label="打开筛选面板"
+                >
+                  <SlidersHorizontal size={16} />
+                  <span>筛选</span>
+                  {activeFilterCount > 0 && (
+                    <span className="filters-trigger-badge">{activeFilterCount}</span>
+                  )}
+                </button>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary filters-trigger"
-                onClick={() => setMobileFilterOpen(true)}
-                aria-label="打开筛选面板"
-              >
-                <SlidersHorizontal size={16} />
-                <span>筛选</span>
-                {activeFilterCount > 0 && (
-                  <span className="filters-trigger-badge">{activeFilterCount}</span>
-                )}
-              </button>
-            </div>
 
-            <div className="search-hints">
-              <span>试着搜</span>
-              {['财务', '软件工程师', '管培生', '不限专业'].map((term) => (
-                <button key={term} type="button" onClick={() => updateQuery(term, true)}>{term}</button>
-              ))}
-              <span className="hint-tail">支持企业、岗位、专业全文搜索</span>
+              <div className="search-hints">
+                <span>试着搜</span>
+                {['财务', '软件工程师', '管培生', '不限专业'].map((term) => (
+                  <button key={term} type="button" onClick={() => updateQuery(term, true)}>{term}</button>
+                ))}
+                <span className="hint-tail">支持企业、岗位、专业全文搜索</span>
+              </div>
             </div>
 
             {data && <PersonalRadar
@@ -1142,9 +1144,16 @@ function HomeContent() {
                           </span>
                         )}
                       </div>
-                      <span>（{filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}）</span>
+                      <span
+                        className="result-count-breakdown"
+                        title={filters.type === '校招' && filters.year !== '全部'
+                          ? `明确${filters.year}届 ${filtered.filter((j) => j.graduation_years.includes(filters.year)).length} 条${filters.includeUncertain ? `（含 ${filtered.filter((j) => j.graduation_years.length === 0).length} 条届别未明确）` : ''}`
+                          : undefined}
+                      >
+                        （{filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groups.length} 组` : ''}）
+                      </span>
                       {filters.type === '校招' && filters.year !== '全部' && (
-                        <span>
+                        <span className="result-cohort-stat">
                           明确{filters.year}届 <strong>{filtered.filter((j) => j.graduation_years.includes(filters.year)).length}</strong> 条
                           {filters.includeUncertain && (
                             <span className="text-muted">
@@ -1192,6 +1201,7 @@ function HomeContent() {
                     className="toggle-chip toggle-chip-sm"
                     aria-pressed={filters.onlyNew}
                     onClick={() => change('onlyNew', !filters.onlyNew)}
+                    title={since && newCount > 0 ? `全库有 ${newCount} 条自上次访问以来首次收录或内容变更；首次收录不代表刚发布` : undefined}
                   >
                     新收录 / 变更
                   </button>
@@ -1357,7 +1367,7 @@ function HomeContent() {
               </p>
             )}
 
-            {since && newCount > 0 && (
+            {filters.onlyNew && since && newCount > 0 && (
               <p className="note-line">
                 全库有 {newCount}{' '}
                 条自上次访问以来首次收录或内容变更；首次收录不代表刚发布。

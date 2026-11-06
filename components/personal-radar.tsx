@@ -163,8 +163,39 @@ export function PersonalRadar({
       <div className="focus-head">
         <div className="focus-title">
           <strong>我的筛选方案</strong>
-          <small>下方数量按当前筛选统计</small>
         </div>
+        {!collapsed && (
+          <fieldset className="preset-tabs" aria-label="雷达方案列表">
+            {presets.map((preset) => {
+              const isActive = activePresetId === preset.id && Object.entries(preset.filters).every(([key, value]) => currentFilters[key as keyof Filters] === value);
+              return (
+                <div
+                  key={preset.id}
+                  className={`preset-chip ${isActive ? 'is-active' : ''}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(preset)}
+                    aria-pressed={isActive}
+                  >
+                    {preset.name}
+                  </button>
+                  {presets.length > 1 && (
+                    <button
+                      type="button"
+                      className="preset-del"
+                      onClick={(e) => handleDeletePreset(preset.id, e)}
+                      title={`删除方案 ${preset.name}`}
+                      aria-label={`删除方案 ${preset.name}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </fieldset>
+        )}
         <div className="focus-actions">
           {!isAdding && (
             <button
@@ -217,61 +248,28 @@ export function PersonalRadar({
       )}
 
       {!collapsed && (
-        <>
-          <fieldset className="preset-tabs" aria-label="雷达方案列表">
-            {presets.map((preset) => {
-              const isActive = activePresetId === preset.id && Object.entries(preset.filters).every(([key, value]) => currentFilters[key as keyof Filters] === value);
-              return (
-                <div
-                  key={preset.id}
-                  className={`preset-chip ${isActive ? 'is-active' : ''}`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(preset)}
-                    aria-pressed={isActive}
-                  >
-                    {preset.name}
-                  </button>
-                  {presets.length > 1 && (
-                    <button
-                      type="button"
-                      className="preset-del"
-                      onClick={(e) => handleDeletePreset(preset.id, e)}
-                      title={`删除方案 ${preset.name}`}
-                      aria-label={`删除方案 ${preset.name}`}
-                    >
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </fieldset>
-
-          <div className="focus-stats">
-            {stats.map(({ focus, label, count, icon: Icon, hot, activeTitle, idleTitle }) => {
-              const active = activeFocus === focus;
-              return (
-                <button
-                  key={focus}
-                  type="button"
-                  className={`focus-stat ${hot ? 'is-hot' : ''}`}
-                  onClick={() => onQuickFocus(focus)}
-                  aria-pressed={active}
-                  title={active ? activeTitle : idleTitle}
-                >
-                  <span className="focus-stat-label">
-                    <Icon />
-                    {label}
-                  </span>
-                  <span className="focus-stat-value">{count}</span>
-                  {active && <span className="focus-stat-state">已聚焦</span>}
-                </button>
-              );
-            })}
-          </div>
-        </>
+        <div className="focus-stats">
+          {stats.map(({ focus, label, count, icon: Icon, hot, activeTitle, idleTitle }) => {
+            const active = activeFocus === focus;
+            return (
+              <button
+                key={focus}
+                type="button"
+                className={`focus-stat ${hot ? 'is-hot' : ''}`}
+                onClick={() => onQuickFocus(focus)}
+                aria-pressed={active}
+                title={active ? activeTitle : idleTitle}
+              >
+                <span className="focus-stat-label">
+                  <Icon />
+                  {label}
+                </span>
+                <span className="focus-stat-value">{count}</span>
+                {active && <span className="focus-stat-state">已聚焦</span>}
+              </button>
+            );
+          })}
+        </div>
       )}
     </section>
   );

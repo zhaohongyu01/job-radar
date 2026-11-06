@@ -42,7 +42,7 @@ export function TopActionCard({
   const topUrgent = queue[0];
 
   return (
-    <div className="top-action-card" aria-label="我的求职安排与投递进度">
+    <div className={`top-action-card ${ready && !topUrgent ? 'is-calm' : ''}`} aria-label="我的求职安排与投递进度">
       <div className="top-action-stats">
         <button
           type="button"

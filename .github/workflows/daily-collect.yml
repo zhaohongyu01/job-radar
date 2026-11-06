@@ -1,5 +1,4 @@
 name: Daily Job Radar Pipeline
-run-name: ${{ inputs.release_nonce && format('Page finalization {0}', inputs.release_nonce) || 'Daily Job Radar Pipeline' }}
 
 on:
   schedule:
@@ -7,10 +6,6 @@ on:
     - cron: '0 6,21 * * *'
   workflow_dispatch:
     inputs:
-      release_nonce:
-        description: 'Optional identifier for a coordinated page publication'
-        type: string
-        default: ''
       reuse_run_id:
         description: '复用已完成采集的运行 ID，仅重新合并发布（不重新采集）；留空为正常采集'
         type: string

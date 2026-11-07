@@ -56,13 +56,13 @@ import {
 } from '@/lib/jobs';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
 import type { Job, Snapshot, Personal, Filters, PersonalRecord } from '@/lib/jobs';
-import { restoreBrowsing, parseUrlState, formatUrlQuery } from '@/lib/browsing';
-import type { ViewMode } from '@/lib/browsing';
+import { restoreBrowsing, restoreCardDensity, parseUrlState, formatUrlQuery } from '@/lib/browsing';
+import type { ViewMode, CardDensity } from '@/lib/browsing';
 import { JobTable } from '@/components/job-table';
 import { groupJobs } from '@/lib/grouping';
 import type { JobGroup } from '@/lib/grouping';
 import { FilterSidebar } from '@/components/filter-sidebar';
-import { JobCard, formatDate as date, OutLink, extractSalary } from '@/components/job-card';
+import { JobCard, formatDate as date, extractSalary } from '@/components/job-card';
 import { DetailDrawer } from '@/components/detail-drawer';
 import { PersonalRadar } from '@/components/personal-radar';
 import { DataHealth } from '@/components/data-health';
@@ -72,28 +72,22 @@ import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
 import type { CoverageReport } from '@/lib/city-coverage';
 import { createBackup, validateBackup, writeBackup } from '@/lib/personal-backup';
 import type { PersonalBackup } from '@/lib/personal-backup';
-import { APPLICATION_STAGES, personalConflicts, mergePersonalRecords } from '@/lib/personal-records';
+import { APPLICATION_STAGES, mergePersonalRecords } from '@/lib/personal-records';
 import { commitPersonalRecords, patchPersonalRecord, readPersonalRecords, withPersonalLock } from '@/lib/personal-store';
 import { EVENT_PERSONAL_STORAGE, validateEventPersonal } from '@/lib/agenda';
 import { EmployerWorkspace, useEmployerRecords, useEmployerReputation, useEmployerNavigation } from '@/components/employer-workspace';
 import { filterByReputation } from '@/lib/reputation';
 import { ApplicationOverview } from '@/components/application-overview';
-import { ReputationCoverage } from '@/components/reputation-coverage';
-import { employerFromId, employerLabel } from '@/lib/employers';
-import { employerRecordConflicts, mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
+import { BackupImportSheet } from '@/components/backup-import-sheet';
+import { SourceStatusSheet } from '@/components/source-status-sheet';
+import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
 
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
+const CARD_DENSITY_STORAGE = 'job-radar-card-density-v1';
 const STORAGE = 'quancheng-personal-v1',
   VISIT = 'quancheng-last-visit-v1';
 const PAGE_SIZE_STORAGE = 'job-radar-page-size-v1';
 const PAGE_SIZES = [20, 50, 100];
-
-function personalStatusText(record: PersonalRecord) {
-  const flags = ([['saved', '收藏'], ['applied', '已投递'], ['hidden', '隐藏']] as const)
-    .map(([key, label]) => `${label}：${typeof record[key] === 'boolean' ? record[key] ? '是' : '否' : '未记录'}`);
-  const read = Object.hasOwn(record, 'readAt') ? record.readAt ? `已读 ${date(record.readAt, true)}` : '未读' : '未记录';
-  return [...flags, `阅读：${read}`].join(' · ');
-}
 
 function ResultsPagination({
   page, pageSize, total, position, onPageChange, onPageSizeChange, grouped = false,
@@ -182,6 +176,7 @@ function HomeContent() {
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(50),
     [viewMode, setViewMode] = useState<ViewMode>('cards'),
+    [cardDensity, setCardDensity] = useState<CardDensity>('standard'),
     [groupCompanies, setGroupCompanies] = useState(false),
     [notice, setNotice] = useState(''),
     [now, setNow] = useState(0);
@@ -418,6 +413,7 @@ function HomeContent() {
       try {
         const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE));
         if (PAGE_SIZES.includes(storedSize)) setPageSize(storedSize);
+        setCardDensity(restoreCardDensity(localStorage.getItem(CARD_DENSITY_STORAGE)));
       } catch {
         // A blocked preference store must not prevent browsing or personal-record loading.
       }
@@ -565,6 +561,31 @@ function HomeContent() {
     });
   };
 
+  const changeStage = (job: Job, nextStage: NonNullable<Filters['applicationStage']>) => {
+    if (nextStage === 'all') return;
+    void save((latest) => {
+      const old = personalFor(job, latest), stamp = new Date().toISOString();
+      const isApplied = nextStage !== 'planned';
+      const patch: PersonalRecord = {
+        application_stage: nextStage,
+        applied: isApplied,
+        saved: old.saved ?? true,
+        applied_at: isApplied ? old.applied_at || stamp : null,
+      };
+      return patchPersonalRecord(latest, job, patch, stamp);
+    });
+    setNotice(`已更新跟进进度为「${APPLICATION_STAGES[nextStage]}」`);
+  };
+
+  const changeCardDensity = (next: CardDensity) => {
+    setCardDensity(next);
+    try {
+      localStorage.setItem(CARD_DENSITY_STORAGE, next);
+    } catch {
+      // Ignore storage write error when blocked
+    }
+  };
+
   const openView = (view: Filters['view']) => {
     if (view === filters.view && view === 'all') return;
     if (filters.view === 'all') discoveryFilters.current = filters;
@@ -647,6 +668,19 @@ function HomeContent() {
   );
   const filtered = useMemo(() => filterByReputation(baseFiltered, filters, reputation.index, employerRecords, now),
     [baseFiltered, filters, reputation.index, employerRecords, now]);
+
+  const selectedIndex = useMemo(
+    () => (selected ? filtered.findIndex((j) => j.id === selected.id) : -1),
+    [selected, filtered],
+  );
+  const navigateDetail = useCallback(
+    (delta: -1 | 1) => {
+      if (selectedIndex < 0) return;
+      const nextJob = filtered[selectedIndex + delta];
+      if (nextJob) void openDetail(nextJob);
+    },
+    [selectedIndex, filtered, openDetail],
+  );
 
   // Snapshot-wide facts used to hide filters that currently cannot match and
   // to explain filters that only apply to explicitly stated values.
@@ -923,9 +957,12 @@ function HomeContent() {
               我的收藏 <span className="app-nav-count">{data ? savedCount : '—'}</span>
             </button>
             <button className="app-nav-item" aria-current={filters.view === 'planned' ? 'page' : undefined} onClick={() => openView('planned')}>待投递</button>
-            <button className="app-nav-item" aria-current={filters.view === 'pipeline' ? 'page' : undefined} onClick={() => openView('pipeline')}>投递进度</button>
-            <button className="app-nav-item" aria-current={filters.view === 'applied' ? 'page' : undefined} onClick={() => openView('applied')}>
-              投递记录 <span className="app-nav-count">{data ? appliedCount : '—'}</span>
+            <button
+              className="app-nav-item"
+              aria-current={filters.view === 'pipeline' || filters.view === 'applied' ? 'page' : undefined}
+              onClick={() => openView('pipeline')}
+            >
+              投递看板 <span className="app-nav-count">{data ? appliedCount : '—'}</span>
             </button>
           </nav>
           <div className="app-bar-actions">
@@ -1121,8 +1158,19 @@ function HomeContent() {
               </p>
             )}
 
-            {filters.view === 'pipeline' && <ApplicationOverview jobs={allJobs} personal={personal} stage={filters.applicationStage}
-              onStage={stage => { setFilters({ ...personalViewFilters('pipeline'), applicationStage: stage }); setPage(1); }} />}
+            {(filters.view === 'pipeline' || filters.view === 'applied') && (
+              <ApplicationOverview
+                jobs={allJobs}
+                personal={personal}
+                stage={filters.applicationStage}
+                activeView={filters.view}
+                onViewChange={openView}
+                onStage={(stage) => {
+                  setFilters({ ...personalViewFilters('pipeline'), applicationStage: stage });
+                  setPage(1);
+                }}
+              />
+            )}
             <div className="result-bar">
               <div className="result-bar-left">
                 <div className="result-count" aria-live="polite">
@@ -1255,6 +1303,25 @@ function HomeContent() {
                   </button>
                 </fieldset>
 
+                {viewMode === 'cards' && (
+                  <fieldset className="seg seg-density" aria-label="卡片密度">
+                    <button
+                      type="button"
+                      aria-pressed={cardDensity === 'standard'}
+                      onClick={() => changeCardDensity('standard')}
+                    >
+                      标准
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={cardDensity === 'compact'}
+                      onClick={() => changeCardDensity('compact')}
+                    >
+                      紧凑
+                    </button>
+                  </fieldset>
+                )}
+
                 {pages > 1 && !searchPending && (
                   <div className="pager-mini">
                     <button
@@ -1385,7 +1452,7 @@ function HomeContent() {
               <div className="opp-list" aria-label="首批预览" aria-busy="true">
                 <output className="plan-caption">首批卡片预览；计数、收藏列表和日程会在完整索引就绪后显示。</output>
                 {previewJobs.map((job) => <JobCard key={job.id} job={job} filters={filters} personal={personal} ready={ready} now={now} since={since}
-                  onDetail={(candidate) => void openDetail(candidate)} onRead={markRead} onReadChange={setRead} onToggle={toggle} onCopy={copyJob} />)}
+                  density={cardDensity} onDetail={(candidate) => void openDetail(candidate)} onRead={markRead} onReadChange={setRead} onToggle={toggle} onStageChange={changeStage} onCopy={copyJob} />)}
                 {!previewJobs.length && <><div className="opp-skeleton" /><div className="opp-skeleton" /></>}
               </div>
             ) : (
@@ -1415,10 +1482,12 @@ function HomeContent() {
                           ready={ready}
                           now={now}
                           since={since}
+                          density={cardDensity}
                           onDetail={(j) => void openDetail(j)}
                           onRead={markRead}
                           onReadChange={setRead}
                           onToggle={toggle}
+                          onStageChange={changeStage}
                           onCopy={copyJob}
                         />
                       ))
@@ -1580,6 +1649,15 @@ function HomeContent() {
                   <button type="button" aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>表格</button>
                 </fieldset>
               </div>
+              {viewMode === 'cards' && (
+                <div className="field">
+                  <span className="field-label">卡片密度</span>
+                  <fieldset className="seg seg-block" aria-label="卡片密度（筛选面板）">
+                    <button type="button" aria-pressed={cardDensity === 'standard'} onClick={() => changeCardDensity('standard')}>标准</button>
+                    <button type="button" aria-pressed={cardDensity === 'compact'} onClick={() => changeCardDensity('compact')}>紧凑</button>
+                  </fieldset>
+                </div>
+              )}
               <label className="check-row">
                 <input type="checkbox" checked={groupCompanies} onChange={(event) => { setGroupCompanies(event.target.checked); setPage(1); }} />
                 <span>合并同企业</span>
@@ -1614,6 +1692,9 @@ function HomeContent() {
         ready={ready}
         detailLoading={detailLoading}
         detailError={detailError}
+        currentIndex={selectedIndex}
+        totalCount={filtered.length}
+        onNavigate={navigateDetail}
         onClose={() => {
           ++detailRequest.current;
           setLinkedJobId(null);
@@ -1628,105 +1709,22 @@ function HomeContent() {
         onPersonalSave={(job, patch, expected) => save((latest) => patchPersonalRecord(latest, job, patch, new Date().toISOString(), expected))}
       />
 
-      <Sheet open={!!importPreview} onOpenChange={(open) => { if (!open && !importing) setImportPreview(null); }}>
-        <SheetContent className="backup-import-sheet">
-          <SheetHeader><SheetTitle>确认合并个人备份</SheetTitle><SheetDescription>验证完成后统一保存；可在合并前先导出当前浏览器备份。</SheetDescription></SheetHeader>
-          {importPreview && <div className="application-tracker">
-            <p>岗位记录 {Object.keys(importPreview.records).length} 条，活动记录 {Object.keys(importPreview.event_records || {}).length} 条。</p>
-            {!!importPreview.employer_records && <p>企业个人记录 {Object.keys(importPreview.employer_records).length} 条，包含意向评分与备注。</p>}
-            <p>有 {personalConflicts(personal, importPreview.records).length} 条个人状态或备注缺少可区分新旧的更新时间；请选择冲突处理方式。可比较时间的记录采用较新状态。</p>
-            {personalConflicts(personal, importPreview.records).slice(0, 20).map((id) => <details key={id}><summary>{allJobs.find((job) => job.id === id || job.duplicate_ids?.includes(id))?.title || id}</summary>
-              <p>本机：{personalStatusText(personal[id])}<br />{personal[id].application_stage ? APPLICATION_STAGES[personal[id].application_stage] : '阶段未填写'} · {personal[id].notes || personal[id].next_action_note || '无备注'}</p>
-              <p>备份：{personalStatusText(importPreview.records[id])}<br />{importPreview.records[id].application_stage ? APPLICATION_STAGES[importPreview.records[id].application_stage] : '阶段未填写'} · {importPreview.records[id].notes || importPreview.records[id].next_action_note || '无备注'}</p>
-            </details>)}
-            {!!importPreview.employer_records && <>
-              <p>企业评分有 {employerRecordConflicts(employerRecords, importPreview.employer_records).length} 条时间相同的冲突；其余采用较新记录，清空评分也会保留。</p>
-              {employerRecordConflicts(employerRecords, importPreview.employer_records).slice(0, 20).map(id => <details key={id}>
-                <summary>{employerLabel(employerFromId(id))}</summary>
-                <p>本机：我的 {employerRecords[id].rating ?? '未评分'} · {employerRecords[id].notes || '无备注'}</p>
-                <p>备份：我的 {importPreview.employer_records![id].rating ?? '未评分'} · {importPreview.employer_records![id].notes || '无备注'}</p>
-              </details>)}
-            </>}
-            <button className="btn btn-outline" disabled={importing} onClick={exportPersonal}>先导出本机备份</button>
-            <button className="btn btn-primary" disabled={importing} onClick={() => void confirmImport(false)}>合并，保留本机冲突状态</button>
-            <button className="btn btn-outline" disabled={importing} onClick={() => void confirmImport(true)}>合并，冲突以备份为准</button>
-          </div>}
-        </SheetContent>
-      </Sheet>
+      <BackupImportSheet
+        importPreview={importPreview}
+        importing={importing}
+        personal={personal}
+        employerRecords={employerRecords}
+        allJobs={allJobs}
+        onClose={() => setImportPreview(null)}
+        onExport={exportPersonal}
+        onConfirm={(preferImported) => void confirmImport(preferImported)}
+      />
 
-      <Sheet open={sourceOpen} onOpenChange={setSourceOpen}>
-        <SheetContent className="detail-sheet">
-          <SheetHeader className="detail-header">
-            <SheetTitle>来源与更新状态</SheetTitle>
-            <SheetDescription>
-              城市可选范围不等于已完整覆盖的城市。
-            </SheetDescription>
-          </SheetHeader>
-          <div className="detail-body">
-            <ReputationCoverage />
-            <div className="apply-panel">
-              <h3>
-                {data?.schedule_enabled
-                  ? '每日更新已启用'
-                  : '每日自动更新尚未启用'}
-              </h3>
-              <p>
-                本页展示最近一次采集结果。首次收录、原站发布和内容变化分别记录；采集失败不会把旧公告下架。
-              </p>
-            </div>
-            {data?.sources.map((s) => (
-              <article className="source-card" key={s.id}>
-                <h3>
-                  {s.name}
-                  <span className={'tag ' + (s.status === 'ok' ? 'new' : '')}>
-                    {s.status === 'ok'
-                      ? '本次读取成功'
-                      : s.status === 'partial'
-                        ? '部分失败'
-                        : s.status === 'deferred'
-                          ? '按需联动'
-                          : s.status === 'blocked'
-                            ? '临时冷却'
-                            : '本次读取失败'}
-                  </span>
-                </h3>
-                {(s.scope || s.recruitment_types?.length || s.sectors?.length || s.trust) && (
-                  <div className="tags" aria-label="来源范围与类型">
-                    {s.scope && <span className="tag">范围：{s.scope}</span>}
-                    {s.recruitment_types?.map((type) => (
-                      <span className="tag blue" key={`${s.id}-${type}`}>
-                        {type}
-                      </span>
-                    ))}
-                    {s.sectors?.map((sector) => (
-                      <span className="tag" key={`${s.id}-${sector}`}>
-                        {sector}
-                      </span>
-                    ))}
-                    {s.trust && <span className="tag">{s.trust}</span>}
-                  </div>
-                )}
-                <p>
-                  读取 {s.pages ?? 0} 页，发现 {s.discovered ?? 0} 条、详情解析 {s.parsed ?? 0}{' '}
-                  条{s.cached ? `、复用近期已核实 ${s.cached} 条` : ''} · {s.coverage || '按规则运行'}
-                </p>
-                <p>最近列表巡检：{date(s.last_list_read_at || s.head_scan_at || ((s.pages ?? 0) > 0 ? s.last_attempt_at : null), true)}</p>
-                <p>最近完整成功：{date(s.last_success_at, true)} · 待补详情 {s.pending_details ?? 0} 条</p>
-                <p>最近尝试：{date(s.last_attempt_at, true)}</p>
-                {Boolean(s.errors && s.errors.length > 0) && (
-                  <p className="warning-text">
-                    {s.errors?.length} 项读取异常，相关旧记录仍保留。
-                  </p>
-                )}
-                <OutLink url={s.url}>访问来源</OutLink>
-              </article>
-            ))}
-            <p className="source-note">
-              以上为当前接入的公开来源及其最近巡检状态；更多银行、企业官网、事业单位和公务员专栏仍会按来源健康度逐步适配。当前没有结果不代表没有招聘。
-            </p>
-          </div>
-        </SheetContent>
-      </Sheet>
+      <SourceStatusSheet
+        open={sourceOpen}
+        onOpenChange={setSourceOpen}
+        data={data}
+      />
     </>
   );
 }

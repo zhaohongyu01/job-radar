@@ -38,9 +38,22 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(packed, {source['id'] for source in c.SOURCES})
         self.assertIn('boc-recruitment', c.source_pack_ids('finance'))
         self.assertIn('jinan-employment', c.source_pack_ids('regional-official'))
+        self.assertIn('sdei-civil-exams', c.source_pack_ids('regional-official'))
+        self.assertIn('sdei-jobfairs', c.source_pack_ids('regional-official'))
         self.assertIn('taiping-campus', c.source_pack_ids('finance'))
+        self.assertIn('picc-campus', c.source_pack_ids('finance'))
+        self.assertIn('chinalife-campus', c.source_pack_ids('finance'))
+        self.assertIn('chinastock-campus', c.source_pack_ids('finance'))
         self.assertIn('haier-social', c.source_pack_ids('large-enterprises'))
         self.assertIn('hisense-campus', c.source_pack_ids('large-enterprises'))
+        self.assertIn('weichai-campus', c.source_pack_ids('large-enterprises'))
+        self.assertIn('tsingtao-campus', c.source_pack_ids('large-enterprises'))
+        self.assertIn('qilu-pharma-campus', c.source_pack_ids('large-enterprises'))
+        self.assertIn('linglong-campus', c.source_pack_ids('large-enterprises'))
+        self.assertIn('sdjzu-jobs', c.source_pack_ids('universities-a'))
+        self.assertIn('sdjt-jobs', c.source_pack_ids('universities-a'))
+        self.assertIn('ouc-announcements', c.source_pack_ids('universities-b'))
+        self.assertIn('qau-positions', c.source_pack_ids('universities-b'))
         self.assertGreaterEqual(len(c.source_pack_ids('finance')), 1)
         with self.assertRaisesRegex(ValueError, 'unknown source pack'):
             c.source_pack_ids('missing-pack')
@@ -253,6 +266,43 @@ class CollectionTests(unittest.TestCase):
             with patch.object(c, 'fetch', return_value=json.dumps({'code': 0, 'data': dict(data, **changes)})):
                 with self.assertRaises(ValueError):
                     c.sdei_news_list(1)
+
+    def test_province_civil_exams_and_bysjy_online_jobs_parse_shandong_opportunities(self):
+        civil_source = next(s for s in c.SOURCES if s['id'] == 'sdei-civil-exams')
+        civil_payload = json.dumps({'code': 0, 'data': {
+            'classId': 99, 'totalPages': 4, 'pageNum': 1,
+            'articleList': [
+                {'id': 'c1', 'title': '221个岗位公开招考！北部战区陆军文职方阵期待您的加入',
+                 'siteurl': 'https://caiji.gxjy.sdei.edu.cn/publicfile/html/2026/11/05/1c42acbba0cf4115897dde2e4b47d60a.html'},
+                {'id': 'c2', 'title': '山东省人民政府印发《山东省实施就业优先战略规划》',
+                 'siteurl': 'https://caiji.gxjy.sdei.edu.cn/publicfile/html/2026/10/28/policy.html'},
+            ]}}, ensure_ascii=False)
+        with patch.object(c, 'fetch', return_value=civil_payload):
+            civil_items, civil_pages = c.sdei_news_list(1, source=civil_source)
+        self.assertEqual(civil_pages, 4)
+        self.assertEqual(len(civil_items), 1)
+        self.assertEqual(civil_items[0]['published_at'], '2026-11-05')
+        self.assertEqual(civil_items[0]['identity'], 'sdei-civil-exams:c1')
+
+        bysjy_source = next(s for s in c.SOURCES if s['id'] == 'sdjzu-jobs')
+        bysjy_payload = json.dumps({'code': 1, 'data': [{
+            'publish_id': '2650730', 'company_name': '中国二冶集团有限公司',
+            'job_name': '项目安全管理岗', 'end_time': '2027-11-06', 'publish_time': '2026-11-06',
+            'salary': '6K-9K/月', 'city_name': '济南市 烟台市', 'about_major': '安全工程，土木工程',
+            'degree_require': '本科及以上', 'company_property': '国有企业', 'industry_category': '建筑业',
+            'welfare': '五险二金', 'keywords': '餐补 房补', 'job_number': '15', 'category': '建筑工程师',
+            'overdue': False,
+        }]}, ensure_ascii=False)
+        with patch.object(c, 'fetch', return_value=bysjy_payload):
+            job_items, job_pages = c.bysjy_jobs_list(bysjy_source, 1)
+        self.assertEqual(job_pages, 1)
+        self.assertEqual(len(job_items), 1)
+        parsed = c.parse_detail(job_items[0]['inline_html'], job_items[0], bysjy_source)
+        self.assertEqual(parsed['company'], '中国二冶集团有限公司')
+        self.assertEqual(parsed['cities'], ['济南', '烟台'])
+        self.assertEqual(parsed['education'], '本科及以上')
+        self.assertIn('安全工程', parsed['body']); self.assertIn('国企', parsed['sectors'])
+        self.assertEqual(parsed['deadline'], '2027-11-06T23:59:59+08:00')
 
     def test_official_bank_list_filters_result_notices_and_reads_pagination(self):
         html='''

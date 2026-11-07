@@ -5,7 +5,8 @@ import {
 } from '../lib/jobs.ts';
 import type { Filters, Job } from '../lib/jobs.ts';
 import { groupJobs } from '../lib/grouping.ts';
-import { formatUrlQuery, parseUrlState, restoreBrowsing } from '../lib/browsing.ts';
+import { formatUrlQuery, parseUrlState, restoreBrowsing, restoreCardDensity } from '../lib/browsing.ts';
+import { parseAnnouncementSections } from '../lib/card-summary.ts';
 import { talkEventsForCity } from '../lib/talk-events.ts';
 import { upcomingTalks } from '../lib/workspace.ts';
 
@@ -89,4 +90,26 @@ void test('a preset restores identically and agenda counts follow the selected c
   assert.equal(upcomingTalks([job], {}, ['济南', '青岛'], now).length, 2);
   assert.equal(upcomingTalks([job], {}, '全部城市', now).length, 3);
   assert.equal(upcomingTalks([job], {}, '北京', now).length, 1);
+});
+
+void test('card density preference and structured announcement section parsing', () => {
+  assert.equal(restoreCardDensity('compact'), 'compact');
+  assert.equal(restoreCardDensity('standard'), 'standard');
+  assert.equal(restoreCardDensity('invalid'), 'standard');
+  assert.equal(restoreCardDensity(null), 'standard');
+
+  assert.deepEqual(parseAnnouncementSections('FULL_BODY_SUCCESS'), [{ id: 'sec-0', content: 'FULL_BODY_SUCCESS' }]);
+  const multiSec = [
+    '一、单位简介',
+    '示例集团是国有大型骨干企业。',
+    '二、招聘岗位',
+    '本次招聘软件研发岗 10 人。',
+    '三、报名条件',
+    '2027 届硕士研究生及以上学历。',
+  ].join('\n');
+  const parsed = parseAnnouncementSections(multiSec);
+  assert.equal(parsed.length, 3);
+  assert.equal(parsed[0].heading, '一、单位简介');
+  assert.equal(parsed[1].heading, '二、招聘岗位');
+  assert.equal(parsed[2].heading, '三、报名条件');
 });

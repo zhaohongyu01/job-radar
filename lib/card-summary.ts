@@ -121,3 +121,54 @@ export function validateCardSummary(value: CardSummary): void {
       (typeof value.source_published_at !== 'string' || !Number.isFinite(Date.parse(value.source_published_at))))
     throw Error('单位介绍来源日期异常。');
 }
+
+export interface AnnouncementSection {
+  id: string;
+  heading?: string;
+  shortLabel?: string;
+  content: string;
+}
+
+const SECTION_HEADING_RE = /^\s*(?:([一二三四五六七八九十]+、[^\n]{1,28})|(（[一二三四五六七八九十]+）[^\n]{1,28})|(【[^】]{2,20}】[^\n]{0,20}))\s*$/;
+
+export function parseAnnouncementSections(body: string | null | undefined): AnnouncementSection[] {
+  if (!body) return [];
+  const lines = body.split(/\r?\n/);
+  if (lines.length < 3) return [{ id: 'sec-0', content: body }];
+
+  const sections: AnnouncementSection[] = [];
+  let currentHeading: string | undefined;
+  let currentShortLabel: string | undefined;
+  let buffer: string[] = [];
+
+  const flush = () => {
+    const text = buffer.join('\n').trim();
+    if (currentHeading || text) {
+      sections.push({
+        id: `drawer-body-sec-${sections.length}`,
+        heading: currentHeading,
+        shortLabel: currentShortLabel,
+        content: text,
+      });
+    }
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (SECTION_HEADING_RE.test(trimmed) && trimmed.length <= 32) {
+      flush();
+      currentHeading = trimmed;
+      currentShortLabel = trimmed.replace(/^[（【]?([一二三四五六七八九十]+)[、）】]\s*/, '$1、').slice(0, 10);
+    } else {
+      buffer.push(line);
+    }
+  }
+  flush();
+
+  const headingCount = sections.filter((s) => s.heading).length;
+  if (headingCount < 2) {
+    return [{ id: 'sec-0', content: body }];
+  }
+  return sections;
+}

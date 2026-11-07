@@ -3,6 +3,18 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
+## 2026-11-08 工作台 UI/UX 全面升级与山东全类型采集渠道扩容（已提交并推送）
+
+用户批准实施 5 阶段前端 UI/UX 与模块化升级，并扩充山东省内全类型（政事基层、山东龙头国企名企、银行保险券商、驻鲁高校）采集渠道：
+- **前端工作台与卡片重构**：导航合并为 4 主视图（`发现机会`、`我的收藏`、`待投递`、`投递跟进` 胶囊切换看板/列表，兼容 `?view=progress` / `?view=records`）；移除低价值说明条；搜索与保存方案合并为紧凑工具栏，4 项动态提醒压成单行胶囊条。卡片标题字重升级（18px/700），单位性质徽章按国企/央企、事业单位/政府、银行/金融配色区分，展示前 3 个子岗位预览胶囊，摘要调整为优先岗位职责/任职要求（无职责回退单位介绍）。详情抽屉桌面端扩宽至 `860px` 并采用左右双栏（左栏岗位表与正文，右栏粘性投递面板与跟进表单），提取独立组件 `components/source-status-sheet.tsx` 与 `components/backup-import-sheet.tsx`，补齐移动端 `min-height: 40px` 触控热区与 `env(safe-area-inset-bottom)`。162 项 TS 单测、oxlint、tsc、Next 生产构建全部通过。
+- **山东重点采集渠道扩容（87 → 123 源，+36 源）**：
+  1. `regional-official`（+2 源）：扩展 `sdei_news_list` 支持多 `class_id`、标题正则过滤及 `caiji.gxjy.sdei.edu.cn` 正文解析与异常拼接外链拦截，新增 `sdei-civil-exams`（招考与基层项目，`classId=99`）与 `sdei-jobfairs`（省级专场招聘活动，`classId=87`）。
+  2. `large-enterprises`（+8 源）：接入潍柴动力（`weichai-campus/social`）、青岛啤酒（`tsingtao-campus/social`）、齐鲁制药（`qilu-pharma-campus/social`）、玲珑轮胎（`linglong-campus/social`）官方北森（Zhiye）接口，并增强 `zhiye_jobs_list` 合并 `LocNames` 与 `DetailAddress` 提取山东具体地市。
+  3. `finance`（+6 源）：接入中国人民保险集团（`picc-campus/social`）、中国人寿集团（`chinalife-campus/social`）、中国银河证券（`chinastock-campus/social`）官方北森接口。
+  4. `universities-a`（+2 源）：新增 `bysjy_jobs_list` 适配器（`/module/getjobs?type=inner`），接入山东建筑大学（`sdjzu-jobs`）、山东交通学院（`sdjt-jobs`）在线直聘岗位。
+  5. `universities-b`（+18 源）：`SDEI_SCHOOLS` 与 `ROTATING_SDEI_GROUPS` 新增中国海洋大学（`ouc`）、青岛农业大学（`qau`）、潍坊学院（`wfu`）、枣庄学院（`uzz`）、济宁医学院（`jnmc`）、山东艺术学院（`sdca`）共 6 校 × 3 通道。
+- **验证**：新增 `test_collect.py` 分片归属与解析单测，294 项 Python 单测全部通过；隔离实测首屏即新增解析 1,243 条有效岗位且零详情请求渠道单源耗时仅 0.31s~0.64s。
+
 ## 2026-11-06 前端可用性修正（已提交并推送，未触发重新部署）
 
 用户批准按审阅建议实施，只做必要测试。仅改前端，不涉及采集管线、托管成本或采集时间。

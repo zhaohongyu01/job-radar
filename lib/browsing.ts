@@ -25,6 +25,11 @@ const cityName = (value: unknown) => typeof value === 'string' && /^[\u4e00-\u9f
   ? normalizeCity(value) || value : null;
 
 export type ViewMode = 'cards' | 'table';
+export type CardDensity = 'standard' | 'compact';
+
+export function restoreCardDensity(input: unknown): CardDensity {
+  return input === 'compact' ? 'compact' : 'standard';
+}
 /** `legacyRelatedTalks` migrates browsing state saved before that option existed;
  * presets pass false so the same preset yields the same result before and after a reload. */
 export function restoreBrowsing(input: unknown, legacyRelatedTalks = true): { filters: Filters; viewMode: ViewMode; groupCompanies: boolean } {

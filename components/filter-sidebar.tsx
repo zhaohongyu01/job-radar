@@ -104,6 +104,16 @@ function Toggle({
   );
 }
 
+const QUICK_CITIES = ['济南', '青岛', '北京', '上海', '广州', '深圳', '杭州', '南京', '成都', '武汉'] as const;
+const QUICK_EDUCATION = [
+  { label: '不限', value: '' },
+  { label: '大专', value: '大专' },
+  { label: '本科', value: '本科' },
+  { label: '硕士', value: '硕士' },
+  { label: '博士', value: '博士' },
+] as const;
+const QUICK_MAJORS = ['计算机', '软件工程', '电气', '电子信息', '机械', '会计', '金融', '法学', '汉语言'] as const;
+
 export function FilterSidebar({
   filters,
   data,
@@ -135,13 +145,41 @@ export function FilterSidebar({
   const cityOptions = Array.from(new Set([...ALL_CITIES, ...(data?.cities || []), ...selectedCities]));
   const canAddCity = cityOptions.includes(cityQuery) && !selectedCities.includes(cityQuery);
   const addCity = () => { if (!canAddCity) return; onChange('workCities', [...selectedCities, cityQuery]); setCityQuery(''); };
+  const toggleQuickCity = (city: string) => {
+    const next = selectedCities.includes(city)
+      ? selectedCities.filter((value) => value !== city)
+      : [...selectedCities, city];
+    onChange('workCities', next);
+  };
+  const activeCount = [
+    selectedCities.length > 0,
+    filters.type !== '全部',
+    filters.type === '校招' && filters.year !== '全部',
+    filters.sector !== '全部',
+    (filters.employmentType || 'all') !== 'all',
+    filters.direction !== '全部',
+    filters.salary !== '全部',
+    Boolean(filters.education),
+    Boolean(filters.major),
+    filters.provenance !== '全部',
+    filters.kind !== '全部',
+    filters.changeType !== '全部',
+    (filters.validity || 'all') !== 'all',
+    (filters.reputationMin || 'all') !== 'all',
+    filters.showExpired,
+    !filters.includeUncertain,
+    Boolean(filters.includeRelatedTalks),
+  ].filter(Boolean).length;
   // Filters with no matching data stay hidden unless already active (so they can be cleared).
   const showValidity = !facts || facts.verified > 0 || (filters.validity || 'all') !== 'all';
   const showReputation = !facts || facts.hasReputationScores || (filters.reputationMin || 'all') !== 'all' || filters.includeUnrated === false;
   return (
     <aside className={`filter-rail ${className}`} aria-label="筛选条件">
       <div className="rail-head">
-        <h2>筛选</h2>
+        <div className="rail-head-title">
+          <h2>筛选</h2>
+          {activeCount > 0 && <span className="filter-active-badge">{activeCount} 项生效</span>}
+        </div>
         <button className="text-btn" aria-label="重置筛选" title="重置筛选" onClick={onReset}>
           <RotateCcw />
           重置
@@ -156,6 +194,22 @@ export function FilterSidebar({
           <datalist id={`${cityListId}-options`}>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</datalist>
           <button type="button" className="btn btn-secondary btn-sm" disabled={!canAddCity} onClick={addCity}>添加城市</button>
         </div>
+        <fieldset className="quick-filter-pills" aria-label="热门城市快捷选择">
+          {QUICK_CITIES.map((city) => {
+            const active = selectedCities.includes(city);
+            return (
+              <button
+                key={city}
+                type="button"
+                aria-pressed={active}
+                className={`toggle-chip toggle-chip-xs${active ? ' is-active' : ''}`}
+                onClick={() => toggleQuickCity(city)}
+              >
+                {city}
+              </button>
+            );
+          })}
+        </fieldset>
         <div className="chip-row">
           {!selectedCities.length && <span className="filter-help">未限定城市，显示全部</span>}
           {selectedCities.map((city) => <button key={city} type="button" className="chip" aria-label={`移除工作城市${city}`}
@@ -216,8 +270,8 @@ export function FilterSidebar({
       {facts && facts.total > 0 && filters.salary !== '全部' && (
         <small className="filter-help">仅含写明薪资的公告（全站约 {Math.round((facts.salaryKnown / facts.total) * 100)}%），未写薪资的不会出现。</small>
       )}
-      <label htmlFor={educationId} className="field">
-        <span className="field-label">学历关键词</span>
+      <div className="field">
+        <label htmlFor={educationId} className="field-label">学历关键词</label>
         <Input
           id={educationId}
           className="field-input"
@@ -225,10 +279,43 @@ export function FilterSidebar({
           onChange={(e) => onChange('education', e.target.value)}
           placeholder="不限，可输入本科"
         />
-      </label>
-      <label className="field" htmlFor={majorId}><span className="field-label">专业关键词（同一岗位匹配）</span>
+        <fieldset className="quick-filter-pills" aria-label="学历快捷选择">
+          {QUICK_EDUCATION.map((item) => {
+            const active = filters.education === item.value;
+            return (
+              <button
+                key={item.label}
+                type="button"
+                aria-pressed={active}
+                className={`toggle-chip toggle-chip-xs${active ? ' is-active' : ''}`}
+                onClick={() => onChange('education', active && item.value ? '' : item.value)}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </fieldset>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor={majorId}>专业关键词（同一岗位匹配）</label>
         <Input id={majorId} value={filters.major || ''} onChange={(event) => onChange('major', event.target.value)} placeholder="例如会计、软件工程" />
-      </label>
+        <fieldset className="quick-filter-pills" aria-label="热门专业快捷选择">
+          {QUICK_MAJORS.map((major) => {
+            const active = (filters.major || '') === major;
+            return (
+              <button
+                key={major}
+                type="button"
+                aria-pressed={active}
+                className={`toggle-chip toggle-chip-xs${active ? ' is-active' : ''}`}
+                onClick={() => onChange('major', active ? '' : major)}
+              >
+                {major}
+              </button>
+            );
+          })}
+        </fieldset>
+      </div>
       <details className="filter-more">
         <summary>
           <span>

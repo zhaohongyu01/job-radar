@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet, Clock } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -16,8 +16,12 @@ import { positionMatches } from '@/lib/eligibility';
 import type { PersonalRecord } from '@/lib/jobs';
 import { ApplicationTracker } from '@/components/application-tracker';
 import { formatDate, OutLink } from '@/components/job-card';
+import { HighlightText } from '@/components/highlight-text';
 import { TalkEvents } from '@/components/talk-events';
 import { EmployerEntry } from '@/components/employer-workspace';
+import { parseAnnouncementSections } from '@/lib/card-summary';
+
+export { parseAnnouncementSections } from '@/lib/card-summary';
 
 export function DetailDrawer({
   selected,
@@ -35,6 +39,9 @@ export function DetailDrawer({
   setNotice,
   onPersonalSave,
   filters,
+  currentIndex = -1,
+  totalCount = 0,
+  onNavigate,
 }: {
   filters?: Filters;
   selected: Job | null;
@@ -51,9 +58,60 @@ export function DetailDrawer({
   onCopy: (job: Job) => void;
   setNotice: (msg: string) => void;
   onPersonalSave: (job: Job, patch: PersonalRecord, expected?: PersonalRecord) => boolean | Promise<boolean>;
+  currentIndex?: number;
+  totalCount?: number;
+  onNavigate?: (delta: -1 | 1) => void;
 }) {
   const [positionSearch, setPositionSearch] = useState({ jobId: '', value: '' });
   const positionFilter = positionSearch.jobId === selected?.id ? positionSearch.value : '';
+
+  useEffect(() => {
+    if (!selected || !onNavigate || totalCount <= 1) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey) return;
+      if (event.key === 'j' || event.key === 'J' || (event.altKey && event.key === 'ArrowDown')) {
+        event.preventDefault();
+        onNavigate(1);
+      } else if (event.key === 'k' || event.key === 'K' || (event.altKey && event.key === 'ArrowUp')) {
+        event.preventDefault();
+        onNavigate(-1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selected, onNavigate, totalCount]);
+
+  const announcementSections = useMemo(
+    () => parseAnnouncementSections(selected?.body),
+    [selected?.body],
+  );
+  const headingAnchors = useMemo(
+    () => announcementSections.filter((s) => Boolean(s.heading)),
+    [announcementSections],
+  );
+  const highlightQuery = useMemo(() => {
+    const terms = [filters?.query, filters?.major, filters?.education]
+      .map((t) => (t || '').trim())
+      .filter(Boolean);
+    return terms.join(' ');
+  }, [filters?.query, filters?.major, filters?.education]);
+
+  const scrollToSection = (elementId: string) => {
+    const el = document.getElementById(elementId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   const displayedPositions = useMemo(() => {
     const list = selected?.positions ?? [];
@@ -152,42 +210,97 @@ export function DetailDrawer({
                 </p>
               )}
               <TalkEvents job={selected} city={city} now={now} onOpen={() => onRead(selected)} />
-              <div className="detail-actions">
-                {/* Opening the drawer already marks it read; offer only the reverse. */}
-                {!isUnread(selected, personal) && (
+              <div className="detail-sticky-bar">
+                <div className="detail-actions">
+                  {onNavigate && currentIndex >= 0 && totalCount > 1 && (
+                    <fieldset className="detail-nav-group" aria-label="上下条岗位切换">
+                      <button
+                        type="button"
+                        className="detail-nav-btn"
+                        disabled={currentIndex <= 0}
+                        onClick={() => onNavigate(-1)}
+                        title="上一条岗位（快捷键 K 或 Alt+↑）"
+                        aria-label="上一条岗位"
+                      >
+                        <ChevronLeft size={14} />
+                        <span>上一条</span>
+                      </button>
+                      <span className="detail-nav-index">{currentIndex + 1} / {totalCount}</span>
+                      <button
+                        type="button"
+                        className="detail-nav-btn"
+                        disabled={currentIndex >= totalCount - 1}
+                        onClick={() => onNavigate(1)}
+                        title="下一条岗位（快捷键 J 或 Alt+↓）"
+                        aria-label="下一条岗位"
+                      >
+                        <span>下一条</span>
+                        <ChevronRight size={14} />
+                      </button>
+                    </fieldset>
+                  )}
+                  {/* Opening the drawer already marks it read; offer only the reverse. */}
+                  {!isUnread(selected, personal) && (
+                    <Button
+                      variant="outline"
+                      disabled={!ready || detailLoading}
+                      onClick={() => onReadChange(selected, false)}
+                    >
+                      标为未读
+                    </Button>
+                  )}
                   <Button
-                    variant="outline"
-                    disabled={!ready || detailLoading}
-                    onClick={() => onReadChange(selected, false)}
+                    variant={personalFor(selected, personal).saved ? 'default' : 'outline'}
+                    disabled={!ready}
+                    onClick={() => onToggle(selected, 'saved')}
                   >
-                    标为未读
+                    <Bookmark size={16} />
+                    {personalFor(selected, personal).saved ? '已收藏' : '收藏'}
                   </Button>
-                )}
-                <Button
-                  variant={personalFor(selected, personal).saved ? 'default' : 'outline'}
-                  disabled={!ready}
-                  onClick={() => onToggle(selected, 'saved')}
-                >
-                  <Bookmark size={16} />
-                  {personalFor(selected, personal).saved ? '已收藏' : '收藏'}
-                </Button>
-                <Button
-                  variant={personalFor(selected, personal).applied ? 'default' : 'outline'}
-                  disabled={!ready}
-                  onClick={() => onToggle(selected, 'applied')}
-                >
-                  <Check size={16} />
-                  {personalFor(selected, personal).applied ? '已投递' : '标记已投递'}
-                </Button>
-                <Button variant="outline" onClick={() => onCopy(selected)}>
-                  <Share2 size={16} />
-                  复制分享
-                </Button>
-                <Button variant="ghost" onClick={() => onToggle(selected, 'hidden')}>
-                  {personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}
-                </Button>
+                  <Button
+                    variant={personalFor(selected, personal).applied ? 'default' : 'outline'}
+                    disabled={!ready}
+                    onClick={() => onToggle(selected, 'applied')}
+                  >
+                    <Check size={16} />
+                    {personalFor(selected, personal).applied ? '已投递' : '标记已投递'}
+                  </Button>
+                  <Button variant="outline" onClick={() => onCopy(selected)}>
+                    <Share2 size={16} />
+                    复制分享
+                  </Button>
+                  <Button variant="ghost" onClick={() => onToggle(selected, 'hidden')}>
+                    {personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}
+                  </Button>
+                </div>
+                <nav className="detail-jump-nav" aria-label="详情章节快速跳转">
+                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-apply')}>
+                    报名入口
+                  </button>
+                  {(selected.positions ?? []).length > 0 && (
+                    <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-positions')}>
+                      岗位明细 ({selected.positions?.length})
+                    </button>
+                  )}
+                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-tracker')}>
+                    投递跟进
+                  </button>
+                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-body')}>
+                    公告正文
+                  </button>
+                  {headingAnchors.map((sec) => (
+                    <button
+                      key={sec.id}
+                      type="button"
+                      className="detail-jump-pill is-sub"
+                      onClick={() => scrollToSection(sec.id)}
+                    >
+                      {sec.shortLabel || sec.heading}
+                    </button>
+                  ))}
+                </nav>
               </div>
-              <div className="apply-panel">
+              <div className="apply-panel" id="drawer-sec-apply">
                 <h3>报名入口</h3>
                 {sdeiPositionListUrl(selected.source_url) && (
                   <div>
@@ -236,7 +349,7 @@ export function DetailDrawer({
               </div>
               {/* Parsed Positions Panel */}
               {(selected.positions ?? []).length > 0 && (
-                <div className="positions-panel" aria-label="岗位需求明细">
+                <div className="positions-panel" id="drawer-sec-positions" aria-label="岗位需求明细">
                   <div className="positions-header">
                     <div className="positions-title-box">
                       <Briefcase size={16} className="positions-icon" />
@@ -330,7 +443,9 @@ export function DetailDrawer({
                 </div>
               )}
 
-              <ApplicationTracker key={selected.id} job={selected} record={personalFor(selected, personal)} onSave={onPersonalSave} />
+              <div id="drawer-sec-tracker">
+                <ApplicationTracker key={selected.id} job={selected} record={personalFor(selected, personal)} onSave={onPersonalSave} />
+              </div>
               <h3>地点与资格</h3>
               <p>
                 {selected.location_evidence.length
@@ -340,9 +455,26 @@ export function DetailDrawer({
               <p className="inline-note">
                 自动整理标签可能不完整；应届资格、专业和工作经验要求请核对原文。
               </p>
-              <h3>公告文字</h3>
+              <h3 id="drawer-sec-body">公告文字</h3>
               <div className="announcement-text">
-                {selected.body || '完整公告尚未读取，请打开原公告核对。'}
+                {!selected.body ? (
+                  '完整公告尚未读取，请打开原公告核对。'
+                ) : headingAnchors.length >= 2 ? (
+                  <div className="announcement-sections">
+                    {announcementSections.map((sec) => (
+                      <section key={sec.id} id={sec.id} className="announcement-sec">
+                        {sec.heading && <h4 className="announcement-sec-heading">{sec.heading}</h4>}
+                        {sec.content && (
+                          <div className="announcement-sec-body">
+                            {highlightQuery ? <HighlightText text={sec.content} query={highlightQuery} /> : sec.content}
+                          </div>
+                        )}
+                      </section>
+                    ))}
+                  </div>
+                ) : (
+                  selected.body
+                )}
               </div>
 
               {((selected.attachments ?? []).length > 0 ||

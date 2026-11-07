@@ -102,10 +102,12 @@ export function JobCard({
   ready,
   now,
   since,
+  density = 'standard',
   onDetail,
   onRead,
   onReadChange,
   onToggle,
+  onStageChange,
   onCopy,
 }: {
   job: Job;
@@ -114,10 +116,12 @@ export function JobCard({
   ready: boolean;
   now: number;
   since: string | null;
+  density?: 'standard' | 'compact';
   onDetail: (job: Job) => void;
   onRead: (job: Job) => void;
   onReadChange: (job: Job, read: boolean) => void;
   onToggle: (job: Job, key: 'saved' | 'applied' | 'hidden') => void;
+  onStageChange?: (job: Job, stage: NonNullable<Filters['applicationStage']>) => void;
   onCopy: (job: Job) => void;
 }) {
   const workCities = selectedWorkCities(filters);
@@ -211,12 +215,20 @@ export function JobCard({
     }
   };
 
+  const isCompact = density === 'compact';
+  const hasTrackedStage = Boolean(saved || applied || personalRecord.application_stage);
+  const currentStageKey = personalRecord.application_stage || (applied ? 'applied' : 'planned');
+
   return (
     <article
       className={
         'opp-card' +
         (expired ? ' is-expired' : '') +
-        (saved ? ' is-saved' : '')
+        (saved ? ' is-saved' : '') +
+        (applied ? ' is-applied' : '') +
+        (unread ? ' is-unread' : ' is-read') +
+        (isCompact ? ' is-compact' : '') +
+        (deadlineState ? ` ${deadlineState}` : '')
       }
     >
       <header className="opp-head">
@@ -229,7 +241,11 @@ export function JobCard({
             <span className="opp-company-name"><EmployerEntry job={job} name={displayCompany} /></span>
             {job.sectors[0] && job.sectors[0] !== '综合' && <span className="opp-sector">{job.sectors[0]}</span>}
             {job.kind === '具体岗位' && <span className="opp-tag-sm">具体岗位</span>}
-            {(filters.view === 'pipeline' || filters.view === 'planned') && <span className="opp-tag-sm">我的进度：{APPLICATION_STAGES[personalRecord.application_stage || (applied ? 'applied' : 'planned')]}</span>}
+            {(filters.view === 'pipeline' || filters.view === 'planned' || hasTrackedStage) && (
+              <span className="opp-tag-sm opp-stage-badge">
+                我的进度：{APPLICATION_STAGES[currentStageKey]}
+              </span>
+            )}
             {job.provenance === '第三方线索' && <span className="opp-sector">第三方线索</span>}
             {!!duplicateSourceNames(job).length && (
               <span className="opp-tag-sm" title={`已同步 ${duplicateSourceNames(job).length + 1} 个官方渠道`}>
@@ -264,6 +280,12 @@ export function JobCard({
               <Bookmark size={17} fill={saved ? 'currentColor' : 'none'} />
             </button>
           </div>
+          {!expired && countdown && (countdown.urgency === 'urgent' || countdown.urgency === 'warning') && (
+            <span className={`opp-countdown-pill is-${countdown.urgency}`} title={`报名截止：${formatDate(job.deadline, true)}`}>
+              <Clock3 size={12} />
+              <span>{countdown.text}</span>
+            </span>
+          )}
           {salary && <span className="opp-salary">{salary}</span>}
         </div>
       </header>
@@ -328,18 +350,18 @@ export function JobCard({
         {displayPositions.length > 0 && (
           <div className="opp-positions">
             <span className="opp-positions-label">{matchingPositions.length ? `匹配岗位 ${matchingPositions.length}` : '岗位信息'}</span>
-            {displayPositions.map((pos, idx) => (
+            {(isCompact ? displayPositions.slice(0, 3) : displayPositions).map((pos, idx) => (
               <span key={idx} className="opp-pos-pill">
                 <HighlightText text={pos} query={filters.query} />
               </span>
             ))}
-            {job.position_count && job.position_count > displayPositions.length && (
+            {job.position_count && job.position_count > (isCompact ? Math.min(3, displayPositions.length) : displayPositions.length) && (
               <span className="text-muted text-xs">等 {job.position_count} 个职位</span>
             )}
           </div>
         )}
 
-        {displayMajors.length > 0 && (
+        {!isCompact && displayMajors.length > 0 && (
           <div className="opp-majors">
             <span className="opp-majors-label">需求专业</span>
             {displayMajors.map((m, idx) => (
@@ -350,7 +372,7 @@ export function JobCard({
           </div>
         )}
 
-        {(hasJobTableAttachment || directEmail) && (
+        {!isCompact && (hasJobTableAttachment || directEmail) && (
           <div className="opp-extras">
             {hasJobTableAttachment && (
               <span className="opp-extra-pill" title="公告附带官方岗位需求表，点击详情可查看解析明细">
@@ -383,7 +405,7 @@ export function JobCard({
           </p>
         )}
         {job.company_conflict && <p className="opp-note">{job.company_note}</p>}
-        {excerptText && (
+        {!isCompact && excerptText && (
           <div className="opp-summary">
             <p id={summaryId} className={`opp-excerpt${summaryExpanded ? ' is-expanded' : ''}`}>
               <strong className="opp-summary-label">{summaryLabel}：</strong>
@@ -399,13 +421,15 @@ export function JobCard({
             </div>
           </div>
         )}
-        <TalkEvents
-          job={job}
-          city={workCities}
-          now={now}
-          limit={2}
-          onOpen={() => onRead(job)}
-        />
+        {!isCompact && (
+          <TalkEvents
+            job={job}
+            city={workCities}
+            now={now}
+            limit={2}
+            onOpen={() => onRead(job)}
+          />
+        )}
       </div>
 
       <footer className="opp-foot">
@@ -449,6 +473,19 @@ export function JobCard({
           </div>
         </div>
         <div className="opp-actions">
+          {hasTrackedStage && onStageChange && (
+            <select
+              className="opp-stage-select"
+              aria-label={`快捷切换阶段：${job.title}`}
+              disabled={!ready}
+              value={currentStageKey}
+              onChange={(e) => onStageChange(job, e.target.value as NonNullable<Filters['applicationStage']>)}
+            >
+              {Object.entries(APPLICATION_STAGES).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          )}
           <button
             className="btn btn-ghost btn-sm"
             disabled={!ready}

@@ -164,13 +164,21 @@ for code, host, school_name in [('sdjzu', 'sdjzu', '山东建筑大学'), ('sdjt
     SOURCES.append({'id': code + '-talks', 'name': school_name + ' · 宣讲日历',
         'url': f'https://{host}.bysjy.com.cn/module/careers', 'school_name': school_name,
         'adapter': 'bysjy_talks', 'channel': 'talks', 'allow_empty_pages': True})
+for code, host, school_name in [('sdjzu', 'sdjzu', '山东建筑大学'), ('sdjt', 'sdjt', '山东交通学院')]:
+    SOURCES.append({'id': code + '-jobs', 'name': school_name + ' · 在线直聘岗位',
+        'url': f'https://{host}.bysjy.com.cn/module/jobs', 'school_name': school_name,
+        'adapter': 'bysjy_jobs', 'channel': 'positions', 'scope': '山东及全国',
+        'recruitment_types': ['校招'], 'sectors': ['综合'], 'trust': '官方原始来源',
+        'source_family': school_name})
 SDEI_SCHOOLS = [
     ('jobsdufe', '山东财经大学'), ('ujn', '济南大学'), ('sdut', '山东理工大学'), ('qlu', '齐鲁工业大学'),
     ('sdnu', '山东师范大学'), ('sdsmu', '山东第二医科大学'), ('qust', '青岛科技大学'), ('qdu', '青岛大学'),
     ('ytu', '烟台大学'), ('ldu', '鲁东大学'), ('sdfmu', '山东第一医科大学'),
     ('bzmc', '滨州医学院'), ('lcu', '聊城大学'), ('lyu', '临沂大学'),
     ('sdtbu', '山东工商学院'), ('dzu', '德州学院'), ('sdua', '山东农业工程学院'),
-    ('sdutcm', '山东中医药大学'),
+    ('sdutcm', '山东中医药大学'), ('ouc', '中国海洋大学'), ('qau', '青岛农业大学'),
+    ('wfu', '潍坊学院'), ('uzz', '枣庄学院'), ('jnmc', '济宁医学院'),
+    ('sdca', '山东艺术学院'),
 ]
 # Only named physical campuses whose city is confirmed by school websites.
 # Multi-city institutions are deliberately not inferred from the school name.
@@ -180,10 +188,10 @@ SDEI_SCHOOLS = [
 # ytu.edu.cn/info/1003/12777.htm, sdua.edu.cn.
 CORE_SDEI_SCHOOLS = {'jobsdufe', 'ujn', 'sdnu', 'qlu', 'sdutcm'}
 ROTATING_SDEI_GROUPS = [
-    ['qdu', 'qust', 'ytu', 'ldu'],
-    ['sdsmu', 'sdfmu', 'bzmc'],
-    ['sdut', 'lcu', 'lyu'],
-    ['sdtbu', 'dzu', 'sdua'],
+    ['qdu', 'qust', 'ytu', 'ldu', 'ouc'],
+    ['sdsmu', 'sdfmu', 'bzmc', 'jnmc', 'qau'],
+    ['sdut', 'lcu', 'lyu', 'wfu', 'uzz'],
+    ['sdtbu', 'dzu', 'sdua', 'sdca'],
 ]
 
 
@@ -225,7 +233,18 @@ SOURCES.append({'id': 'offerjack', 'name': 'Jacky学长校招 · 公开招聘线
 SOURCES.extend([
     {'id': 'sdei-news', 'name': '山东省大学生就业服务平台 · 招聘速递',
      'url': 'https://gxjy.sdei.edu.cn/JobFairs/channel?classId=96', 'adapter': 'sdei_news',
-     'scope': '山东及全国', 'recruitment_types': ['校招', '社招', '事业单位'],
+     'class_id': 96, 'scope': '山东及全国', 'recruitment_types': ['校招', '社招', '事业单位'],
+     'sectors': ['综合'], 'trust': '官方原始来源', 'source_family': '山东省大学生就业服务平台'},
+    {'id': 'sdei-civil-exams', 'name': '山东省大学生就业服务平台 · 招考与基层项目',
+     'url': 'https://gxjy.sdei.edu.cn/JobFairs/channel?classId=99', 'adapter': 'sdei_news',
+     'class_id': 99, 'allow_empty_pages': True,
+     'include_title_re': r'招聘|招考|招募|招录|选调|选聘|三支一扶|文职|岗位|简章|引进|事业单位',
+     'scope': '山东及全国', 'recruitment_types': ['事业单位', '校招'],
+     'sectors': ['政府 / 事业单位'], 'trust': '官方原始来源', 'source_family': '山东省大学生就业服务平台'},
+    {'id': 'sdei-jobfairs', 'name': '山东省大学生就业服务平台 · 省级专场招聘活动',
+     'url': 'https://gxjy.sdei.edu.cn/JobFairs/channel?classId=87', 'adapter': 'sdei_news',
+     'class_id': 87, 'allow_empty_pages': True,
+     'scope': '山东', 'recruitment_types': ['校招'],
      'sectors': ['综合'], 'trust': '官方原始来源', 'source_family': '山东省大学生就业服务平台'},
     {'id': 'boc-recruitment', 'name': '中国银行 · 官方招聘公告',
      'url': 'https://www.boc.cn/aboutboc/bi4/', 'adapter': 'official_bank',
@@ -254,6 +273,42 @@ SOURCES.extend([
      'institution': '中国太平保险集团', 'default_type': '社招', 'pack': 'finance',
      'scope': '全国', 'recruitment_types': ['社招'], 'sectors': ['保险'],
      'trust': '官方招聘平台', 'source_family': '保险官方招聘'},
+    {'id': 'picc-campus', 'name': '中国人民保险集团 · 校园招聘',
+     'url': 'https://picc.zhiye.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': '77a33ae7-0f82-44e0-9a8f-69f4e1727c78', 'business_type': '2',
+     'institution': '中国人民保险集团', 'default_type': '校招', 'pack': 'finance',
+     'scope': '山东及全国', 'recruitment_types': ['校招'], 'sectors': ['保险'],
+     'trust': '官方招聘平台', 'source_family': '保险官方招聘'},
+    {'id': 'picc-social', 'name': '中国人民保险集团 · 社会招聘',
+     'url': 'https://picc.zhiye.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': '77a33ae7-0f82-44e0-9a8f-69f4e1727c78', 'business_type': '1',
+     'institution': '中国人民保险集团', 'default_type': '社招', 'pack': 'finance',
+     'scope': '山东及全国', 'recruitment_types': ['社招'], 'sectors': ['保险'],
+     'trust': '官方招聘平台', 'source_family': '保险官方招聘'},
+    {'id': 'chinalife-campus', 'name': '中国人寿集团 · 校园招聘',
+     'url': 'https://chinalife.zhiye.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': 'fe8282b1-c288-43de-8189-b08d0639b506', 'business_type': '2',
+     'institution': '中国人寿集团', 'default_type': '校招', 'pack': 'finance',
+     'scope': '山东及全国', 'recruitment_types': ['校招'], 'sectors': ['保险'],
+     'trust': '官方招聘平台', 'source_family': '保险官方招聘'},
+    {'id': 'chinalife-social', 'name': '中国人寿集团 · 社会招聘',
+     'url': 'https://chinalife.zhiye.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': 'fe8282b1-c288-43de-8189-b08d0639b506', 'business_type': '1',
+     'institution': '中国人寿集团', 'default_type': '社招', 'pack': 'finance',
+     'scope': '山东及全国', 'recruitment_types': ['社招'], 'sectors': ['保险'],
+     'trust': '官方招聘平台', 'source_family': '保险官方招聘'},
+    {'id': 'chinastock-campus', 'name': '中国银河证券 · 校园招聘',
+     'url': 'https://chinastock.zhiye.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': '6dff4726-2857-4719-8871-d77a4403f48a', 'business_type': '2',
+     'institution': '中国银河证券', 'default_type': '校招', 'pack': 'finance',
+     'scope': '山东及全国', 'recruitment_types': ['校招'], 'sectors': ['银行 / 金融'],
+     'trust': '官方招聘平台', 'source_family': '证券官方招聘'},
+    {'id': 'chinastock-social', 'name': '中国银河证券 · 社会招聘',
+     'url': 'https://chinastock.zhiye.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': '6dff4726-2857-4719-8871-d77a4403f48a', 'business_type': '1',
+     'institution': '中国银河证券', 'default_type': '社招', 'pack': 'finance',
+     'scope': '山东及全国', 'recruitment_types': ['社招'], 'sectors': ['银行 / 金融'],
+     'trust': '官方招聘平台', 'source_family': '证券官方招聘'},
     {'id': 'haier-campus', 'name': '海尔集团 · 校园招聘',
      'url': 'https://maker.haier.net/client/campus/activityindex.html', 'adapter': 'haier_campus',
      'activity_ids': ['68', '69', '71', '70', '67'], 'institution': '海尔集团',
@@ -277,6 +332,54 @@ SOURCES.extend([
      'institution': '海信集团', 'default_type': '社招', 'pack': 'large-enterprises',
      'scope': '全国', 'recruitment_types': ['社招'], 'sectors': ['企业 / 其他'],
      'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'weichai-campus', 'name': '潍柴动力 · 校园招聘',
+     'url': 'https://weichai.zhiye.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': '7efdd081-1734-4818-8a9e-d53ddebfef86', 'business_type': '2',
+     'institution': '潍柴动力', 'default_type': '校招', 'pack': 'large-enterprises',
+     'scope': '山东及全国', 'recruitment_types': ['校招'], 'sectors': ['国企', '企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'weichai-social', 'name': '潍柴动力 · 社会招聘',
+     'url': 'https://weichai.zhiye.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': '7efdd081-1734-4818-8a9e-d53ddebfef86', 'business_type': '1',
+     'institution': '潍柴动力', 'default_type': '社招', 'pack': 'large-enterprises',
+     'scope': '山东及全国', 'recruitment_types': ['社招'], 'sectors': ['国企', '企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'tsingtao-campus', 'name': '青岛啤酒 · 校园招聘',
+     'url': 'https://tsingtao.zhiye.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': 'a7141b3d-3282-4f9f-9a0b-1276fbc30ad8', 'business_type': '2',
+     'institution': '青岛啤酒', 'default_type': '校招', 'pack': 'large-enterprises',
+     'scope': '山东及全国', 'recruitment_types': ['校招'], 'sectors': ['国企', '企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'tsingtao-social', 'name': '青岛啤酒 · 社会招聘',
+     'url': 'https://tsingtao.zhiye.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': 'a7141b3d-3282-4f9f-9a0b-1276fbc30ad8', 'business_type': '1',
+     'institution': '青岛啤酒', 'default_type': '社招', 'pack': 'large-enterprises',
+     'scope': '山东及全国', 'recruitment_types': ['社招'], 'sectors': ['国企', '企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'qilu-pharma-campus', 'name': '齐鲁制药 · 校园招聘',
+     'url': 'https://qilu-pharma.zhiye.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': '405d2b4d-8cab-4cf0-b9fa-66f3a2920b32', 'business_type': '2',
+     'institution': '齐鲁制药', 'default_type': '校招', 'pack': 'large-enterprises',
+     'scope': '山东及全国', 'recruitment_types': ['校招'], 'sectors': ['企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'qilu-pharma-social', 'name': '齐鲁制药 · 社会招聘',
+     'url': 'https://qilu-pharma.zhiye.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': '405d2b4d-8cab-4cf0-b9fa-66f3a2920b32', 'business_type': '1',
+     'institution': '齐鲁制药', 'default_type': '社招', 'pack': 'large-enterprises',
+     'scope': '山东及全国', 'recruitment_types': ['社招'], 'sectors': ['企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'linglong-campus', 'name': '玲珑轮胎 · 校园招聘',
+     'url': 'https://linglong.zhiye.com/campus/', 'adapter': 'zhiye_jobs',
+     'portal_id': '0e9d6cb9-504a-4f2f-b3c8-fb11a8b33023', 'business_type': '2',
+     'institution': '玲珑轮胎', 'default_type': '校招', 'pack': 'large-enterprises',
+     'scope': '山东及全国', 'recruitment_types': ['校招'], 'sectors': ['企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
+    {'id': 'linglong-social', 'name': '玲珑轮胎 · 社会招聘',
+     'url': 'https://linglong.zhiye.com/social/', 'adapter': 'zhiye_jobs',
+     'portal_id': '0e9d6cb9-504a-4f2f-b3c8-fb11a8b33023', 'business_type': '1',
+     'institution': '玲珑轮胎', 'default_type': '社招', 'pack': 'large-enterprises',
+     'scope': '山东及全国', 'recruitment_types': ['社招'], 'sectors': ['企业 / 其他'],
+     'trust': '官方招聘平台', 'source_family': '大型企业官方招聘'},
 ])
 # Keep the source registry self-describing.  The UI can show these fields and
 # future city source packs can select them without changing the collector's
@@ -295,8 +398,8 @@ for _source in SOURCES:
 # independent university hosts run in the other pack.
 _sdei_source_ids = [s['id'] for s in SOURCES if s.get('adapter') == 'sdei']
 SOURCE_PACKS = {
-    'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news'],
-    'universities-a': ['nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'hdu-talks', 'upc-talks-public', 'sjtu-campus-events', 'upc'],
+    'regional-official': ['jinan', 'hrss', 'jinan-employment', 'gzw', 'qdhrss', 'sdei-news', 'sdei-civil-exams', 'sdei-jobfairs'],
+    'universities-a': ['nankai-talks', 'pku-talks', 'sdu', 'sdu-talks', 'sdnu-graduate-talks', 'sdjzu-talks', 'sdjt-talks', 'sdjzu-jobs', 'sdjt-jobs', 'scau-talks', 'sztu-talks', 'nuist-talks', 'tongji-talks', 'hdu-talks', 'upc-talks-public', 'sjtu-campus-events', 'upc'],
     # Same-state bounded Cloud/NAS trial: 9 vs 44 recovered Nankai details.
     # Ownership is exclusive; compact NAS baselines include its pending queue.
     'universities-b': _sdei_source_ids + ['nankai'],
@@ -760,57 +863,136 @@ def sdei_list(source, page):
     return items, (int(payload['total']) + page_size - 1) // page_size
 
 
-def sdei_news_list(page, page_size=50):
-    """Read the province-wide public 招聘速递 feed.
+def sdei_news_list(page, page_size=50, source=None):
+    """Read the province-wide public 招聘速递 / 基层招考 / 专场活动 feeds.
 
-    The hub renders this list through its public JobFairs JSON endpoint. It is
-    separate from each university's school feed and therefore catches
-    province-level public institution and enterprise announcements that are
-    not present in individual school views.
+    The hub renders these lists through its public JobFairs JSON endpoint. They
+    are separate from each university's school feed and therefore catch
+    province-level public institution, civil exam, and enterprise announcements
+    that are not present in individual school views.
     """
-    referer = 'https://gxjy.sdei.edu.cn/JobFairs/channel?classId=96'
+    class_id = int((source or {}).get('class_id') or 96)
+    referer = f'https://gxjy.sdei.edu.cn/JobFairs/channel?classId={class_id}'
     endpoint = 'https://gxjy.sdei.edu.cn/JobFairs/channel/ajaxList?' + urllib.parse.urlencode({
-        'classId': 96, 'pageNum': page, 'pageSize': page_size})
+        'classId': class_id, 'pageNum': page, 'pageSize': page_size})
     # This hub is independent from school feeds. A stalled request must not
     # spend two 18-second attempts before the other regional sources can run.
     payload = json.loads(fetch(endpoint, referer=referer, timeout=8, retries=0))
     data = payload.get('data')
-    if payload.get('code') != 0 or not isinstance(data, dict) or str(data.get('classId')) != '96':
+    if payload.get('code') != 0 or not isinstance(data, dict) or str(data.get('classId')) != str(class_id):
         raise ValueError('province recruitment feed returned invalid channel')
     rows = data.get('articleList')
     total_pages = int(data.get('totalPages') or 1)
     if not isinstance(rows, list) or int(data.get('pageNum') or page) != page or not 1 <= total_pages <= 10000:
         raise ValueError('province recruitment feed returned invalid rows')
+    include_pattern = (source or {}).get('include_title_re')
+    identity_prefix = (source or {}).get('id') or 'sdei-news'
     items = []
     base = 'https://html.gxjy.sdei.edu.cn/'
     for row in rows:
         if not isinstance(row, dict):
             continue
         title = clean(str(row.get('title') or ''))
-        href = safe_url(row.get('siteurl') or '', base)
+        raw_siteurl = str(row.get('siteurl') or '').strip()
+        if re.search(r'https?://', raw_siteurl[8:], re.I):
+            continue
+        href = safe_url(raw_siteurl, base)
         if not title or not href:
+            continue
+        if include_pattern and not re.search(include_pattern, title):
             continue
         # Keep the old canonical URL and sdei-news:id identity even though
         # the new hub emits HTTP links. Dates come from the original path,
         # never today's crawl time; details can supply the original date too.
         parts = urllib.parse.urlsplit(href)
         published = None
-        if parts.hostname == 'html.gxjy.sdei.edu.cn':
+        if parts.hostname in {'html.gxjy.sdei.edu.cn', 'caiji.gxjy.sdei.edu.cn'}:
             href = urllib.parse.urlunsplit(parts._replace(scheme='https'))
-            date = re.search(r'^/html/(\d{4})/(\d{2})/(\d{2})/', parts.path)
+            date = re.search(r'^/(?:publicfile/)?html/(\d{4})/(\d{2})/(\d{2})/', parts.path)
             if date:
                 try:
                     published = dt.date(*map(int, date.groups())).isoformat()
                 except ValueError:
                     pass
         items.append({
-            'identity': f"sdei-news:{row.get('id') or href}",
+            'identity': f"{identity_prefix}:{row.get('id') or href}",
             'url': href,
             'title': title,
             'published_at': published,
             'kind': '招聘公告',
         })
     return items, total_pages
+
+
+def bysjy_jobs_list(source, page, page_size=20):
+    """Read official online job postings from a BYSJY campus recruitment portal."""
+    query = urllib.parse.urlencode({
+        'start': (page - 1) * page_size,
+        'count': page_size + 1,
+        'k': '',
+        'address': '',
+        'professionals': '',
+        'work_type': '',
+        'type': 'inner',
+    })
+    endpoint = urllib.parse.urljoin(source['url'], '/module/getjobs') + '?' + query
+    payload = json.loads(fetch(
+        endpoint,
+        referer=source['url'],
+        extra_headers={'X-Requested-With': 'XMLHttpRequest'},
+    ))
+    rows = payload.get('data')
+    if payload.get('code') != 1 or not isinstance(rows, list):
+        raise ValueError('BYSJY school online jobs API did not return a valid public list')
+    has_next = len(rows) > page_size
+    items = []
+    for row in rows[:page_size]:
+        if not isinstance(row, dict):
+            continue
+        publish_id = str(row.get('publish_id') or '').strip()
+        company = clean(str(row.get('company_name') or ''))
+        role = clean(str(row.get('job_name') or ''))
+        if not publish_id.isdigit() or not company or not role or row.get('overdue') is True:
+            continue
+        detail_url = urllib.parse.urljoin(source['url'], '/detail/job?id=' + publish_id)
+        published = str(row.get('publish_time') or '')[:10]
+        if not re.fullmatch(r'20\d{2}-\d{2}-\d{2}', published):
+            published = None
+        deadline_value = str(row.get('end_time') or '')[:10]
+        if not re.fullmatch(r'20\d{2}-\d{2}-\d{2}', deadline_value) or int(deadline_value[:4]) >= 2100:
+            deadline_value = ''
+        structured = dict(row)
+        structured['companyName'] = company
+        if row.get('degree_require'):
+            structured['degreereq'] = row['degree_require']
+        if row.get('about_major'):
+            structured['specialty'] = row['about_major']
+        values = [
+            ('招聘单位', company),
+            ('岗位名称', role),
+            ('岗位类别', row.get('category')),
+            ('单位性质', row.get('company_property')),
+            ('所属行业', row.get('industry_category')),
+            ('工作地点', row.get('city_name')),
+            ('学历要求', row.get('degree_require')),
+            ('专业要求', row.get('about_major')),
+            ('薪资', row.get('salary')),
+            ('招聘人数', row.get('job_number')),
+            ('福利待遇', ' '.join(filter(None, [row.get('welfare'), row.get('keywords')]))),
+            ('报名截止时间', deadline_value),
+        ]
+        items.append({
+            'identity': f"bysjy-job:{source['id']}:{publish_id}",
+            'url': detail_url,
+            'application_url': detail_url,
+            'title': f'{company} · {role}',
+            'company': company,
+            'published_at': published,
+            'inline_html': inline_detail(values),
+            'structured': structured,
+            'kind': '具体岗位',
+        })
+    return items, (page + 1 if has_next else page)
 
 
 def official_bank_list(html, base, source):
@@ -918,11 +1100,13 @@ def zhiye_jobs_list(source, page, page_size=500):
         company = clean(str(row.get('Org') or row.get('ClassificationTwo') or source['institution']))
         structured = dict(row)
         structured['companyName'] = company
+        detail_address = clean(str(row.get('DetailAddress') or ''))
+        location_text = ' '.join(dict.fromkeys(filter(None, [locations, detail_address])))
         values = [
             ('招聘单位', company),
             ('岗位名称', title),
             ('岗位类别', row.get('ClassificationOne') or row.get('Category')),
-            ('工作地点', locations or row.get('DetailAddress')),
+            ('工作地点', location_text),
             ('学历要求', row.get('Degree')),
             ('工作经验', row.get('YearsOfWorking')),
             ('薪资', row.get('Salary')),
@@ -2759,7 +2943,7 @@ def run(args):
                         print(source['id'], 'deferred 0 0', flush=True)
                         continue
         try:
-            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks','js91_talks','tongji_talks'}
+            api_adapters={'sdei','sdei_news','offerjack','upc','jinan_cms','zhiye_jobs','haier_jobs','haier_campus','sdu_talks','bysjy_talks','bysjy_jobs','js91_talks','tongji_talks'}
             if source.get('adapter') == 'jysd_talks':
                 calendar_robots = check_jysd_robots(fetch, source, DEFAULT_USER_AGENT)
             if source.get('adapter') == 'public_home_calendar':
@@ -2789,11 +2973,11 @@ def run(args):
             # Live inventories need a complete single-run view for withdrawal
             # detection; SDU follows opaque next-page links; OfferJack has cities.
             resumable = (source.get('adapter') in {'sdei', 'sdei_news', 'upc', 'jinan_cms', 'official_bank', 'qdhrss', 'wondercv',
-                                                 'nankai_talks', 'pku_talks', 'bysjy_talks', 'js91_talks', 'tongji_talks', 'jysd_talks'}
+                                                 'nankai_talks', 'pku_talks', 'bysjy_talks', 'bysjy_jobs', 'js91_talks', 'tongji_talks', 'jysd_talks'}
                          or source['id'] in {'nankai', 'jinan'})
             # BYSJY exposes only a look-ahead row, not an exact last-page number.
             # Its first-page "total=2" must never reset a deeper saved cursor.
-            exact_page_count = source.get('adapter') != 'bysjy_talks'
+            exact_page_count = source.get('adapter') not in {'bysjy_talks', 'bysjy_jobs'}
             # Target historical window
             target_history_days = max(args.days, getattr(args, 'history_days', 180)) if resumable else args.days
             cutoff = (dt.datetime.now(TZ) - dt.timedelta(days=target_history_days)).date().isoformat()
@@ -2889,6 +3073,8 @@ def run(args):
                             referer=source['url'], extra_headers={'X-Requested-With': 'XMLHttpRequest'}))
                         rows = bysjy_calendar(payload, source)
                         found, total = rows[:20], page+1 if len(rows)>20 else page
+                    elif source.get('adapter')=='bysjy_jobs':
+                        found, total = bysjy_jobs_list(source, page)
                     elif source.get('adapter')=='js91_talks':
                         payload = fetch_json_post(urllib.parse.urljoin(source['url'], '/web/wsjysc/lbxq/getXjhPageList'),
                             {'current': page, 'size': 20, 'xxxs': '', 'fbsj': '', 'ssxx': source['school_code'],
@@ -2897,7 +3083,7 @@ def run(args):
                     elif source.get('adapter')=='sdei':
                         found,total=sdei_list(source,page)
                     elif source.get('adapter')=='sdei_news':
-                        found,total=sdei_news_list(page)
+                        found,total=sdei_news_list(page, source=source)
                     elif source.get('adapter')=='upc':
                         found,total=upc_list(page)
                     elif source.get('adapter')=='jinan_cms':
@@ -3194,7 +3380,7 @@ def run(args):
                 if old_job.get('source_id')!=source['id']: continue
                 # API inventories are their own recheck; their JS detail pages
                 # must not be passed to the generic announcement HTML parser.
-                if is_active_listing_source: continue
+                if is_active_listing_source or source.get('adapter') == 'bysjy_jobs': continue
                 url=old_job.get('source_url')
                 if not url or url in existing_urls or j_id in existing_ids: continue
                 d_line=old_job.get('deadline')

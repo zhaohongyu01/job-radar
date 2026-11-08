@@ -1664,22 +1664,22 @@
 .opp-group-directory {
   margin: 0 0 10px;
   padding: 10px 12px;
-  border-radius: var(--radius);
-  background: rgba(255, 253, 248, 0.86);
-  border: 1px dashed rgba(31, 92, 69, 0.22);
+  border-radius: var(--r-md, 8px);
+  background: var(--surface, #fffefa);
+  border: 1px solid var(--line-strong, #d7d0c1);
 }
 
 .opp-group-directory-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 7px;
+  margin-bottom: 8px;
 }
 
 .opp-group-directory-label {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
-  color: var(--muted);
+  color: var(--ink-2, #3f3c35);
 }
 
 .opp-group-role-list {
@@ -1695,14 +1695,14 @@
 .opp-group-role-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   max-width: 100%;
-  padding: 4px 10px;
+  padding: 5px 11px;
   border-radius: 999px;
-  border: 1px solid rgba(23, 33, 28, 0.12);
+  border: 1px solid var(--line-strong, #d7d0c1);
   background: #ffffff;
-  color: var(--ink);
-  font-size: 12.5px;
+  color: var(--ink, #1c1b18);
+  font-size: 13px;
   line-height: 1.35;
   cursor: pointer;
   transition:
@@ -1713,38 +1713,45 @@
 }
 
 .opp-group-role-chip:hover {
-  border-color: rgba(31, 92, 69, 0.45);
-  background: var(--brand-soft);
-  color: var(--brand);
+  border-color: var(--brand, #1f5140);
+  background: var(--brand-soft, #e6efe9);
+  color: var(--brand, #1f5140);
 }
 
 .opp-group-role-chip.is-active {
-  border-color: var(--brand);
-  background: var(--brand-soft);
-  color: var(--brand);
+  border-color: var(--brand, #1f5140);
+  background: var(--brand-soft, #e6efe9);
+  color: var(--brand, #1f5140);
   font-weight: 700;
 }
 
 .opp-group-role-name {
-  font-weight: 600;
+  font-weight: 650;
+  color: var(--ink, #1c1b18);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 240px;
 }
 
+.opp-group-role-chip:hover .opp-group-role-name,
+.opp-group-role-chip.is-active .opp-group-role-name {
+  color: var(--brand, #1f5140);
+}
+
 .opp-group-role-meta {
-  font-size: 11px;
-  color: var(--muted);
-  padding-left: 5px;
-  border-left: 1px solid rgba(23, 33, 28, 0.12);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3, #686357);
+  padding-left: 6px;
+  border-left: 1px solid var(--line-strong, #d7d0c1);
   white-space: nowrap;
 }
 
 .opp-group-role-chip:hover .opp-group-role-meta,
 .opp-group-role-chip.is-active .opp-group-role-meta {
-  color: var(--brand);
-  border-left-color: rgba(31, 92, 69, 0.28);
+  color: var(--brand, #1f5140);
+  border-left-color: var(--brand-line, #bfd5c8);
 }
 
 .opp-group-roles-more {

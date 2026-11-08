@@ -1507,9 +1507,9 @@ function HomeContent() {
                       );
                       const eduRaw = formatEducationDisplay(item.education);
                       const eduShort =
-                        eduRaw === '博士研究生'
+                        eduRaw === '博士研究生' || eduRaw === '博士生毕业'
                           ? '博士'
-                          : eduRaw === '硕士研究生'
+                          : eduRaw === '硕士研究生' || eduRaw === '硕士生毕业'
                             ? '硕士'
                             : eduRaw === '本科生毕业'
                               ? '本科'

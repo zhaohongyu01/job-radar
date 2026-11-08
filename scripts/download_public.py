@@ -8,10 +8,10 @@ from urllib.request import Request, urlopen
 
 try:
     from stage_public import ASSET, asset_paths
-    from collect import employer_identity, refine_facts
+    from employer_identity import employer_identity, refine_company_facts
 except ImportError:
     from scripts.stage_public import ASSET, asset_paths
-    from scripts.collect import employer_identity, refine_facts
+    from scripts.employer_identity import employer_identity, refine_company_facts
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
 
@@ -44,7 +44,7 @@ def repair_snapshot_zhiye_urls(public, snapshot, metadata):
                     repaired_urls.setdefault(job_id, {})[k] = emp_id[k]
                     shard_changed = True
             if job.get('kind') != '宣讲会':
-                refined = refine_facts(job)
+                refined = refine_company_facts(job)
                 for k in ('company', 'company_conflict', 'company_note'):
                     old_val = job.get(k)
                     new_val = refined.get(k)

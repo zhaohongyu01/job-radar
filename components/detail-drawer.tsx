@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   Sheet,
@@ -64,6 +64,13 @@ export function DetailDrawer({
 }) {
   const [positionSearch, setPositionSearch] = useState({ jobId: '', value: '' });
   const positionFilter = positionSearch.jobId === selected?.id ? positionSearch.value : '';
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = 0;
+    }
+  }, [selected?.id]);
 
   useEffect(() => {
     if (!selected || !onNavigate || totalCount <= 1) return;
@@ -181,7 +188,97 @@ export function DetailDrawer({
                 {formatDate(selected.last_verified_at, true)}
               </SheetDescription>
             </SheetHeader>
-            <div className="detail-body">
+            <div className="detail-sticky-bar">
+              <div className="detail-actions">
+                {onNavigate && currentIndex >= 0 && totalCount > 1 && (
+                  <fieldset className="detail-nav-group" aria-label="上下条岗位切换">
+                    <button
+                      type="button"
+                      className="detail-nav-btn"
+                      disabled={currentIndex <= 0}
+                      onClick={() => onNavigate(-1)}
+                      title="上一条岗位（快捷键 K 或 Alt+↑）"
+                      aria-label="上一条岗位"
+                    >
+                      <ChevronLeft size={14} />
+                      <span>上一条</span>
+                    </button>
+                    <span className="detail-nav-index">{currentIndex + 1} / {totalCount}</span>
+                    <button
+                      type="button"
+                      className="detail-nav-btn"
+                      disabled={currentIndex >= totalCount - 1}
+                      onClick={() => onNavigate(1)}
+                      title="下一条岗位（快捷键 J 或 Alt+↓）"
+                      aria-label="下一条岗位"
+                    >
+                      <span>下一条</span>
+                      <ChevronRight size={14} />
+                    </button>
+                  </fieldset>
+                )}
+                {/* Opening the drawer already marks it read; offer only the reverse. */}
+                {!isUnread(selected, personal) && (
+                  <Button
+                    variant="outline"
+                    disabled={!ready || detailLoading}
+                    onClick={() => onReadChange(selected, false)}
+                  >
+                    标为未读
+                  </Button>
+                )}
+                <Button
+                  variant={personalFor(selected, personal).saved ? 'default' : 'outline'}
+                  disabled={!ready}
+                  onClick={() => onToggle(selected, 'saved')}
+                >
+                  <Bookmark size={16} />
+                  {personalFor(selected, personal).saved ? '已收藏' : '收藏'}
+                </Button>
+                <Button
+                  variant={personalFor(selected, personal).applied ? 'default' : 'outline'}
+                  disabled={!ready}
+                  onClick={() => onToggle(selected, 'applied')}
+                >
+                  <Check size={16} />
+                  {personalFor(selected, personal).applied ? '已投递' : '标记已投递'}
+                </Button>
+                <Button variant="outline" onClick={() => onCopy(selected)}>
+                  <Share2 size={16} />
+                  复制分享
+                </Button>
+                <Button variant="ghost" onClick={() => onToggle(selected, 'hidden')}>
+                  {personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}
+                </Button>
+              </div>
+              <nav className="detail-jump-nav" aria-label="详情章节快速跳转">
+                <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-apply')}>
+                  报名入口
+                </button>
+                {(selected.positions ?? []).length > 0 && (
+                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-positions')}>
+                    岗位明细 ({selected.positions?.length})
+                  </button>
+                )}
+                <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-body')}>
+                  公告正文
+                </button>
+                <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-tracker')}>
+                  投递跟进
+                </button>
+                {headingAnchors.map((sec) => (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    className="detail-jump-pill is-sub"
+                    onClick={() => scrollToSection(sec.id)}
+                  >
+                    {sec.shortLabel || sec.heading}
+                  </button>
+                ))}
+              </nav>
+            </div>
+            <div className="detail-body" ref={bodyRef}>
               <dl className="detail-facts">
                 <div><dt>工作地点</dt><dd>{locationSummary(selected)}</dd></div>
                 <div><dt>学历要求</dt><dd>{formatEducationDisplay(selected.education, '原公告未明确')}</dd></div>
@@ -196,7 +293,7 @@ export function DetailDrawer({
               {detailError && (
                 <div className="notice warning" role="alert">
                   {detailError}
-                </div>
+                </div >
               )}
               {selected.classification_note && (
                 <p className="inline-note">{selected.classification_note}</p>
@@ -210,96 +307,6 @@ export function DetailDrawer({
                 </p>
               )}
               <TalkEvents job={selected} city={city} now={now} onOpen={() => onRead(selected)} />
-              <div className="detail-sticky-bar">
-                <div className="detail-actions">
-                  {onNavigate && currentIndex >= 0 && totalCount > 1 && (
-                    <fieldset className="detail-nav-group" aria-label="上下条岗位切换">
-                      <button
-                        type="button"
-                        className="detail-nav-btn"
-                        disabled={currentIndex <= 0}
-                        onClick={() => onNavigate(-1)}
-                        title="上一条岗位（快捷键 K 或 Alt+↑）"
-                        aria-label="上一条岗位"
-                      >
-                        <ChevronLeft size={14} />
-                        <span>上一条</span>
-                      </button>
-                      <span className="detail-nav-index">{currentIndex + 1} / {totalCount}</span>
-                      <button
-                        type="button"
-                        className="detail-nav-btn"
-                        disabled={currentIndex >= totalCount - 1}
-                        onClick={() => onNavigate(1)}
-                        title="下一条岗位（快捷键 J 或 Alt+↓）"
-                        aria-label="下一条岗位"
-                      >
-                        <span>下一条</span>
-                        <ChevronRight size={14} />
-                      </button>
-                    </fieldset>
-                  )}
-                  {/* Opening the drawer already marks it read; offer only the reverse. */}
-                  {!isUnread(selected, personal) && (
-                    <Button
-                      variant="outline"
-                      disabled={!ready || detailLoading}
-                      onClick={() => onReadChange(selected, false)}
-                    >
-                      标为未读
-                    </Button>
-                  )}
-                  <Button
-                    variant={personalFor(selected, personal).saved ? 'default' : 'outline'}
-                    disabled={!ready}
-                    onClick={() => onToggle(selected, 'saved')}
-                  >
-                    <Bookmark size={16} />
-                    {personalFor(selected, personal).saved ? '已收藏' : '收藏'}
-                  </Button>
-                  <Button
-                    variant={personalFor(selected, personal).applied ? 'default' : 'outline'}
-                    disabled={!ready}
-                    onClick={() => onToggle(selected, 'applied')}
-                  >
-                    <Check size={16} />
-                    {personalFor(selected, personal).applied ? '已投递' : '标记已投递'}
-                  </Button>
-                  <Button variant="outline" onClick={() => onCopy(selected)}>
-                    <Share2 size={16} />
-                    复制分享
-                  </Button>
-                  <Button variant="ghost" onClick={() => onToggle(selected, 'hidden')}>
-                    {personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}
-                  </Button>
-                </div>
-                <nav className="detail-jump-nav" aria-label="详情章节快速跳转">
-                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-apply')}>
-                    报名入口
-                  </button>
-                  {(selected.positions ?? []).length > 0 && (
-                    <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-positions')}>
-                      岗位明细 ({selected.positions?.length})
-                    </button>
-                  )}
-                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-tracker')}>
-                    投递跟进
-                  </button>
-                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-body')}>
-                    公告正文
-                  </button>
-                  {headingAnchors.map((sec) => (
-                    <button
-                      key={sec.id}
-                      type="button"
-                      className="detail-jump-pill is-sub"
-                      onClick={() => scrollToSection(sec.id)}
-                    >
-                      {sec.shortLabel || sec.heading}
-                    </button>
-                  ))}
-                </nav>
-              </div>
               <div className="apply-panel" id="drawer-sec-apply">
                 <h3>报名入口</h3>
                 {sdeiPositionListUrl(selected.source_url) && (
@@ -443,9 +450,6 @@ export function DetailDrawer({
                 </div>
               )}
 
-              <div id="drawer-sec-tracker">
-                <ApplicationTracker key={selected.id} job={selected} record={personalFor(selected, personal)} onSave={onPersonalSave} />
-              </div>
               <h3>地点与资格</h3>
               <p>
                 {selected.location_evidence.length
@@ -531,6 +535,10 @@ export function DetailDrawer({
                   ))}
                 </>
               )}
+
+              <div id="drawer-sec-tracker">
+                <ApplicationTracker key={selected.id} job={selected} record={personalFor(selected, personal)} onSave={onPersonalSave} />
+              </div>
               {!!selected.duplicate_sources?.length && (
                 <details className="drawer-fold drawer-fold-channels">
                   <summary>整合发布渠道（{(selected.duplicate_sources?.length ?? 0) + 1}）</summary>

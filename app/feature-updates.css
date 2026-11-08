@@ -1473,19 +1473,36 @@
   -webkit-backdrop-filter: none !important;
 }
 
+html[data-base-ui-scroll-locked] .app-bar,
+html[data-base-ui-scroll-locked] .topbar,
+html[data-base-ui-scroll-locked] .personal-radar-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-base-ui-scroll-locked] .page,
+html[data-base-ui-scroll-locked] .app-bar {
+  pointer-events: none;
+}
+
 .detail-sheet {
-  contain: layout paint;
-  transform: translateZ(0);
+  contain: strict;
+  box-shadow: -6px 0 20px rgba(28, 27, 24, 0.12) !important;
 }
 
 .detail-body {
   overscroll-behavior: contain;
-  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
 }
 
-.detail-body .announcement-text {
+.detail-body .announcement-text,
+.detail-body .positions-table-wrap {
   max-height: none;
   overflow-y: visible;
+}
+
+.detail-body .positions-table th {
+  position: static;
 }
 
 .detail-body .timeline-item.current .timeline-dot {
@@ -1493,17 +1510,20 @@
 }
 
 .detail-sticky-bar {
-  position: sticky;
-  top: 0;
-  z-index: 15;
-  margin: 0 -4px 12px;
-  padding: 8px 4px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 10px 32px;
   background: var(--surface, #fffefa);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line, #e7e2d7);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transform: translateZ(0);
+}
+
+@media (max-width: 640px) {
+  .detail-sticky-bar {
+    padding: 8px 16px;
+  }
 }
 
 .detail-sticky-bar .detail-actions {
@@ -1596,7 +1616,7 @@
 }
 
 .announcement-sec {
-  scroll-margin-top: 110px;
+  scroll-margin-top: 16px;
 }
 
 .announcement-sec-heading {
@@ -1618,7 +1638,7 @@
 #drawer-sec-positions,
 #drawer-sec-tracker,
 #drawer-sec-body {
-  scroll-margin-top: 110px;
+  scroll-margin-top: 16px;
 }
 
 /* 4. ApplicationOverview Visual Funnel Board */

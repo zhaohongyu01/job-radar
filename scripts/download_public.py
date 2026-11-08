@@ -37,8 +37,10 @@ def repair_snapshot_zhiye_urls(public, snapshot, metadata):
         if shard_changed:
             raw_detail = json.dumps(detail_data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
             new_hash = hashlib.sha256(raw_detail).hexdigest()[:20]
-            new_rel_path = f'/detail-{prefix}-{new_hash}.json'
-            (public / new_rel_path.lstrip('/')).write_bytes(raw_detail)
+            new_rel_path = re.sub(r'[0-9a-f]{20}\.json$', f'{new_hash}.json', rel_path)
+            target_file = public / new_rel_path.lstrip('/')
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            target_file.write_bytes(raw_detail)
             detail_shards[prefix] = new_rel_path
 
     if not repaired_urls:
@@ -64,8 +66,10 @@ def repair_snapshot_zhiye_urls(public, snapshot, metadata):
         if shard_changed:
             raw_idx = json.dumps(idx_data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
             new_hash = hashlib.sha256(raw_idx).hexdigest()[:20]
-            new_rel_path = f'/index-{new_hash}.json'
-            (public / new_rel_path.lstrip('/')).write_bytes(raw_idx)
+            new_rel_path = re.sub(r'[0-9a-f]{20}\.json$', f'{new_hash}.json', rel_path)
+            target_file = public / new_rel_path.lstrip('/')
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            target_file.write_bytes(raw_idx)
             index_shards[idx] = new_rel_path
 
     index = json.dumps(snapshot, ensure_ascii=False, separators=(',', ':')).encode('utf-8')

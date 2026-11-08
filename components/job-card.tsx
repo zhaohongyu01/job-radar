@@ -461,6 +461,18 @@ export function JobCard({
               {job.source_name}{' '}
               · {job.date_label || '发布'} {publicationText(job, now)}
             </span>
+            {sdeiPositionListUrl(job.source_url) && (
+              <span className="opp-fallback">
+                ·{' '}
+                <OutLink
+                  className=""
+                  url={sdeiPositionListUrl(job.source_url)}
+                  onOpen={() => onRead(job)}
+                >
+                  原文打不开？查看来源岗位列表
+                </OutLink>
+              </span>
+            )}
             <button
               className={unread ? 'read-toggle is-unread' : 'read-toggle'}
               disabled={!ready}
@@ -512,17 +524,6 @@ export function JobCard({
           </OutLink>
         </div>
       </footer>
-      {sdeiPositionListUrl(job.source_url) && (
-        <div className="opp-fallback">
-          <OutLink
-            className=""
-            url={sdeiPositionListUrl(job.source_url)}
-            onOpen={() => onRead(job)}
-          >
-            原文打不开？查看来源岗位列表
-          </OutLink>
-        </div>
-      )}
     </article>
   );
 }

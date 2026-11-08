@@ -1652,3 +1652,12 @@
 .stage-funnel-card.is-interview .stage-funnel-bar > b {
   background: var(--accent);
 }
+
+.opp-source .opp-fallback {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 0;
+  text-align: left;
+}
+

@@ -1527,9 +1527,6 @@ function HomeContent() {
                           title={`${rawRole}${metaParts.length ? ` · ${metaParts.join(' · ')}` : ''}（点击查看岗位详情与投递链接）`}
                         >
                           <span className="opp-group-role-name">{cleanRole}</span>
-                          {metaParts.length > 0 && (
-                            <span className="opp-group-role-meta">{metaParts.join('·')}</span>
-                          )}
                         </button>
                       );
                     };
@@ -1547,25 +1544,21 @@ function HomeContent() {
                           </div>
                         </div>
                         <div className="opp-group-directory" aria-label={`${group.company}在招岗位速览`}>
-                          <div className="opp-group-directory-head">
-                            <span className="opp-group-directory-label">
-                              在招岗位速览（点击岗位直达详情与投递）：
-                            </span>
-                          </div>
                           <div className="opp-group-role-list">
-                            {group.jobs.slice(0, 12).map((item, idx) => renderRoleChip(item, idx))}
+                            <span className="opp-group-directory-label">在招岗位</span>
+                            {group.jobs.slice(0, 16).map((item, idx) => renderRoleChip(item, idx))}
                           </div>
-                          {group.jobs.length > 12 && (
+                          {group.jobs.length > 16 && (
                             <details className="opp-group-roles-more">
                               <summary>
                                 <span className="when-closed">
-                                  查看全部 {group.jobs.length} 个岗位名称（其余 {group.jobs.length - 12} 个）
+                                  展开其余 {group.jobs.length - 16} 个岗位
                                 </span>
-                                <span className="when-open">收起其余岗位名称</span>
-                                <ChevronDown size={13} />
+                                <span className="when-open">收起其余岗位</span>
+                                <ChevronDown size={12} />
                               </summary>
                               <div className="opp-group-role-list opp-group-role-list-extra">
-                                {group.jobs.slice(12).map((item, idx) => renderRoleChip(item, idx + 12))}
+                                {group.jobs.slice(16).map((item, idx) => renderRoleChip(item, idx + 16))}
                               </div>
                             </details>
                           )}

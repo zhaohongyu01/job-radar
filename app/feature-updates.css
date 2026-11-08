@@ -1661,55 +1661,59 @@
   text-align: left;
 }
 
-.opp-group-directory {
-  margin: 0 0 10px;
-  padding: 10px 12px;
-  border-radius: var(--r-md, 8px);
-  background: var(--surface, #fffefa);
-  border: 1px solid var(--line-strong, #d7d0c1);
+.opp-group {
+  border-left: 3.5px solid var(--brand, #1f5140);
 }
 
-.opp-group-directory-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+.opp-group .opp-card.is-unread,
+.opp-group .opp-card.is-read:not(.is-saved):not(.is-applied) {
+  border-left: 1px solid var(--line, #e7e2d7);
+}
+
+.opp-group-directory {
+  margin: 0 4px 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--paper, #f6f4ee);
+  border: 1px solid var(--line, #e7e2d7);
 }
 
 .opp-group-directory-label {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--ink-2, #3f3c35);
+  margin-right: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-4, #8d8779);
+  white-space: nowrap;
 }
 
 .opp-group-role-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 5px 6px;
 }
 
 .opp-group-role-list-extra {
-  margin-top: 6px;
+  margin-top: 5px;
 }
 
 .opp-group-role-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   max-width: 100%;
-  padding: 5px 11px;
-  border-radius: 999px;
+  padding: 1px 7px;
+  border-radius: 4px;
   border: 1px solid var(--line-strong, #d7d0c1);
-  background: #ffffff;
+  background: var(--surface, #fffefa);
   color: var(--ink, #1c1b18);
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.12s ease;
+    border-color 0.14s ease,
+    background-color 0.14s ease,
+    color 0.14s ease;
 }
 
 .opp-group-role-chip:hover {
@@ -1722,51 +1726,30 @@
   border-color: var(--brand, #1f5140);
   background: var(--brand-soft, #e6efe9);
   color: var(--brand, #1f5140);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .opp-group-role-name {
-  font-weight: 650;
-  color: var(--ink, #1c1b18);
+  color: inherit;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 240px;
-}
-
-.opp-group-role-chip:hover .opp-group-role-name,
-.opp-group-role-chip.is-active .opp-group-role-name {
-  color: var(--brand, #1f5140);
-}
-
-.opp-group-role-meta {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink-3, #686357);
-  padding-left: 6px;
-  border-left: 1px solid var(--line-strong, #d7d0c1);
-  white-space: nowrap;
-}
-
-.opp-group-role-chip:hover .opp-group-role-meta,
-.opp-group-role-chip.is-active .opp-group-role-meta {
-  color: var(--brand, #1f5140);
-  border-left-color: var(--brand-line, #bfd5c8);
+  max-width: 220px;
 }
 
 .opp-group-roles-more {
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .opp-group-roles-more > summary {
   list-style: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--brand);
+  gap: 3px;
+  padding: 1px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--brand, #1f5140);
   cursor: pointer;
   user-select: none;
 }

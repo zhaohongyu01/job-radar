@@ -1140,4 +1140,11 @@ void test('brand department display, PICC/China Life formatting, card title dedu
   assert.equal(formatEducationDisplay('2027届'), '学历待核实');
   assert.equal(formatEducationDisplay('未明确 / 见原公告'), '学历待核实');
   assert.equal(formatEducationDisplay('招聘条件待核实', '原公告未明确'), '原公告未明确');
+  assert.equal(formatCompanyDisplay('财务投资部', '投资分析岗', 'taiping-campus').displayCompany, '中国太平 · 财务投资部');
+  assert.equal(formatCompanyDisplay('数质中心', 'AI算法工程师', 'hisense-campus').displayCompany, '海信集团 · 数质中心');
+  assert.equal(formatCompanyDisplay('临床研究中心', 'CRA', 'qilu-pharma-social').displayCompany, '齐鲁制药 · 临床研究中心');
+  assert.equal(formatCompanyDisplay('养老险山东省分公司', '综合管理岗', 'chinalife-campus').displayCompany, '中国人寿集团 · 养老险山东省分公司');
+  assert.equal(formatCompanyDisplay('银川分公司', '查勘定损岗', 'picc-campus').displayCompany, '中国人民保险集团 · 银川分公司');
+  assert.equal(formatCompanyDisplay('物流处', '物流专员', 'linglong-social').displayCompany, '玲珑轮胎 · 物流处');
+  assert.equal(formatCompanyDisplay('固定收益总部', '债券交易员', 'chinastock-social').displayCompany, '中国银河证券 · 固定收益总部');
 });

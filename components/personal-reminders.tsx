@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Bell, Clock3, X } from 'lucide-react';
 import type { Job, Personal } from '@/lib/jobs';
 import { eventDisplayTitle } from '@/lib/jobs';
+import { extractSalary } from '@/lib/salary-display';
 import { buildPersonalReminders } from '@/lib/reminders';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
@@ -127,7 +128,7 @@ export function PersonalReminders({
                     </span>
                     <div className="top-reminder-item-main">
                       <span className="top-reminder-item-title">
-                        {eventDisplayTitle(job)} · {job.title}
+                        {eventDisplayTitle(job)} · {extractSalary(job).cleanTitle}
                       </span>
                       <span className="top-reminder-item-time">
                         <Clock3 size={11} />

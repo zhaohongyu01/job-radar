@@ -8,8 +8,10 @@ from urllib.request import Request, urlopen
 
 try:
     from stage_public import ASSET, asset_paths
+    from collect import employer_identity, refine_facts
 except ImportError:
     from scripts.stage_public import ASSET, asset_paths
+    from scripts.collect import employer_identity, refine_facts
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
 
@@ -25,15 +27,36 @@ def repair_snapshot_zhiye_urls(public, snapshot, metadata):
         shard_changed = False
         for job_id, job in (detail_data.get('jobs') or {}).items():
             structured_uuid = str((job.get('structured') or {}).get('Id') or '').strip()
-            if not re.fullmatch(r'[0-9a-fA-F-]{36}', structured_uuid):
-                continue
-            for url_field in ('source_url', 'application_url'):
-                url_value = str(job.get(url_field) or '')
-                if re.search(r'/(?:campus|social)/detail\?jobAdId=\d+$', url_value):
-                    new_url = re.sub(r'jobAdId=\d+$', f'jobAdId={structured_uuid}', url_value)
-                    job[url_field] = new_url
-                    repaired_urls.setdefault(job_id, {})[url_field] = new_url
+            if re.fullmatch(r'[0-9a-fA-F-]{36}', structured_uuid):
+                for url_field in ('source_url', 'application_url'):
+                    url_value = str(job.get(url_field) or '')
+                    if re.search(r'/(?:campus|social)/detail\?jobAdId=\d+$', url_value):
+                        new_url = re.sub(r'jobAdId=\d+$', f'jobAdId={structured_uuid}', url_value)
+                        job[url_field] = new_url
+                        if isinstance(job.get('primary_facts'), dict) and job['primary_facts'].get(url_field):
+                            job['primary_facts'][url_field] = new_url
+                        repaired_urls.setdefault(job_id, {})[url_field] = new_url
+                        shard_changed = True
+            emp_id = employer_identity(job)
+            for k in ('employer_brand', 'company_department'):
+                if emp_id.get(k) and job.get(k) != emp_id[k]:
+                    job[k] = emp_id[k]
+                    repaired_urls.setdefault(job_id, {})[k] = emp_id[k]
                     shard_changed = True
+            if job.get('kind') != '宣讲会':
+                refined = refine_facts(job)
+                for k in ('company', 'company_conflict', 'company_note'):
+                    old_val = job.get(k)
+                    new_val = refined.get(k)
+                    if old_val != new_val:
+                        if new_val is None:
+                            job.pop(k, None)
+                        else:
+                            job[k] = new_val
+                        if isinstance(job.get('primary_facts'), dict) and k in job['primary_facts'] and k == 'company' and new_val:
+                            job['primary_facts'][k] = new_val
+                        repaired_urls.setdefault(job_id, {})[k] = new_val
+                        shard_changed = True
         if shard_changed:
             raw_detail = json.dumps(detail_data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
             new_hash = hashlib.sha256(raw_detail).hexdigest()[:20]
@@ -46,10 +69,17 @@ def repair_snapshot_zhiye_urls(public, snapshot, metadata):
     if not repaired_urls:
         return None, None, 0
 
+    def apply_summary_updates(target_job, updates):
+        for k, v in updates.items():
+            if v is None:
+                target_job.pop(k, None)
+            else:
+                target_job[k] = v
+
     for job in snapshot.get('jobs') or []:
         updates = repaired_urls.get(job.get('id'))
         if updates:
-            job.update(updates)
+            apply_summary_updates(job, updates)
 
     index_shards = snapshot.get('index_shards') or []
     for idx, rel_path in enumerate(list(index_shards)):
@@ -61,7 +91,7 @@ def repair_snapshot_zhiye_urls(public, snapshot, metadata):
         for job in idx_data.get('jobs') or []:
             updates = repaired_urls.get(job.get('id'))
             if updates:
-                job.update(updates)
+                apply_summary_updates(job, updates)
                 shard_changed = True
         if shard_changed:
             raw_idx = json.dumps(idx_data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
@@ -117,7 +147,7 @@ def download(site, public, repair_zhiye_urls=False):
         if repaired_count:
             index = repaired_index
             metadata_raw = repaired_meta
-            print(f'Repaired {repaired_count} Zhiye detail URLs using structured UUIDs')
+            print(f'Repaired {repaired_count} snapshot records (URLs, brand departments, and employer names)')
     (public / 'jobs.json').write_bytes(index)
     (public / 'snapshot-manifest.json').write_bytes(metadata_raw)
     print(f'Reused published snapshot with {snapshot.get("index_count", len(snapshot["jobs"]))} records; no collection performed')

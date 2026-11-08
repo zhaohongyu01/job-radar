@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { Job, Personal, Filters } from '@/lib/jobs';
 import { personalFor, getDeadlineCountdown, eventDisplayTitle } from '@/lib/jobs';
+import { extractSalary } from '@/lib/salary-display';
 import { buildActionQueue } from '@/lib/workspace';
 import { PersonalReminders } from '@/components/personal-reminders';
 
@@ -86,7 +87,7 @@ export function TopActionCard({
               title={`点击查看「${eventDisplayTitle(topUrgent)}」详情`}
             >
               <strong className="top-cue-company">{eventDisplayTitle(topUrgent)}</strong>
-              <span className="top-cue-title">{topUrgent.title}</span>
+              <span className="top-cue-title">{extractSalary(topUrgent).cleanTitle}</span>
               <small className="top-cue-time">
                 <Clock3 size={11} />
                 {getDeadlineCountdown(topUrgent.deadline, now)?.text || '截止日期待核实'}

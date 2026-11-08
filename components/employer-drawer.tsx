@@ -8,6 +8,7 @@ import type { EmployerProfile } from '@/lib/employers';
 import type { EmployerPatch, EmployerRecord } from '@/lib/employer-personal';
 import type { Job } from '@/lib/jobs';
 import { locationSummary, defaultFilters, isExpired } from '@/lib/jobs';
+import { extractSalary } from '@/lib/salary-display';
 import { formatUrlQuery } from '@/lib/browsing';
 import { employerEvents } from '@/lib/employer-catalog';
 import { REPUTATION_PROVIDERS } from '@/lib/reputation';
@@ -75,7 +76,7 @@ export default function EmployerDrawer({ profile, job, jobs, now, complete, onDe
         <SheetDescription>{scopeText}</SheetDescription></SheetHeader>
       <div className="employer-content">
         <section className="employer-section"><h3>当前招聘机会</h3>
-          <p>{job.title}</p><p className="small muted">{locationSummary(job)} · {job.source_name}</p>
+          <p>{extractSalary(job).cleanTitle}</p><p className="small muted">{locationSummary(job)} · {job.source_name}</p>
           {profile.brand && profile.scope !== 'brand' && <p className="small muted">集团参考：{profile.brand}。集团与本档案的个人评分分别保存。</p>}
         </section>
         <section className="employer-section" aria-label="企业全部机会">
@@ -92,7 +93,7 @@ export default function EmployerDrawer({ profile, job, jobs, now, complete, onDe
           </div>
           <p className="small muted">当前{opportunities.length}条；按同一企业档案聚合，集团、子公司和分公司分别保留。未标截止不代表已经核验在招。</p>
           <div className="employer-opportunities">{opportunities.slice(0, limit).map(row => <article key={row.id}>
-            <button type="button" className="quiet-link" onClick={() => onDetail(row)}>{row.title}</button>
+            <button type="button" className="quiet-link" onClick={() => onDetail(row)}>{extractSalary(row).cleanTitle}</button>
             <p className="small muted">{locationSummary(row)} · {row.source_name} · {row.published_at || '发布日期未明确'}</p>
             <p className="small muted">{row.deadline ? `截止 ${row.deadline.slice(0, 10)}` : '未写明截止日期'}{isExpired(row, now) && ' · 已截止/撤回'}</p>
           </article>)}</div>

@@ -326,12 +326,14 @@ export function employerBrand(sourceId?: string): string {
   return (employerBrands.sources as Record<string, string>)[sourceId || ''] || '';
 }
 export function employerGroupName(job: Job): string {
-  return departmentPattern.test(job.company || '') ? employerBrand(job.source_id) || job.company : job.company;
+  return departmentPattern.test(job.company || '')
+    ? employerBrand(job.source_id) || (employerBrands.reference_sources as Record<string, string>)[job.source_id || ''] || job.company
+    : job.company;
 }
 export function formatCompanyDisplay(company?: string | null, title?: string | null, sourceId?: string): { displayCompany: string; monogram: string } {
   const rawComp = (company ?? '').trim();
   const rawTitle = (title ?? '').trim();
-  const brand = employerBrand(sourceId);
+  const brand = employerBrand(sourceId) || (employerBrands.reference_sources as Record<string, string>)[sourceId || ''] || '';
   let displayCompany = rawComp || brand;
   if (rawComp === '所属区县及以下机构' && sourceId?.startsWith('picc-')) {
     const piccBranch = rawTitle.match(/^(人保(?:财险|寿险|健康|资产|金服|养老|再保险|科技)(?:公司)?)-([^-\s]+分公司)/);

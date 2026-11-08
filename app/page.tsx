@@ -1498,8 +1498,9 @@ function HomeContent() {
                     // page of N groups never renders hundreds of cards.
                     const renderRoleChip = (item: Job, idx: number) => {
                       const rawRole = cardJobTitle(
-                        item.title,
-                        formatCompanyDisplay(item.company, item.source_name, item.title).displayCompany,
+                        extractSalary(item).cleanTitle,
+                        item.company,
+                        formatCompanyDisplay(item.company, item.title, item.source_id).displayCompany,
                       );
                       const cleanRole = rawRole.replace(/\s*[（(][A-Za-z]\d{4,}[)）]\s*$/, '').trim() || rawRole;
                       const city = (item.cities || []).find(

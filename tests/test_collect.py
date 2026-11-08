@@ -123,6 +123,22 @@ class CollectionTests(unittest.TestCase):
                      original['body'] + '\n公司简介\n北京宇视科技有限公司，是企业。']:
             self.assertEqual(c.refine_facts(dict(original, body=body))['company'], '')
         self.assertEqual(c.refine_facts(dict(original, kind='具体岗位'))['company'], '')
+        liante = c.refine_facts({'title': '联特科技 2027届 校园招聘', 'company': '', 'company_original': '武汉联特科技股份有限公司',
+                                 'company_conflict': True, 'company_note': '来源单位字段与公告未能对应，企业名称待核对。',
+                                 'source_id': 'jobsdufe-announcements', 'body': '联特科技2027届校招启动'})
+        self.assertEqual(liante['company'], '武汉联特科技股份有限公司')
+        self.assertFalse(liante.get('company_conflict'))
+        sdu_branch = c.refine_facts({'title': '中国石油天然气股份有限公司新疆油田分公司招聘', 'company': '', 'source_id': 'sdu', 'body': '招聘简章'})
+        self.assertEqual(sdu_branch['company'], '中国石油天然气股份有限公司新疆油田分公司')
+        repaired_zhiye = c.repair_sdu_urls({'z1': {
+            'id': 'z1', 'source_id': 'qilu-pharma-campus',
+            'source_url': 'https://qilu-pharma.zhiye.com/campus/detail?jobAdId=620996401',
+            'application_url': 'https://qilu-pharma.zhiye.com/campus/detail?jobAdId=620996401',
+            'structured': {'Id': '560760c3-273f-44fd-9294-2e93909b1bf9'},
+            'content_fingerprint': 'old', 'fingerprint_version': 3,
+        }})['z1']
+        self.assertEqual(repaired_zhiye['application_url'], 'https://qilu-pharma.zhiye.com/campus/detail?jobAdId=560760c3-273f-44fd-9294-2e93909b1bf9')
+        self.assertEqual(repaired_zhiye['identity'], 'https://qilu-pharma.zhiye.com/campus/detail?jobAdId=620996401')
 
     def test_later_page_failure_retains_discoveries_and_export_is_consistent(self):
         source=next(s for s in c.SOURCES if s['id']=='jobsdufe-positions')

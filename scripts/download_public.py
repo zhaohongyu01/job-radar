@@ -14,7 +14,67 @@ except ImportError:
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
 
 
-def download(site, public):
+def repair_snapshot_zhiye_urls(public, snapshot, metadata):
+    repaired_urls = {}
+    detail_shards = snapshot.get('detail_shards') or {}
+    for prefix, rel_path in list(detail_shards.items()):
+        shard_file = public / rel_path.lstrip('/')
+        if not shard_file.exists():
+            continue
+        detail_data = json.loads(shard_file.read_bytes())
+        shard_changed = False
+        for job_id, job in (detail_data.get('jobs') or {}).items():
+            structured_uuid = str((job.get('structured') or {}).get('Id') or '').strip()
+            if not re.fullmatch(r'[0-9a-fA-F-]{36}', structured_uuid):
+                continue
+            for url_field in ('source_url', 'application_url'):
+                url_value = str(job.get(url_field) or '')
+                if re.search(r'/(?:campus|social)/detail\?jobAdId=\d+$', url_value):
+                    new_url = re.sub(r'jobAdId=\d+$', f'jobAdId={structured_uuid}', url_value)
+                    job[url_field] = new_url
+                    repaired_urls.setdefault(job_id, {})[url_field] = new_url
+                    shard_changed = True
+        if shard_changed:
+            raw_detail = json.dumps(detail_data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+            new_hash = hashlib.sha256(raw_detail).hexdigest()[:20]
+            new_rel_path = f'/detail-{prefix}-{new_hash}.json'
+            (public / new_rel_path.lstrip('/')).write_bytes(raw_detail)
+            detail_shards[prefix] = new_rel_path
+
+    if not repaired_urls:
+        return None, None, 0
+
+    for job in snapshot.get('jobs') or []:
+        updates = repaired_urls.get(job.get('id'))
+        if updates:
+            job.update(updates)
+
+    index_shards = snapshot.get('index_shards') or []
+    for idx, rel_path in enumerate(list(index_shards)):
+        shard_file = public / rel_path.lstrip('/')
+        if not shard_file.exists():
+            continue
+        idx_data = json.loads(shard_file.read_bytes())
+        shard_changed = False
+        for job in idx_data.get('jobs') or []:
+            updates = repaired_urls.get(job.get('id'))
+            if updates:
+                job.update(updates)
+                shard_changed = True
+        if shard_changed:
+            raw_idx = json.dumps(idx_data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+            new_hash = hashlib.sha256(raw_idx).hexdigest()[:20]
+            new_rel_path = f'/index-{new_hash}.json'
+            (public / new_rel_path.lstrip('/')).write_bytes(raw_idx)
+            index_shards[idx] = new_rel_path
+
+    index = json.dumps(snapshot, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    metadata['index_sha256'] = hashlib.sha256(index).hexdigest()
+    metadata_raw = json.dumps(metadata, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    return index, metadata_raw, len(repaired_urls)
+
+
+def download(site, public, repair_zhiye_urls=False):
     if not re.fullmatch(r'https://[a-zA-Z0-9.-]+', site):
         raise ValueError('Expected a plain HTTPS origin')
     public = Path(public)
@@ -48,6 +108,12 @@ def download(site, public):
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(fetch_asset, sorted(paths)))
     public.mkdir(parents=True, exist_ok=True)
+    if repair_zhiye_urls:
+        repaired_index, repaired_meta, repaired_count = repair_snapshot_zhiye_urls(public, snapshot, metadata)
+        if repaired_count:
+            index = repaired_index
+            metadata_raw = repaired_meta
+            print(f'Repaired {repaired_count} Zhiye detail URLs using structured UUIDs')
     (public / 'jobs.json').write_bytes(index)
     (public / 'snapshot-manifest.json').write_bytes(metadata_raw)
     print(f'Reused published snapshot with {snapshot.get("index_count", len(snapshot["jobs"]))} records; no collection performed')
@@ -57,5 +123,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--site', required=True)
     parser.add_argument('--public-dir', type=Path, required=True)
+    parser.add_argument('--repair-zhiye-urls', action='store_true')
     args = parser.parse_args()
-    download(args.site, args.public_dir)
+    download(args.site, args.public_dir, repair_zhiye_urls=args.repair_zhiye_urls)

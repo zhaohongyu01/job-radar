@@ -1086,10 +1086,11 @@ def zhiye_jobs_list(source, page, page_size=500):
     route = 'campus' if source['business_type'] == '2' else 'social'
     for row in rows:
         job_id = row.get('JobAdId')
+        detail_id = row.get('Id') or job_id
         title = clean(str(row.get('JobAdName') or ''))
         if not job_id or not title or row.get('Status') == 0:
             continue
-        detail_url = origin + f'/{route}/detail?jobAdId={job_id}'
+        detail_url = origin + f'/{route}/detail?jobAdId={detail_id}'
         locations = '、'.join(clean(str(value)) for value in row.get('LocNames') or [] if value)
         deadline_value = str(row.get('EndTime') or '')[:10]
         if (not re.fullmatch(r'20\d{2}-\d{2}-\d{2}', deadline_value) or
@@ -2620,6 +2621,12 @@ def attach_talk_events(jobs):
 def public_record(job):
     """Recompute derived location labels from retained text, without advancing verification time."""
     row = {k:v for k,v in job.items() if k!='fingerprint'}
+    structured_uuid = str((row.get('structured') or {}).get('Id') or '').strip()
+    if re.fullmatch(r'[0-9a-fA-F-]{36}', structured_uuid):
+        for url_field in ('source_url', 'application_url'):
+            url_value = str(row.get(url_field) or '')
+            if re.search(r'/(?:campus|social)/detail\?jobAdId=\d+$', url_value):
+                row[url_field] = re.sub(r'jobAdId=\d+$', f'jobAdId={structured_uuid}', url_value)
     row.update(employer_identity(row))
     if row.get('event_verification') == 'official_list' and row.get('detail_verification') == 'failed':
         event_only = calendar_record({'url': row['source_url'], 'title': row['title'],

@@ -1661,3 +1661,127 @@
   text-align: left;
 }
 
+.opp-group-directory {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: rgba(255, 253, 248, 0.86);
+  border: 1px dashed rgba(31, 92, 69, 0.22);
+}
+
+.opp-group-directory-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.opp-group-directory-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.opp-group-role-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.opp-group-role-list-extra {
+  margin-top: 6px;
+}
+
+.opp-group-role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(23, 33, 28, 0.12);
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.35;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.opp-group-role-chip:hover {
+  border-color: rgba(31, 92, 69, 0.45);
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.opp-group-role-chip.is-active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.opp-group-role-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.opp-group-role-meta {
+  font-size: 11px;
+  color: var(--muted);
+  padding-left: 5px;
+  border-left: 1px solid rgba(23, 33, 28, 0.12);
+  white-space: nowrap;
+}
+
+.opp-group-role-chip:hover .opp-group-role-meta,
+.opp-group-role-chip.is-active .opp-group-role-meta {
+  color: var(--brand);
+  border-left-color: rgba(31, 92, 69, 0.28);
+}
+
+.opp-group-roles-more {
+  margin-top: 6px;
+}
+
+.opp-group-roles-more > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand);
+  cursor: pointer;
+  user-select: none;
+}
+
+.opp-group-roles-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.opp-group-roles-more > summary .when-open {
+  display: none;
+}
+
+.opp-group-roles-more[open] > summary .when-closed {
+  display: none;
+}
+
+.opp-group-roles-more[open] > summary .when-open {
+  display: inline;
+}
+
+.opp-group-roles-more[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+

@@ -375,7 +375,7 @@ class CollectionTests(unittest.TestCase):
                 'ClassificationTwo':'太平人寿山东分公司','Duty':'负责预算与财务分析。',
                 'Require':'经济、金融、会计相关专业。',
             },{
-                'JobAdId':561286064,'JobAdName':'长期招聘岗位','Status':1,
+                'Id':'fafeaeb8-5662-4f83-a37c-b40707208016','JobAdId':561286064,'JobAdName':'长期招聘岗位','Status':1,
                 'Org':'太平人寿山东分公司','LocNames':['山东省','济南市'],
                 'PostDate':'2026-08-01T10:00:00','EndTime':'2222-02-02T00:00:00',
             }]
@@ -394,6 +394,14 @@ class CollectionTests(unittest.TestCase):
         self.assertIn('/campus/detail?jobAdId=561286063',job['application_url'])
         sentinel_job=c.parse_detail(items[1]['inline_html'],items[1],source)
         self.assertIsNone(sentinel_job['deadline'])
+        self.assertEqual(items[1]['identity'],'zhiye:taiping-campus:561286064')
+        self.assertIn('/campus/detail?jobAdId=fafeaeb8-5662-4f83-a37c-b40707208016',sentinel_job['application_url'])
+        legacy_zhiye=dict(sentinel_job,structured=items[1]['structured'],
+                          source_url='https://qilu-pharma.zhiye.com/campus/detail?jobAdId=230936032',
+                          application_url='https://qilu-pharma.zhiye.com/campus/detail?jobAdId=230936032')
+        repaired_zhiye=c.public_record(legacy_zhiye)
+        self.assertEqual(repaired_zhiye['source_url'],'https://qilu-pharma.zhiye.com/campus/detail?jobAdId=fafeaeb8-5662-4f83-a37c-b40707208016')
+        self.assertEqual(repaired_zhiye['application_url'],'https://qilu-pharma.zhiye.com/campus/detail?jobAdId=fafeaeb8-5662-4f83-a37c-b40707208016')
 
     def test_haier_social_and_campus_public_apis_create_searchable_jobs(self):
         social_payload=json.dumps({'status':1,'data':{'count':101,'list':[{

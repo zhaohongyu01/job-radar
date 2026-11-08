@@ -275,7 +275,7 @@ jobs:
 
       - name: Restore exact live snapshot for page-only deployment
         if: ${{ inputs.deploy_only }}
-        run: python scripts/download_public.py --site https://sites-project.job-radar.workers.dev --public-dir data/live-public
+        run: python scripts/download_public.py --site https://sites-project.job-radar.workers.dev --public-dir data/live-public --repair-zhiye-urls
 
       - name: Audit actual data freshness and source coverage
         if: ${{ !inputs.deploy_only }}

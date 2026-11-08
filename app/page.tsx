@@ -51,6 +51,8 @@ import {
   selectedWorkCities,
   workCitiesLabel,
   formatCompanyDisplay,
+  formatEducationDisplay,
+  cardJobTitle,
   resolveJobId,
   parseSalaryRange,
 } from '@/lib/jobs';
@@ -1494,6 +1496,43 @@ function HomeContent() {
                     );
                     // Groups show their newest record; the rest expand on demand so a
                     // page of N groups never renders hundreds of cards.
+                    const renderRoleChip = (item: Job, idx: number) => {
+                      const rawRole = cardJobTitle(
+                        item.title,
+                        formatCompanyDisplay(item.company, item.source_name, item.title).displayCompany,
+                      );
+                      const cleanRole = rawRole.replace(/\s*[（(][A-Za-z]\d{4,}[)）]\s*$/, '').trim() || rawRole;
+                      const city = (item.cities || []).find(
+                        (c) => c && c !== '全国' && c !== '其他' && c !== '地区待确认',
+                      );
+                      const eduRaw = formatEducationDisplay(item.education);
+                      const eduShort =
+                        eduRaw === '博士研究生'
+                          ? '博士'
+                          : eduRaw === '硕士研究生'
+                            ? '硕士'
+                            : eduRaw === '本科生毕业'
+                              ? '本科'
+                              : eduRaw === '学历待确认'
+                                ? ''
+                                : eduRaw;
+                      const metaParts = [city, eduShort].filter(Boolean);
+                      const isActive = Boolean(selected && selected.id === item.id);
+                      return (
+                        <button
+                          key={item.id || `${group.id}-role-${idx}`}
+                          type="button"
+                          className={`opp-group-role-chip${isActive ? ' is-active' : ''}`}
+                          onClick={() => void openDetail(item)}
+                          title={`${rawRole}${metaParts.length ? ` · ${metaParts.join(' · ')}` : ''}（点击查看岗位详情与投递链接）`}
+                        >
+                          <span className="opp-group-role-name">{cleanRole}</span>
+                          {metaParts.length > 0 && (
+                            <span className="opp-group-role-meta">{metaParts.join('·')}</span>
+                          )}
+                        </button>
+                      );
+                    };
                     return group.grouped ? (
                       <div className="opp-group" key={group.id}>
                         <div className="opp-group-head">
@@ -1504,14 +1543,38 @@ function HomeContent() {
                             </span>
                           </div>
                           <div className="opp-group-count">
-                            <span>{group.jobs.length} 条信息</span>
+                            <span>共 {group.jobs.length} 个在招岗位</span>
                           </div>
+                        </div>
+                        <div className="opp-group-directory" aria-label={`${group.company}在招岗位速览`}>
+                          <div className="opp-group-directory-head">
+                            <span className="opp-group-directory-label">
+                              在招岗位速览（点击岗位直达详情与投递）：
+                            </span>
+                          </div>
+                          <div className="opp-group-role-list">
+                            {group.jobs.slice(0, 12).map((item, idx) => renderRoleChip(item, idx))}
+                          </div>
+                          {group.jobs.length > 12 && (
+                            <details className="opp-group-roles-more">
+                              <summary>
+                                <span className="when-closed">
+                                  查看全部 {group.jobs.length} 个岗位名称（其余 {group.jobs.length - 12} 个）
+                                </span>
+                                <span className="when-open">收起其余岗位名称</span>
+                                <ChevronDown size={13} />
+                              </summary>
+                              <div className="opp-group-role-list opp-group-role-list-extra">
+                                {group.jobs.slice(12).map((item, idx) => renderRoleChip(item, idx + 12))}
+                              </div>
+                            </details>
+                          )}
                         </div>
                         <div className="opp-group-members">{renderJobs(group.jobs.slice(0, 1))}</div>
                         <details className="opp-group-more">
                           <summary>
-                            <span className="when-closed">展开其余 {group.jobs.length - 1} 条</span>
-                            <span className="when-open">收起其余 {group.jobs.length - 1} 条</span>
+                            <span className="when-closed">展开其余 {group.jobs.length - 1} 条完整卡片</span>
+                            <span className="when-open">收起其余 {group.jobs.length - 1} 条完整卡片</span>
                             <ChevronDown size={14} />
                           </summary>
                           <div className="opp-group-members">{renderJobs(group.jobs.slice(1))}</div>

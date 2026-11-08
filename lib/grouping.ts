@@ -16,10 +16,10 @@ export function groupJobs(jobs: Job[], enabled = true): JobGroup[] {
     // missing cohort: records without a cohort/type only group with others that
     // are equally unstated, and the label says so.
     const types = effectiveJobTypes(job);
-    const type = types.length === 1 ? types[0] : types.length === 0 ? '' : null;
-    const cohort = cohorts.length === 1 ? cohorts[0] : cohorts.length === 0 ? '' : null;
-    const canGroup = enabled && !!company && type !== null && cohort !== null;
-    const kindLabel = type === '社招' ? '社招' : type === '校招' ? phase : '类型未明确';
+    const type = types.length === 1 ? types[0] : types.length === 0 ? '' : [...new Set(types)].sort().join(' / ');
+    const cohort = [...new Set(cohorts)].sort().join(' / ');
+    const canGroup = enabled && !!company;
+    const kindLabel = type === '社招' ? '社招' : type === '校招' ? phase : type || '类型未明确';
     const id = canGroup ? JSON.stringify([company, type, cohort, type === '校招' ? phase : '']) : job.id;
     const existing = groups.get(id);
     if (existing) existing.jobs.push(job);

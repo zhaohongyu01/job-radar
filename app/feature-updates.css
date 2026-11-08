@@ -1468,18 +1468,42 @@
 }
 
 /* 3. DetailDrawer Sticky Action Bar, Prev/Next Navigation & Section Jump */
+[data-slot="sheet-overlay"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.detail-sheet {
+  contain: layout paint;
+  transform: translateZ(0);
+}
+
+.detail-body {
+  overscroll-behavior: contain;
+  will-change: scroll-position;
+}
+
+.detail-body .announcement-text {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.detail-body .timeline-item.current .timeline-dot {
+  animation: none;
+}
+
 .detail-sticky-bar {
   position: sticky;
   top: 0;
   z-index: 15;
   margin: 0 -4px 12px;
   padding: 8px 4px;
-  background: rgba(251, 249, 245, 0.96);
-  backdrop-filter: blur(8px);
+  background: var(--surface, #fffefa);
   border-bottom: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: 8px;
+  transform: translateZ(0);
 }
 
 .detail-sticky-bar .detail-actions {

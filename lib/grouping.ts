@@ -1,5 +1,5 @@
 import type { Job } from './jobs.ts';
-import { employerGroupName } from './jobs.ts';
+import { employerGroupName, effectiveJobTypes } from './jobs.ts';
 
 export type JobGroup = { id: string; company: string; label: string; jobs: Job[] };
 
@@ -15,7 +15,8 @@ export function groupJobs(jobs: Job[], enabled = true): JobGroup[] {
     // Preserve branches and legal entities verbatim. Do not guess aliases or a
     // missing cohort: records without a cohort/type only group with others that
     // are equally unstated, and the label says so.
-    const type = job.types.length === 1 ? job.types[0] : job.types.length === 0 ? '' : null;
+    const types = effectiveJobTypes(job);
+    const type = types.length === 1 ? types[0] : types.length === 0 ? '' : null;
     const cohort = cohorts.length === 1 ? cohorts[0] : cohorts.length === 0 ? '' : null;
     const canGroup = enabled && !!company && type !== null && cohort !== null;
     const kindLabel = type === '社招' ? '社招' : type === '校招' ? phase : '类型未明确';

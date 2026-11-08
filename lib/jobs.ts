@@ -332,14 +332,53 @@ export function formatCompanyDisplay(company?: string | null, title?: string | n
   const rawComp = (company ?? '').trim();
   const rawTitle = (title ?? '').trim();
   const brand = employerBrand(sourceId);
-  const displayCompany = brand && rawComp && departmentPattern.test(rawComp) && !rawComp.includes(brand)
-    ? `${brand} · ${rawComp}` : rawComp || brand;
+  let displayCompany = rawComp || brand;
+  if (rawComp === '所属区县及以下机构' && sourceId?.startsWith('picc-')) {
+    const piccBranch = rawTitle.match(/^(人保(?:财险|寿险|健康|资产|金服|养老|再保险|科技)(?:公司)?)-([^-\s]+分公司)/);
+    displayCompany = piccBranch
+      ? `${piccBranch[1]}${piccBranch[2]} · ${rawComp}`
+      : `${brand || '中国人民保险集团'} · ${rawComp}`;
+  } else if (brand && rawComp && departmentPattern.test(rawComp) && !rawComp.includes(brand)) {
+    displayCompany = `${brand} · ${rawComp}`;
+  }
 
   const monogramBase = displayCompany || rawTitle;
   const norm = normalizeCompanyName(monogramBase);
   const monogram = (norm.length >= 2 ? norm.slice(0, 2) : monogramBase.slice(0, 2)) || '招';
 
   return { displayCompany: displayCompany || '企业名称待核实', monogram };
+}
+export function effectiveJobTypes(job: Pick<Job, 'types' | 'source_id' | 'kind'>): string[] {
+  if (job.types?.length) return job.types;
+  if (job.kind === '具体岗位' && /(?:-(?:positions|jobs))$/.test(job.source_id || '')) {
+    return ['校招'];
+  }
+  return [];
+}
+export function formatEducationDisplay(education?: string | null, fallback = '学历待核实'): string {
+  if (!education) return fallback;
+  const cleaned = education
+    .replace(/(?:20)?\d{2}\s*届(?:[\s,/、，|-]*(?:20)?\d{2}\s*届)*/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s,/、，|-]+|[\s,/、，|-]+$/g, '')
+    .trim();
+  if (!cleaned || cleaned === '未明确 / 见原公告' || cleaned === '招聘条件待核实' || cleaned === '未明确') {
+    return fallback;
+  }
+  return cleaned;
+}
+export function cardJobTitle(cleanTitle: string, company?: string | null, displayCompany?: string | null): string {
+  const title = cleanTitle.trim();
+  if (!title) return title;
+  for (const candidate of [displayCompany, company]) {
+    const prefix = (candidate ?? '').trim();
+    if (!prefix) continue;
+    if (title.startsWith(prefix)) {
+      const rest = title.slice(prefix.length).replace(/^\s*[·•—\-:：]\s*/, '').trim();
+      if (rest) return rest;
+    }
+  }
+  return title;
 }
 export function eventDisplayTitle(job: Job): string {
   return job.company ? formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany : job.title || '校园活动';
@@ -1258,10 +1297,11 @@ function matchingJobs(
         if (!positions.some((position) => positionMatches(position, { cities: workCities, education: f.education,
           major: f.major || '', year: f.type === '校招' ? f.year : '全部', includeUnknown: f.includeUncertain }))) return false;
       } else if (f.major && !(j.majors?.some((major) => major.includes(f.major!))) && !(f.includeUncertain && !j.majors?.length)) return false;
+      const effectiveTypes = effectiveJobTypes(j);
       if (
         f.type !== '全部' &&
-        !j.types.includes(f.type) &&
-        !(f.includeUncertain && j.types.length === 0)
+        !effectiveTypes.includes(f.type) &&
+        !(f.includeUncertain && effectiveTypes.length === 0)
       )
         return false;
       if (
@@ -1283,7 +1323,7 @@ function matchingJobs(
       if (
         f.education && !positions?.length &&
         !j.education.includes(f.education) &&
-        !(f.includeUncertain && j.education.includes('未明确'))
+        !(f.includeUncertain && (j.education.includes('未明确') || formatEducationDisplay(j.education, '未明确').includes('未明确')))
       )
         return false;
       if (f.salary && f.salary !== '全部') {

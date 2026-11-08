@@ -167,7 +167,7 @@ for code, host, school_name in [('sdjzu', 'sdjzu', '山东建筑大学'), ('sdjt
 for code, host, school_name in [('sdjzu', 'sdjzu', '山东建筑大学'), ('sdjt', 'sdjt', '山东交通学院')]:
     SOURCES.append({'id': code + '-jobs', 'name': school_name + ' · 在线直聘岗位',
         'url': f'https://{host}.bysjy.com.cn/module/jobs', 'school_name': school_name,
-        'adapter': 'bysjy_jobs', 'channel': 'positions', 'scope': '山东及全国',
+        'adapter': 'bysjy_jobs', 'channel': 'positions', 'default_type': '校招', 'scope': '山东及全国',
         'recruitment_types': ['校招'], 'sectors': ['综合'], 'trust': '官方原始来源',
         'source_family': school_name})
 SDEI_SCHOOLS = [
@@ -218,7 +218,8 @@ for school, name in SDEI_SCHOOLS:
     for channel, label in [('announcements', '招聘公告'), ('positions', '具体岗位')]:
         SOURCES.append({'id': f'{school}-{channel}', 'name': f'{name} · {label}',
                         'url': f'https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo?type=' + ('zwxx' if channel == 'positions' else 'zpgg'),
-                        'adapter': 'sdei', 'school': school, 'channel': channel})
+                        'adapter': 'sdei', 'school': school, 'channel': channel,
+                        **({'default_type': '校招'} if channel == 'positions' else {})})
 for school, name in SDEI_SCHOOLS:
     SOURCES.append({'id': f'{school}-talks', 'name': f'{name} · 宣讲会招聘',
                     'url': f'https://school.gxjy.sdei.edu.cn/{school}/front/JiuYeInfo?type=xjh',
@@ -1826,6 +1827,10 @@ def parse_detail(html, item, source):
         attachments=attachments,
         fetch_attachment_fn=fetch_bytes,
     )
+    raw_edu = fields.get('学历要求') or structured.get('degreereq') or structured.get('graduationYear') or structured.get('Degree') or structured.get('education_required_label') or ''
+    cleaned_edu = re.sub(r'(?:20)?\d{2}\s*届(?:[\s,/、，|-]*(?:20)?\d{2}\s*届)*', '', str(raw_edu))
+    cleaned_edu = re.sub(r'\s+', ' ', cleaned_edu)
+    cleaned_edu = re.sub(r'^[\s,/、，|-]+|[\s,/、，|-]+$', '', cleaned_edu).strip() or '未明确 / 见原公告'
     raw_job=refine_facts({'id': item.get('target_id') or hashlib.sha256(item.get('identity',item['url']).encode()).hexdigest()[:20],
             'identity': item.get('identity', item['url']),
             'title':title,'company':company,
@@ -1836,7 +1841,7 @@ def parse_detail(html, item, source):
             'sectors':sectors,'directions':directions,'cities':cities,'possible_cities':possible,
             'location_evidence':location_evidence[:12],'province_possible':'山东' in combined,
             'domestic_status':location_status,
-            'education':fields.get('学历要求') or structured.get('degreereq') or structured.get('graduationYear') or structured.get('Degree') or structured.get('education_required_label') or '未明确 / 见原公告',
+            'education':cleaned_edu,
             'deadline':expires,'deadline_evidence':expires_text,'deadline_precision':precision,
             'application_url':application_url,'emails':emails,'attachments':attachments,'links':links[:20],
             'qr_attachment':bool(re.search(r'扫码|二维码',text)),
@@ -2697,6 +2702,13 @@ def public_record(job):
     row['domestic_status']=domestic_status(row['location_evidence'],row['cities'])
     if 'graduation_years' in row:
         row['graduation_years']=[y for y in row['graduation_years'] if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
+    if not row.get('types') and row.get('kind') == '具体岗位' and re.search(r'-(?:positions|jobs)$', row.get('source_id') or ''):
+        row['types'] = ['校招']
+    if row.get('education'):
+        edu_clean = re.sub(r'(?:20)?\d{2}\s*届(?:[\s,/、，|-]*(?:20)?\d{2}\s*届)*', '', str(row['education']))
+        edu_clean = re.sub(r'\s+', ' ', edu_clean)
+        edu_clean = re.sub(r'^[\s,/、，|-]+|[\s,/、，|-]+$', '', edu_clean).strip()
+        row['education'] = edu_clean or '未明确 / 见原公告'
     if row.get('source_id')=='wondercv':
         row['types']=list(dict.fromkeys(row['types']+['校招']))
         combined=row['title']+'\n'+row.get('body','')

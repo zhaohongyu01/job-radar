@@ -30,6 +30,20 @@ class EmployerIdentityTests(unittest.TestCase):
         self.assertEqual(employer_identity(dict(job, source_id='unknown', company='研发中心', title='嵌入式软件工程师')), {})
         self.assertEqual(employer_identity(dict(job, company='海信视像科技股份有限公司')), {'employer_brand': '海信集团'})
         self.assertEqual(job['company'], '全球营销中心-中国区')
+        self.assertEqual(employer_identity({'source_id': 'weichai-campus', 'company': '未来技术研究院'}),
+                         {'employer_brand': '潍柴动力', 'company_department': '未来技术研究院'})
+        self.assertEqual(employer_identity({'source_id': 'qilu-pharma-campus', 'company': '创新药物研发中心(济南）'}),
+                         {'employer_brand': '齐鲁制药', 'company_department': '创新药物研发中心(济南）'})
+        self.assertEqual(employer_identity({'source_id': 'tsingtao-campus', 'company': '山东省区'}),
+                         {'employer_brand': '青岛啤酒', 'company_department': '山东省区'})
+        self.assertEqual(employer_identity({'source_id': 'linglong-social', 'company': '集团职能'}),
+                         {'employer_brand': '玲珑轮胎', 'company_department': '集团职能'})
+        self.assertEqual(employer_identity({'source_id': 'chinastock-campus', 'company': '投资银行业务线'}),
+                         {'employer_brand': '中国银河证券', 'company_department': '投资银行业务线'})
+        self.assertEqual(employer_identity({'source_id': 'picc-campus', 'company': '所属区县及以下机构'}),
+                         {'employer_brand': '中国人民保险集团', 'company_department': '所属区县及以下机构'})
+        self.assertEqual(employer_identity({'source_id': 'chinalife-campus', 'company': '寿险山东省分公司'}),
+                         {'employer_brand': '中国人寿集团', 'company_department': '寿险山东省分公司'})
 
     def test_public_projection_does_not_mutate_raw_identity_or_history(self):
         job = next(iter(fixture()['jobs'].values()))

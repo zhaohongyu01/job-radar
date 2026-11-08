@@ -10,7 +10,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary, formatCompanyDisplay, selectedWorkCities } from '@/lib/jobs';
+import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary, formatCompanyDisplay, effectiveJobTypes, formatEducationDisplay, selectedWorkCities } from '@/lib/jobs';
 import type { Filters, Job, Personal } from '@/lib/jobs';
 import { positionMatches } from '@/lib/eligibility';
 import type { PersonalRecord } from '@/lib/jobs';
@@ -184,8 +184,8 @@ export function DetailDrawer({
             <div className="detail-body">
               <dl className="detail-facts">
                 <div><dt>工作地点</dt><dd>{locationSummary(selected)}</dd></div>
-                <div><dt>学历要求</dt><dd>{selected.education || '原公告未明确'}</dd></div>
-                <div><dt>招聘对象</dt><dd>{selected.types.join(' / ') || '类型待核实'}{selected.graduation_years.length ? ` · ${selected.graduation_years.join(' / ')}届` : ''}</dd></div>
+                <div><dt>学历要求</dt><dd>{formatEducationDisplay(selected.education, '原公告未明确')}</dd></div>
+                <div><dt>招聘对象</dt><dd>{effectiveJobTypes(selected).join(' / ') || '类型待核实'}{selected.graduation_years.length ? ` · ${selected.graduation_years.join(' / ')}届` : ''}</dd></div>
                 <div><dt>报名截止</dt><dd>{selected.deadline ? formatDate(selected.deadline, true) : '日期未明确，请核实'}</dd></div>
               </dl>
               {detailLoading && (

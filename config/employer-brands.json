@@ -4,9 +4,23 @@
     "hisense-campus": "海信集团",
     "hisense-social": "海信集团",
     "haier-campus": "海尔集团",
-    "haier-social": "海尔集团"
+    "haier-social": "海尔集团",
+    "weichai-campus": "潍柴动力",
+    "weichai-social": "潍柴动力",
+    "tsingtao-campus": "青岛啤酒",
+    "tsingtao-social": "青岛啤酒",
+    "qilu-pharma-campus": "齐鲁制药",
+    "qilu-pharma-social": "齐鲁制药",
+    "linglong-campus": "玲珑轮胎",
+    "linglong-social": "玲珑轮胎",
+    "chinastock-campus": "中国银河证券",
+    "chinastock-social": "中国银河证券",
+    "picc-campus": "中国人民保险集团",
+    "picc-social": "中国人民保险集团",
+    "chinalife-campus": "中国人寿集团",
+    "chinalife-social": "中国人寿集团"
   },
-  "department_pattern": "(?:营销中心|研发中心|制造中心|运营中心|供应链|管理中心|事业部|分部|分中心|业务部|中国区|华东区|华北区|华南区)$",
+  "department_pattern": "(?:营销中心|研发中心(?:[（(][^）)]+[）)])?|临床研发中心|制造中心|运营中心|技术中心|共享中心|服务中心|供应链|管理中心|事业部|分部|分中心|业务部|业务线|条线|研究院|研究总院|总院|总厂|省区|大区|中国区|华东区|华北区|华南区|集团职能|所属区县及以下机构)$|^(?:集团公司|股份公司|分公司|总公司|生物公司|本部)$|^(?!.*(?:公司|集团|银行|证券|保险|有限|俱乐部)).+部$|^(?!.*(?:公司|集团)).+(?:营销|销售)$|^(?:寿险|财险)",
   "reference_sources": {
     "taiping-campus": "中国太平",
     "taiping-social": "中国太平"

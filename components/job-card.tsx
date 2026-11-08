@@ -27,6 +27,9 @@ import {
   personalFor,
   selectedWorkCities,
   formatCompanyDisplay,
+  effectiveJobTypes,
+  formatEducationDisplay,
+  cardJobTitle,
   duplicateSourceNames,
 } from '@/lib/jobs';
 import type { Job, Personal, Filters } from '@/lib/jobs';
@@ -148,6 +151,9 @@ export function JobCard({
   const stageInfo = getLifecycleStage(job, now);
   const changeAlert = cardChangeAlert(job, now);
   const { displayCompany, monogram } = formatCompanyDisplay(job.company, cleanTitle, job.source_id);
+  const displayTitle = cardJobTitle(cleanTitle, job.company, displayCompany);
+  const displayTypes = effectiveJobTypes(job);
+  const displayEducation = formatEducationDisplay(job.education, '学历待核实');
   const isNew = !!since && Date.parse(job.first_seen_at) > Date.parse(since);
   const showStage = !['accepting', 'expired', 'expiring_soon'].includes(stageInfo.stage);
   const validity = assessOpportunityValidity(job, now);
@@ -172,18 +178,22 @@ export function JobCard({
     cities: selectedWorkCities(filters), education: filters.education, major: filters.major || '',
     year: filters.type === '校招' ? filters.year : '全部', includeUnknown: filters.includeUncertain,
   })), [job.position_matches, job.positions, filters]);
-  const displayPositions = useMemo(() => {
-    if (matchingPositions.length) return [...new Set(matchingPositions.map((position) => position.name))].slice(0, 5);
-    if (job.sample_positions?.length) return job.sample_positions.slice(0, 5);
+  const { displayPositions, isDirectionFallback } = useMemo(() => {
+    if (matchingPositions.length) {
+      return { displayPositions: [...new Set(matchingPositions.map((position) => position.name))].slice(0, 5), isDirectionFallback: false };
+    }
+    if (job.sample_positions?.length) {
+      return { displayPositions: job.sample_positions.slice(0, 5), isDirectionFallback: false };
+    }
     if (job.positions?.length) {
       const names = Array.from(new Set(job.positions.map((p) => p.name).filter(Boolean)));
-      return names.slice(0, 5);
+      return { displayPositions: names.slice(0, 5), isDirectionFallback: false };
     }
-    if (job.directions?.length && job.directions[0] !== '全部') {
-      return job.directions.slice(0, 5);
+    if (job.kind !== '具体岗位' && job.directions?.length && job.directions[0] !== '全部') {
+      return { displayPositions: job.directions.slice(0, 5), isDirectionFallback: true };
     }
-    return [];
-  }, [job.sample_positions, job.positions, job.directions, matchingPositions]);
+    return { displayPositions: [], isDirectionFallback: false };
+  }, [job.kind, job.sample_positions, job.positions, job.directions, matchingPositions]);
 
   const displayMajors = useMemo(() => {
     const set = new Set<string>();
@@ -255,7 +265,7 @@ export function JobCard({
           </p>
           <h2 className="opp-title">
             <button onClick={() => onDetail(job)}>
-              <HighlightText text={cleanTitle} query={filters.query} />
+              <HighlightText text={displayTitle} query={filters.query} />
             </button>
           </h2>
         </div>
@@ -311,11 +321,11 @@ export function JobCard({
           </li>
           <li>
             <GraduationCap />
-            {job.education || '学历待核实'}
+            {displayEducation}
           </li>
           <li>
             <Briefcase />
-            {job.types.join(' / ') || '招聘类型待确认'}
+            {displayTypes.join(' / ') || '招聘类型待确认'}
             {!!job.graduation_years.length && ` · ${job.graduation_years.join(' / ')} 届`}
           </li>
           {!!job.position_count && (
@@ -349,7 +359,7 @@ export function JobCard({
 
         {displayPositions.length > 0 && (
           <div className="opp-positions">
-            <span className="opp-positions-label">{matchingPositions.length ? `匹配岗位 ${matchingPositions.length}` : '岗位信息'}</span>
+            <span className="opp-positions-label">{matchingPositions.length ? `匹配岗位 ${matchingPositions.length}` : isDirectionFallback ? '涉及方向' : '岗位信息'}</span>
             {(isCompact ? displayPositions.slice(0, 3) : displayPositions).map((pos, idx) => (
               <span key={idx} className="opp-pos-pill">
                 <HighlightText text={pos} query={filters.query} />

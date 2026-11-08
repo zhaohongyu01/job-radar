@@ -20,10 +20,15 @@ import {
   hasRecentJobChange,
   isExpired,
   formatCompanyDisplay,
+  employerGroupName,
+  effectiveJobTypes,
+  formatEducationDisplay,
+  cardJobTitle,
   eventDisplayTitle,
   resolveJobId,
   UNKNOWN_SECTOR,
 } from '../lib/jobs.ts';
+import { groupJobs } from '../lib/grouping.ts';
 import type { Job } from '../lib/jobs.ts';
 const job = {
   id: '0123456789abcdef0123',
@@ -1085,4 +1090,54 @@ void test('hasRecentJobChange and generateJobTimeline filter out generic boilerp
     specificTimeline.some((e) => e.detail === '工作地点新增「青岛」'),
     '时间线应保留具体差异内容',
   );
+});
+
+void test('brand department display, PICC/China Life formatting, card title deduplication, effective types, and education cleanup', () => {
+  assert.equal(
+    formatCompanyDisplay('未来技术研究院', '控制算法工程师', 'weichai-campus').displayCompany,
+    '潍柴动力 · 未来技术研究院',
+  );
+  assert.equal(
+    formatCompanyDisplay('创新药物研发中心(济南）', '药理研究员', 'qilu-pharma-campus').displayCompany,
+    '齐鲁制药 · 创新药物研发中心(济南）',
+  );
+  assert.equal(
+    formatCompanyDisplay('所属区县及以下机构', '人保健康-青岛分公司-理赔调查岗', 'picc-campus').displayCompany,
+    '人保健康青岛分公司 · 所属区县及以下机构',
+  );
+  assert.equal(
+    formatCompanyDisplay('寿险山东省分公司', '营销管理岗（市公司）', 'chinalife-campus').displayCompany,
+    '中国人寿集团 · 寿险山东省分公司',
+  );
+  assert.equal(
+    employerGroupName({ ...job, company: '未来技术研究院', source_id: 'weichai-campus' }),
+    '潍柴动力',
+  );
+  assert.equal(
+    employerGroupName({ ...job, company: '所属区县及以下机构', source_id: 'picc-campus' }),
+    '中国人民保险集团',
+  );
+  assert.equal(
+    cardJobTitle('山东九五电力技术有限公司 · 出纳', '山东九五电力技术有限公司', '山东九五电力技术有限公司'),
+    '出纳',
+  );
+  assert.deepEqual(
+    effectiveJobTypes({ types: [], source_id: 'qdu-positions', kind: '具体岗位' }),
+    ['校招'],
+  );
+  assert.deepEqual(
+    effectiveJobTypes({ types: [], source_id: 'sdjzu-jobs', kind: '具体岗位' }),
+    ['校招'],
+  );
+  const grouped = groupJobs([
+    { ...job, id: 'p1', company: '山东九五电力技术有限公司', title: '山东九五电力技术有限公司 · 出纳', source_id: 'qdu-positions', kind: '具体岗位', types: [], graduation_years: [] },
+    { ...job, id: 'p2', company: '山东九五电力技术有限公司', title: '山东九五电力技术有限公司 · 造价员', source_id: 'qdu-positions', kind: '具体岗位', types: [], graduation_years: [] },
+  ]);
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0].label, '届别未明确 · 校招');
+  assert.equal(formatEducationDisplay('2027届\n本科及以上'), '本科及以上');
+  assert.equal(formatEducationDisplay('2026届,2027届\n本科,硕士,博士'), '本科,硕士,博士');
+  assert.equal(formatEducationDisplay('2027届'), '学历待核实');
+  assert.equal(formatEducationDisplay('未明确 / 见原公告'), '学历待核实');
+  assert.equal(formatEducationDisplay('招聘条件待核实', '原公告未明确'), '原公告未明确');
 });

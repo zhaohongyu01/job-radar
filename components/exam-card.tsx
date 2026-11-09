@@ -36,6 +36,13 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave }: Ex
   const eligibleCount = eligList.filter((r) => r.status === 'eligible').length;
   const unknownCount = eligList.filter((r) => r.status === 'unknown').length;
   const regWindow = formatRegWindow(exam.schedule);
+  const regDisplay =
+    regWindow ||
+    (exam.schedule.reg_mode === 'rolling'
+      ? exam.schedule.rolling_until
+        ? `长期招聘（至 ${formatShortDate(exam.schedule.rolling_until)}）`
+        : '长期招聘'
+      : '见公告');
   const cityLabel = exam.cities.length
     ? exam.cities.slice(0, 2).join('、') + (exam.cities.length > 2 ? ` 等${exam.cities.length}地` : '')
     : exam.province;
@@ -80,12 +87,16 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave }: Ex
                 ) : (
                   '见公告'
                 )}
-                {exam.total_positions != null ? ` · ${exam.total_positions} 岗` : ''}
+                {exam.total_positions != null
+                  ? ` · ${exam.total_positions} 岗`
+                  : exam.positions_status === 'attachment_only'
+                    ? ' · 岗位表在附件'
+                    : ''}
               </dd>
             </div>
             <div>
               <dt>报名时间</dt>
-              <dd>{regWindow || '见公告'}</dd>
+              <dd>{regDisplay}</dd>
             </div>
             <div>
               <dt>学历</dt>

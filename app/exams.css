@@ -99,6 +99,29 @@
   color: var(--ink-4);
   font-size: 12px;
 }
+.exw-stat.is-stale strong,
+.exw-stat.is-stale span {
+  color: var(--warn);
+}
+.exw-archive-bar {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+.exw-src-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.exw-src-dot.is-ok {
+  background: var(--brand);
+}
+.exw-src-dot.is-zero {
+  background: var(--ink-5);
+}
 .exw-head-actions {
   display: flex;
   align-items: center;

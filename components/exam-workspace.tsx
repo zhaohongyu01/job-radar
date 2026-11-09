@@ -57,9 +57,11 @@ import {
   chinaToday,
   ExamSheet,
   formatMonthDay,
+  formatShortDate,
 } from '@/components/exam-ui';
 
 const PAGE_SIZE = 20;
+const EXAM_FILTERS_MIGRATED_KEY = 'job-radar-exam-filters-migrated-v2';
 
 const EXAM_CATEGORIES: ExamCategory[] = [
   '公务员国考',
@@ -205,9 +207,24 @@ export function ExamWorkspace() {
       return DEFAULT_EXAM_PROFILE;
     }
   });
-  const [filters, setFilters] = useState<ExamFilters>(() =>
-    safeReadJson(EXAM_FILTERS_STORAGE, DEFAULT_EXAM_FILTERS),
-  );
+  const [filters, setFilters] = useState<ExamFilters>(() => {
+    const loaded = safeReadJson(EXAM_FILTERS_STORAGE, DEFAULT_EXAM_FILTERS);
+    if (typeof window !== 'undefined') {
+      try {
+        if (!window.localStorage.getItem(EXAM_FILTERS_MIGRATED_KEY)) {
+          window.localStorage.setItem(EXAM_FILTERS_MIGRATED_KEY, '1');
+          if (loaded.stage === '全部') {
+            const migrated = { ...loaded, stage: DEFAULT_EXAM_FILTERS.stage };
+            safeWriteJson(EXAM_FILTERS_STORAGE, migrated);
+            return migrated;
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return loaded;
+  });
   const [personal, setPersonal] = useState<ExamPersonalStore>(() => {
     if (typeof window === 'undefined') return {};
     try {
@@ -368,6 +385,23 @@ export function ExamWorkspace() {
     () => (snapshot?.exams || []).map((e) => (today ? { ...e, stage: deriveExamStage(e, today) } : e)),
     [snapshot, today],
   );
+  const activeExamCount = useMemo(
+    () => allExams.filter((e) => ['upcoming', 'registering', 'closing_soon', 'rolling'].includes(e.stage)).length,
+    [allExams],
+  );
+  const endedExamCount = useMemo(
+    () => allExams.filter((e) => e.stage === 'ended').length,
+    [allExams],
+  );
+  const freshnessMeta = useMemo(() => {
+    if (!snapshot?.generated_at) return null;
+    const ms = Date.parse(snapshot.generated_at);
+    if (!Number.isFinite(ms)) return null;
+    const hours = Math.max(0, Math.round((Date.now() - ms) / 3600_000));
+    const stale = hours > 36;
+    const label = hours < 1 ? '刚刚更新' : `更新于 ${hours} 小时前`;
+    return { hours, stale, label };
+  }, [snapshot?.generated_at]);
   const filteredExams = useMemo(
     () => filterExams(allExams, filters, profile, personal),
     [allExams, filters, profile, personal],
@@ -501,21 +535,21 @@ export function ExamWorkspace() {
       {/* ---------- Header ---------- */}
       <header className="exw-head">
         <div className="exw-head-text">
-          <p className="exw-eyebrow">山东省直 · 16 地市 · 国考 / 军队文职</p>
+          <p className="exw-eyebrow">山东省 · 16 地市 · 全国性考试 · 每日更新</p>
           <h1 className="exw-title">考公考编</h1>
         </div>
         <div className="exw-stats">
           <div className="exw-stat">
-            <strong>{snapshot ? snapshot.total_exams : '—'}</strong>
-            <span>招考公告</span>
+            <strong>{snapshot ? activeExamCount : '—'}</strong>
+            <span>在招公告</span>
           </div>
           <div className="exw-stat">
             <strong>{snapshot ? snapshot.total_positions : '—'}</strong>
-            <span>结构化岗位</span>
+            <span>岗位明细</span>
           </div>
-          <div className="exw-stat">
-            <strong>{snapshot ? snapshot.total_headcount.toLocaleString('zh-CN') : '—'}</strong>
-            <span>招录名额</span>
+          <div className={`exw-stat${freshnessMeta?.stale ? ' is-stale' : ''}`}>
+            <strong>{freshnessMeta ? freshnessMeta.label : '—'}</strong>
+            <span>{freshnessMeta?.stale ? '数据可能过期' : '数据状态'}</span>
           </div>
         </div>
         <div className="exw-head-actions">
@@ -1150,6 +1184,18 @@ export function ExamWorkspace() {
               </button>
             </nav>
           )}
+
+          {filters.view === 'announcements' && filters.stage !== '报名已结束' && endedExamCount > 0 && (
+            <div className="exw-archive-bar">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => updateFilters({ stage: '报名已结束' })}
+              >
+                查看往期公告（{endedExamCount} 条）
+              </button>
+            </div>
+          )}
         </section>
       </div>
 
@@ -1185,20 +1231,28 @@ export function ExamWorkspace() {
         </header>
         <div className="exw-db">
           <ul className="exw-source-list">
-            {(snapshot?.sources || []).map((src) => (
-              <li key={src.id}>
-                <div>
-                  <strong>{src.name}</strong>
-                  <span className="exw-muted">
-                    {src.city || src.level || '官方'} · {src.count ?? 0} 条
-                  </span>
-                </div>
-                <a href={src.url} target="_blank" rel="noopener noreferrer" className="exw-card-link">
-                  官网
-                  <ExternalLink size={12} />
-                </a>
-              </li>
-            ))}
+            {(snapshot?.sources || []).map((src) => {
+              const count = src.count ?? 0;
+              const isZero = count === 0;
+              return (
+                <li key={src.id}>
+                  <div>
+                    <strong>
+                      <span className={`exw-src-dot ${isZero ? 'is-zero' : 'is-ok'}`} aria-hidden="true" />
+                      {src.name}
+                    </strong>
+                    <span className="exw-muted">
+                      {src.city || src.level || '官方'} · {isZero ? '本次 0 条' : `${count} 条`}
+                      {src.last_success_at ? ` · 更新于 ${formatShortDate(src.last_success_at)}` : ''}
+                    </span>
+                  </div>
+                  <a href={src.url} target="_blank" rel="noopener noreferrer" className="exw-card-link">
+                    官网
+                    <ExternalLink size={12} />
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </ExamSheet>

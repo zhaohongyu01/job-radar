@@ -320,7 +320,7 @@ export const DEFAULT_EXAM_FILTERS: ExamFilters = {
   category: '全部',
   bianzhi: '全部',
   subject: '全部',
-  stage: '全部',
+  stage: '可报名/进行中',
   noticeRole: '全部',
   unlimitedMajorOnly: false,
   view: 'announcements',
@@ -657,7 +657,7 @@ export function filterExams(
     // Stage filter
     if (filters.stage !== '全部') {
       if (filters.stage === '可报名/进行中') {
-        if (!['upcoming', 'registering', 'closing_soon', 'rolling'].includes(exam.stage)) return false;
+        if (!['upcoming', 'registering', 'closing_soon', 'rolling', 'payment_confirm', 'admit_exam', 'interview_review'].includes(exam.stage)) return false;
       } else if (filters.stage === '正在报名' && !['registering', 'closing_soon'].includes(exam.stage)) {
         return false;
       } else if (filters.stage === '即将开始' && exam.stage !== 'upcoming') {

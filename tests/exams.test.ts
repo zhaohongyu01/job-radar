@@ -4,6 +4,7 @@ import {
   computeExamStageLabel,
   DEFAULT_EXAM_FILTERS,
   DEFAULT_EXAM_PROFILE,
+  deriveExamStage,
   evaluateExamPositionEligibility,
   filterExams,
   flattenAndFilterExamPositions,
@@ -299,4 +300,38 @@ void test('onlyMatchProfile keeps unknown position rows while hiding ineligible 
   const exams = filterExams([exam], DEFAULT_EXAM_FILTERS, profile, {});
   assert.equal(exams.length, 1);
 });
+
+void test('deriveExamStage covers upcoming, registering, closing_soon, rolling, expired rolling, admit_exam, ended, and unknown', () => {
+  const base = makeExam();
+
+  // 1. upcoming
+  assert.equal(deriveExamStage(base, '2026-11-05'), 'upcoming');
+  // 2. registering (>3 days before reg_end)
+  assert.equal(deriveExamStage(base, '2026-11-10'), 'registering');
+  // 3. closing_soon (<=3 days before reg_end)
+  assert.equal(deriveExamStage(base, '2026-11-13'), 'closing_soon');
+  // 4. admit_exam (after reg_end, before written_exam_date)
+  assert.equal(deriveExamStage(base, '2026-11-20'), 'admit_exam');
+  // 5. ended (after written_exam_date)
+  assert.equal(deriveExamStage(base, '2026-12-05'), 'ended');
+
+  // 6. rolling active
+  const rollingExam = makeExam({
+    schedule: { reg_mode: 'rolling', rolling_until: '2026-12-31' },
+  });
+  assert.equal(deriveExamStage(rollingExam, '2026-11-10'), 'rolling');
+  assert.equal(computeExamStageLabel('rolling').label, '长期招聘');
+
+  // 7. rolling expired
+  assert.equal(deriveExamStage(rollingExam, '2027-01-02'), 'ended');
+
+  // 8. unknown (no schedule dates, recently published)
+  const unknownExam = makeExam({
+    published_at: '2026-11-01',
+    schedule: {},
+  });
+  assert.equal(deriveExamStage(unknownExam, '2026-11-10'), 'unknown');
+  assert.equal(computeExamStageLabel('unknown').label, '时间待确认');
+});
+
 

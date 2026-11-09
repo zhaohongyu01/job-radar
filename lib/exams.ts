@@ -29,10 +29,12 @@ export type ExamStage =
   | 'upcoming'         // 即将开始报名
   | 'registering'      // 正在报名
   | 'closing_soon'     // 报名即将截止（<=3天）
+  | 'rolling'          // 长期招聘
   | 'payment_confirm'  // 资格初审 / 缴费确认期
   | 'admit_exam'       // 准考证打印 / 笔试期
   | 'interview_review' // 笔试成绩 / 资格复审 / 面试
   | 'publicity'        // 体检考察 / 拟录用公示
+  | 'unknown'          // 时间待确认
   | 'ended';           // 已截止 / 考务归档
 
 export type ExamTrackStatus =
@@ -562,6 +564,8 @@ export function computeExamStageLabel(stage: ExamStage): {
       return { label: '正在报名', tone: 'active' };
     case 'upcoming':
       return { label: '即将开始报名', tone: 'upcoming' };
+    case 'rolling':
+      return { label: '长期招聘', tone: 'upcoming' };
     case 'payment_confirm':
       return { label: '初审 / 缴费确认期', tone: 'urgent' };
     case 'admit_exam':
@@ -570,10 +574,33 @@ export function computeExamStageLabel(stage: ExamStage): {
       return { label: '成绩 / 资审 / 面试', tone: 'progress' };
     case 'publicity':
       return { label: '体检 / 考察 / 公示', tone: 'muted' };
+    case 'unknown':
+      return { label: '时间待确认', tone: 'muted' };
     case 'ended':
     default:
       return { label: '报名已结束', tone: 'muted' };
   }
+}
+
+const dayDiff = (a: string, b: string) =>
+  Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86400000);
+
+export function deriveExamStage(exam: ExamAnnouncement, today: string): ExamStage {
+  if (exam.notice_role !== '招考简章') {
+    if (exam.published_at && dayDiff(today, exam.published_at.slice(0, 10)) > 45) return 'ended';
+    return exam.stage === 'ended' ? 'ended' : exam.stage;
+  }
+  const s = exam.schedule || {};
+  if (s.reg_mode === 'rolling') return s.rolling_until && today > s.rolling_until ? 'ended' : 'rolling';
+  if (s.reg_start && today < s.reg_start) return 'upcoming';
+  if (s.reg_end) {
+    if (today <= s.reg_end) return dayDiff(s.reg_end, today) <= 3 ? 'closing_soon' : 'registering';
+    if (s.written_exam_date && today <= s.written_exam_date) return 'admit_exam';
+    if (s.interview_date && today <= s.interview_date) return 'interview_review';
+    return 'ended';
+  }
+  if (exam.published_at && dayDiff(today, exam.published_at.slice(0, 10)) > 60) return 'ended';
+  return 'unknown';
 }
 
 export function filterExams(
@@ -630,10 +657,14 @@ export function filterExams(
     // Stage filter
     if (filters.stage !== '全部') {
       if (filters.stage === '可报名/进行中') {
-        if (!['upcoming', 'registering', 'closing_soon'].includes(exam.stage)) return false;
+        if (!['upcoming', 'registering', 'closing_soon', 'rolling'].includes(exam.stage)) return false;
       } else if (filters.stage === '正在报名' && !['registering', 'closing_soon'].includes(exam.stage)) {
         return false;
       } else if (filters.stage === '即将开始' && exam.stage !== 'upcoming') {
+        return false;
+      } else if (filters.stage === '长期招聘' && exam.stage !== 'rolling') {
+        return false;
+      } else if (filters.stage === '时间待确认' && exam.stage !== 'unknown') {
         return false;
       } else if (filters.stage === '考务跟进（笔面试/资审）' && !['payment_confirm', 'admit_exam', 'interview_review', 'publicity'].includes(exam.stage)) {
         return false;
@@ -689,11 +720,13 @@ export function filterExams(
     closing_soon: 1,
     registering: 2,
     upcoming: 3,
-    payment_confirm: 4,
-    admit_exam: 5,
-    interview_review: 6,
-    publicity: 7,
-    ended: 8,
+    rolling: 4,
+    payment_confirm: 5,
+    admit_exam: 6,
+    interview_review: 7,
+    publicity: 8,
+    unknown: 9,
+    ended: 10,
   };
 
   return [...result].sort((a, b) => {

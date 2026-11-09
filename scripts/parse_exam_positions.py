@@ -741,17 +741,32 @@ def compute_exam_stage(
     published_at: Optional[str],
     today_str: str,
 ) -> str:
-    if notice_role == '体检/递补/公示':
-        return 'publicity'
-    if notice_role in ('成绩/进面', '资格复审/面试'):
-        return 'interview_review'
-    if notice_role == '准考证/笔试':
-        return 'admit_exam'
+    if notice_role != '招考简章':
+        if published_at:
+            try:
+                d_pub = dt.date.fromisoformat(published_at[:10])
+                d_today = dt.date.fromisoformat(today_str)
+                if (d_today - d_pub).days > 45:
+                    return 'ended'
+            except Exception:
+                pass
+        if notice_role == '体检/递补/公示':
+            return 'publicity'
+        if notice_role in ('成绩/进面', '资格复审/面试'):
+            return 'interview_review'
+        if notice_role == '准考证/笔试':
+            return 'admit_exam'
+
+    reg_mode = schedule.get('reg_mode')
+    rolling_until = schedule.get('rolling_until')
+    if reg_mode == 'rolling':
+        return 'ended' if (rolling_until and today_str > rolling_until) else 'rolling'
 
     reg_start = schedule.get('reg_start')
     reg_end = schedule.get('reg_end')
     pay_end = schedule.get('payment_end')
     exam_date = schedule.get('written_exam_date')
+    interview_date = schedule.get('interview_date')
 
     if reg_start and reg_start > today_str:
         return 'upcoming'
@@ -770,21 +785,20 @@ def compute_exam_stage(
             return 'payment_confirm'
         if exam_date and exam_date >= today_str:
             return 'admit_exam'
+        if interview_date and interview_date >= today_str:
+            return 'interview_review'
         return 'ended'
 
-    # No explicit reg_end extracted: infer from published_at age
+    # No explicit reg_end extracted: mark ended if published > 60 days ago, else unknown
     if published_at:
         try:
             d_pub = dt.date.fromisoformat(published_at[:10])
             d_today = dt.date.fromisoformat(today_str)
-            age_days = (d_today - d_pub).days
-            if age_days <= 14:
-                return 'registering'
-            if age_days <= 30:
-                return 'admit_exam'
+            if (d_today - d_pub).days > 60:
+                return 'ended'
         except Exception:
             pass
-    return 'ended'
+    return 'unknown'
 
 
 PROSE_NAME_BLACKLIST = {

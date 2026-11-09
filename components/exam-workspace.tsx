@@ -26,6 +26,7 @@ import {
 import {
   DEFAULT_EXAM_FILTERS,
   DEFAULT_EXAM_PROFILE,
+  deriveExamStage,
   EXAM_FILTERS_STORAGE,
   EXAM_PERSONAL_STORAGE,
   EXAM_PROFILE_STORAGE,
@@ -94,7 +95,9 @@ const STAGE_OPTIONS: [string, string][] = [
   ['可报名/进行中', '可报名'],
   ['正在报名', '报名中'],
   ['即将开始', '即将开始'],
+  ['长期招聘', '长期招聘'],
   ['考务跟进（笔面试/资审）', '考试进行中'],
+  ['时间待确认', '时间待确认'],
   ['报名已结束', '已结束'],
 ];
 
@@ -361,7 +364,10 @@ export function ExamWorkspace() {
     setNotice(exists ? '已移出候选岗位' : `已加入候选：${positionName}`);
   };
 
-  const allExams = useMemo(() => snapshot?.exams || [], [snapshot]);
+  const allExams = useMemo(
+    () => (snapshot?.exams || []).map((e) => (today ? { ...e, stage: deriveExamStage(e, today) } : e)),
+    [snapshot, today],
+  );
   const filteredExams = useMemo(
     () => filterExams(allExams, filters, profile, personal),
     [allExams, filters, profile, personal],

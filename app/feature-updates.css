@@ -1319,11 +1319,6 @@ html[data-base-ui-scroll-locked] .app-bar {
   -webkit-backdrop-filter: none !important;
 }
 
-html[data-base-ui-scroll-locked] .page,
-html[data-base-ui-scroll-locked] .app-bar {
-  pointer-events: none;
-}
-
 .detail-body {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;

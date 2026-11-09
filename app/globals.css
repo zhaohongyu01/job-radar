@@ -373,13 +373,6 @@ button:disabled {
 }
 
 /* Detail Drawer */
-.detail-sheet {
-  width: min(720px, 100vw) !important;
-  max-width: 720px !important;
-  background-color: #fffefa !important;
-  gap: 0 !important;
-}
-
 .detail-header {
   padding: 24px 28px 18px !important;
   border-bottom: 1px solid var(--border);

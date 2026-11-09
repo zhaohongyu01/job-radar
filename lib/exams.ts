@@ -81,7 +81,7 @@ export interface ExamPositionRow {
   position_code?: string;      // 岗位代码
   position_category?: string;  // 岗位类别（如综合类A、医疗类E、教师岗）
   bianzhi: BianzhiCategory;    // 编制性质
-  recruit_count: number;       // 招录人数
+  recruit_count: number | null; // 招录人数
   city: string;                // 工作地点
   education: string;           // 学历要求
   degree?: string;             // 学位要求
@@ -97,6 +97,7 @@ export interface ExamPositionRow {
   contact_phone?: string;      // 咨询电话
   source_file?: string;        // 来源附件名
   source_url?: string;         // 来源附件地址
+  source?: 'table' | 'attachment' | 'prose';
 }
 
 export interface ExamRelatedNotice {
@@ -119,8 +120,9 @@ export interface ExamAnnouncement {
   exam_category: ExamCategory;
   stage: ExamStage;
   notice_role: '招考简章' | '报名统计' | '准考证/笔试' | '成绩/进面' | '资格复审/面试' | '体检/递补/公示' | '补充公告';
-  total_positions: number;
-  total_headcount: number;
+  total_positions: number | null;
+  total_headcount: number | null;
+  positions_status?: 'parsed' | 'prose' | 'attachment_only' | 'none';
   schedule: ExamSchedule;
   exam_subjects: string[];
   exam_ratio?: string | null;
@@ -157,6 +159,7 @@ export interface ExamSnapshot {
   total_exams: number;
   total_positions: number;
   total_headcount: number;
+  total_exams_with_positions?: number;
   cities: string[];
   detail_shards?: Record<string, string>;
   exams: ExamAnnouncement[];
@@ -663,7 +666,9 @@ export function filterExams(
       return (b.published_at || '').localeCompare(a.published_at || '');
     }
     if (filters.sort === 'headcount') {
-      if (b.total_headcount !== a.total_headcount) return b.total_headcount - a.total_headcount;
+      const aHc = a.total_headcount ?? 0;
+      const bHc = b.total_headcount ?? 0;
+      if (bHc !== aHc) return bHc - aHc;
       return (b.published_at || '').localeCompare(a.published_at || '');
     }
     // Smart sort: active registrations first, then by published date desc
@@ -714,9 +719,5 @@ export function flattenAndFilterExamPositions(
       });
     }
   }
-  return rows.sort((a, b) => {
-    const aSummary = a.row_id.endsWith('-summary-0') ? 1 : 0;
-    const bSummary = b.row_id.endsWith('-summary-0') ? 1 : 0;
-    return aSummary - bSummary;
-  });
+  return rows;
 }

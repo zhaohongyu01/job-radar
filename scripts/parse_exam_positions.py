@@ -563,16 +563,16 @@ def parse_exam_table_grid(
         if not pos_name and not major_raw and not get_col(row, 'employer'):
             continue
 
-        edu = get_col(row, 'education') or get_col(row, 'edu_degree') or '本科及以上'
+        edu = get_col(row, 'education') or get_col(row, 'edu_degree') or ''
         deg = get_col(row, 'degree')
         if not deg and '学位' in edu:
             deg = edu
 
         raw_count = get_col(row, 'recruit_count')
         count_m = re.search(r'(\d+)', raw_count)
-        recruit_count = int(count_m.group(1)) if count_m else 1
-        if recruit_count <= 0 or recruit_count > 5000:
-            recruit_count = 1
+        recruit_count: Optional[int] = int(count_m.group(1)) if count_m else None
+        if recruit_count is not None and (recruit_count <= 0 or recruit_count > 5000):
+            recruit_count = None
 
         city_val = get_col(row, 'city') or default_city
         if not city_val:
@@ -604,19 +604,20 @@ def parse_exam_table_grid(
             'position_category': get_col(row, 'position_category'),
             'bianzhi': bz,
             'recruit_count': recruit_count,
-            'city': city_val or '山东',
+            'city': city_val or '',
             'education': edu,
-            'degree': deg or '学士及以上',
-            'majors': split_majors(major_raw) if major_raw else ['不限专业'],
-            'major_raw': major_raw or '不限专业 / 详见岗位表',
-            'political_status': get_col(row, 'political') or '不限',
-            'fresh_grad_rule': get_col(row, 'fresh_grad') or '不限',
-            'age_limit': get_col(row, 'age') or '35周岁及以下',
-            'hukou_rule': get_col(row, 'hukou') or '不限',
-            'exam_ratio': get_col(row, 'ratio') or '1:3',
+            'degree': deg or '',
+            'majors': split_majors(major_raw) if major_raw else [],
+            'major_raw': major_raw or '',
+            'political_status': get_col(row, 'political') or '',
+            'fresh_grad_rule': get_col(row, 'fresh_grad') or '',
+            'age_limit': get_col(row, 'age') or '',
+            'hukou_rule': get_col(row, 'hukou') or '',
+            'exam_ratio': get_col(row, 'ratio') or '',
             'exam_subjects': get_col(row, 'subjects'),
             'other_conditions': get_col(row, 'notes')[:160],
             'contact_phone': get_col(row, 'phone'),
+            'source': 'table',
         })
 
     return rows_out
@@ -650,6 +651,7 @@ def parse_exam_excel_bytes(
                 )
                 for p in parsed:
                     p['source_file'] = filename or sheet_name
+                    p['source'] = 'attachment'
                 rows.extend(parsed)
         except Exception:
             pass
@@ -698,6 +700,7 @@ def parse_exam_pdf_bytes(
                             )
                             for p in parsed:
                                 p['source_file'] = filename or f'第{page_idx + 1}页'
+                                p['source'] = 'attachment'
                             rows.extend(parsed)
                 except Exception:
                     pass
@@ -759,6 +762,23 @@ def compute_exam_stage(
         except Exception:
             pass
     return 'ended'
+
+
+PROSE_NAME_BLACKLIST = {
+    '以上', '以下', '硕士及', '博士及', '本科及', '初级', '中级', '高级',
+    '岗位', '职位', '人员', '人才', '工作人员', '专业技术人员',
+}
+
+
+def valid_prose_position_name(name: str) -> bool:
+    n = name.strip()
+    return (
+        2 <= len(n) <= 20
+        and n not in PROSE_NAME_BLACKLIST
+        and re.search(r'[\u4e00-\u9fa5]{2,}', n) is not None
+        and not re.fullmatch(r'[\d\W_]+', n)
+        and not re.match(r'^(?:以上|及|或|和|等|其中|包括|包含|此次|本次)', n)
+    )
 
 
 def enrich_exam_record(
@@ -849,7 +869,7 @@ def enrich_exam_record(
         region_level = '区县级'
 
     # Convert or extract positions
-    default_city = cities[0] if cities else ('山东' if '山东' in combined or '省属' in combined else '全国')
+    default_city = cities[0] if cities else ''
     default_bz = bianzhi_types[0] if bianzhi_types else '事业编'
     exam_positions: List[Dict[str, Any]] = []
 
@@ -867,6 +887,8 @@ def enrich_exam_record(
                 p_copy['department'] = organizer
             if p_copy.get('employer') in CAMPUS_PORTAL_HOSTS or not p_copy.get('employer'):
                 p_copy['employer'] = organizer
+            if not p_copy.get('source'):
+                p_copy['source'] = 'attachment' if (p_copy.get('source_file') or p_copy.get('source_url')) else 'table'
             exam_positions.append(p_copy)
             continue
         # Convert from generic PositionRequirement
@@ -874,11 +896,13 @@ def enrich_exam_record(
         if not pos_name or pos_name in ('其它相关职位', '其他相关职位'):
             continue
         cnt_m = re.search(r'(\d+)', str(p.get('count') or ''))
-        cnt = int(cnt_m.group(1)) if cnt_m else 1
+        cnt = int(cnt_m.group(1)) if cnt_m else None
+        if cnt is not None and (cnt <= 0 or cnt > 5000):
+            cnt = None
         majors_list = p.get('majors') or []
         notes_text = str(p.get('notes') or '')
-        pol = '中共党员' if '党员' in notes_text else '不限'
-        fresh = p.get('cohort') or ('应届毕业生' if '应届' in notes_text else '不限')
+        pol = '中共党员' if '党员' in notes_text else ''
+        fresh = p.get('cohort') or ('应届毕业生' if '应届' in notes_text else '')
         exam_positions.append({
             'row_id': f'{exam_id}-pos-{idx}',
             'exam_id': exam_id,
@@ -890,102 +914,70 @@ def enrich_exam_record(
             'bianzhi': default_bz,
             'recruit_count': cnt,
             'city': p.get('city') or default_city,
-            'education': p.get('education') or raw_item.get('education') or '本科及以上',
-            'degree': '学士及以上',
-            'majors': majors_list if majors_list else ['详见岗位表'],
-            'major_raw': '、'.join(majors_list) if majors_list else '详见岗位表',
+            'education': p.get('education') or raw_item.get('education') or '',
+            'degree': '',
+            'majors': majors_list if majors_list else [],
+            'major_raw': '、'.join(majors_list) if majors_list else '',
             'political_status': pol,
             'fresh_grad_rule': fresh,
-            'age_limit': '35周岁及以下',
-            'hukou_rule': '不限',
-            'exam_ratio': '1:3',
+            'age_limit': '',
+            'hukou_rule': '',
+            'exam_ratio': '',
             'other_conditions': notes_text[:120],
             'source_file': p.get('source_file'),
             'source_url': p.get('source_url'),
+            'source': 'attachment' if (p.get('source_file') or p.get('source_url')) else 'table',
         })
 
-    # Extract key condition summaries from body first so prose/summary rows can use them
+    # Extract key condition summaries from body without fabricating defaults
     ratio_m = re.search(r'开考比例[^。\n]{0,15}?(1\s*[：:]\s*\d+)', combined)
-    exam_ratio = ratio_m.group(1).replace('：', ':').replace(' ', '') if ratio_m else '1:3'
+    exam_ratio = ratio_m.group(1).replace('：', ':').replace(' ', '') if ratio_m else None
 
     age_m = re.search(r'年龄(?:在|一般为|不超过)?\s*(\d{2})\s*周岁(?:及)?以下', combined)
-    age_limit = f"{age_m.group(1)}周岁及以下" if age_m else '35周岁及以下（硕博可放宽至40周岁）'
+    age_limit = f"{age_m.group(1)}周岁及以下" if age_m else None
 
     srv_m = re.search(r'最低服务年限(?:为)?\s*(\d+|一|二|三|五)\s*年', combined)
     service_years = f"最低服务年限{srv_m.group(1)}年" if srv_m else None
 
-    hukou_summary = '不限户籍'
+    hukou_summary = ''
     if re.search(r'限.*户籍|具有.*常住户口|生源地.*限', combined):
         hukou_summary = '部分岗位限本地户籍/生源'
+    elif re.search(r'不限户籍|户籍不限', combined):
+        hukou_summary = '不限户籍'
 
-    fresh_grad_summary = '应往届均可（按岗位区分）'
+    fresh_grad_summary = ''
     if re.search(r'专项招聘.*高校毕业生|仅限.*应届|面向202\d届|202\d届.*公费师范', combined):
         fresh_grad_summary = '主要面向应届高校毕业生（含择业期）'
     elif re.search(r'选调', title):
         fresh_grad_summary = '限应届优秀高校毕业生'
 
-    political_summary = '多数不限（部分党务岗要求党员）'
+    political_summary = ''
     if re.search(r'选调', title) or re.search(r'均须为中共党员|必须为中共党员', combined):
         political_summary = '要求中共党员（含预备党员）或主要学生干部'
 
-    edu_min = '本科及以上'
-    if re.search(r'博士研究生|博士学位|招聘博士', combined) and not re.search(r'本科|硕士', combined):
+    edu_min = ''
+    if re.search(r'博士|高层次|高级人才', title):
+        edu_min = '博士研究生'
+    elif re.search(r'博士研究生|博士学位|招聘博士', combined) and not re.search(r'本科|硕士', combined):
         edu_min = '博士研究生'
     elif re.search(r'硕士研究生及以上|硕士及以上|硕士学位', combined) and not re.search(r'本科及以上|大学本科', combined):
         edu_min = '硕士研究生及以上'
+    elif re.search(r'本科及以上|大学本科及以上|全日制本科|本科以上学历', combined):
+        edu_min = '本科及以上'
     elif re.search(r'专科及以上|大专及以上|高中|中专', combined):
         edu_min = '专科及以上'
 
-    degree_summary = '学士及以上学位（依岗位表）'
+    degree_summary = ''
 
     all_majors = list(dict.fromkeys(
         list(raw_item.get('majors') or []) +
-        [m for p in exam_positions for m in (p.get('majors') or []) if m not in ('详见岗位表', '详见附件岗位表')]
+        [m for p in exam_positions for m in (p.get('majors') or []) if m]
     ))[:20]
 
     has_unlimited_major = bool(
         re.search(r'专业不限|不限专业', combined) or
         any('不限' in str(p.get('major_raw') or '') for p in exam_positions)
     )
-
-    # Headcount & position count extraction from title + body
-    total_positions = len(exam_positions)
-    total_headcount = sum(int(p.get('recruit_count') or 1) for p in exam_positions)
-
-    # Check title first for explicit headcount like "140人！" or "（325人）" or "共1537人！"
-    title_hc_m = re.search(r'(?:^|[·\s（(【]|共)\s*(\d{1,4})\s*[名人人](?:[！!）)】\s]|$)', title)
-    if title_hc_m:
-        thc = int(title_hc_m.group(1))
-        if thc > total_headcount and thc <= 50000:
-            total_headcount = thc
-
-    title_pos_m = re.search(r'(\d{1,4})\s*个(?:招聘)?(?:岗位|职位)', title)
-    if title_pos_m:
-        tpos = int(title_pos_m.group(1))
-        if tpos > total_positions and tpos <= 20000:
-            total_positions = tpos
-
-    hc_matches = re.findall(
-        r'(?:公开招聘|计划招聘|拟招聘|拟公开招聘|共招聘|招录|招考|招募|引进)[^。\n；;]{0,28}?(\d{1,4})\s*[名人人]',
-        combined,
-    )
-    for m_str in hc_matches:
-        text_hc = int(m_str)
-        if text_hc > total_headcount and text_hc <= 50000:
-            total_headcount = text_hc
-
-    pos_matches = re.findall(r'(\d{1,4})\s*个(?:招聘)?(?:岗位|职位)', combined)
-    for p_str in pos_matches:
-        text_pos = int(p_str)
-        if text_pos > total_positions and text_pos <= 20000:
-            total_positions = text_pos
-
-    if total_positions == 0 and notice_role == '招考简章':
-        total_positions = 1
-    if total_headcount == 0 and notice_role == '招考简章':
-        total_headcount = max(1, total_positions)
-    if total_headcount < total_positions:
-        total_headcount = total_positions
 
     # If no tabular positions were extracted yet for a 招考简章, extract prose positions from body
     if not exam_positions and notice_role == '招考简章':
@@ -1001,7 +993,7 @@ def enrich_exam_record(
                 '',
                 p_name,
             ).strip()
-            if len(p_name) < 2 or p_name in seen_prose or p_name in ('工作人员', '人员', '人才', '岗位', '职位'):
+            if not valid_prose_position_name(p_name) or p_name in seen_prose:
                 continue
             seen_prose.add(p_name)
             exam_positions.append({
@@ -1015,43 +1007,63 @@ def enrich_exam_record(
                 'bianzhi': default_bz,
                 'recruit_count': int(p_cnt),
                 'city': default_city,
-                'education': edu_min,
-                'degree': degree_summary,
-                'majors': all_majors[:5] if all_majors else ['详见附件岗位表'],
-                'major_raw': '、'.join(all_majors[:6]) if all_majors else ('不限专业 / 详见岗位表' if has_unlimited_major else '详见附件岗位汇总表'),
-                'political_status': '中共党员' if '党员' in political_summary and '多数' not in political_summary else '不限',
-                'fresh_grad_rule': '限应届毕业生' if '限' in fresh_grad_summary else '应往届均可',
-                'age_limit': age_limit,
-                'hukou_rule': hukou_summary,
-                'exam_ratio': exam_ratio,
-                'exam_subjects': ' + '.join(exam_subjects),
-                'other_conditions': f'共 {total_positions} 岗 / 招 {total_headcount} 人，具体专业目录见原公告附件',
+                'education': '',
+                'degree': '',
+                'majors': [],
+                'major_raw': '',
+                'political_status': '',
+                'fresh_grad_rule': '',
+                'age_limit': '',
+                'hukou_rule': '',
+                'exam_ratio': '',
+                'exam_subjects': '',
+                'other_conditions': '',
+                'source': 'prose',
             })
 
-        if not exam_positions:
-            exam_positions.append({
-                'row_id': f'{exam_id}-summary-0',
-                'exam_id': exam_id,
-                'department': organizer,
-                'employer': organizer,
-                'position_name': f'{organizer}公开招聘岗位（详见岗位汇总表）',
-                'position_code': '汇总',
-                'position_category': exam_category,
-                'bianzhi': default_bz,
-                'recruit_count': total_headcount,
-                'city': default_city,
-                'education': edu_min,
-                'degree': degree_summary,
-                'majors': all_majors[:6] if all_majors else ['详见附件岗位表'],
-                'major_raw': '、'.join(all_majors[:6]) if all_majors else ('含不限专业岗位' if has_unlimited_major else '详见原公告岗位汇总表'),
-                'political_status': '中共党员' if '党员' in political_summary and '多数' not in political_summary else '不限',
-                'fresh_grad_rule': '限应届毕业生' if '限' in fresh_grad_summary else '应往届均可',
-                'age_limit': age_limit,
-                'hukou_rule': hukou_summary,
-                'exam_ratio': exam_ratio,
-                'exam_subjects': ' + '.join(exam_subjects),
-                'other_conditions': f'本次共发布 {total_positions} 个岗位、计划招录 {total_headcount} 人',
-            })
+    # Headcount & position count extraction from title + body without fabricating defaults
+    pos_count_val = len(exam_positions)
+    hc_count_val = sum(int(p['recruit_count']) for p in exam_positions if p.get('recruit_count') is not None)
+
+    title_hc_m = re.search(r'(?:^|[·\s（(【]|共)\s*(\d{1,4})\s*[名人人](?:[！!）)】\s]|$)', title)
+    if title_hc_m:
+        thc = int(title_hc_m.group(1))
+        if thc > hc_count_val and thc <= 50000:
+            hc_count_val = thc
+
+    title_pos_m = re.search(r'(\d{1,4})\s*个(?:招聘)?(?:岗位|职位)', title)
+    if title_pos_m:
+        tpos = int(title_pos_m.group(1))
+        if tpos > pos_count_val and tpos <= 20000:
+            pos_count_val = tpos
+
+    hc_matches = re.findall(
+        r'(?:公开招聘|计划招聘|拟招聘|拟公开招聘|共招聘|招录|招考|招募|引进)[^。\n；;]{0,28}?(\d{1,4})\s*[名人人]',
+        combined,
+    )
+    for m_str in hc_matches:
+        text_hc = int(m_str)
+        if text_hc > hc_count_val and text_hc <= 50000:
+            hc_count_val = text_hc
+
+    pos_matches = re.findall(r'(\d{1,4})\s*个(?:招聘)?(?:岗位|职位)', combined)
+    for p_str in pos_matches:
+        text_pos = int(p_str)
+        if text_pos > pos_count_val and text_pos <= 20000:
+            pos_count_val = text_pos
+
+    total_positions: Optional[int] = pos_count_val if pos_count_val > 0 else None
+    total_headcount: Optional[int] = hc_count_val if hc_count_val > 0 else None
+
+    attachments = raw_item.get('attachments') or []
+    if any(p.get('source') in ('table', 'attachment') for p in exam_positions):
+        positions_status = 'parsed'
+    elif exam_positions:
+        positions_status = 'prose'
+    elif any(re.search(r'岗位|职位|计划|汇总表|一览表', str(a.get('title') or '')) for a in attachments):
+        positions_status = 'attachment_only'
+    else:
+        positions_status = 'none'
 
     phones = list(dict.fromkeys(re.findall(r'0\d{2,3}-\d{7,8}', combined)))[:5]
     reg_url = raw_item.get('application_url')
@@ -1081,6 +1093,7 @@ def enrich_exam_record(
         'notice_role': notice_role,
         'total_positions': total_positions,
         'total_headcount': total_headcount,
+        'positions_status': positions_status,
         'schedule': schedule,
         'exam_subjects': exam_subjects,
         'exam_ratio': exam_ratio,

@@ -993,8 +993,9 @@ def collect_and_export_exams(
     # Sort newest first
     exams.sort(key=lambda x: (x.get('published_at') or '', x.get('id') or ''), reverse=True)
 
-    total_positions = sum(int(e.get('total_positions') or 0) for e in exams)
-    total_headcount = sum(int(e.get('total_headcount') or 0) for e in exams)
+    total_positions = sum(len(e.get('positions') or []) for e in exams)
+    total_headcount = sum(int(e['total_headcount']) for e in exams if e.get('total_headcount') is not None)
+    total_exams_with_positions = sum(1 for e in exams if e.get('positions'))
     all_cities = sorted({c_name for e in exams for c_name in (e.get('cities') or []) if c_name})
 
     payload = {
@@ -1004,6 +1005,7 @@ def collect_and_export_exams(
         'total_exams': len(exams),
         'total_positions': total_positions,
         'total_headcount': total_headcount,
+        'total_exams_with_positions': total_exams_with_positions,
         'cities': all_cities,
         'exams': exams,
         'sources': list(source_stats.values()),

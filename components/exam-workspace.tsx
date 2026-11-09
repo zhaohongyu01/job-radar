@@ -983,12 +983,12 @@ export function ExamWorkspace() {
                           </td>
                           <td className="exw-nowrap">{row.city || row.exam.cities[0] || row.exam.province}</td>
                           <td className="is-num">
-                            <strong>{row.recruit_count}</strong>
+                            <strong>{row.recruit_count ?? '—'}</strong>
                           </td>
                           <td>
-                            <div>{row.education}</div>
-                            <div className="exw-row-sub exw-clamp" title={row.major_raw}>
-                              {row.major_raw}
+                            <div>{row.education || '见公告'}</div>
+                            <div className="exw-row-sub exw-clamp" title={row.major_raw || '见公告'}>
+                              {row.major_raw || '见公告'}
                             </div>
                           </td>
                           <td>
@@ -1001,7 +1001,7 @@ export function ExamWorkspace() {
                                 ))}
                               </div>
                             ) : (
-                              <span className="exw-muted">无</span>
+                              <span className="exw-muted">—</span>
                             )}
                           </td>
                           {profileActive && (

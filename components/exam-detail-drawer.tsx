@@ -165,7 +165,7 @@ function DrawerContent({
   const copyShare = async () => {
     const text = [
       exam.title,
-      `${exam.total_positions} 岗 / 招 ${exam.total_headcount} 人 · ${exam.bianzhi_types.join('、')}`,
+      `${exam.total_positions ?? '—'} 岗 / 招 ${exam.total_headcount ?? '—'} 人 · ${exam.bianzhi_types.join('、')}`,
       `报名：${exam.schedule.reg_start || ''} ~ ${exam.schedule.reg_end || '见公告'}`,
       exam.source_url,
     ].join('\n');
@@ -196,16 +196,21 @@ function DrawerContent({
   ];
 
   const facts: [string, string][] = [
-    ['招录规模', `${exam.total_positions} 个岗位 · ${exam.total_headcount} 人`],
-    ['编制性质', exam.bianzhi_types.map(bianzhiLabel).join('、')],
+    [
+      '招录规模',
+      exam.total_positions != null || exam.total_headcount != null
+        ? `${exam.total_positions ?? '—'} 个岗位 · ${exam.total_headcount ?? '—'} 人`
+        : '见公告',
+    ],
+    ['编制性质', exam.bianzhi_types.map(bianzhiLabel).join('、') || '见公告'],
     ['考试科目', exam.exam_subjects.join(' + ') || '见公告'],
     ['开考比例', exam.exam_ratio || '见公告'],
-    ['学历学位', `${exam.education_min} · ${exam.degree_summary}`],
-    ['毕业身份', exam.fresh_grad_summary],
-    ['政治面貌', exam.political_summary],
+    ['学历学位', [exam.education_min, exam.degree_summary].filter(Boolean).join(' · ') || '见公告'],
+    ['毕业身份', exam.fresh_grad_summary || '见公告'],
+    ['政治面貌', exam.political_summary || '见公告'],
     ['年龄', exam.age_limit || '见公告'],
-    ['户籍', exam.hukou_summary],
-    ['报名方式', exam.registration_method],
+    ['户籍', exam.hukou_summary || '见公告'],
+    ['报名方式', exam.registration_method || '见公告'],
     ...(exam.service_years ? ([['服务年限', exam.service_years]] as [string, string][]) : []),
     ...((exam.contact_phones?.length || 0) > 0
       ? ([['咨询电话', exam.contact_phones!.join(' / ')]] as [string, string][])
@@ -435,12 +440,12 @@ function DrawerContent({
                           </div>
                         </td>
                         <td className="is-num">
-                          <strong>{pos.recruit_count}</strong>
+                          <strong>{pos.recruit_count ?? '—'}</strong>
                         </td>
                         <td>
-                          <div>{pos.education}</div>
-                          <div className="exw-row-sub exw-clamp" title={pos.major_raw}>
-                            {pos.major_raw}
+                          <div>{pos.education || '见公告'}</div>
+                          <div className="exw-row-sub exw-clamp" title={pos.major_raw || '见公告'}>
+                            {pos.major_raw || '见公告'}
                           </div>
                         </td>
                         <td>

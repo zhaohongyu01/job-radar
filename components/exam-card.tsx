@@ -73,7 +73,14 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave }: Ex
             <div>
               <dt>招录</dt>
               <dd>
-                <strong>{exam.total_headcount}</strong> 人 · {exam.total_positions} 岗
+                {exam.total_headcount != null ? (
+                  <>
+                    <strong>{exam.total_headcount}</strong> 人
+                  </>
+                ) : (
+                  '见公告'
+                )}
+                {exam.total_positions != null ? ` · ${exam.total_positions} 岗` : ''}
               </dd>
             </div>
             <div>
@@ -82,7 +89,7 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave }: Ex
             </div>
             <div>
               <dt>学历</dt>
-              <dd>{exam.education_min}</dd>
+              <dd>{exam.education_min || '见公告'}</dd>
             </div>
             <div>
               <dt>编制</dt>

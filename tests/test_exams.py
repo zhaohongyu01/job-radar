@@ -11,6 +11,7 @@ from scripts.parse_exam_positions import (
     infer_exam_category,
     infer_notice_role,
     parse_exam_table_grid,
+    valid_prose_position_name,
 )
 
 
@@ -151,6 +152,61 @@ class ExamParserTests(unittest.TestCase):
         self.assertEqual(enriched["total_headcount"], 12)
         self.assertEqual(enriched["stage"], "registering")
         self.assertTrue(len(enriched["positions"]) >= 1)
+
+    def test_no_fabricated_defaults_or_placeholder_rows(self):
+        # 1. Missing columns in table grid output empty string / None rather than fabricated defaults
+        grid = [
+            ["岗位代码", "招聘单位", "岗位名称"],
+            ["01", "济南市某局", "综合文秘岗"],
+        ]
+        rows = parse_exam_table_grid(grid, exam_id="exam-no-def")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["education"], "")
+        self.assertEqual(rows[0]["degree"], "")
+        self.assertEqual(rows[0]["major_raw"], "")
+        self.assertEqual(rows[0]["majors"], [])
+        self.assertEqual(rows[0]["age_limit"], "")
+        self.assertEqual(rows[0]["exam_ratio"], "")
+        self.assertEqual(rows[0]["hukou_rule"], "")
+        self.assertIsNone(rows[0]["recruit_count"])
+        self.assertEqual(rows[0]["source"], "table")
+
+        # 2. Announcement without table or valid prose rows has positions == [] and attachment_only / none status
+        raw_att = {
+            "id": "exam-att-only",
+            "title": "2026年潍坊市某单位公开招聘工作人员简章",
+            "body": "有关招聘事项见附件。",
+            "attachments": [{"title": "附件1：公开招聘岗位汇总表.xlsx", "url": "https://example.gov.cn/1.xlsx"}],
+        }
+        enriched_att = enrich_exam_record(raw_att, today_str="2026-11-09")
+        self.assertEqual(enriched_att["positions"], [])
+        self.assertEqual(enriched_att["positions_status"], "attachment_only")
+        self.assertIsNone(enriched_att["exam_ratio"])
+        self.assertIsNone(enriched_att["age_limit"])
+
+        raw_none = {
+            "id": "exam-none",
+            "title": "2026年潍坊市某单位公开招聘工作人员简章",
+            "body": "有关事项另行通知，硕士及以上10人，以上人员5人。",
+            "attachments": [],
+        }
+        enriched_none = enrich_exam_record(raw_none, today_str="2026-11-09")
+        self.assertEqual(enriched_none["positions"], [])
+        self.assertEqual(enriched_none["positions_status"], "none")
+
+        # 3. Prose blacklist rejects invalid fragment names
+        for bad in ("以上", "硕士及", "1", "工作人员", "人才"):
+            self.assertFalse(valid_prose_position_name(bad), bad)
+        self.assertTrue(valid_prose_position_name("专任教师"))
+
+        # 4. Title containing 博士 sets education_min to 博士研究生 even if body mentions 本科
+        raw_phd = {
+            "id": "exam-phd",
+            "title": "山东某高校2026年引进博士研究生公告",
+            "body": "具有全日制本科、硕士及博士研究生学历学位。",
+        }
+        enriched_phd = enrich_exam_record(raw_phd, today_str="2026-11-09")
+        self.assertEqual(enriched_phd["education_min"], "博士研究生")
 
 
 if __name__ == "__main__":

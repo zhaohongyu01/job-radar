@@ -1,6 +1,5 @@
 'use client';
-import { loadSnapshotParts, loadIndexSnapshot, supportedBrowseIndex } from '../lib/snapshot-loader';
-import type { SnapshotIndexCache } from '../lib/snapshot-loader';
+import { loadSnapshotParts, supportedBrowseIndex } from '../lib/snapshot-loader';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Search,
@@ -52,7 +51,7 @@ import {
   parseSalaryRange,
 } from '@/lib/jobs';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
-import type { Job, Snapshot, Personal, Filters, PersonalRecord } from '@/lib/jobs';
+import type { Job, Personal, Filters, PersonalRecord } from '@/lib/jobs';
 import { restoreBrowsing, restoreCardDensity, parseUrlState, formatUrlQuery } from '@/lib/browsing';
 import type { ViewMode, CardDensity } from '@/lib/browsing';
 import { groupJobs } from '@/lib/grouping';
@@ -65,7 +64,6 @@ import { DataHealth } from '@/components/data-health';
 import { ActionRail } from '@/components/action-rail';
 import { TopActionCard } from '@/components/top-action-card';
 import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
-import type { CoverageReport } from '@/lib/city-coverage';
 import { createBackup, validateBackup, writeBackup } from '@/lib/personal-backup';
 import type { PersonalBackup } from '@/lib/personal-backup';
 import { APPLICATION_STAGES, mergePersonalRecords } from '@/lib/personal-records';
@@ -81,6 +79,7 @@ import { ResultsToolbar } from '@/components/jobs/results-toolbar';
 import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
 import { AppHeader } from '@/components/jobs/app-header';
+import { useJobSnapshot } from '@/hooks/use-job-snapshot';
 import type { WorkspaceMode } from '@/lib/exams';
 import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
 
@@ -177,10 +176,6 @@ function HomeContent() {
   const employerRecords = useEmployerRecords();
   const reputation = useEmployerReputation();
   const { register: registerEmployerCatalog, selectId: selectEmployerId, requestedId: requestedEmployerId, missing: missingEmployer } = useEmployerNavigation();
-  const [data, setData] = useState<Snapshot | null>(null),
-    [error, setError] = useState(''),
-    [loading, setLoading] = useState(true);
-  const [previewData, setPreviewData] = useState<Snapshot | null>(null);
   const [linkedJobId, setLinkedJobId] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(defaultFilters),
     [personal, setPersonal] = useState<Personal>({}),
@@ -199,7 +194,6 @@ function HomeContent() {
   const [detailLoading, setDetailLoading] = useState(false),
     [detailError, setDetailError] = useState('');
   const [detailNavIds, setDetailNavIds] = useState<string[] | null>(null);
-  const [dataOrigin, setDataOrigin] = useState('site');
   const [importPreview, setImportPreview] = useState<PersonalBackup | null>(null);
   const [importing, setImporting] = useState(false);
   const [presetRevision, setPresetRevision] = useState(0);
@@ -226,27 +220,6 @@ function HomeContent() {
       window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
     }
   }, []);
-  const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
-  const coverage = coverageReport?.as_of === data?.generated_at ? coverageReport : null;
-  const reputationEnabled = !!data && workspaceMode === 'jobs';
-  const enableReputation = reputation.enable;
-  useEffect(() => {
-    if (!reputationEnabled) return;
-    const timer = setTimeout(enableReputation, 0);
-    return () => clearTimeout(timer);
-  }, [reputationEnabled, enableReputation]);
-  useEffect(() => {
-    const url = data?.coverage_url;
-    if (!url || !/^\/job-assets\/coverage-[0-9a-f]{20}\.json$/.test(url)) return;
-    const controller = new AbortController();
-    void fetch(url, { cache: 'force-cache', signal: controller.signal }).then(async (response) => {
-      if (!response.ok) throw Error('Coverage unavailable');
-      const report = await response.json() as CoverageReport;
-      if (report.schema_version !== 1 || !report.cities || !Array.isArray(report.schools)) throw Error('Coverage format invalid');
-      setCoverageReport(report);
-    }).catch(() => { /* Coverage failures do not hide a complete jobs index. */ });
-    return () => controller.abort();
-  }, [data?.coverage_url]);
   const fileRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const discoveryFilters = useRef<Filters>(defaultFilters);
@@ -259,16 +232,9 @@ function HomeContent() {
   const [searchError, setSearchError] = useState('');
   const [searchAttempt, setSearchAttempt] = useState(0);
   const previousSearchQuery = useRef('');
-  const [progressiveProgress, setProgressiveProgress] = useState<{ loaded: number; total: number } | null>(null);
-  const dataRef = useRef<Snapshot | null>(null);
-  const indexCache = useRef<SnapshotIndexCache | null>(null);
-  const activeSnapshot = useRef<Snapshot | null>(null);
-  const refreshController = useRef<AbortController | null>(null);
-  const refreshRequest = useRef(0);
   const missingLink = useRef<string | null>(null);
 
-  const activateSnapshot = useCallback((snapshot: Snapshot | null) => {
-    activeSnapshot.current = snapshot;
+  const handleActivateSnapshot = useCallback(() => {
     detailCache.current = {};
     detailsPromise.current = {};
     ++detailRequest.current;
@@ -279,66 +245,27 @@ function HomeContent() {
     setSearchError('');
   }, []);
 
-  const refresh = useCallback(async () => {
-    const request = ++refreshRequest.current;
-    refreshController.current?.abort();
-    const controller = new AbortController();
-    refreshController.current = controller;
-    const current = () => request === refreshRequest.current && !controller.signal.aborted;
-    let previewActivated = false;
-    setLoading(true);
-    setError('');
-    setProgressiveProgress(null);
-    setPreviewData(null);
-    if (!dataRef.current) activateSnapshot(null);
-    try {
-      const r = await fetch('/jobs.json', { cache: 'no-store', signal: controller.signal });
-      if (!r.ok) throw Error('招聘信息暂时无法读取，请稍后重试。');
-      const origin = r.headers.get('x-job-radar-data-origin') || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'local' : 'site');
-      const json = (await r.json()) as Snapshot;
-      if (
-        !json ||
-        ![1, 2, 3].includes(json.schema_version) ||
-        !Array.isArray(json.jobs) ||
-        !Array.isArray(json.sources)
-      )
-        throw Error('招聘数据格式异常。');
-      if (json.index_shards?.length || supportedBrowseIndex(json)) {
-        json.jobs = await loadIndexSnapshot(json, controller.signal, (jobs, total) => {
-          if (!current()) return;
-          setProgressiveProgress({ loaded: jobs.length, total });
-          if (!dataRef.current) {
-            if (!previewActivated) {
-              activateSnapshot(json);
-              previewActivated = true;
-            }
-            setPreviewData({ ...json, jobs });
-          }
-        }, indexCache);
-      }
-      if (!current()) return;
-      if (new Set(json.jobs.map((job) => job.id)).size !== json.jobs.length) throw Error('招聘数据包含重复记录。');
-      // A successful legacy inline snapshot replaces the sharded generation too.
-      if (!json.index_shards?.length && !supportedBrowseIndex(json)) indexCache.current = null;
-      if (!previewActivated) activateSnapshot(json);
-      // A cold preview and its completed index share one detail-request generation.
-      dataRef.current = json;
-      setDataOrigin(origin);
-      setData(json);
-      setPreviewData(null);
-    } catch (e) {
-      if (!current()) return;
-      setPreviewData(null);
-      if (previewActivated) activateSnapshot(null);
-      setError(e instanceof Error ? e.message : '读取失败');
-    } finally {
-      if (current()) {
-        setProgressiveProgress(null);
-        setLoading(false);
-        refreshController.current = null;
-      }
-    }
-  }, [activateSnapshot]);
+  const {
+    data,
+    previewData,
+    loading,
+    error,
+    progress: progressiveProgress,
+    refresh,
+    refreshIfIdle,
+    dataOrigin,
+    coverage,
+    getActiveSnapshot,
+    isCurrentData,
+  } = useJobSnapshot({ onActivateSnapshot: handleActivateSnapshot });
+
+  const reputationEnabled = !!data && workspaceMode === 'jobs';
+  const enableReputation = reputation.enable;
+  useEffect(() => {
+    if (!reputationEnabled) return;
+    const timer = setTimeout(enableReputation, 0);
+    return () => clearTimeout(timer);
+  }, [reputationEnabled, enableReputation]);
 
   const syncPersonal = useCallback(() => {
     try {
@@ -400,7 +327,7 @@ function HomeContent() {
       );
       if (cached) { markRead(cached); return; }
       if (job.body) { markRead(job); return; }
-      const snapshot = activeSnapshot.current;
+      const snapshot = getActiveSnapshot();
       const url = snapshot?.detail_shards?.[job.id.slice(0, 2)] ?? snapshot?.details_url;
       if (!url) { setDetailError('这条公告的详情暂未生成，请打开原公告核对。'); return; }
       const pending = detailsPromise.current;
@@ -442,7 +369,7 @@ function HomeContent() {
         if (request === detailRequest.current) setDetailLoading(false);
       }
     },
-    [markRead],
+    [markRead, getActiveSnapshot],
   );
 
   // Browser storage is read after hydration; SSR has no access to this device state.
@@ -482,14 +409,13 @@ function HomeContent() {
     return () => {
       clearTimeout(initialRead);
       clearInterval(timer);
-      refreshController.current?.abort();
     };
   }, [refresh, selectEmployerId]);
 
   useEffect(() => {
-    if (!ready || workspaceMode !== 'jobs' || dataRef.current || refreshController.current) return;
-    void refresh();
-  }, [ready, workspaceMode, refresh]);
+    if (!ready || workspaceMode !== 'jobs') return;
+    refreshIfIdle();
+  }, [ready, workspaceMode, refreshIfIdle]);
 
   useEffect(() => {
     if (!ready || !linkedJobId) return;
@@ -700,11 +626,11 @@ function HomeContent() {
           const jobs = Object.assign({}, ...parts.map((part) => part.jobs)) as Record<string, string>;
           if (data.jobs.some((j) => typeof jobs[j.id] !== 'string'))
             throw Error('全文索引不完整，请点击刷新重试。');
-          if (!controller.signal.aborted && data === dataRef.current) setSearchIndex(jobs);
-        }).catch((e) => { if (!controller.signal.aborted && data === dataRef.current) setSearchError(e.message); });
+          if (!controller.signal.aborted && isCurrentData(data)) setSearchIndex(jobs);
+        }).catch((e) => { if (!controller.signal.aborted && isCurrentData(data)) setSearchError(e.message); });
     }, 0);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [needsSearch, data, searchIndex, searchAttempt]);
+  }, [needsSearch, data, searchIndex, searchAttempt, isCurrentData]);
 
   useEffect(() => {
     const query = filters.query.trim(), previous = previousSearchQuery.current;

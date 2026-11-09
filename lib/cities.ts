@@ -1,6 +1,17 @@
 import { CITY_REGISTRY } from './cities.generated.ts';
 
 export const ALL_CITIES = CITY_REGISTRY.cities.map((row) => row.name);
+
+let allCitiesPromise: Promise<string[]> | null = null;
+
+export const loadAllCities = (): Promise<string[]> => {
+  if (!allCitiesPromise) {
+    allCitiesPromise = import('./cities.generated.ts').then((m) =>
+      m.CITY_REGISTRY.cities.map((row) => row.name),
+    );
+  }
+  return allCitiesPromise;
+};
 export const PROVINCE_CITIES: Record<string, string[]> = {};
 const aliases = new Map<string, Set<string>>();
 const counties = new Map<string, Set<string>>();

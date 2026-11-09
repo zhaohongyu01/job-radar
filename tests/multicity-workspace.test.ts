@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { defaultFilters, filterJobs, personalFor, validatePersonal, locationMatch, isExpired } from '../lib/jobs.ts';
 import type { Job } from '../lib/jobs.ts';
 import validityCases from './fixtures/opportunity-validity.json' with { type: 'json' };
-import { citiesInText, ALL_CITIES } from '../lib/cities.ts';
+import { citiesInText, ALL_CITIES, loadAllCities } from '../lib/cities.ts';
 import { restoreBrowsing } from '../lib/browsing.ts';
 import { fixtureJob } from './fixtures/job.ts';
 import { assessOpportunityValidity } from '../lib/opportunity-validity.ts';
@@ -11,8 +11,10 @@ import { agendaEntries, defaultAgenda, eventChanged, restoreAgenda } from '../li
 
 const now = Date.parse('2026-10-25T11:52:51.364+08:00');
 
-await test('expanded city dictionary matches explicit cities without province and campus homonyms', () => {
+await test('expanded city dictionary matches explicit cities without province and campus homonyms', async () => {
   for (const city of ['无锡', '常州', '南通', '泉州', '温州', '呼和浩特']) assert.ok(ALL_CITIES.includes(city));
+  const lazyCities = await loadAllCities();
+  assert.deepEqual(lazyCities, ALL_CITIES);
   assert.deepEqual(citiesInText('吉林省'), []);
   assert.deepEqual(citiesInText('千佛山校区'), []);
   assert.deepEqual(citiesInText('朝阳区', true), []);

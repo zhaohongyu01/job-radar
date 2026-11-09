@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CalendarDays, MapPin, Bookmark, Download } from 'lucide-react';
 import type { Job, Personal, Filters, TalkEvent } from '@/lib/jobs';
 import { externalUrl, eventDisplayTitle } from '@/lib/jobs';
-import { ALL_CITIES } from '@/lib/cities';
+import { loadAllCities } from '@/lib/cities';
 import { AGENDA_STORAGE, EVENT_PERSONAL_STORAGE, EVENT_TYPES, agendaEntries, defaultAgenda, restoreAgenda, validateEventPersonal, eventChanged } from '@/lib/agenda';
 import type { AgendaFilters, EventPersonal } from '@/lib/agenda';
 import { downloadCalendar } from '@/lib/calendar-export';
@@ -23,6 +23,13 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
   const [onlySaved, setOnlySaved] = useState(false);
   const [allTalks, setAllTalks] = useState(true);
   const [notice, setNotice] = useState('');
+  const [loadedCities, setLoadedCities] = useState<string[]>([]);
+  const citiesRequestedRef = useRef(false);
+  const ensureCitiesLoaded = useCallback(() => {
+    if (citiesRequestedRef.current) return;
+    citiesRequestedRef.current = true;
+    void loadAllCities().then(setLoadedCities);
+  }, []);
   const agendaId = useId();
   const cityId = useId();
   useEffect(() => {
@@ -66,7 +73,7 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
   const schools = useMemo(() => [...new Set([...(coverage?.schools || []), ...jobs.flatMap((job) => (job.talk_events ?? (job.talk_event ? [job.talk_event] : [])).map((event) => event.school)), filters.school].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')), [jobs, coverage, filters.school]);
   const displayed = allTalks ? talks : talks.slice(0, 4);
   const changes = talks.filter(({ event }) => saved[event.id]?.saved && eventChanged(event, saved[event.id]));
-  const cityOptions = [...new Set(['全部城市', filters.city, ...ALL_CITIES])];
+  const cityOptions = [...new Set(['全部城市', filters.city, ...loadedCities].filter(Boolean))];
   const exportSelected = () => {
     try { downloadCalendar(talks.map(({ job, event }) => ({ event, title: eventDisplayTitle(job) })), now); }
     catch (error) { setNotice(error instanceof Error ? error.message : '日历导出失败'); }
@@ -80,7 +87,7 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
         <div className="agenda-controls">
           <div className="agenda-primary">
           <label>参加活动城市
-            <input list={`${cityId}-options`} aria-label="参加活动城市" value={filters.city} onChange={(event) => update('city', event.target.value)} />
+            <input list={`${cityId}-options`} aria-label="参加活动城市" value={filters.city} onFocus={ensureCitiesLoaded} onChange={(event) => update('city', event.target.value)} />
             <datalist id={`${cityId}-options`}>{cityOptions.map((value) => <option key={value} value={value}>{value}</option>)}</datalist>
           </label>
           <label>学校<select aria-label="筛选宣讲学校" value={filters.school} onChange={(event) => update('school', event.target.value)}>

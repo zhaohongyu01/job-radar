@@ -18,7 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import type { Filters, Snapshot } from '@/lib/jobs';
 import { countActiveFilters, selectedWorkCities } from '@/lib/jobs';
-import { ALL_CITIES } from '@/lib/cities';
+import { loadAllCities, normalizeCity } from '@/lib/cities';
 
 function Choice({
   label,
@@ -149,12 +149,24 @@ export function FilterSidebar({
   const cityListId = useId();
   const majorId = useId();
   const [cityQuery, setCityQuery] = useState('');
+  const [loadedCities, setLoadedCities] = useState<string[]>([]);
+  const citiesRequestedRef = useRef(false);
+  const ensureCitiesLoaded = useCallback(() => {
+    if (citiesRequestedRef.current) return;
+    citiesRequestedRef.current = true;
+    void loadAllCities().then(setLoadedCities);
+  }, []);
   const selectedCities = selectedWorkCities(filters);
-  const cityOptions = Array.from(new Set([...ALL_CITIES, ...(data?.cities || []), ...selectedCities]));
-  const canAddCity = cityOptions.includes(cityQuery) && !selectedCities.includes(cityQuery);
+  const cityOptions = Array.from(
+    new Set([...QUICK_CITIES, ...loadedCities, ...(data?.cities || []), ...selectedCities]),
+  );
+  const resolvedCity =
+    normalizeCity(cityQuery.trim()) ||
+    (cityOptions.includes(cityQuery.trim()) ? cityQuery.trim() : null);
+  const canAddCity = Boolean(resolvedCity && !selectedCities.includes(resolvedCity));
   const addCity = () => {
-    if (!canAddCity) return;
-    onChange('workCities', [...selectedCities, cityQuery]);
+    if (!resolvedCity || selectedCities.includes(resolvedCity)) return;
+    onChange('workCities', [...selectedCities, resolvedCity]);
     setCityQuery('');
   };
   const toggleQuickCity = (city: string) => {
@@ -214,6 +226,7 @@ export function FilterSidebar({
             list={`${cityListId}-options`}
             value={cityQuery}
             placeholder="输入城市名称后添加"
+            onFocus={ensureCitiesLoaded}
             onChange={(event) => setCityQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {

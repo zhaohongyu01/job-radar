@@ -1,6 +1,12 @@
 import type { Filters, Job } from './jobs.ts';
 import { restoreBrowsing } from './browsing.ts';
-import { getDeadlineCountdown, hasRecentJobChange, parseSalaryRange, isTodayOpportunity, isSupplementOpportunity } from './jobs.ts';
+import {
+  getDeadlineCountdown,
+  hasRecentJobChange,
+  parseSalaryRange,
+  isTodayOpportunity,
+  isSupplementOpportunity,
+} from './jobs.ts';
 
 export type RadarPreset = {
   id: string;
@@ -61,9 +67,29 @@ export function loadRadarPresets(): RadarPreset[] {
     const raw = window.localStorage.getItem(RADAR_PRESETS_STORAGE);
     if (!raw) return DEFAULT_RADAR_PRESETS;
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string' && p.filters)
-        .map((p) => ({ ...p, filters: restoreBrowsing({ filters: p.filters }, false).filters }));
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter(
+          (p) =>
+            p &&
+            typeof p.id === 'string' &&
+            typeof p.name === 'string' &&
+            p.filters &&
+            typeof p.filters === 'object',
+        )
+        .map((p) => {
+          const fullRestored = restoreBrowsing({ filters: p.filters }, false).filters;
+          const partialFilters: Partial<Filters> = {};
+          for (const key of Object.keys(p.filters) as (keyof Filters)[]) {
+            if (Object.hasOwn(fullRestored, key)) {
+              Object.assign(partialFilters, { [key]: fullRestored[key] });
+            }
+          }
+          if (Object.hasOwn(p.filters, 'city') && !Object.hasOwn(p.filters, 'workCities')) {
+            partialFilters.workCities = undefined;
+          }
+          return { ...p, filters: partialFilters };
+        });
     }
   } catch {
     // fallback

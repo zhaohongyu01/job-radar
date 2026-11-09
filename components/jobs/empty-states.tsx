@@ -3,7 +3,7 @@
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyDescription, EmptyTitle } from '@/components/ui/empty';
-import { defaultFilters, selectedWorkCities } from '@/lib/jobs';
+import { resetFilters, selectedWorkCities } from '@/lib/jobs';
 import type { Filters, Snapshot } from '@/lib/jobs';
 import type { LocationScopeOption } from '@/components/jobs/results-toolbar';
 
@@ -75,24 +75,15 @@ export function JobsEmptyStates({
       <Button
         variant="outline"
         onClick={() => {
-          onRelaxFilters({
-            ...defaultFilters,
-            city: filters.city,
-            workCities: filters.workCities,
-            includeRelatedTalks: filters.includeRelatedTalks,
-            view: filters.view,
-            locationScope: filters.locationScope,
-            type: '全部',
-            sector: '全部',
-            direction: '全部',
-            education: '',
-            query: '',
-            onlyNew: false,
-            onlyUnread: false,
-            includeUncertain: true,
-            salary: '全部',
-            sort: 'newest',
-          });
+          onRelaxFilters(
+            resetFilters(filters, [
+              'city',
+              'workCities',
+              'includeRelatedTalks',
+              'view',
+              'locationScope',
+            ]),
+          );
         }}
       >
         放宽条件，保留当前城市

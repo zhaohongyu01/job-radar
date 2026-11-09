@@ -101,7 +101,6 @@ export function PersonalRadar({
 
   const handleDeletePreset = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (presets.length <= 1) return;
     const updated = presets.filter((p) => p.id !== id);
     if (!saveRadarPresets(updated)) {
       setPresetError('浏览器未允许保存，请检查存储设置后重试。');

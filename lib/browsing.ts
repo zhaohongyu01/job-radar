@@ -53,6 +53,9 @@ export function restoreBrowsing(input: unknown, legacyRelatedTalks = true): { fi
   for (const key of TEXT) {
     if (typeof fields[key] === 'string') result.filters[key] = fields[key].slice(0, 200);
   }
+  if (!['', '大专', '本科', '硕士', '博士'].includes(result.filters.education)) {
+    result.filters.education = '';
+  }
   const city = cityName(fields.city);
   if (city) result.filters.city = city;
   if (Array.isArray(fields.workCities)) {

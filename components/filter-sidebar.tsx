@@ -1,7 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
-
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   ChevronDown,
   Download,
@@ -18,7 +17,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import type { Filters, Snapshot } from '@/lib/jobs';
-import { selectedWorkCities } from '@/lib/jobs';
+import { countActiveFilters, selectedWorkCities } from '@/lib/jobs';
 import { ALL_CITIES } from '@/lib/cities';
 
 function Choice({
@@ -32,9 +31,19 @@ function Choice({
   options: string[];
   onChange: (v: string) => void;
 }) {
-  const text = (option: string) => label === '企业体验参考'
-    ? ({ all: '不限参考分', '3': '3分及以上', '4': '4分及以上' } as Record<string, string>)[option] || option
-    : ({ all: '全部', full_time: '全职', internship: '实习', part_time: '兼职', confirmed_open: '近期核验在招', long_term: '原文长期招聘', unconfirmed: '有效性待核实' } as Record<string, string>)[option] || option;
+  const text = (option: string) =>
+    label === '企业体验参考'
+      ? ({ all: '不限参考分', '3': '3分及以上', '4': '4分及以上' } as Record<string, string>)[option] ||
+        option
+      : ({
+          all: '全部',
+          full_time: '全职',
+          internship: '实习',
+          part_time: '兼职',
+          confirmed_open: '近期核验在招',
+          long_term: '原文长期招聘',
+          unconfirmed: '有效性待核实',
+        } as Record<string, string>)[option] || option;
   return (
     <div className="field">
       <span className="field-label">{label}</span>
@@ -137,42 +146,52 @@ export function FilterSidebar({
   onImport: () => void;
   className?: string;
 }) {
-  const educationId = useId();
   const cityListId = useId();
   const majorId = useId();
   const [cityQuery, setCityQuery] = useState('');
   const selectedCities = selectedWorkCities(filters);
   const cityOptions = Array.from(new Set([...ALL_CITIES, ...(data?.cities || []), ...selectedCities]));
   const canAddCity = cityOptions.includes(cityQuery) && !selectedCities.includes(cityQuery);
-  const addCity = () => { if (!canAddCity) return; onChange('workCities', [...selectedCities, cityQuery]); setCityQuery(''); };
+  const addCity = () => {
+    if (!canAddCity) return;
+    onChange('workCities', [...selectedCities, cityQuery]);
+    setCityQuery('');
+  };
   const toggleQuickCity = (city: string) => {
     const next = selectedCities.includes(city)
       ? selectedCities.filter((value) => value !== city)
       : [...selectedCities, city];
     onChange('workCities', next);
   };
-  const activeCount = [
-    selectedCities.length > 0,
-    filters.type !== '全部',
-    filters.type === '校招' && filters.year !== '全部',
-    filters.sector !== '全部',
-    (filters.employmentType || 'all') !== 'all',
-    filters.direction !== '全部',
-    filters.salary !== '全部',
-    Boolean(filters.education),
-    Boolean(filters.major),
-    filters.provenance !== '全部',
-    filters.kind !== '全部',
-    filters.changeType !== '全部',
-    (filters.validity || 'all') !== 'all',
-    (filters.reputationMin || 'all') !== 'all',
-    filters.showExpired,
-    !filters.includeUncertain,
-    Boolean(filters.includeRelatedTalks),
-  ].filter(Boolean).length;
+
+  const currentMajor = filters.major || '';
+  const [majorDraft, setMajorDraft] = useState(currentMajor);
+  const [majorBase, setMajorBase] = useState(currentMajor);
+  if (majorBase !== currentMajor) {
+    setMajorBase(currentMajor);
+    setMajorDraft(currentMajor);
+  }
+  const majorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const updateMajor = useCallback(
+    (value: string, immediate = false) => {
+      setMajorDraft(value);
+      clearTimeout(majorTimer.current);
+      if (immediate) onChange('major', value);
+      else majorTimer.current = setTimeout(() => onChange('major', value), 300);
+    },
+    [onChange],
+  );
+  useEffect(() => () => clearTimeout(majorTimer.current), []);
+
+  const activeCount = countActiveFilters(filters);
   // Filters with no matching data stay hidden unless already active (so they can be cleared).
   const showValidity = !facts || facts.verified > 0 || (filters.validity || 'all') !== 'all';
-  const showReputation = !facts || facts.hasReputationScores || (filters.reputationMin || 'all') !== 'all' || filters.includeUnrated === false;
+  const showReputation =
+    !facts ||
+    facts.hasReputationScores ||
+    (filters.reputationMin || 'all') !== 'all' ||
+    filters.includeUnrated === false;
+
   return (
     <aside className={`filter-rail ${className}`} aria-label="筛选条件">
       <div className="rail-head">
@@ -186,13 +205,38 @@ export function FilterSidebar({
         </button>
       </div>
       <div className="field">
-        <label className="field-label" htmlFor={cityListId}>意向工作城市（可多选）</label>
+        <label className="field-label" htmlFor={cityListId}>
+          意向工作城市（可多选）
+        </label>
         <div className="city-input-row">
-          <Input id={cityListId} list={`${cityListId}-options`} value={cityQuery} placeholder="输入城市名称后添加"
+          <Input
+            id={cityListId}
+            list={`${cityListId}-options`}
+            value={cityQuery}
+            placeholder="输入城市名称后添加"
             onChange={(event) => setCityQuery(event.target.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCity(); } }} />
-          <datalist id={`${cityListId}-options`}>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</datalist>
-          <button type="button" className="btn btn-secondary btn-sm" disabled={!canAddCity} onClick={addCity}>添加城市</button>
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addCity();
+              }
+            }}
+          />
+          <datalist id={`${cityListId}-options`}>
+            {cityOptions.map((city) => (
+              <option key={city} value={city}>
+                {city}
+              </option>
+            ))}
+          </datalist>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={!canAddCity}
+            onClick={addCity}
+          >
+            添加城市
+          </button>
         </div>
         <fieldset className="quick-filter-pills" aria-label="热门城市快捷选择">
           {QUICK_CITIES.map((city) => {
@@ -212,9 +256,27 @@ export function FilterSidebar({
         </fieldset>
         <div className="chip-row">
           {!selectedCities.length && <span className="filter-help">未限定城市，显示全部</span>}
-          {selectedCities.map((city) => <button key={city} type="button" className="chip" aria-label={`移除工作城市${city}`}
-            onClick={() => onChange('workCities', selectedCities.filter((value) => value !== city))}>{city} ×</button>)}
-          {!!selectedCities.length && <button type="button" className="text-btn" onClick={() => onChange('workCities', [])}>全部城市</button>}
+          {selectedCities.map((city) => (
+            <button
+              key={city}
+              type="button"
+              className="chip"
+              aria-label={`移除工作城市${city}`}
+              onClick={() =>
+                onChange(
+                  'workCities',
+                  selectedCities.filter((value) => value !== city),
+                )
+              }
+            >
+              {city} ×
+            </button>
+          ))}
+          {!!selectedCities.length && (
+            <button type="button" className="text-btn" onClick={() => onChange('workCities', [])}>
+              全部城市
+            </button>
+          )}
         </div>
         <small className="filter-help">按岗位工作地筛选；各城市的本地来源覆盖程度不同。</small>
       </div>
@@ -247,8 +309,12 @@ export function FilterSidebar({
         ]}
         onChange={(v) => onChange('sector', v)}
       />
-      <Choice label="工作性质" value={filters.employmentType || 'all'} options={['all', 'full_time', 'internship', 'part_time']}
-        onChange={(value) => onChange('employmentType', value as Filters['employmentType'])} />
+      <Choice
+        label="工作性质"
+        value={filters.employmentType || 'all'}
+        options={['all', 'full_time', 'internship', 'part_time']}
+        onChange={(value) => onChange('employmentType', value as Filters['employmentType'])}
+      />
       <Choice
         label="岗位方向"
         value={filters.direction}
@@ -268,17 +334,12 @@ export function FilterSidebar({
         onChange={(v) => onChange('salary', v)}
       />
       {facts && facts.total > 0 && filters.salary !== '全部' && (
-        <small className="filter-help">仅含写明薪资的公告（全站约 {Math.round((facts.salaryKnown / facts.total) * 100)}%），未写薪资的不会出现。</small>
+        <small className="filter-help">
+          仅含写明薪资的公告（全站约 {Math.round((facts.salaryKnown / facts.total) * 100)}%），未写薪资的不会出现。
+        </small>
       )}
       <div className="field">
-        <label htmlFor={educationId} className="field-label">学历关键词</label>
-        <Input
-          id={educationId}
-          className="field-input"
-          value={filters.education}
-          onChange={(e) => onChange('education', e.target.value)}
-          placeholder="不限，可输入本科"
-        />
+        <span className="field-label">学历要求</span>
         <fieldset className="quick-filter-pills" aria-label="学历快捷选择">
           {QUICK_EDUCATION.map((item) => {
             const active = filters.education === item.value;
@@ -297,18 +358,28 @@ export function FilterSidebar({
         </fieldset>
       </div>
       <div className="field">
-        <label className="field-label" htmlFor={majorId}>专业关键词（同一岗位匹配）</label>
-        <Input id={majorId} value={filters.major || ''} onChange={(event) => onChange('major', event.target.value)} placeholder="例如会计、软件工程" />
+        <label className="field-label" htmlFor={majorId}>
+          专业关键词（同一岗位匹配）
+        </label>
+        <Input
+          id={majorId}
+          value={majorDraft}
+          onChange={(event) => updateMajor(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') updateMajor(majorDraft, true);
+          }}
+          placeholder="例如会计、软件工程"
+        />
         <fieldset className="quick-filter-pills" aria-label="热门专业快捷选择">
           {QUICK_MAJORS.map((major) => {
-            const active = (filters.major || '') === major;
+            const active = currentMajor === major;
             return (
               <button
                 key={major}
                 type="button"
                 aria-pressed={active}
                 className={`toggle-chip toggle-chip-xs${active ? ' is-active' : ''}`}
-                onClick={() => onChange('major', active ? '' : major)}
+                onClick={() => updateMajor(active ? '' : major, true)}
               >
                 {major}
               </button>
@@ -351,15 +422,37 @@ export function FilterSidebar({
           checked={filters.showExpired}
           onChange={(v) => onChange('showExpired', v)}
         />
-        <Toggle label="同时看本城宣讲关联机会（工作地另核）" checked={Boolean(filters.includeRelatedTalks)} onChange={(value) => onChange('includeRelatedTalks', value)} />
-        {showValidity && <Choice label="招聘有效性" value={filters.validity || 'all'} options={['all', 'confirmed_open', 'long_term', 'unconfirmed']}
-          onChange={(value) => onChange('validity', value as Filters['validity'])} />}
-        {showReputation && <>
-          <Choice label="企业体验参考" value={filters.reputationMin || 'all'} options={['all', '3', '4']}
-            onChange={value => onChange('reputationMin', value as Filters['reputationMin'])} />
-          <Toggle label="保留评分不足的企业" checked={filters.includeUnrated !== false} onChange={value => onChange('includeUnrated', value)} />
-          <p className="filter-help">体验参考分来自近一年公开员工体验的规则归纳，非平台官方评分；集团参考不直接套用到子公司。</p>
-        </>}
+        <Toggle
+          label="同时看本城宣讲关联机会（工作地另核）"
+          checked={Boolean(filters.includeRelatedTalks)}
+          onChange={(value) => onChange('includeRelatedTalks', value)}
+        />
+        {showValidity && (
+          <Choice
+            label="招聘有效性"
+            value={filters.validity || 'all'}
+            options={['all', 'confirmed_open', 'long_term', 'unconfirmed']}
+            onChange={(value) => onChange('validity', value as Filters['validity'])}
+          />
+        )}
+        {showReputation && (
+          <>
+            <Choice
+              label="企业体验参考"
+              value={filters.reputationMin || 'all'}
+              options={['all', '3', '4']}
+              onChange={(value) => onChange('reputationMin', value as Filters['reputationMin'])}
+            />
+            <Toggle
+              label="保留评分不足的企业"
+              checked={filters.includeUnrated !== false}
+              onChange={(value) => onChange('includeUnrated', value)}
+            />
+            <p className="filter-help">
+              体验参考分来自近一年公开员工体验的规则归纳，非平台官方评分；集团参考不直接套用到子公司。
+            </p>
+          </>
+        )}
         <p className="filter-help">
           默认只保留国内或地点未明确的机会；仅海外岗位自动排除。专业可用上方“专业关键词”按同一岗位筛选；公告未写明的资格需查看原文。
         </p>

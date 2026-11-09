@@ -1148,3 +1148,42 @@ void test('brand department display, PICC/China Life formatting, card title dedu
   assert.equal(formatCompanyDisplay('物流处', '物流专员', 'linglong-social').displayCompany, '玲珑轮胎 · 物流处');
   assert.equal(formatCompanyDisplay('固定收益总部', '债券交易员', 'chinastock-social').displayCompany, '中国银河证券 · 固定收益总部');
 });
+
+
+import { countActiveFilters, resetFilters } from '../lib/jobs.ts';
+
+void test('countActiveFilters and resetFilters share a single 17-item filter contract excluding sort', () => {
+  const cleanAllCities = { ...defaultFilters, city: '全部城市', workCities: [] as string[] };
+  assert.equal(countActiveFilters(cleanAllCities), 0);
+  assert.equal(countActiveFilters({ ...cleanAllCities, sort: 'deadline_asc' }), 0);
+  assert.equal(countActiveFilters(defaultFilters), 1); // defaultFilters has city: '济南'
+
+  const customized = {
+    ...defaultFilters,
+    city: '青岛',
+    workCities: ['青岛', '济南'],
+    type: '校招',
+    year: '2027',
+    sector: '国企',
+    direction: '技术 / 研发',
+    education: '硕士',
+    major: '软件工程',
+    salary: '15K以上',
+    sort: 'salary_desc' as const,
+    view: 'planned' as const,
+  };
+  assert.equal(countActiveFilters(customized), 8);
+
+  const reset = resetFilters(customized);
+  assert.deepEqual(reset.workCities, ['青岛', '济南']);
+  assert.equal(reset.city, '青岛');
+  assert.equal(reset.view, 'planned');
+  assert.equal(reset.type, '全部');
+  assert.equal(reset.sector, '全部');
+  assert.equal(reset.direction, '全部');
+  assert.equal(reset.education, '');
+  assert.equal(reset.major, '');
+  assert.equal(reset.salary, '全部');
+  assert.equal(reset.sort, 'newest');
+  assert.equal(countActiveFilters(reset), 1);
+});

@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { defaultFilters, selectedWorkCities, validatePersonal } from '@/lib/jobs';
+import {
+  countActiveFilters,
+  defaultFilters,
+  resetFilters as resetJobFilters,
+   validatePersonal,
+} from '@/lib/jobs';
 import type { Filters, Job, Personal } from '@/lib/jobs';
 import {
   formatUrlQuery,
@@ -247,12 +252,7 @@ export function useUrlSync({
 
   // Reset conditions but keep the user's chosen work cities and current list.
   const resetFilters = useCallback(() => {
-    setFilters((f) => ({
-      ...defaultFilters,
-      city: f.city,
-      workCities: f.workCities,
-      view: f.view,
-    }));
+    setFilters((f) => resetJobFilters(f, ['city', 'workCities', 'view']));
     setPage(1);
   }, []);
 
@@ -291,32 +291,7 @@ export function useUrlSync({
     [],
   );
 
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (selectedWorkCities(filters).join('|') !== selectedWorkCities(defaultFilters).join('|')) count++;
-    if (filters.employmentType !== defaultFilters.employmentType) count++;
-    if (filters.validity !== defaultFilters.validity) count++;
-    if (filters.major !== defaultFilters.major) count++;
-    if (filters.includeRelatedTalks !== defaultFilters.includeRelatedTalks) count++;
-    if (filters.type !== defaultFilters.type) count++;
-    if (filters.year !== defaultFilters.year) count++;
-    if (filters.sector !== defaultFilters.sector) count++;
-    if (filters.direction !== defaultFilters.direction) count++;
-    if (filters.education !== defaultFilters.education) count++;
-    if (filters.provenance !== defaultFilters.provenance) count++;
-    if (filters.kind !== defaultFilters.kind) count++;
-    if (filters.locationScope !== defaultFilters.locationScope) count++;
-    if (filters.onlyNew !== defaultFilters.onlyNew) count++;
-    if (filters.onlyUnread !== defaultFilters.onlyUnread) count++;
-    if (filters.includeUncertain !== defaultFilters.includeUncertain) count++;
-    if (filters.showExpired !== defaultFilters.showExpired) count++;
-    if (filters.salary !== defaultFilters.salary) count++;
-    if (filters.reputationMin !== defaultFilters.reputationMin) count++;
-    if (filters.includeUnrated !== defaultFilters.includeUnrated) count++;
-    if (filters.changeType !== defaultFilters.changeType) count++;
-    if (filters.radarFocus !== defaultFilters.radarFocus) count++;
-    return count;
-  }, [filters]);
+  const activeFilterCount = useMemo(() => countActiveFilters(filters), [filters]);
 
   return {
     filters,

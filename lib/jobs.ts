@@ -1509,3 +1509,40 @@ export function externalUrl(url: string | null | undefined) {
     return undefined;
   }
 }
+
+
+export function countActiveFilters(f: Filters): number {
+  const selectedCities = selectedWorkCities(f);
+  return [
+    selectedCities.length > 0,
+    f.type !== '全部',
+    f.type === '校招' && f.year !== '全部',
+    f.sector !== '全部',
+    (f.employmentType || 'all') !== 'all',
+    f.direction !== '全部',
+    f.salary !== '全部',
+    Boolean(f.education && f.education !== '不限'),
+    Boolean(f.major),
+    f.provenance !== '全部',
+    f.kind !== '全部',
+    f.changeType !== '全部',
+    (f.validity || 'all') !== 'all',
+    (f.reputationMin || 'all') !== 'all',
+    f.showExpired,
+    !f.includeUncertain,
+    Boolean(f.includeRelatedTalks),
+  ].filter(Boolean).length;
+}
+
+export function resetFilters(
+  current: Filters,
+  keep: (keyof Filters)[] = ['city', 'workCities', 'view'],
+): Filters {
+  const next: Filters = { ...defaultFilters };
+  for (const key of keep) {
+    if (Object.hasOwn(current, key)) {
+      Object.assign(next, { [key]: current[key] });
+    }
+  }
+  return next;
+}

@@ -619,14 +619,28 @@ function HomeContent() {
               newCount={newCount}
               dueSoonCount={personalCounts.dueSoon}
               presetRevision={presetRevision}
-              onApplyPreset={(presetFilters) => {
+              onApplyPreset={(presetFilters, presetName) => {
+                const previousFilters = { ...filters };
                 setFilters(
                   restoreBrowsing(
-                    { filters: { ...defaultFilters, ...filters, ...presetFilters, view: 'all', radarFocus: 'none' } },
+                    { filters: { ...filters, ...presetFilters, view: 'all', radarFocus: 'none' } },
                     false,
                   ).filters,
                 );
                 setPage(1);
+                if (presetName) {
+                  toast({
+                    message: `已应用方案「${presetName}」`,
+                    tone: 'success',
+                    action: {
+                      label: '撤销',
+                      onClick: () => {
+                        setFilters(previousFilters);
+                        setPage(1);
+                      },
+                    },
+                  });
+                }
               }}
               groupCompanies={groupCompanies}
               onToggleGroupCompanies={() => {

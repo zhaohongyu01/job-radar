@@ -68,6 +68,8 @@ export interface ExamSchedule {
   admit_card_start?: string | null;
   written_exam_date?: string | null;
   interview_date?: string | null;
+  reg_mode?: 'window' | 'rolling';
+  rolling_until?: string | null;
   raw_evidence?: string[];
 }
 

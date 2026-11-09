@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-09T19:56:55+08:00",
-  "last_success_at": "2026-11-09T19:56:55+08:00",
-  "total_exams": 215,
+  "generated_at": "2026-11-09T20:13:32+08:00",
+  "last_success_at": "2026-11-09T20:13:32+08:00",
+  "total_exams": 218,
   "total_positions": 321,
-  "total_headcount": 9525,
+  "total_headcount": 9524,
   "total_exams_with_positions": 60,
   "cities": [
     "东营",
@@ -51,6 +51,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -98,19 +100,21 @@
         "事业编"
       ],
       "exam_category": "人才引进 / 优才",
-      "stage": "registering",
+      "stage": "admit_exam",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 12,
       "positions_status": "attachment_only",
       "schedule": {
-        "reg_start": null,
-        "reg_end": null,
+        "reg_start": "2026-11-02",
+        "reg_end": "2026-11-06",
         "audit_end": "2026-11-07",
         "payment_end": "2026-11-07",
         "admit_card_start": "2026-11-12",
         "written_exam_date": "2026-11-15",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "三、报名时间和方式",
           "报名时间：2026年11月2日9:00－11月6日16:00",
@@ -195,6 +199,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -221,7 +227,7 @@
       "published_at": "2026-11-06",
       "last_verified_at": "2026-11-06T20:39:59+08:00",
       "excerpt": "* 职位描述：\n招聘简章：\n权威发布 | 国防科技大学2027年军队文职人员公开招考岗位计划\n报考链接：\n中国人民解放军专业技术人才网",
-      "body": "国防科技大学2027年军队文职人员公开招考岗位计划\n国防科技大学前沿交叉学科学院\n职位投递网址链接：http://81rc.81.cn/\n工作地域：江苏省 / 安徽省 / 湖南省\n职位类别： -\n学历要求：硕士研究生 / 博士研究生\n招聘人数：100人\n发布时间：2026-11-06浏览量：581\n* 职位描述：\n招聘简章：\n权威发布 | 国防科技大学2027年军队文职人员公开招考岗位计划\n报考链接：\n中国人民解放军专业技术人才网",
+      "body": "国防科技大学2027年军队文职人员公开招考岗位计划\n国防科技大学前沿交叉学科学院\n职位投递网址链接：http://81rc.81.cn/\n工作地域：江苏省 / 安徽省 / 湖南省\n职位类别： -\n学历要求：硕士研究生 / 博士研究生\n招聘人数：100人\n发布时间：2026-11-06浏览量：584\n* 职位描述：\n招聘简章：\n权威发布 | 国防科技大学2027年军队文职人员公开招考岗位计划\n报考链接：\n中国人民解放军专业技术人才网",
       "positions": [],
       "attachments": [
         {
@@ -261,6 +267,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -324,6 +332,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-12-13",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "考生可于 2026 年 11 月 5 日 8:00 至 10 日 18:00 期间，登录军队人才网（http://81rc.81.cn/）进行网上报名",
           "此次招考按照发布招考信息、网上报名、统一笔试、成绩查询、确定入围人员名单、面试、体检、确定预选对象、政治考核、确定拟录用对象、办理审批录用手续的程序步骤进行",
@@ -430,6 +440,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "采取网上报名的方式进行，应聘人员可根据本人实际情况，填报符合条件的招聘岗位（不限定报考岗位数量）",
           "网上报名时间为2026年11月4日9:00—11月11日17:00，符合岗位条件的应聘人员，登录济南市教育局网站下载《济南市教育局所属学校公开招聘2027届优秀毕业生报名表》（以下简称《报名表》，见附件2），按要求规范填写，“贴照片”处上传电子照片，并在指定位置签字确认，内容要真实准确",
@@ -511,6 +523,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年10月26日9:00-10月30日16:00",
           "查询时间：2026年10月26日11:00-10月31日16:00",
@@ -658,6 +672,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-11-14",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年10月26日9:00—10月30日16:00",
           "查询时间：2026年10月26日11:00—10月30日18:00",
@@ -722,6 +738,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -788,6 +806,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "1.报名时间：2026年10月15日至10月20日",
           "2.通过资格审核的人员按照成绩由高到低确认拟招募人员（如遇相同笔试成绩的，根据报名时间顺序由先到后确认拟招募人员）"
@@ -871,6 +891,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -929,6 +951,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（二）成绩查询时间"
         ]
@@ -1004,6 +1028,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报考人员于10月22日登录报名系统，下载打印笔试准考证",
           "报考人员凭与报名时姓名、身份证号码一致的本人有效居民身份证、笔试准考证及《推荐报名表》到指定地点参加笔试",
@@ -1072,6 +1098,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "学校根据应聘人员提交的报名信息进行资格初审，审核通过的会发送笔试和面试通知，请及时查看邮件信息，并保持手机畅通"
         ]
@@ -1160,6 +1188,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -1274,6 +1304,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -1335,6 +1367,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -1381,19 +1415,21 @@
         "事业编"
       ],
       "exam_category": "事业单位统考",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 103,
       "positions_status": "none",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-11-30",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间：此次招聘岗位为长期招聘岗位，自公告发布之日起5个工作日后，校（院）根据岗位报名情况，不定期启动面试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年11月30日"
         ]
@@ -1484,6 +1520,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-10-11",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "1.报名时间：2026年9月17日9：00至9月22日16：00",
           "未在报名时间内提供上述材料的，视为放弃报名",
@@ -1596,6 +1634,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -1654,6 +1694,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -1713,6 +1755,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间为北京时间2026年9月14日10:00至2026年9月29日10:00，依托山东大学招聘系统（http://zhaopin.sdu.edu.cn）网上报名"
         ]
@@ -1811,6 +1855,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -1858,19 +1904,21 @@
         "事业编"
       ],
       "exam_category": "高校 / 科研院所",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": 1,
       "total_headcount": 20,
       "positions_status": "prose",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": [
           "报名采取网上报名的方式进行，应聘人员可登录济南工程职业技术学院公开招聘高层次人才报名系统（https://rsxt.jngcxy.edu.cn）报名（系统开放时间：每天8:00-20:00），按以下程序进行：",
           "每人仅限报一次、并仅限报一个岗位，应聘人员在资格初审通过前多次登录填报报名信息的，后一次填报自动替换前一次填报信息",
@@ -1993,6 +2041,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -2053,6 +2103,8 @@
         "admit_card_start": "2026-10-13",
         "written_exam_date": "2026-10-17",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "三、报名、资格初审和缴费",
           "报名时间：2026年9月14日9:00—9月18日16:00",
@@ -2143,6 +2195,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-10-11",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名工作采取统一时间网上报名、网上初审、网上缴费的方式进行",
           "网上报名地址：淄博市卫生健康委员会官方网站 （http://ws.zibo.gov.cn/）、淄博市卫生健康事业发展中心官方网站（http://www.zbwsrc.cn/）“通知公告”专栏",
@@ -2233,6 +2287,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年9月7日9:00—9月11日16:00",
           "应聘人员在报名时间内登录邹平市人民政府网站（www.zouping.gov.cn）“通知公告”栏目，点击报名入口，按要求如实填写个人信息，并上传个人近期免冠正面证件电子照片",
@@ -2321,102 +2377,6 @@
       "related_notices": []
     },
     {
-      "id": "adb68984ad8bdd038834",
-      "title": "济南市卫生健康人才交流服务中心 · 不要错过！这家市属事业单位公开招聘了",
-      "organizer": "济南市卫生健康人才交流服务中心",
-      "region_level": "市级",
-      "province": "山东",
-      "cities": [
-        "济南"
-      ],
-      "bianzhi_types": [
-        "医疗卫生编",
-        "事业编"
-      ],
-      "exam_category": "医疗卫生招聘",
-      "stage": "registering",
-      "notice_role": "招考简章",
-      "total_positions": null,
-      "total_headcount": 1,
-      "positions_status": "none",
-      "schedule": {
-        "reg_start": null,
-        "reg_end": "2026-11-30",
-        "audit_end": null,
-        "payment_end": null,
-        "admit_card_start": null,
-        "written_exam_date": null,
-        "interview_date": null,
-        "raw_evidence": [
-          "报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认",
-          "我中心对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复",
-          "报名结束后，凡通过资格初审的应聘人员须在规定时间到指定地点进行现场资格复审"
-        ]
-      },
-      "exam_subjects": [
-        "专业科目"
-      ],
-      "exam_ratio": null,
-      "age_limit": "40周岁及以下",
-      "service_years": null,
-      "hukou_summary": "",
-      "fresh_grad_summary": "",
-      "political_summary": "",
-      "education_min": "博士研究生",
-      "degree_summary": "",
-      "has_unlimited_major": false,
-      "majors": [],
-      "registration_url": null,
-      "registration_method": "电子邮箱投递报名表",
-      "contact_phones": [
-        "0531-58176690",
-        "0531-58176661"
-      ],
-      "emails": [
-        "jnhhr@jn.shandong.cn"
-      ],
-      "source_id": "campus-exam-hub",
-      "source_name": "济南市政府 · 求职招聘",
-      "source_url": "https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/art/2026/art_10898a27f14c739631c0aa5bb255184a.html",
-      "published_at": "2026-09-01",
-      "last_verified_at": "2026-11-09T08:25:28+08:00",
-      "excerpt": "根据济南市卫生健康人才交流服务中心人员空缺情况，按照事业单位公开招聘有关规定和要求，我中心拟公开招聘博士1人，现将有关事项公告如下：\n一、招聘条件\n（一）具有中华人民共和国国籍；\n（二）遵守中华人民共和国宪法和法律，拥护中国共产党领导和社会主义制度；\n（三）具有良好的品行；\n（四）具有岗位所需的专业或技能条件；\n（五）具有适应岗位要求的身体条件和心理素质；\n（六）应聘本次岗位的博士研究生年龄在40周岁以下（1985年8月以后出生）。\n（七）具备研究生学历和博士学位（学历、学位证书须在2026年12月31日前取得），所学专业符合招聘岗位专业要求；\n（八）具备招聘岗位所需的其他资格条件。\n被依法列",
-      "body": "根据济南市卫生健康人才交流服务中心人员空缺情况，按照事业单位公开招聘有关规定和要求，我中心拟公开招聘博士1人，现将有关事项公告如下：\n一、招聘条件\n（一）具有中华人民共和国国籍；\n（二）遵守中华人民共和国宪法和法律，拥护中国共产党领导和社会主义制度；\n（三）具有良好的品行；\n（四）具有岗位所需的专业或技能条件；\n（五）具有适应岗位要求的身体条件和心理素质；\n（六）应聘本次岗位的博士研究生年龄在40周岁以下（1985年8月以后出生）。\n（七）具备研究生学历和博士学位（学历、学位证书须在2026年12月31日前取得），所学专业符合招聘岗位专业要求；\n（八）具备招聘岗位所需的其他资格条件。\n被依法列为失信联合惩戒对象的人员不能报考；现役军人及法律规定不得聘用的其他情形的人员不得报考。应聘人员不得报考有《事业单位人事管理回避规定》（人社部规〔2019〕1号）中应回避情形的岗位。\n香港和澳门居民中的中国公民可应聘符合条件的岗位。\n台湾居民可应聘符合条件的岗位。\n二、招聘岗位和计划\n我中心本次计划招聘1人。招聘的报名、审核、面试、考察体检等均由我中心组织。招聘岗位和具体要求详见《济南市卫生健康人才交流服务中心2026年公开招聘博士（事业编制）岗位汇总表》。\n三、报名及资格审查工作\n（一）报名时间\n此次公开招聘为长期招聘，采取“长期报名，招满即止”的方式，自公告发布之日起开始报名，根据岗位报名情况，适时启动考试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年11月30日。\n（二）报名方式\n报名采取发送电子邮件报名的方式。应聘人员下载并如实填写《济南市卫生健康人才交流服务中心2026年公开招聘博士（事业编制）报名表》《诚信承诺书》，填写完毕确认无误后，连同身份证、学历学位证书、资格证书、工作经历证明、单位同意报考证明等岗位要求的证明材料（照片或扫描件）在规定时间内发送至电子邮箱jnhhr@jn.shandong.cn，邮件主题注明“报考单位＋报考岗位+姓名＋电话”，邮件附件大小不得超过5M。报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认。\n（三）资格初审\n我中心对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复。\n（四）现场资格复审\n报名结束后，凡通过资格初审的应聘人员须在规定时间到指定地点进行现场资格复审。逾期不进行现场资格复审的，视为自动放弃应聘。我中心指定专人现场复审应聘人员提交的信息资料，确定进入面试范围人员名单。\n现场资格复审时需提交以下材料：\n1.个人身份证；\n2.经本人签字确认的《济南市卫生健康人才交流服务中心2026年公开招聘博士（事业编制）报名表》《诚信承诺书》；\n3.学历学位证书；\n4.海外留学人员还须提供教育部留学服务中心出具的海外学历学位认证书；\n5.个人简历（包括本人基本信息、获得荣誉及社会实践等情况）；\n6.在职人员应聘的，须有用人权限部门或单位出具的同意报考证明（对按时出具同意报考证明确有困难的在职人员，经本人申请、招聘单位同意，也可在考察体检阶段提供）；\n7.岗位要求的其他材料。\n上述材料中的各类证件、证明材料均须提供复印件。单位查看原件，留存复印件。\n对应聘人员的资格审查工作，贯穿招聘工作的全过程。应聘人员提供的信息和材料如有弄虚作假或不按要求提供的，我中心取消应聘者应聘资格。通过现场资格复审者进入面试。现场资格复审时间、地点和相关要求另行通知。\n四、考试\n考试采取面试的方式进行，主要测评应聘人员综合素质、科研水平、专业知识和工作能力等方面。面试通过答辩的方式进行。每组面试考官不少于7人，由熟悉相关专业知识、具有面试实践经验的人员担任。面试成绩按百分制计算，设面试合格分数线80分。达到面试合格分数线，方可列为考察体检范围人选。面试成绩即为考试总成绩，根据考试总成绩，由高分到低分按1:2的比例，确定进入考察体检范围人选，并等额组织考察体检。同一招聘岗位应聘人员总成绩并列的，重新组织面试。面试等具体事宜另行通知，请应聘人员保持通讯畅通。\n五、考察体检\n考察体检由我中心组织，严格落实公开招聘回避、保密等纪律规定。\n（一）体检\n考察体检人员应在规定的时间携带身份证、面试通知单等材料到指定的地点集合，集体进行体检。体检应在市级及以上综合医院进行，体检标准和项目参照公务员录用体检标准及操作手册执行，国家另有规定的从其规定。应聘人员不按规定的时间、地点参加体检的，视作放弃。对按规定需要复检的，不在原体检医院进行，复检只能进行1次，结果以复检结论为准。\n（二）考察\n考察由我中心根据岗位条件要求采取多种方式进行，主要考察思想政治表现、道德品行、能力素质、学习和工作表现、遵纪守法、廉洁自律情况，以及是否具有应当回避的情形、与招聘岗位的匹配度等情况，并对应聘人员是否符合规定的岗位资格条件、提供的相关信息材料是否真实准确等进行复审。按照干部档案管理有关要求，加强对考察人选档案的审核。\n考察工作应当在规定的期限内完成，一般不得超过体检结束后90日；情况复杂的，经主管部门批准，可以延长，但延长一般不得超过30日。到规定的完成期限（含延长期限）时，有关审查调查等程序仍未终结的，一般应当终止招聘程序。\n对因弃权和考察、体检不合格造成的空缺，从进入同一岗位考察体检范围的人员中依次等额递补。\n六、公示聘用\n经面试、考察、体检合格的拟聘用人员，在我中心官网公示5个工作日。拟聘用人员公示后，不再递补。公示期满无异议的，按照规定程序办理手续。对反映问题影响聘用并查实的，不予聘用。符合聘用条件的，签订聘用合同，确立人事关系。受聘人员按规定实行试用期制度，期满合格的正式聘用，不合格的解除聘用合同。\n七、其他\n本次招聘有关重大事项均在济南市卫生健康人才交流服务中心官网公布，请应聘人员及时关注查询，同时保持通讯畅通。因本人原因错过重要信息而影响考试聘用的，责任自负。\n政策咨询电话：0531-58176690、0531-58176661\n济南市卫生健康人才交流服务中心\n2026年8月31日\n扫码下载相关附件",
-      "positions": [],
-      "attachments": [
-        {
-          "title": "招聘图片（文字未自动识别）",
-          "url": "https://www.jinan.gov.cn/cms_files/filemanager/1573/picture/20267/S145fdbbe6695496192280b6ef220b919-800.jpg"
-        },
-        {
-          "title": "招聘图片（文字未自动识别）",
-          "url": "https://www.jinan.gov.cn/cms_files/filemanager/1573/picture/20268/ac4313b6d80444199e1a75a0df861386.png"
-        },
-        {
-          "title": "查看链接",
-          "url": "https://www.jinan.gov.cn/cms_files/filemanager/1573/picture/20267/145fdbbe6695496192280b6ef220b919.jpg"
-        },
-        {
-          "title": "查看链接",
-          "url": "https://www.jinan.gov.cn/cms_files/filemanager/1573/picture/20268/ac4313b6d80444199e1a75a0df861386.png"
-        },
-        {
-          "title": "招聘图片（文字未自动识别）",
-          "url": "https://jnhrss.jinan.gov.cn/cms_files/filemanager/1573/picture/20267/S145fdbbe6695496192280b6ef220b919-800.jpg"
-        },
-        {
-          "title": "招聘图片（文字未自动识别）",
-          "url": "https://jnhrss.jinan.gov.cn/cms_files/filemanager/1573/picture/20268/ac4313b6d80444199e1a75a0df861386.png"
-        },
-        {
-          "title": "查看链接",
-          "url": "https://jnhrss.jinan.gov.cn/cms_files/filemanager/1573/picture/20267/145fdbbe6695496192280b6ef220b919.jpg"
-        }
-      ],
-      "links": [],
-      "related_notices": []
-    },
-    {
       "id": "f13733621ae233f23154",
       "title": "济南市卫生健康人才交流服务中心2026年公开招聘博士（事业编制）公告",
       "organizer": "济南市卫生健康人才交流服务中心",
@@ -2443,6 +2403,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认",
           "我中心对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复",
@@ -2566,6 +2528,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名时间：2026年9月2日9:00-9月8日16:00"
@@ -2639,6 +2603,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -2691,19 +2657,21 @@
         "事业编"
       ],
       "exam_category": "医疗卫生招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 9,
       "positions_status": "none",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-11-30",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间：此次公开招聘为长期招聘，采取“长期报名，招满即止”的方式，自公告发布之日起开始报名，根据岗位报名情况，适时启动考试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年11月30日",
           "报名时间：此次公开招聘工作为长期招聘，采取“长期报名，招满即止”的方式，自简章发布之日起开始报名，根据岗位报名情况，适时启动考试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年11月30日"
@@ -2808,6 +2776,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认",
           "我院对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复",
@@ -2839,7 +2809,7 @@
       "published_at": "2026-08-26",
       "last_verified_at": "2026-09-09T15:00:13+08:00",
       "excerpt": "详情尚未读取，请打开原公告核对岗位、工作地点与报名要求。\n公告文字较少或以图片展示，请打开原公告查看完整岗位与报名要求。",
-      "body": "医院简介\n领导成员\n专家介绍\n今日坐诊\n临床药学\n名优特色\n中药园地\n合理用药\n护理动态\n健康宣教\n教育教学\n科教法规\n申报流程\n下载中心\n数字图书馆\n党建行风\n纪检监察/廉洁文化教育阵地\n党群工作\n主题活动\n党史学习教育\n学会简介\n学会动态\n环境文化\n行为规范\n院报浏览\n媒体报道\n您现在的位置是： 济南市中医医院 > 通知公告\n更多 >>\n以查促教强师资 教学相长育人才...\n压实责任细谋划 凝心聚力迎巡查...\n我院成功承办2026年济南市“...\n膳竞泉城，再度折桂！我院代表队...\n沉一线察实情 强能级担使命——...\n我院医学影像科在2026年济南...\n我院有序组织山东省第六批“西医...\n更多 >>\n广安门医院济南医院2026年公...\n2025年度广安门医院济南医院...\n广安门医院济南医院公开招聘（控...\n广安门医院济南医院2026年公...\n广安门医院济南医院（济南市中医...\n中国中医科学院广安门医院驻济专...\n广安门医院济南医院（济南市中医...\n通知公告\n广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）公告\n发布时间：[2026-08-25] 浏览次数：7471\n根据广安门医院济南医院人员空缺情况，按照市事业单位公开招聘有关规定和要求，我院拟公开招聘卫生高级人才（控制总量）3人，现将有关事项公告如下：\n一、招聘条件\n（一）具有中华人民共和国国籍；\n（二）遵守中华人民共和国宪法和法律，拥护中国共产党领导和社会主义制度；\n（三）具有良好的品行；\n（四）具有岗位所需的专业或技能条件；\n（五）具有适应岗位要求的身体条件和心理素质；\n（六）应聘高级岗位的人员年龄在50周岁以下（1975年8月以后出生）。应聘正高级岗位人员年龄经招聘单位主管部门同意可适当放宽；\n（七）应聘人员须在2026年8月前取得岗位要求的学历证书、学位证书及相关资格证书等；\n（八）具备招聘岗位所需的其他资格条件。\n定向、委培毕业生报考，须征得定向、委培单位同意。属在职人员应聘的，应征得所在单位同意。曾受过刑事处罚和曾被开除公职的人员不能报考；被依法列为失信联合惩戒对象的人员不能报考；在读的非应届毕业生不能报考；在读全日制普通高等院校非应届毕业生不能用已取得的学历学位作为条件报考；现役军人及法律规定不得聘用的其他情形的人员不得报考。应聘人员不得报考有《事业单位人事管理回避规定》（人社部规〔2019〕1号）中应回避情形的岗位。\n香港和澳门居民中的中国公民可应聘符合条件的岗位。\n台湾居民可应聘符合条件的岗位。\n招聘岗位对工作经历有明确要求的，应聘人员需提供相应的工作经历证明。高校毕业生在校期间的社会实践、实习、兼职等不能作为工作经历。工作经历年限按足年足月累计，工作年限计算至2026年8月。\n二、招聘岗位和计划\n我院本次计划招聘3人。招聘的报名、审核、面试、考察体检等均由我院组织。招聘岗位和具体要求详见《广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）岗位汇总表》。\n三、报名及资格审查工作\n（一）报名时间\n此次公开招聘工作为长期招聘，采取“长期报名，招满即止”的方式，自简章发布之日起开始报名，根据岗位报名情况，适时启动考试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年11月30日。\n（二）报名方式\n报名采取发送电子邮件报名的方式。应聘人员下载并如实填写《广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）报名表》《诚信承诺书》，填写完毕确认无误后，连同身份证、学历学位证书、资格证书、工作经历证明、单位同意报考证明等岗位要求的证明材料（照片或扫描件）在规定时间内发送至电子邮箱szyrsk@jn.shandong.cn，邮件主题注明“报考单位＋报考岗位+姓名＋电话”，邮件附件大小不得超过5M。报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认。\n（三）资格初审\n我院对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复。\n（四）现场资格复审\n报名结束后，凡通过资格初审的应聘人员须在规定时间到指定地点进行现场资格复审。逾期不进行现场资格复审的，视为自动放弃应聘。我院指定专人现场复审应聘人员提交的信息资料，确定进入面试范围人员名单。\n现场资格复审时需提交以下材料：\n1.个人身份证；\n2.经本人签字确认的《广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）报名表》《诚信承诺书》；\n3.学历学位证书；\n4.海外留学人员还须提供教育部留学服务中心出具的海外学历学位认证书；\n5.个人简历（包括本人基本信息、获得荣誉及社会实践等情况）；\n6.在职人员应聘的，须有用人权限部门或单位出具的同意报考证明（对按时出具同意报考证明确有困难的在职人员，经本人申请、招聘单位同意，也可在考察体检阶段提供）；\n7.岗位要求的其他材料。\n上述材料中的各类证件、证明材料均须提供复印件。单位查看原件，留存复印件。\n对应聘人员的资格审查工作，贯穿招聘工作的全过程。应聘人员提供的信息和材料如有弄虚作假或不按要求提供的，我院取消应聘者应聘资格。通过现场资格复审者进入面试。现场资格复审时间、地点和相关要求另行通知。\n四、考试\n考试采取面试的方式进行，主要测评应聘人员综合素质、科研水平、专业知识和工作能力等方面。面试通过答辩的方式进行。每组面试考官不少于7人，由熟悉相关专业知识、具有面试实践经验的人员担任。面试成绩按百分制计算，设面试合格分数线80分。达到面试合格分数线，方可列为考察体检范围人选。面试成绩即为考试总成绩，根据考试总成绩，由高分到低分按1:2的比例，确定进入考察体检范围人选，并等额组织考察体检。同一招聘岗位应聘人员总成绩并列的，重新组织面试。面试等具体事宜另行通知，请应聘人员保持通讯畅通。\n五、考察体检\n考察体检由我院组织，严格落实公开招聘回避、保密等纪律规定。\n（一）体检\n考察体检人员应在规定的时间携带身份证、面试通知单等材料到指定的地点集合，集体进行体检。体检应在市级及以上综合医院进行，体检标准和项目参照公务员录用体检标准及操作手册执行，国家另有规定的从其规定。应聘人员不按规定的时间、地点参加体检的，视作放弃。对按规定需要复检的，不在原体检医院进行，复检只能进行1次，结果以复检结论为准。\n（二）考察\n考察由我院根据岗位条件要求采取多种方式进行，主要考察思想政治表现、道德品行、能力素质、学习和工作表现、遵纪守法、廉洁自律情况，以及是否具有应当回避的情形、与招聘岗位的匹配度等情况，并对应聘人员是否符合规定的岗位资格条件、提供的相关信息材料是否真实准确等进行复审。按照干部档案管理有关要求，加强对考察人选档案的审核。\n考察工作应当在规定的期限内完成，一般不得超过体检结束后90日；情况复杂的，经主管部门批准，可以延长，但延长一般不得超过30日。到规定的完成期限（含延长期限）时，有关审查调查等程序仍未终结的，一般应当终止招聘程序。\n对因弃权和考察、体检不合格造成的空缺，从进入同一岗位考察体检范围的人员中依次等额递补。\n六、公示聘用\n经面试、考察、体检合格的拟聘用人员，在我院官网公示5个工作日。拟聘用人员公示后，不再递补。公示期满无异议的，按照规定程序办理手续。对反映问题影响聘用并查实的，不予聘用。符合聘用条件的，签订聘用合同，确立人事关系。受聘人员按规定实行试用期制度，期满合格的正式聘用，不合格的解除聘用合同。\n七、其他\n本次招聘有关重大事项均在广安门医院济南医院官网公布，请应聘人员及时关注查询，同时保持通讯畅通。因本人原因错过重要信息而影响考试聘用的，责任自负。\n政策咨询电话：0531-81698673、86193190\n附件：\n1.广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）岗位汇总表\n2.广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）报名表\n3.诚信承诺书\n广安门医院济南医院\n2026年8月25日\n首页 |\n网站导航 |\n联系我们 |\n网站统计 |\n意见建议 |\nRSS订阅 |\n旧站入口\n地址：济南市共青团路76号 邮编：250012\n信箱： szyyb@jn.shandong.cn\n联系电话：总值班：86193155 门诊部（医疗业务咨询）：86193303\n客服部：81698667 医务部：86193188 护理部：86193187\n药学部：86193160 办公室：86193100 监察室：86193167\n鲁ICP备05024668号-1 版权所有：济南市中医医院\n技术支持：山东拂晓信息技术有限公司\n网站统计\n网站访问量： 39077718",
+      "body": "医院简介\n领导成员\n专家介绍\n今日坐诊\n临床药学\n名优特色\n中药园地\n合理用药\n护理动态\n健康宣教\n教育教学\n科教法规\n申报流程\n下载中心\n数字图书馆\n党建行风\n纪检监察/廉洁文化教育阵地\n党群工作\n主题活动\n党史学习教育\n学会简介\n学会动态\n环境文化\n行为规范\n院报浏览\n媒体报道\n您现在的位置是： 济南市中医医院 > 通知公告\n更多 >>\n以查促教强师资 教学相长育人才...\n压实责任细谋划 凝心聚力迎巡查...\n我院成功承办2026年济南市“...\n膳竞泉城，再度折桂！我院代表队...\n沉一线察实情 强能级担使命——...\n我院医学影像科在2026年济南...\n我院有序组织山东省第六批“西医...\n更多 >>\n广安门医院济南医院2026年公...\n2025年度广安门医院济南医院...\n广安门医院济南医院公开招聘（控...\n广安门医院济南医院2026年公...\n广安门医院济南医院（济南市中医...\n中国中医科学院广安门医院驻济专...\n广安门医院济南医院（济南市中医...\n通知公告\n广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）公告\n发布时间：[2026-08-25] 浏览次数：7473\n根据广安门医院济南医院人员空缺情况，按照市事业单位公开招聘有关规定和要求，我院拟公开招聘卫生高级人才（控制总量）3人，现将有关事项公告如下：\n一、招聘条件\n（一）具有中华人民共和国国籍；\n（二）遵守中华人民共和国宪法和法律，拥护中国共产党领导和社会主义制度；\n（三）具有良好的品行；\n（四）具有岗位所需的专业或技能条件；\n（五）具有适应岗位要求的身体条件和心理素质；\n（六）应聘高级岗位的人员年龄在50周岁以下（1975年8月以后出生）。应聘正高级岗位人员年龄经招聘单位主管部门同意可适当放宽；\n（七）应聘人员须在2026年8月前取得岗位要求的学历证书、学位证书及相关资格证书等；\n（八）具备招聘岗位所需的其他资格条件。\n定向、委培毕业生报考，须征得定向、委培单位同意。属在职人员应聘的，应征得所在单位同意。曾受过刑事处罚和曾被开除公职的人员不能报考；被依法列为失信联合惩戒对象的人员不能报考；在读的非应届毕业生不能报考；在读全日制普通高等院校非应届毕业生不能用已取得的学历学位作为条件报考；现役军人及法律规定不得聘用的其他情形的人员不得报考。应聘人员不得报考有《事业单位人事管理回避规定》（人社部规〔2019〕1号）中应回避情形的岗位。\n香港和澳门居民中的中国公民可应聘符合条件的岗位。\n台湾居民可应聘符合条件的岗位。\n招聘岗位对工作经历有明确要求的，应聘人员需提供相应的工作经历证明。高校毕业生在校期间的社会实践、实习、兼职等不能作为工作经历。工作经历年限按足年足月累计，工作年限计算至2026年8月。\n二、招聘岗位和计划\n我院本次计划招聘3人。招聘的报名、审核、面试、考察体检等均由我院组织。招聘岗位和具体要求详见《广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）岗位汇总表》。\n三、报名及资格审查工作\n（一）报名时间\n此次公开招聘工作为长期招聘，采取“长期报名，招满即止”的方式，自简章发布之日起开始报名，根据岗位报名情况，适时启动考试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年11月30日。\n（二）报名方式\n报名采取发送电子邮件报名的方式。应聘人员下载并如实填写《广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）报名表》《诚信承诺书》，填写完毕确认无误后，连同身份证、学历学位证书、资格证书、工作经历证明、单位同意报考证明等岗位要求的证明材料（照片或扫描件）在规定时间内发送至电子邮箱szyrsk@jn.shandong.cn，邮件主题注明“报考单位＋报考岗位+姓名＋电话”，邮件附件大小不得超过5M。报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认。\n（三）资格初审\n我院对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复。\n（四）现场资格复审\n报名结束后，凡通过资格初审的应聘人员须在规定时间到指定地点进行现场资格复审。逾期不进行现场资格复审的，视为自动放弃应聘。我院指定专人现场复审应聘人员提交的信息资料，确定进入面试范围人员名单。\n现场资格复审时需提交以下材料：\n1.个人身份证；\n2.经本人签字确认的《广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）报名表》《诚信承诺书》；\n3.学历学位证书；\n4.海外留学人员还须提供教育部留学服务中心出具的海外学历学位认证书；\n5.个人简历（包括本人基本信息、获得荣誉及社会实践等情况）；\n6.在职人员应聘的，须有用人权限部门或单位出具的同意报考证明（对按时出具同意报考证明确有困难的在职人员，经本人申请、招聘单位同意，也可在考察体检阶段提供）；\n7.岗位要求的其他材料。\n上述材料中的各类证件、证明材料均须提供复印件。单位查看原件，留存复印件。\n对应聘人员的资格审查工作，贯穿招聘工作的全过程。应聘人员提供的信息和材料如有弄虚作假或不按要求提供的，我院取消应聘者应聘资格。通过现场资格复审者进入面试。现场资格复审时间、地点和相关要求另行通知。\n四、考试\n考试采取面试的方式进行，主要测评应聘人员综合素质、科研水平、专业知识和工作能力等方面。面试通过答辩的方式进行。每组面试考官不少于7人，由熟悉相关专业知识、具有面试实践经验的人员担任。面试成绩按百分制计算，设面试合格分数线80分。达到面试合格分数线，方可列为考察体检范围人选。面试成绩即为考试总成绩，根据考试总成绩，由高分到低分按1:2的比例，确定进入考察体检范围人选，并等额组织考察体检。同一招聘岗位应聘人员总成绩并列的，重新组织面试。面试等具体事宜另行通知，请应聘人员保持通讯畅通。\n五、考察体检\n考察体检由我院组织，严格落实公开招聘回避、保密等纪律规定。\n（一）体检\n考察体检人员应在规定的时间携带身份证、面试通知单等材料到指定的地点集合，集体进行体检。体检应在市级及以上综合医院进行，体检标准和项目参照公务员录用体检标准及操作手册执行，国家另有规定的从其规定。应聘人员不按规定的时间、地点参加体检的，视作放弃。对按规定需要复检的，不在原体检医院进行，复检只能进行1次，结果以复检结论为准。\n（二）考察\n考察由我院根据岗位条件要求采取多种方式进行，主要考察思想政治表现、道德品行、能力素质、学习和工作表现、遵纪守法、廉洁自律情况，以及是否具有应当回避的情形、与招聘岗位的匹配度等情况，并对应聘人员是否符合规定的岗位资格条件、提供的相关信息材料是否真实准确等进行复审。按照干部档案管理有关要求，加强对考察人选档案的审核。\n考察工作应当在规定的期限内完成，一般不得超过体检结束后90日；情况复杂的，经主管部门批准，可以延长，但延长一般不得超过30日。到规定的完成期限（含延长期限）时，有关审查调查等程序仍未终结的，一般应当终止招聘程序。\n对因弃权和考察、体检不合格造成的空缺，从进入同一岗位考察体检范围的人员中依次等额递补。\n六、公示聘用\n经面试、考察、体检合格的拟聘用人员，在我院官网公示5个工作日。拟聘用人员公示后，不再递补。公示期满无异议的，按照规定程序办理手续。对反映问题影响聘用并查实的，不予聘用。符合聘用条件的，签订聘用合同，确立人事关系。受聘人员按规定实行试用期制度，期满合格的正式聘用，不合格的解除聘用合同。\n七、其他\n本次招聘有关重大事项均在广安门医院济南医院官网公布，请应聘人员及时关注查询，同时保持通讯畅通。因本人原因错过重要信息而影响考试聘用的，责任自负。\n政策咨询电话：0531-81698673、86193190\n附件：\n1.广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）岗位汇总表\n2.广安门医院济南医院2026年公开招聘第二批卫生高级人才（控制总量）报名表\n3.诚信承诺书\n广安门医院济南医院\n2026年8月25日\n首页 |\n网站导航 |\n联系我们 |\n网站统计 |\n意见建议 |\nRSS订阅 |\n旧站入口\n地址：济南市共青团路76号 邮编：250012\n信箱： szyyb@jn.shandong.cn\n联系电话：总值班：86193155 门诊部（医疗业务咨询）：86193303\n客服部：81698667 医务部：86193188 护理部：86193187\n药学部：86193160 办公室：86193100 监察室：86193167\n鲁ICP备05024668号-1 版权所有：济南市中医医院\n技术支持：山东拂晓信息技术有限公司\n网站统计\n网站访问量： 39078244",
       "positions": [],
       "attachments": [
         {
@@ -2933,6 +2903,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -2993,6 +2965,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-09-19",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -3069,6 +3043,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-09-06",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年8月25日9:00—8月31日16:00",
           "查询和初审时间：2026年8月25日11:00—9月1日16:00",
@@ -3190,6 +3166,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "三、报名、初审和打印准考证",
           "查询和初审时间：2026年8月17日9:00—8月21日18:00",
@@ -3277,6 +3255,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "因个人原因未及时查看资格初审情况、通知消息等影响报名或考试的，责任自负",
           "报名方式：网上报名",
@@ -3417,13 +3397,15 @@
       "total_headcount": 4,
       "positions_status": "none",
       "schedule": {
-        "reg_start": null,
-        "reg_end": null,
+        "reg_start": "2026-08-07",
+        "reg_end": "2026-08-13",
         "audit_end": "2026-08-14",
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年8月7日9:00－8月13日16:00",
           "查询时间：2026年8月7日11:00－8月14日16:00",
@@ -3493,6 +3475,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年7月27日09:00至8月4日16:00",
           "查询时间：2026年7月27日11:00至8月5日16:00"
@@ -3582,6 +3566,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": [
           "报名时间:2026年7月31日9:00-8月6日16:00",
           "报名时间：此次招聘岗位为长期招聘岗位，公告公布后，医院根据岗位报名情况，不定期启动面试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年12月31日"
@@ -3782,6 +3768,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年7月27日9:00-7月31日16:00",
           "查询和初审时间：2026年7月27日11:00-8月1日16:00",
@@ -3876,6 +3864,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-08-08",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年7月27日9:00-7月31日16:00",
           "查询和初审时间：2026年7月27日11:00-8月1日16:00",
@@ -3984,6 +3974,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-07-18",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年7月6日9:00-7月10日16:00",
           "查询和初审时间：2026年7月6日11:00-7月11日16:00",
@@ -4697,6 +4689,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-07-18",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
           "报名时间：2026年7月6日9:00-7月10日16:00",
@@ -4822,6 +4816,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "采取统一时间网上报名、网上初审的方式进行",
           "报名时间：2026年7月22日9:00-28日17:00",
@@ -4892,6 +4888,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年7月16日9：00—7月22日16：00",
           "查询时间：2026年7月16日11：00—7月22日18：00",
@@ -5063,6 +5061,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年7月22日9:00—7月28日16:00",
           "查询时间：2026年7月22日11:00—7月29日16:00",
@@ -5210,6 +5210,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -5238,7 +5240,7 @@
       "published_at": "2026-07-16",
       "last_verified_at": "2026-10-19T18:31:21+08:00",
       "excerpt": "中国水产科学研究院黄海水产研究所2026年度第三批统一公开招聘公告.docx",
-      "body": "大学生就业服务平台\n学生登录\n单位登录\n学校登录\n首页\n学生\n档案查询\n职业测评\n学校\n单位\n生源信息\n就业信息\n关于我们\n部门介绍\n服务指南\n联系方式\n组织机构\n首页\n>\n招聘公告\n>\n详情\n返回\n中国水产科学研究院黄海水产研究所2026年度第三批统一公开招聘公告\n中国水产科学研究院黄海水产研究所\n发布日期: 2026-07-16\n过期时间: 2026-08-06\n访问量: 80\n已过期\n招聘公告详情\n中国水产科学研究院黄海水产研究所2026年度第三批统一公开招聘公告.docx\n附件\n上一篇：济南新城实验高级中学2026年招聘公告\n下一篇：济南开元外国语小学 教师招聘简章\n版权所有 @ 2026 鲁东大学大学生就业指导中心\n电话:0535-6675933 邮编:264025邮箱:Idjiuye@163.com\n地址:烟台市芝罘区红旗中路186号",
+      "body": "大学生就业服务平台\n学生登录\n单位登录\n学校登录\n首页\n学生\n档案查询\n职业测评\n学校\n单位\n生源信息\n就业信息\n关于我们\n部门介绍\n服务指南\n联系方式\n组织机构\n首页\n>\n招聘公告\n>\n详情\n返回\n中国水产科学研究院黄海水产研究所2026年度第三批统一公开招聘公告\n中国水产科学研究院黄海水产研究所\n发布日期: 2026-07-16\n过期时间: 2026-08-06\n访问量: 82\n已过期\n招聘公告详情\n中国水产科学研究院黄海水产研究所2026年度第三批统一公开招聘公告.docx\n附件\n上一篇：济南新城实验高级中学2026年招聘公告\n下一篇：济南开元外国语小学 教师招聘简章\n版权所有 @ 2026 鲁东大学大学生就业指导中心\n电话:0535-6675933 邮编:264025邮箱:Idjiuye@163.com\n地址:烟台市芝罘区红旗中路186号",
       "positions": [],
       "attachments": [
         {
@@ -5280,6 +5282,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "1.网上报名：将简历电子版发至学校邮箱：wfsyzxhr@126.com ，简历名称以“应聘学科+姓名+毕业院校+专业 ”命名"
         ]
@@ -5516,6 +5520,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -5574,6 +5580,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间：2026年7月20日9:00-7月24日16:00",
           "查询时间：2026年7月20日11:00-7月25日16:00",
@@ -5665,19 +5673,21 @@
         "事业编"
       ],
       "exam_category": "教师公开招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": 12,
       "total_headcount": 59,
       "positions_status": "prose",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-07-31",
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -6048,6 +6058,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（二）报名、资格初审与缴费",
           "报名采取网上报名的方式进行",
@@ -6903,6 +6915,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年7月6日9:00-7月10日16:00"
         ]
@@ -7006,6 +7020,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "本次招聘采取网上报名、笔试、现场资格审查、面试、考察、体检、公示聘用等程序进行",
           "报名采取网上报名、网上初审、网上缴费、网上打印准考证的方式进行",
@@ -7085,6 +7101,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -7157,6 +7175,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -7229,6 +7249,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年6月29日9:00—7月5日17:00",
           "查询时间：2026年6月29日9:00—7月6日17:00",
@@ -7392,6 +7414,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "网上报名时间截止到2026年7月3日16时(以邮箱显示接收时间为准)",
           "网上报名期间，龙口市卫生健康局指定专人负责资格初审工作，及时查看网上报名情况，认真进行资格审查，确认初审结果",
@@ -7487,6 +7511,8 @@
         "admit_card_start": "2026-07-24",
         "written_exam_date": "2026-07-26",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（二）报名、资格初审、笔试缴费、打印准考证",
           "报名方式:网上报名",
@@ -7880,6 +7906,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -7939,6 +7967,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年6月25日9:00-7月1日17:00",
           "查询时间：2026年6月25日11:00-7月2日17:00",
@@ -8036,6 +8066,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "1、采取网上报名：",
           "个人报名时间：2026年6月15日9：00—6月25日16:00",
@@ -8123,6 +8155,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "本次招聘资格审核、缴费、打印准考证时间及具体注意事项等相关通知，通过学校人事处网站发布，不再另行通知，请考生自行关注查询，因个人原因未及时查看通知消息而影响考试，责任自负",
           "报名方式：网上报名",
@@ -8211,19 +8245,21 @@
         "事业编"
       ],
       "exam_category": "教师公开招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": 3,
       "total_headcount": 53,
       "positions_status": "parsed",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -8384,6 +8420,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：自信息发布之日起"
         ]
@@ -8476,6 +8514,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年6月22日9:00—6月26日16:00",
           "查询时间：2026年6月22日11:00—6月26日18:00",
@@ -8729,6 +8769,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -8823,6 +8865,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-10-31",
         "raw_evidence": [
           "报名时间：2026年6月16日9:00—2026年6月23日16:00（博士岗位报名时间：2026年6月16日9:00—2026年10月31日16:00）",
           "查询时间：2026年6月16日11:00—2026年6月24日16:00（博士岗位查询时间：2026年6月16日11:00—2026年11月1日16:00）",
@@ -8926,6 +8970,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -9021,6 +9067,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-07-04",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年6月16日9:00—6月23日16:00",
           "查询时间：2026年6月16日11:00—6月24日16:00",
@@ -9101,6 +9149,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年6月12日9:00—2026年6月18日16:00",
           "查询时间：2026年6月12日11:00—2026年6月19日16:00",
@@ -9246,6 +9296,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "采取网上报名、网上初审的方式进行",
           "报名时间：2026年6月22日9:00—6月26日16:00",
@@ -9347,6 +9399,8 @@
         "admit_card_start": "2026-06-23",
         "written_exam_date": "2026-06-27",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年6月10日9:00—6月16日16:00",
           "查询和初审时间：2026年6月10日11:00—6月17日16:00",
@@ -9469,6 +9523,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -9524,12 +9580,14 @@
       "positions_status": "none",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-09-30",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -9602,6 +9660,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -9660,6 +9720,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": [
           "报名时间：2026年6月8日10:00—6月16日16:00",
           "查询时间：2026年6月8日11:00—6月17日16:00",
@@ -9814,6 +9876,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -9898,6 +9962,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -9967,19 +10033,21 @@
         "事业编"
       ],
       "exam_category": "高校 / 科研院所",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": 12,
       "total_headcount": 59,
       "positions_status": "prose",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-07-31",
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -10350,6 +10418,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -10418,6 +10488,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名采取统一时间、网上报名、网上初审的方式进行",
           "报名时间：2026年6月8日9:00—6月15日16:00",
@@ -10492,6 +10564,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": [
           "报名时间：2026年6月8日9:00-6月12日16:00",
           "报名时间：2026年6月8日 9:00-6月12日16:00"
@@ -10629,6 +10703,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -10722,6 +10798,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年5月28日9:00—6月3日16:00",
           "查询时间：2026年5月28日11:00—6月4日16:00",
@@ -10807,13 +10885,15 @@
       "total_headcount": 325,
       "positions_status": "none",
       "schedule": {
-        "reg_start": "2026-05-27",
+        "reg_start": "2026-06-01",
         "reg_end": "2026-06-05",
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：此类岗位为本年度长期招聘岗位，2026年全年，根据岗位报名情况，不定期启动面试、考察、体检程序",
           "报名时间：6月1日9:00－6月5日16:00",
@@ -10928,6 +11008,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年6月1日9:00-6月5日16:00",
           "查询时间：2026年6月1日11:00-6月5日20:00",
@@ -11049,6 +11131,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "网上报名：不能参加现场面试的应聘人员，可以将本人简历发至邮箱bzxzrsh@126.com ，简历名称以“应聘学科+姓名+毕业院校+专业”命名，初步审查应聘人员资格，过审后，学校将电话通知面试，面试要求以电话通知为准"
         ]
@@ -11113,6 +11197,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名方式：报名采取网上报名的方式进行，应聘人员登录网址https://wsbm.zkybm.com/#/?code=sdsyky，进入报名系统进行报名,按要求如实填写、提交个人信息资料，每人限报一个岗位，兼报者取消应聘资格",
           "报名时间：2026年5月22日9:00—5月28日16:00",
@@ -11207,6 +11293,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "本次招聘后续报名、缴费、打印准考证及注意事项等相关通知，均通过泰山学院公开招聘网站（https://join.tsu.edu.cn）发布，不再另行通知，应聘人员须及时关注查询",
           "报名时间：2026年5月22日9:00至5月28日16:00",
@@ -11314,19 +11402,21 @@
         "事业编"
       ],
       "exam_category": "事业单位统考",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 65,
       "positions_status": "none",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": [
           "报名时间：此类招聘岗位为长期招聘岗位，自公告发布后，学校根据岗位报名情况，不定期启动现场审核、面试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年12月31日"
         ]
@@ -11426,6 +11516,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -11484,6 +11576,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -11542,6 +11636,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "1.报名时间：2026年6月3日9:00-6月9日16:00",
           "2.查询时间：2026年6月3日11:00-6月11日16:00",
@@ -11673,6 +11769,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名工作采取统一时间网上报名、网上初审的方式进行",
           "报名时间：2026年5月19日8:30—5月25日17:00",
@@ -11797,6 +11895,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "符合招考岗位要求的考生可于2026年5月11日9:00至5月17日18:00期间，登录军队人才网进行网上报名，报考条件、招考程序等按照《2026年军队文职人员公开招考公告》和《2026年军队文职人员公开招考报考指南》有关要求执行"
         ]
@@ -11861,6 +11961,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -11914,13 +12016,15 @@
       "total_headcount": 78,
       "positions_status": "prose",
       "schedule": {
-        "reg_start": null,
-        "reg_end": "2026-04-22",
+        "reg_start": "2026-04-23",
+        "reg_end": "2026-04-29",
         "audit_end": "2026-04-30",
         "payment_end": "2026-04-30",
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名采取网上报名、资格初审、网上缴费的方式进行",
           "报名时间：2026年4月23日9：00－4月29日17：00",
@@ -12016,6 +12120,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年7月16日9:00—7月22日16:00",
           "查询时间：2026年7月17日11:00—7月23日16:00",
@@ -12101,19 +12207,21 @@
         "事业编"
       ],
       "exam_category": "教师公开招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": 1,
       "total_headcount": 7,
       "positions_status": "parsed",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-07-31",
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -12221,6 +12329,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间:2026年5月11日08:00—2026年5月18日17:00",
           "查询时间:2026年5月11日12:00—2026年5月19日17:00",
@@ -12329,19 +12439,21 @@
         "事业编"
       ],
       "exam_category": "事业单位统考",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 47,
       "positions_status": "none",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": [
           "1.报名时间：自本公告发布之日起7个工作日后，学院根据岗位报名情况，适时启动面试、体能测评、体检、考察程序，岗位招满即止，未招满的岗位报名有效期至2026年12月31日17:00"
         ]
@@ -12438,6 +12550,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": [
           "报名时间：2026年5月8日09:00-2026年5月13日16:00",
           "查询时间：2026年5月8日11:00-2026年5月14日16:00",
@@ -12588,6 +12702,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -12696,6 +12812,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -12754,6 +12872,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-23",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名工作采取统一时间网上报名、网上初审的方式进行",
           "报名时间：2026年5月7日09:00—5月14日16:00",
@@ -12848,6 +12968,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年5月6日9:00—5月11日16:00",
           "报名时间：自公告发布之日起至2026年9月30日"
@@ -13008,6 +13130,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-24",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
           "报名时间：2026年4月24日9:00—4月30日16:00",
@@ -13113,6 +13237,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月24日9:00-4月30日16:00"
         ]
@@ -13275,6 +13401,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月22日9:00-4月28日16:00",
           "查询时间：2026年4月22日11:00-4月29日16:00",
@@ -13375,6 +13503,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -13478,6 +13608,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -13597,6 +13729,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -13672,6 +13806,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -13730,6 +13866,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -13787,6 +13925,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "本次考试报名采取网上报名方式进行，具体程序如下：",
           "报名时间内资格条件初审未通过的，可以改报其他岗位",
@@ -13857,6 +13997,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "报名时间：2026年4月20日9：00－4月24日16：00",
@@ -14161,6 +14303,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -14806,6 +14950,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -14960,6 +15106,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "报名时间：2026年4月20日9:00—4月24日16:00"
@@ -15143,6 +15291,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "三、报名、资格初审和缴费",
           "报名时间：2026年4月20日9:00-4月24日16:00",
@@ -15228,6 +15378,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -15414,6 +15566,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -15472,6 +15626,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -15530,6 +15686,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -15733,6 +15891,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -15972,6 +16132,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -16030,6 +16192,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -16088,6 +16252,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -16147,6 +16313,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -16681,6 +16849,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -16785,13 +16955,15 @@
       "total_headcount": 87,
       "positions_status": "attachment_only",
       "schedule": {
-        "reg_start": null,
-        "reg_end": null,
+        "reg_start": "2026-04-20",
+        "reg_end": "2026-04-24",
         "audit_end": "2026-04-25",
         "payment_end": "2026-04-26",
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9：00－4月24日16：00",
           "查询和初审时间：2026年4月20日11：00－4月25日16：00",
@@ -16875,13 +17047,15 @@
       "total_headcount": 35,
       "positions_status": "parsed",
       "schedule": {
-        "reg_start": null,
-        "reg_end": null,
+        "reg_start": "2026-04-20",
+        "reg_end": "2026-04-24",
         "audit_end": "2026-04-25",
         "payment_end": "2026-04-26",
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9：00－4月24日16：00",
           "查询和初审时间：2026年4月20日11：00－4月25日16：00",
@@ -17018,6 +17192,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名实行电子邮箱统一时间网上报名的方式，报名时间：2026年4月20日9:00-4月24日16:00",
           "网上报名期间，招聘单位指定专人负责资格初审工作，及时查看本单位网上报名情况，认真进行资格审查，确认初审结果",
@@ -17092,6 +17268,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -17173,6 +17351,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -18033,6 +18213,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -18155,6 +18337,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -18267,13 +18451,15 @@
       "total_headcount": 25,
       "positions_status": "prose",
       "schedule": {
-        "reg_start": null,
-        "reg_end": null,
+        "reg_start": "2026-04-20",
+        "reg_end": "2026-04-24",
         "audit_end": "2026-04-25",
         "payment_end": "2026-04-26",
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00－4月24日16:00",
           "查询和初审时间：2026年4月20日11:00－4月25日16:00",
@@ -18378,6 +18564,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-10",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月20日9:00-4月24日16:00",
           "查询和初审时间：2026年4月20日11:00-4月25日16:00",
@@ -18457,6 +18645,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名采取统一时间网上报名、网上初审、网上缴费的方式进行，每人限报一个岗位",
           "报名时间：2026年4月20日9:00-4月24日16:00",
@@ -18538,13 +18728,15 @@
       "total_headcount": 77,
       "positions_status": "prose",
       "schedule": {
-        "reg_start": "2026-04-13",
-        "reg_end": "2026-04-17",
+        "reg_start": "2026-04-09",
+        "reg_end": "2026-04-15",
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间:2026年4月9日9:00－4月15日16:00",
           "报名时间：2026年4月13日9:00 - 4月17 日16:00",
@@ -18711,6 +18903,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间：此次公开招聘为长期招聘，采取“长期报名，招满即止”的方式，自简章发布之日起开始报名，根据岗位报名情况，适时启动考试、考察、体检程序，岗位招满即止，未招满的岗位报名有效期至2026年11月30日",
           "报名时间：2026年4月1日—2026年4月10日",
@@ -19003,6 +19197,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -19091,6 +19287,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19150,6 +19348,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19218,6 +19418,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19277,6 +19479,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19336,6 +19540,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19395,6 +19601,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19454,6 +19662,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19513,6 +19723,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19572,6 +19784,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -19619,19 +19833,21 @@
         "事业编"
       ],
       "exam_category": "医疗卫生招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 1,
       "positions_status": "attachment_only",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-11-30",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认",
           "我院对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复",
@@ -19854,6 +20070,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年3月26日8:00-4月25日17:00",
           "有不明事宜请在规定的报名时间内尽早咨询，因提交报名信息材料不准确、不完整、不符合要求，或上传的电子材料不清晰导致无法审核、影响报名的，由应聘人员本人承担相应后果"
@@ -20084,19 +20302,21 @@
         "事业编"
       ],
       "exam_category": "医疗卫生招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 6,
       "positions_status": "none",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-11-30",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认",
           "我院对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复",
@@ -20274,6 +20494,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -20333,6 +20555,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -20380,19 +20604,21 @@
         "事业编"
       ],
       "exam_category": "医疗卫生招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 18,
       "positions_status": "attachment_only",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-11-30",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认",
           "我院对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复",
@@ -20619,6 +20845,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -20678,6 +20906,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -20736,6 +20966,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -20783,19 +21015,21 @@
         "事业编"
       ],
       "exam_category": "医疗卫生招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 6,
       "positions_status": "attachment_only",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-11-30",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认",
           "我院对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复",
@@ -20910,6 +21144,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -20969,6 +21205,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -21016,19 +21254,21 @@
         "事业编"
       ],
       "exam_category": "医疗卫生招聘",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": null,
       "total_headcount": 1,
       "positions_status": "attachment_only",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-11-30",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-11-30",
         "raw_evidence": [
           "报名时间以邮件收到时间为准，应聘人员发送邮件后应和招聘单位电话确认",
           "我院对应聘人员发送到报名邮箱的信息进行资格初审，并通过电话对资格初审结果给予回复",
@@ -21265,6 +21505,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：即日起至2026年4月24日18：00"
         ]
@@ -21391,6 +21633,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月8日9：00—4月14日16：00",
           "报名时间：2026年4月8日9:00—4月14日16:00"
@@ -21639,6 +21883,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -21716,6 +21962,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "查询和初审时间：2026年4月8日11:00—4月15日16:00",
           "应聘人员在招聘单位资格初审前可修改报名信息，后一次自动替换前一次信息",
@@ -21788,6 +22036,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年4月8日9:00—4月14日16:00"
         ]
@@ -21862,19 +22112,21 @@
         "事业编"
       ],
       "exam_category": "高校 / 科研院所",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": 3,
       "total_headcount": 165,
       "positions_status": "prose",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -22026,6 +22278,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -22443,6 +22697,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -23172,6 +23428,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -23251,6 +23509,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -23345,6 +23605,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -23421,6 +23683,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -23498,6 +23762,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -23575,6 +23841,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "本次人才引进工作采取线上线下相结合报名的方式，通过网上报名初审、现场报名和资格审查、面试、签约、考察体检、选岗的程序进行",
           "应聘人员在报名前，请仔细阅读招聘公告、《岗位计划表》及有关政策规定，确认符合拟应聘岗位的条件后再进行网上报名",
@@ -23660,6 +23928,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -23763,6 +24033,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -24128,6 +24400,8 @@
         "admit_card_start": null,
         "written_exam_date": "2026-05-16",
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "（一）报名时间与方式",
           "报名采取统一时间、网上报名、网上初审、网上缴费的方式进行",
@@ -24203,6 +24477,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年3月30日9:00—4月3日17:00",
           "初审时间：2026年3月30日11:00—4月3日19:00",
@@ -24302,6 +24578,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "学校根据应聘人员提交的报名信息进行资格初审，审核通过的会发送笔试和面试通知，请及时查看邮件信息，并保持手机畅通"
         ]
@@ -24379,19 +24657,21 @@
         "事业编"
       ],
       "exam_category": "高校 / 科研院所",
-      "stage": "registering",
+      "stage": "ended",
       "notice_role": "招考简章",
       "total_positions": 3,
       "total_headcount": 80,
       "positions_status": "parsed",
       "schedule": {
         "reg_start": null,
-        "reg_end": "2026-12-31",
+        "reg_end": null,
         "audit_end": null,
         "payment_end": null,
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-12-31",
         "raw_evidence": [
           "1.报名时间与方式",
           "报名方式：采取网上报名的方式，应聘人员可提前登录莱芜职业技术学院网站下载相关附件，并按要求以附件形式发送个人报名材料至学校电子邮箱，邮件主题为“岗位名称+姓名”",
@@ -24568,6 +24848,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -24628,6 +24910,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "学校根据应聘人员提交的报名信息进行资格初审，审核通过的会发送笔试和面试通知，请及时查看邮件信息，并保持手机畅通"
         ]
@@ -24717,6 +25001,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26179,6 +26465,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26237,6 +26525,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26296,6 +26586,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "rolling",
+        "rolling_until": "2026-10-31",
         "raw_evidence": [
           "报名时间：2026年 3月2日—2026年10月31日",
           "网上报名参加2026年度乳山市人民医院急需紧缺专业人才招聘考试的，未被录取的报销来院路费",
@@ -26391,6 +26683,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26447,6 +26741,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26480,6 +26776,242 @@
       "related_notices": []
     },
     {
+      "id": "7d612c850beff0f088fa",
+      "title": "国家税务总局山东省税务局2026年度公开招聘事业单位工作人员简章",
+      "organizer": "国家税务总局山东省税务局",
+      "region_level": "市级",
+      "province": "山东",
+      "cities": [],
+      "bianzhi_types": [
+        "事业编"
+      ],
+      "exam_category": "事业单位单招",
+      "stage": "ended",
+      "notice_role": "招考简章",
+      "total_positions": null,
+      "total_headcount": null,
+      "positions_status": "none",
+      "schedule": {
+        "reg_start": null,
+        "reg_end": null,
+        "audit_end": null,
+        "payment_end": null,
+        "admit_card_start": null,
+        "written_exam_date": null,
+        "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
+        "raw_evidence": []
+      },
+      "exam_subjects": [
+        "公基",
+        "综合写作"
+      ],
+      "exam_ratio": null,
+      "age_limit": null,
+      "service_years": null,
+      "hukou_summary": "",
+      "fresh_grad_summary": "",
+      "political_summary": "",
+      "education_min": "",
+      "degree_summary": "",
+      "has_unlimited_major": false,
+      "majors": [],
+      "registration_url": null,
+      "registration_method": "网上报名系统",
+      "contact_phones": [],
+      "emails": [],
+      "source_id": "sdei-exam-dispatch",
+      "source_name": "山东省大学生就业服务平台 · 全省事编与教师医疗招考",
+      "source_url": "https://html.gxjy.sdei.edu.cn/html/2026/01/22/207019.html",
+      "published_at": "2026-01-22",
+      "last_verified_at": "2026-11-09",
+      "excerpt": "",
+      "body": "",
+      "positions": [],
+      "attachments": [],
+      "links": [],
+      "related_notices": []
+    },
+    {
+      "id": "15ceb8583203d581ce88",
+      "title": "2026年度省属事业单位公开招聘初级综合类岗位人员公告",
+      "organizer": "山东省人力资源和社会保障厅",
+      "region_level": "市级",
+      "province": "山东",
+      "cities": [],
+      "bianzhi_types": [
+        "事业编"
+      ],
+      "exam_category": "事业单位统考",
+      "stage": "ended",
+      "notice_role": "招考简章",
+      "total_positions": null,
+      "total_headcount": null,
+      "positions_status": "none",
+      "schedule": {
+        "reg_start": null,
+        "reg_end": null,
+        "audit_end": null,
+        "payment_end": null,
+        "admit_card_start": null,
+        "written_exam_date": null,
+        "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
+        "raw_evidence": []
+      },
+      "exam_subjects": [
+        "公基",
+        "综合写作"
+      ],
+      "exam_ratio": null,
+      "age_limit": null,
+      "service_years": null,
+      "hukou_summary": "",
+      "fresh_grad_summary": "",
+      "political_summary": "",
+      "education_min": "",
+      "degree_summary": "",
+      "has_unlimited_major": false,
+      "majors": [],
+      "registration_url": null,
+      "registration_method": "网上报名系统",
+      "contact_phones": [],
+      "emails": [],
+      "source_id": "sdei-exam-dispatch",
+      "source_name": "山东省大学生就业服务平台 · 全省事编与教师医疗招考",
+      "source_url": "https://html.gxjy.sdei.edu.cn/html/2026/01/22/207018.html",
+      "published_at": "2026-01-22",
+      "last_verified_at": "2026-11-09",
+      "excerpt": "",
+      "body": "",
+      "positions": [],
+      "attachments": [],
+      "links": [],
+      "related_notices": []
+    },
+    {
+      "id": "e13c289a8b76d1e44439",
+      "title": "山东省体育局所属事业单位2025年度公开招聘人员公告",
+      "organizer": "山东省体育局",
+      "region_level": "市级",
+      "province": "山东",
+      "cities": [
+        "济南"
+      ],
+      "bianzhi_types": [
+        "事业编"
+      ],
+      "exam_category": "事业单位单招",
+      "stage": "ended",
+      "notice_role": "招考简章",
+      "total_positions": null,
+      "total_headcount": null,
+      "positions_status": "none",
+      "schedule": {
+        "reg_start": null,
+        "reg_end": null,
+        "audit_end": null,
+        "payment_end": null,
+        "admit_card_start": null,
+        "written_exam_date": null,
+        "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
+        "raw_evidence": []
+      },
+      "exam_subjects": [
+        "公基",
+        "综合写作"
+      ],
+      "exam_ratio": null,
+      "age_limit": null,
+      "service_years": null,
+      "hukou_summary": "",
+      "fresh_grad_summary": "",
+      "political_summary": "",
+      "education_min": "",
+      "degree_summary": "",
+      "has_unlimited_major": false,
+      "majors": [],
+      "registration_url": null,
+      "registration_method": "网上报名系统",
+      "contact_phones": [],
+      "emails": [],
+      "source_id": "sdei-exam-dispatch",
+      "source_name": "山东省大学生就业服务平台 · 全省事编与教师医疗招考",
+      "source_url": "https://html.gxjy.sdei.edu.cn/html/2026/01/15/207005.html",
+      "published_at": "2026-01-15",
+      "last_verified_at": "2026-11-09",
+      "excerpt": "",
+      "body": "",
+      "positions": [],
+      "attachments": [],
+      "links": [],
+      "related_notices": []
+    },
+    {
+      "id": "129db43956c569a9e437",
+      "title": "2026年淄博市教育局所属事业单位公开招聘工作人员的公告",
+      "organizer": "淄博市教育局",
+      "region_level": "市级",
+      "province": "山东",
+      "cities": [
+        "淄博"
+      ],
+      "bianzhi_types": [
+        "事业编"
+      ],
+      "exam_category": "事业单位单招",
+      "stage": "ended",
+      "notice_role": "招考简章",
+      "total_positions": null,
+      "total_headcount": null,
+      "positions_status": "none",
+      "schedule": {
+        "reg_start": null,
+        "reg_end": null,
+        "audit_end": null,
+        "payment_end": null,
+        "admit_card_start": null,
+        "written_exam_date": null,
+        "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
+        "raw_evidence": []
+      },
+      "exam_subjects": [
+        "公基",
+        "教基/教学"
+      ],
+      "exam_ratio": null,
+      "age_limit": null,
+      "service_years": null,
+      "hukou_summary": "",
+      "fresh_grad_summary": "",
+      "political_summary": "",
+      "education_min": "",
+      "degree_summary": "",
+      "has_unlimited_major": false,
+      "majors": [],
+      "registration_url": null,
+      "registration_method": "网上报名系统",
+      "contact_phones": [],
+      "emails": [],
+      "source_id": "sdei-exam-dispatch",
+      "source_name": "山东省大学生就业服务平台 · 全省事编与教师医疗招考",
+      "source_url": "https://html.gxjy.sdei.edu.cn/html/2026/01/15/207000.html",
+      "published_at": "2026-01-15",
+      "last_verified_at": "2026-11-09",
+      "excerpt": "",
+      "body": "",
+      "positions": [],
+      "attachments": [],
+      "links": [],
+      "related_notices": []
+    },
+    {
       "id": "a9b15db57a922069a42e",
       "title": "2025年山东省高校毕业生“三支一扶”计划招募公告",
       "organizer": "山东省人力资源和社会保障厅",
@@ -26503,6 +27035,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26562,6 +27096,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": [
           "报名时间：2026年5月25日09:00至5月29日16:00",
           "查询时间：2026年5月25日11:00至5月30日16:00",
@@ -26790,6 +27326,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26846,6 +27384,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26904,6 +27444,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -26960,6 +27502,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27016,6 +27560,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27071,6 +27617,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27127,6 +27675,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27185,6 +27735,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27241,6 +27793,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27297,6 +27851,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27353,6 +27909,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27412,6 +27970,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27478,6 +28038,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27536,6 +28098,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27592,6 +28156,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27650,6 +28216,8 @@
         "admit_card_start": null,
         "written_exam_date": null,
         "interview_date": null,
+        "reg_mode": "window",
+        "rolling_until": null,
         "raw_evidence": []
       },
       "exam_subjects": [
@@ -27692,7 +28260,7 @@
       "level": "国家级",
       "status": "ok",
       "count": 10,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27703,7 +28271,7 @@
       "level": "省级",
       "status": "ok",
       "count": 1,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27714,7 +28282,7 @@
       "level": "省级",
       "status": "ok",
       "count": 5,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27724,8 +28292,8 @@
       "city": "省属/全省",
       "level": "省级",
       "status": "ok",
-      "count": 11,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "count": 15,
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27736,7 +28304,7 @@
       "level": "市级",
       "status": "ok",
       "count": 75,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27747,7 +28315,7 @@
       "level": "市级",
       "status": "ok",
       "count": 5,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27758,7 +28326,7 @@
       "level": "市级",
       "status": "ok",
       "count": 2,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27769,7 +28337,7 @@
       "level": "市级",
       "status": "ok",
       "count": 1,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27780,7 +28348,7 @@
       "level": "市级",
       "status": "ok",
       "count": 2,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27791,7 +28359,7 @@
       "level": "市级",
       "status": "ok",
       "count": 4,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27802,7 +28370,7 @@
       "level": "市级",
       "status": "ok",
       "count": 4,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27813,7 +28381,7 @@
       "level": "市级",
       "status": "ok",
       "count": 1,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27824,7 +28392,7 @@
       "level": "市级",
       "status": "ok",
       "count": 0,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27835,7 +28403,7 @@
       "level": "市级",
       "status": "ok",
       "count": 1,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27846,7 +28414,7 @@
       "level": "市级",
       "status": "ok",
       "count": 3,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27857,7 +28425,7 @@
       "level": "市级",
       "status": "ok",
       "count": 5,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27868,7 +28436,7 @@
       "level": "市级",
       "status": "ok",
       "count": 3,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27879,7 +28447,7 @@
       "level": "市级",
       "status": "ok",
       "count": 1,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27890,7 +28458,7 @@
       "level": "市级",
       "status": "ok",
       "count": 0,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27901,7 +28469,7 @@
       "level": "市级",
       "status": "ok",
       "count": 6,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     },
     {
@@ -27911,8 +28479,8 @@
       "city": "山东及全国",
       "level": "高校招考分流",
       "status": "ok",
-      "count": 75,
-      "last_success_at": "2026-11-09T19:56:55+08:00",
+      "count": 74,
+      "last_success_at": "2026-11-09T20:13:32+08:00",
       "errors": []
     }
   ]

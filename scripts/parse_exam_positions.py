@@ -48,6 +48,10 @@ except ImportError:
 
 SHANDONG_CITIES = list(PROVINCE_CITIES.get('山东', []))
 
+RANGE_SEP = r'(?:至|到|－|—|–|-|~|～|〜|起至)'
+ROLLING_RE = re.compile(r'长期招聘|招满即止|招满为止|长期有效|常年招聘|常年有效|随到随审')
+UNTIL_RE = re.compile(r'(?:有效期(?:至|截至|到)|自发布公告(?:之)?日起至)\s*(?:(202\d)\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日')
+
 # Exam-specific composite column header patterns
 COL_DEPARTMENT = re.compile(r'(?:主管部门|主管机关|主办单位|所属部门|上级主管部门|招录机关)', re.I)
 COL_EMPLOYER = re.compile(r'(?:招聘单位|用人单位|单位名称|招考单位|聘用单位|工作单位|学校名称|医院名称|^单位$)', re.I)
@@ -331,8 +335,11 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
         'admit_card_start': None,
         'written_exam_date': None,
         'interview_date': None,
+        'reg_mode': 'window',
+        'rolling_until': None,
         'raw_evidence': [],
     }
+    explicit_reg_range = False
 
     # Split on both line breaks and Chinese sentence punctuation so space-collapsed bodies still parse cleanly
     segments = [
@@ -348,7 +355,7 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
         # 1. Registration window: e.g. 报名时间：2026年3月18日9:00—3月22日16:00 or 2026年11月10日至2026年11月14日
         if not schedule['reg_end'] and re.search(r'报名时间|网上报名|报名起止|报名期限|报名方式及时间', line):
             range_m = re.search(
-                r'(?:(202\d)\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*\d{1,2}[：:时]\d{0,2}分?)?\s*(?:至|到|—|-|–|~|～|起至)\s*(?:(202\d)\s*年\s*)?(?:(\d{1,2})\s*月\s*)?(\d{1,2})\s*日',
+                rf'(?:(202\d)\s*年\s*)?(\d{{1,2}})\s*月\s*(\d{{1,2}})\s*日(?:\s*\d{{1,2}}[：:时]\d{{0,2}}分?)?\s*{RANGE_SEP}\s*(?:(202\d)\s*年\s*)?(?:(\d{{1,2}})\s*月\s*)?(\d{{1,2}})\s*日',
                 line,
             )
             if range_m:
@@ -360,11 +367,13 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
                 d2 = range_m.group(6)
                 schedule['reg_start'] = _normalize_cn_date(y1, m1, d1)
                 schedule['reg_end'] = _normalize_cn_date(y2, m2, d2)
+                explicit_reg_range = True
             else:
                 iso_m = re.findall(r'(202\d)[-.](\d{1,2})[-.](\d{1,2})', line)
                 if len(iso_m) >= 2:
                     schedule['reg_start'] = _normalize_cn_date(*iso_m[0])
                     schedule['reg_end'] = _normalize_cn_date(*iso_m[1])
+                    explicit_reg_range = True
                 elif len(iso_m) == 1 and re.search(r'截止|截至|前', line):
                     schedule['reg_end'] = _normalize_cn_date(*iso_m[0])
                 else:
@@ -403,6 +412,20 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
             if dates:
                 first = dates[0]
                 schedule['written_exam_date'] = _normalize_cn_date(first[0] or default_year, first[1], first[2])
+
+    if ROLLING_RE.search(text or ''):
+        schedule['reg_mode'] = 'rolling'
+        until_m = UNTIL_RE.search(text or '')
+        if until_m:
+            schedule['rolling_until'] = _normalize_cn_date(
+                until_m.group(1) or default_year,
+                until_m.group(2),
+                until_m.group(3),
+            )
+        if not explicit_reg_range:
+            schedule['reg_end'] = None
+    else:
+        schedule['reg_mode'] = 'window'
 
     return schedule
 
@@ -815,11 +838,16 @@ def enrich_exam_record(
     exam_category = infer_exam_category(title, body)
     notice_role = infer_notice_role(title)
     schedule = extract_exam_schedule(combined, published_at)
-    if not schedule.get('reg_end') and raw_item.get('deadline'):
+    if schedule.get('reg_mode') != 'rolling' and not schedule.get('reg_end') and raw_item.get('deadline'):
         dl = str(raw_item['deadline'])[:10]
-        # Avoid synthetic year-end placeholder 2026-12-31 unless explicitly mentioned in body
-        if not dl.endswith('-12-31') or '12月31日' in combined or '12-31' in combined:
-            schedule['reg_end'] = dl
+        if re.fullmatch(r'202\d-\d{2}-\d{2}', dl):
+            m_int = int(dl[5:7])
+            d_int = int(dl[8:10])
+            date_tokens = (dl, f'{m_int}月{d_int}日', f'{m_int:02d}月{d_int:02d}日')
+            for sent in re.split(r'[\r\n。；;]+', combined):
+                if re.search(r'报名|截止|投递|报送|提交', sent) and any(tok in sent for tok in date_tokens):
+                    schedule['reg_end'] = dl
+                    break
 
     exam_subjects = extract_exam_subjects(title, body)
     stage = compute_exam_stage(schedule, notice_role, published_at, today)

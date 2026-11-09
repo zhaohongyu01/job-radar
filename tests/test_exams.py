@@ -208,6 +208,30 @@ class ExamParserTests(unittest.TestCase):
         enriched_phd = enrich_exam_record(raw_phd, today_str="2026-11-09")
         self.assertEqual(enriched_phd["education_min"], "博士研究生")
 
+    def test_fullwidth_range_rolling_and_strict_deadline_fallback(self):
+        # 1. Full-width range separator "－" (U+FF0D)
+        s1 = extract_exam_schedule("报名时间：2026年11月2日9:00－11月6日16:00", "2026-10-28")
+        self.assertEqual(s1["reg_start"], "2026-11-02")
+        self.assertEqual(s1["reg_end"], "2026-11-06")
+        self.assertEqual(s1["reg_mode"], "window")
+
+        # 2. Rolling recruitment with validity until date
+        s2 = extract_exam_schedule("采取长期招聘、招满即止的方式，报名有效期至2026年11月30日", "2026-09-01")
+        self.assertEqual(s2["reg_mode"], "rolling")
+        self.assertEqual(s2["rolling_until"], "2026-11-30")
+        self.assertIsNone(s2["reg_end"])
+
+        # 3. Non-registration deadline in body is not adopted as reg_end
+        raw_dl = {
+            "id": "exam-dl-grad",
+            "title": "2026年某单位公开招聘简章",
+            "body": "应聘人员须于2026年12月31日前取得相应学历学位证书。",
+            "deadline": "2026-12-31",
+            "published_at": "2026-11-01",
+        }
+        enriched_dl = enrich_exam_record(raw_dl, today_str="2026-11-09")
+        self.assertIsNone(enriched_dl["schedule"]["reg_end"])
+
 
 if __name__ == "__main__":
     unittest.main()

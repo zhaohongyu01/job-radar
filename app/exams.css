@@ -1714,7 +1714,7 @@
   background: var(--surface, #fffefa) !important;
   border-top-left-radius: 16px !important;
   border-top-right-radius: 16px !important;
-  z-index: 100 !important;
+  z-index: var(--z-sheet) !important;
 }
 
 .exw-filter-sheet-scroll {

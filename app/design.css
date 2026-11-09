@@ -67,6 +67,10 @@
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur: 160ms;
   --header-h: 60px;
+  --z-header: 30;
+  --z-bottom-bar: 40;
+  --z-sheet: 100;
+  --z-toast: 120;
 
   /* Bridge to shadcn / Tailwind tokens so primitives follow the theme. */
   --background: var(--paper);
@@ -440,7 +444,7 @@ button.chip:hover {
 .app-bar {
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: var(--z-header);
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--paper) 86%, transparent);
   backdrop-filter: saturate(1.4) blur(14px);
@@ -817,7 +821,7 @@ button.chip:hover {
   position: fixed;
   bottom: 28px;
   left: 50%;
-  z-index: 80;
+  z-index: var(--z-toast);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2870,7 +2874,7 @@ button.chip:hover {
   background: rgba(28, 27, 24, 0.46) !important;
   backdrop-filter: blur(2px) !important;
   -webkit-backdrop-filter: blur(2px) !important;
-  z-index: 99 !important;
+  z-index: calc(var(--z-sheet) - 1) !important;
 }
 
 .detail-sheet {
@@ -2885,7 +2889,7 @@ button.chip:hover {
   flex-direction: column !important;
   padding: 0 !important;
   gap: 0 !important;
-  z-index: 100 !important;
+  z-index: var(--z-sheet) !important;
   overflow: hidden !important;
 }
 
@@ -4048,7 +4052,7 @@ button.chip:hover {
   position: fixed;
   bottom: calc(20px + env(safe-area-inset-bottom, 0px) + var(--bottom-bar-h, 0px));
   left: 50%;
-  z-index: 120;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4155,7 +4159,7 @@ button.chip:hover {
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 80;
+    z-index: var(--z-bottom-bar);
     display: flex;
     align-items: stretch;
     justify-content: space-around;

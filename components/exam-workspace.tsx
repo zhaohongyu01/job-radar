@@ -1,12 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import {
   Bookmark,
   CalendarClock,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Database,
@@ -33,14 +31,11 @@ import {
   filterExams,
   flattenAndFilterExamPositions,
   isExamProfileActive,
-  SHANDONG_16,
   validateExamPersonal,
   validateExamProfile,
 } from '@/lib/exams';
 import type {
-  BianzhiCategory,
   ExamAnnouncement,
-  ExamCategory,
   ExamFilters,
   ExamPersonalRecord,
   ExamPersonalStore,
@@ -52,7 +47,10 @@ import { ExamCard } from '@/components/exam-card';
 import { ExamDetailDrawer } from '@/components/exam-detail-drawer';
 import { ExamProfilePanel } from '@/components/exams/exam-profile-panel';
 import {
-  bianzhiLabel,
+  buildActiveExamFilters,
+  ExamFilterSidebar,
+} from '@/components/exams/exam-filter-sidebar';
+import {
   categoryLabel,
   chinaToday,
   ExamSheet,
@@ -62,51 +60,6 @@ import {
 
 const PAGE_SIZE = 20;
 const EXAM_FILTERS_MIGRATED_KEY = 'job-radar-exam-filters-migrated-v2';
-
-const EXAM_CATEGORIES: ExamCategory[] = [
-  '公务员国考',
-  '公务员省考',
-  '选调生招录',
-  '事业单位统考',
-  '事业单位单招',
-  '教师公开招聘',
-  '医疗卫生招聘',
-  '高校 / 科研院所',
-  '人才引进 / 优才',
-  '军队文职招考',
-  '三支一扶 / 基层',
-];
-
-const BIANZHI_OPTIONS: BianzhiCategory[] = [
-  '公务员（行政编）',
-  '参公管理',
-  '事业编',
-  '控制总量 / 备案制',
-  '选调生',
-  '教师编',
-  '医疗卫生编',
-  '军队文职',
-  '三支一扶 / 基层项目',
-  '高层次 / 紧缺人才',
-];
-
-const SUBJECT_OPTIONS = ['行测', '申论', '公基', '职测', '综应', '综合写作', '教基/教学', '医基/临床', '直接面试/面谈'];
-
-/** value → display label; values are what filterExams() expects. */
-const STAGE_OPTIONS: [string, string][] = [
-  ['可报名/进行中', '可报名'],
-  ['正在报名', '报名中'],
-  ['即将开始', '即将开始'],
-  ['长期招聘', '长期招聘'],
-  ['考务跟进（笔面试/资审）', '考试进行中'],
-  ['时间待确认', '时间待确认'],
-  ['报名已结束', '已结束'],
-];
-
-const NOTICE_OPTIONS: [string, string][] = [
-  ['仅看招考简章', '只看招考简章'],
-  ['考务进展通知', '只看考务通知'],
-];
 
 const SORT_OPTIONS: [ExamFilters['sort'], string][] = [
   ['smart', '报名中优先'],
@@ -139,50 +92,6 @@ async function fetchExamSnapshot(): Promise<ExamSnapshot> {
   const resp = await fetch('/exams.json', { cache: 'no-cache' });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return (await resp.json()) as ExamSnapshot;
-}
-
-function FilterSection({
-  title,
-  children,
-  defaultOpen = true,
-  badge,
-}: {
-  title: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
-  badge?: number;
-}) {
-  return (
-    <details className="exw-fsec" open={defaultOpen}>
-      <summary>
-        <span>{title}</span>
-        {badge ? <span className="exw-fsec-badge">{badge}</span> : null}
-        <ChevronDown size={14} className="exw-fsec-caret" />
-      </summary>
-      <div className="exw-fsec-body">{children}</div>
-    </details>
-  );
-}
-
-function Chip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className={`exw-chip${active ? ' is-on' : ''}`}
-      aria-pressed={active}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
 }
 
 interface Milestone {
@@ -473,36 +382,7 @@ export function ExamWorkspace() {
 
   const profileActive = isExamProfileActive(profile);
 
-  const selectedCities = filters.cities.filter((c) => c !== '全部');
-  const activeFilters: { key: string; label: string; clear: () => void }[] = [
-    ...selectedCities.map((c) => ({ key: `city-${c}`, label: c, clear: () => toggleCity(c) })),
-    ...(filters.category !== '全部'
-      ? [{ key: 'cat', label: categoryLabel(filters.category), clear: () => updateFilters({ category: '全部' }) }]
-      : []),
-    ...(filters.bianzhi !== '全部'
-      ? [{ key: 'bz', label: bianzhiLabel(filters.bianzhi), clear: () => updateFilters({ bianzhi: '全部' }) }]
-      : []),
-    ...(filters.stage !== '全部'
-      ? [{
-          key: 'stage',
-          label: STAGE_OPTIONS.find(([v]) => v === filters.stage)?.[1] ?? filters.stage,
-          clear: () => updateFilters({ stage: '全部' }),
-        }]
-      : []),
-    ...(filters.subject !== '全部'
-      ? [{ key: 'subj', label: filters.subject, clear: () => updateFilters({ subject: '全部' }) }]
-      : []),
-    ...(filters.noticeRole !== '全部'
-      ? [{
-          key: 'role',
-          label: NOTICE_OPTIONS.find(([v]) => v === filters.noticeRole)?.[1] ?? filters.noticeRole,
-          clear: () => updateFilters({ noticeRole: '全部' }),
-        }]
-      : []),
-    ...(filters.unlimitedMajorOnly
-      ? [{ key: 'major', label: '含不限专业', clear: () => updateFilters({ unlimitedMajorOnly: false }) }]
-      : []),
-  ];
+  const activeFilters = buildActiveExamFilters(filters, toggleCity, updateFilters);
 
   const listLength = filters.view === 'positions' ? flattenedPositions.length : filteredExams.length;
   const totalPages = Math.max(1, Math.ceil(listLength / PAGE_SIZE));
@@ -638,110 +518,14 @@ export function ExamWorkspace() {
 
       <div className="exw-layout">
         {/* ---------- Filters ---------- */}
-        <aside className={`exw-filters${filtersOpen ? ' is-open' : ''}`} aria-label="筛选条件">
-          <div className="exw-filters-head">
-            <span>筛选</span>
-            {activeFilters.length > 0 && (
-              <button type="button" className="text-btn" onClick={resetFilters}>
-                重置
-              </button>
-            )}
-          </div>
-
-          <FilterSection title="地区" badge={selectedCities.length}>
-            <div className="exw-chip-grid">
-              <Chip active={selectedCities.length === 0} onClick={() => toggleCity('全部')}>
-                全部
-              </Chip>
-              {SHANDONG_16.map((city) => (
-                <Chip key={city} active={filters.cities.includes(city)} onClick={() => toggleCity(city)}>
-                  {city}
-                </Chip>
-              ))}
-            </div>
-          </FilterSection>
-
-          <FilterSection title="报名状态" badge={filters.stage !== '全部' ? 1 : 0}>
-            <div className="exw-chip-wrap">
-              <Chip active={filters.stage === '全部'} onClick={() => updateFilters({ stage: '全部' })}>
-                全部
-              </Chip>
-              {STAGE_OPTIONS.map(([v, label]) => (
-                <Chip key={v} active={filters.stage === v} onClick={() => updateFilters({ stage: v })}>
-                  {label}
-                </Chip>
-              ))}
-            </div>
-          </FilterSection>
-
-          <FilterSection title="招考类别" badge={filters.category !== '全部' ? 1 : 0}>
-            <div className="exw-chip-wrap">
-              <Chip active={filters.category === '全部'} onClick={() => updateFilters({ category: '全部' })}>
-                全部
-              </Chip>
-              {EXAM_CATEGORIES.map((cat) => (
-                <Chip key={cat} active={filters.category === cat} onClick={() => updateFilters({ category: cat })}>
-                  {categoryLabel(cat)}
-                </Chip>
-              ))}
-            </div>
-          </FilterSection>
-
-          <FilterSection title="编制性质" badge={filters.bianzhi !== '全部' ? 1 : 0}>
-            <div className="exw-chip-wrap">
-              <Chip active={filters.bianzhi === '全部'} onClick={() => updateFilters({ bianzhi: '全部' })}>
-                全部
-              </Chip>
-              {BIANZHI_OPTIONS.map((bz) => (
-                <Chip key={bz} active={filters.bianzhi === bz} onClick={() => updateFilters({ bianzhi: bz })}>
-                  {bianzhiLabel(bz)}
-                </Chip>
-              ))}
-            </div>
-          </FilterSection>
-
-          <FilterSection
-            title="更多"
-            defaultOpen={false}
-            badge={
-              (filters.subject !== '全部' ? 1 : 0) +
-              (filters.noticeRole !== '全部' ? 1 : 0) +
-              (filters.unlimitedMajorOnly ? 1 : 0)
-            }
-          >
-            <p className="exw-fsub">考试科目</p>
-            <div className="exw-chip-wrap">
-              <Chip active={filters.subject === '全部'} onClick={() => updateFilters({ subject: '全部' })}>
-                全部
-              </Chip>
-              {SUBJECT_OPTIONS.map((s) => (
-                <Chip key={s} active={filters.subject === s} onClick={() => updateFilters({ subject: s })}>
-                  {s}
-                </Chip>
-              ))}
-            </div>
-            <p className="exw-fsub">公告类型</p>
-            <div className="exw-chip-wrap">
-              <Chip active={filters.noticeRole === '全部'} onClick={() => updateFilters({ noticeRole: '全部' })}>
-                全部
-              </Chip>
-              {NOTICE_OPTIONS.map(([v, label]) => (
-                <Chip key={v} active={filters.noticeRole === v} onClick={() => updateFilters({ noticeRole: v })}>
-                  {label}
-                </Chip>
-              ))}
-            </div>
-            <label className="exw-switch is-block">
-              <input
-                type="checkbox"
-                checked={filters.unlimitedMajorOnly}
-                onChange={(e) => updateFilters({ unlimitedMajorOnly: e.target.checked })}
-              />
-              <span className="exw-switch-ui" aria-hidden="true" />
-              <span>只看含「不限专业」岗位</span>
-            </label>
-          </FilterSection>
-        </aside>
+        <ExamFilterSidebar
+          filters={filters}
+          filtersOpen={filtersOpen}
+          activeFilterCount={activeFilters.length}
+          onToggleCity={toggleCity}
+          onUpdateFilters={updateFilters}
+          onResetFilters={resetFilters}
+        />
 
         {/* ---------- Results ---------- */}
         <section className="exw-results" aria-label="检索结果">

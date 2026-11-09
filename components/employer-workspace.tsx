@@ -65,7 +65,21 @@ export function EmployerWorkspace({ children }: { children: ReactNode }) {
   }, [reload]);
   const show = useCallback((job: Job) => {
     const profile = resolveEmployer(job);
-    if (profile) { enableReputation(); setSelection({ profile, job }); setRequestedId(profile.id); }
+    if (profile) {
+      enableReputation();
+      setSelection({ profile, job });
+      setRequestedId(profile.id);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('employer', profile.id);
+        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+        if (window.history.state?.overlay === 'employer') {
+          window.history.replaceState({ ...window.history.state, overlay: 'employer', employerId: profile.id }, '', nextUrl);
+        } else {
+          window.history.pushState({ ...window.history.state, overlay: 'employer', employerId: profile.id }, '', nextUrl);
+        }
+      }
+    }
   }, [enableReputation]);
   const save = async (id: string, patch: EmployerPatch, expected?: EmployerRecord, overwrite = false): Promise<SaveResult> => {
     try {
@@ -84,7 +98,13 @@ export function EmployerWorkspace({ children }: { children: ReactNode }) {
       <EmployerDrawer key={selection.profile.id} profile={selection.profile} job={selection.job} open={open}
         jobs={catalog.get(selection.profile.id)?.jobs || [selection.job]} now={reputation.now} complete={registration.complete && catalog.has(selection.profile.id)}
         onDetail={job => { setRequestedId(null); registration.onDetail(job); }}
-        onClose={() => setRequestedId(null)} record={records[selection.profile.id]} ready={ready} error={error}
+        onClose={() => {
+          if (typeof window !== 'undefined' && window.history.state?.overlay === 'employer') {
+            window.history.back();
+          } else {
+            setRequestedId(null);
+          }
+        }} record={records[selection.profile.id]} ready={ready} error={error}
         onSave={(patch, expected, overwrite) => save(selection.profile.id, patch, expected, overwrite)} />
     </Suspense>}
   </EmployerContext.Provider>;

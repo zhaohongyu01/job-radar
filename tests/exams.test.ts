@@ -8,7 +8,9 @@ import {
   evaluateExamPositionEligibility,
   filterExams,
   flattenAndFilterExamPositions,
+  formatExamUrl,
   isExamProfileActive,
+  parseExamUrl,
   type ExamAnnouncement,
   type ExamPositionRow,
   type ExamUserProfile,
@@ -335,3 +337,34 @@ void test('deriveExamStage covers upcoming, registering, closing_soon, rolling, 
 });
 
 
+void test('parseExamUrl and formatExamUrl round-trip filters, examId, and omit defaults', () => {
+  const defaultQs = formatExamUrl({ filters: DEFAULT_EXAM_FILTERS, examId: null, page: 1 });
+  assert.equal(defaultQs, '');
+
+  const parsedDefault = parseExamUrl(defaultQs);
+  assert.equal(parsedDefault.filters, undefined);
+  assert.equal(parsedDefault.examId, null);
+  assert.equal(parsedDefault.page, 1);
+
+  const customFilters = {
+    ...DEFAULT_EXAM_FILTERS,
+    view: 'positions' as const,
+    query: '计算机 选调',
+    cities: ['济南', '青岛'],
+    stage: '正在报名',
+    category: '事业单位统考',
+  };
+  const customQs = formatExamUrl({ filters: customFilters, examId: 'sd-2026-001', page: 3 });
+  assert.ok(customQs.startsWith('?'));
+
+  const roundTrip = parseExamUrl(customQs);
+  assert.equal(roundTrip.examId, 'sd-2026-001');
+  assert.equal(roundTrip.page, 3);
+  assert.deepEqual(roundTrip.filters, {
+    view: 'positions',
+    query: '计算机 选调',
+    cities: ['济南', '青岛'],
+    stage: '正在报名',
+    category: '事业单位统考',
+  });
+});

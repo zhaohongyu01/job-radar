@@ -795,3 +795,113 @@ export function flattenAndFilterExamPositions(
   }
   return rows;
 }
+
+
+const EXAM_VIEW_SET = new Set<ExamFilters['view']>(['announcements', 'positions', 'saved', 'tracker']);
+const EXAM_STAGE_SET = new Set([
+  '可报名/进行中',
+  '全部',
+  '正在报名',
+  '即将开始',
+  '长期招聘',
+  '时间待确认',
+  '考务跟进（笔面试/资审）',
+  '报名已结束',
+]);
+const EXAM_CITY_SET = new Set<string>(['全部', '全国', '山东省直', ...SHANDONG_16]);
+
+export interface ExamUrlState {
+  filters?: Partial<ExamFilters>;
+  examId?: string | null;
+  page?: number;
+}
+
+export function parseExamUrl(search: string): ExamUrlState {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  const filters: Partial<ExamFilters> = {};
+  let hasFilter = false;
+
+  const view = params.get('view');
+  if (view && EXAM_VIEW_SET.has(view as ExamFilters['view'])) {
+    filters.view = view as ExamFilters['view'];
+    hasFilter = true;
+  }
+
+  const q = params.get('q');
+  if (q !== null && q.trim().length > 0) {
+    filters.query = q.trim().slice(0, 120);
+    hasFilter = true;
+  }
+
+  const city = params.get('city');
+  if (city !== null) {
+    const cities = city
+      .split(',')
+      .map((c) => c.trim())
+      .filter((c) => EXAM_CITY_SET.has(c));
+    if (cities.length > 0) {
+      filters.cities = cities.includes('全部') ? ['全部'] : cities;
+      hasFilter = true;
+    }
+  }
+
+  const stage = params.get('stage');
+  if (stage && EXAM_STAGE_SET.has(stage)) {
+    filters.stage = stage;
+    hasFilter = true;
+  }
+
+  const cat = params.get('cat');
+  if (cat && cat.trim().length > 0 && cat.length <= 40) {
+    filters.category = cat.trim();
+    hasFilter = true;
+  }
+
+  const examRaw = params.get('exam');
+  const examId = examRaw && /^[\w-]{1,80}$/.test(examRaw) ? examRaw : null;
+
+  const pageRaw = Number(params.get('page'));
+  const page = Number.isInteger(pageRaw) && pageRaw > 1 ? pageRaw : 1;
+
+  return {
+    filters: hasFilter ? filters : undefined,
+    examId,
+    page,
+  };
+}
+
+export function formatExamUrl(state: {
+  filters: ExamFilters;
+  examId?: string | null;
+  page?: number;
+}): string {
+  const params = new URLSearchParams();
+  const { filters, examId, page } = state;
+
+  if (filters.view && filters.view !== DEFAULT_EXAM_FILTERS.view) {
+    params.set('view', filters.view);
+  }
+  const q = (filters.query || '').trim();
+  if (q) {
+    params.set('q', q);
+  }
+  const activeCities = (filters.cities || []).filter((c) => c && c !== '全部');
+  if (activeCities.length > 0) {
+    params.set('city', activeCities.join(','));
+  }
+  if (filters.stage && filters.stage !== DEFAULT_EXAM_FILTERS.stage) {
+    params.set('stage', filters.stage);
+  }
+  if (filters.category && filters.category !== DEFAULT_EXAM_FILTERS.category) {
+    params.set('cat', filters.category);
+  }
+  if (page && page > 1) {
+    params.set('page', String(page));
+  }
+  if (examId) {
+    params.set('exam', examId);
+  }
+
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}

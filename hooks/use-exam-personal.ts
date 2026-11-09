@@ -7,6 +7,7 @@ import {
   EXAM_FILTERS_STORAGE,
   EXAM_PERSONAL_STORAGE,
   EXAM_PROFILE_STORAGE,
+  parseExamUrl,
   validateExamPersonal,
   validateExamProfile,
 } from '@/lib/exams';
@@ -39,6 +40,12 @@ export function safeWriteExamJson(key: string, value: unknown): void {
   }
 }
 
+function persistExamFilters(filters: ExamFilters): void {
+  const { query: _query, ...persisted } = filters;
+  void _query;
+  safeWriteExamJson(EXAM_FILTERS_STORAGE, persisted);
+}
+
 export interface UseExamPersonalOptions {
   onNotice: (msg: string) => void;
   onPageReset: () => void;
@@ -55,19 +62,25 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     }
   });
   const [filters, setFilters] = useState<ExamFilters>(() => {
-    const loaded = safeReadJson(EXAM_FILTERS_STORAGE, DEFAULT_EXAM_FILTERS);
+    let loaded: ExamFilters = {
+      ...safeReadJson(EXAM_FILTERS_STORAGE, DEFAULT_EXAM_FILTERS),
+      query: '',
+    };
     if (typeof window !== 'undefined') {
       try {
         if (!window.localStorage.getItem(EXAM_FILTERS_MIGRATED_KEY)) {
           window.localStorage.setItem(EXAM_FILTERS_MIGRATED_KEY, '1');
           if (loaded.stage === '全部') {
-            const migrated = { ...loaded, stage: DEFAULT_EXAM_FILTERS.stage };
-            safeWriteExamJson(EXAM_FILTERS_STORAGE, migrated);
-            return migrated;
+            loaded = { ...loaded, stage: DEFAULT_EXAM_FILTERS.stage };
+            persistExamFilters(loaded);
           }
         }
       } catch {
         // ignore storage errors
+      }
+      const urlState = parseExamUrl(window.location.search);
+      if (urlState.filters) {
+        loaded = { ...loaded, ...urlState.filters };
       }
     }
     return loaded;
@@ -126,7 +139,7 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     (patch: Partial<ExamFilters>) => {
       setFilters((prev) => {
         const next = { ...prev, ...patch };
-        safeWriteExamJson(EXAM_FILTERS_STORAGE, next);
+        persistExamFilters(next);
         return next;
       });
       onPageReset();
@@ -137,7 +150,7 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
   const resetFilters = useCallback(() => {
     setFilters((prev) => {
       const clean: ExamFilters = { ...DEFAULT_EXAM_FILTERS, view: prev.view, sort: prev.sort };
-      safeWriteExamJson(EXAM_FILTERS_STORAGE, clean);
+      persistExamFilters(clean);
       return clean;
     });
     onPageReset();

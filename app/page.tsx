@@ -289,7 +289,7 @@ function HomeContent() {
       if (!nextId) return;
       const nextJob = allJobs.find((j) => j.id === nextId) ?? filtered.find((j) => j.id === nextId);
       if (!nextJob) return;
-      void openDetail(nextJob);
+      void openDetail(nextJob, nextJob.id, false);
       const filteredIdx = filtered.findIndex((j) => j.id === nextId);
       const pageIdx = filters.onlyUnread || filteredIdx < 0 ? nextIdx : filteredIdx;
       const nextPage = Math.floor(pageIdx / pageSize) + 1;

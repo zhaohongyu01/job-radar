@@ -18,11 +18,14 @@ import {
   X,
 } from 'lucide-react';
 import {
+  DEFAULT_EXAM_FILTERS,
   EXAM_PERSONAL_STORAGE,
   EXAM_TRACK_STAGES,
   filterExams,
   flattenAndFilterExamPositions,
+  formatExamUrl,
   isExamProfileActive,
+  parseExamUrl,
   validateExamPersonal,
 } from '@/lib/exams';
 import type {
@@ -72,9 +75,16 @@ export function ExamWorkspace() {
     }
   });
   const [selectedExam, setSelectedExam] = useState<ExamAnnouncement | null>(null);
+  const [linkedExamId, setLinkedExamId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return parseExamUrl(window.location.search).examId || null;
+  });
   const [sourceOpen, setSourceOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    if (typeof window === 'undefined') return 1;
+    return parseExamUrl(window.location.search).page || 1;
+  });
 
   const resetPage = useCallback(() => setPage(1), []);
 
@@ -93,6 +103,7 @@ export function ExamWorkspace() {
   const {
     profile,
     filters,
+    setFilters,
     personal,
     updateProfile,
     clearProfile,
@@ -112,14 +123,107 @@ export function ExamWorkspace() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  const openExam = (exam: ExamAnnouncement) => {
-    setSelectedExam(exam);
-    if (!personal[exam.id]?.readAt) {
-      updatePersonalRecord(exam.id, { readAt: new Date().toISOString() });
-    }
-  };
+  useEffect(() => {
+    if (!linkedExamId || allExams.length === 0) return;
+    if (selectedExam?.id === linkedExamId) return;
+    const found = allExams.find((ex) => ex.id === linkedExamId);
+    if (!found) return;
+    const timer = window.setTimeout(() => {
+      setSelectedExam(found);
+      if (!personal[found.id]?.readAt) {
+        updatePersonalRecord(found.id, { readAt: new Date().toISOString() });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [linkedExamId, allExams, selectedExam?.id, personal, updatePersonalRecord]);
 
-  const closeExam = useCallback(() => setSelectedExam(null), []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const newQuery = formatExamUrl({ filters, examId: linkedExamId, page });
+    if (window.location.search !== newQuery) {
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${newQuery}${window.location.hash}`,
+      );
+    }
+  }, [filters, linkedExamId, page]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onPopState = (event: PopStateEvent) => {
+      const urlState = parseExamUrl(window.location.search);
+      setFilters((prev) => ({
+        ...prev,
+        query: '',
+        cities: DEFAULT_EXAM_FILTERS.cities,
+        stage: DEFAULT_EXAM_FILTERS.stage,
+        category: DEFAULT_EXAM_FILTERS.category,
+        view: DEFAULT_EXAM_FILTERS.view,
+        ...urlState.filters,
+      }));
+      setPage(urlState.page || 1);
+      const nextExamId =
+        event.state?.overlay === 'exam'
+          ? urlState.examId || event.state.examId || null
+          : urlState.examId || null;
+      setLinkedExamId(nextExamId);
+      if (!nextExamId) {
+        setSelectedExam(null);
+      } else {
+        const found = allExams.find((ex) => ex.id === nextExamId);
+        if (found) setSelectedExam(found);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [allExams, setFilters]);
+
+  const openExam = useCallback(
+    (exam: ExamAnnouncement, pushHistory = true) => {
+      setSelectedExam(exam);
+      setLinkedExamId(exam.id);
+      if (typeof window !== 'undefined' && pushHistory) {
+        const newQuery = formatExamUrl({ filters, examId: exam.id, page });
+        const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
+        if (window.history.state?.overlay === 'exam') {
+          window.history.replaceState({ overlay: 'exam', examId: exam.id }, '', newUrl);
+        } else {
+          window.history.pushState({ overlay: 'exam', examId: exam.id }, '', newUrl);
+        }
+      }
+      if (!personal[exam.id]?.readAt) {
+        updatePersonalRecord(exam.id, { readAt: new Date().toISOString() });
+      }
+    },
+    [filters, page, personal, updatePersonalRecord],
+  );
+
+  const switchView = useCallback(
+    (nextView: ExamFilters['view']) => {
+      if (nextView === filters.view) return;
+      const nextFilters = { ...filters, view: nextView };
+      updateFilters({ view: nextView });
+      if (typeof window !== 'undefined') {
+        const newQuery = formatExamUrl({ filters: nextFilters, examId: linkedExamId, page: 1 });
+        window.history.pushState(
+          { view: nextView },
+          '',
+          `${window.location.pathname}${newQuery}${window.location.hash}`,
+        );
+      }
+    },
+    [filters, linkedExamId, updateFilters],
+  );
+
+  const closeExam = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.state?.overlay === 'exam') {
+      window.history.back();
+      return;
+    }
+    setSelectedExam(null);
+    setLinkedExamId(null);
+  }, []);
   const closeSources = useCallback(() => setSourceOpen(false), []);
 
   const filteredExams = useMemo(
@@ -263,7 +367,7 @@ export function ExamWorkspace() {
                 role="tab"
                 aria-selected={on}
                 className={`exw-tab${on ? ' is-on' : ''}`}
-                onClick={() => updateFilters({ view: t.key })}
+                onClick={() => switchView(t.key)}
               >
                 <Icon size={15} />
                 <span>{t.label}</span>
@@ -485,7 +589,7 @@ export function ExamWorkspace() {
         profile={profile}
         personal={selectedExam ? personal[selectedExam.id] : undefined}
         onClose={closeExam}
-        onSelectExam={openExam}
+        onSelectExam={(nextExam) => openExam(nextExam, false)}
         onToggleSave={toggleSaveExam}
         onUpdatePersonal={updatePersonalRecord}
         onChangeStatus={(examId: string, status: ExamTrackStatus) => {

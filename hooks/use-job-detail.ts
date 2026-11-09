@@ -18,7 +18,7 @@ export interface UseJobDetailState {
   detailError: string;
   detailNavIds: string[] | null;
   setDetailNavIds: Dispatch<SetStateAction<string[] | null>>;
-  openDetail: (job: Job, linkId?: string) => Promise<void>;
+  openDetail: (job: Job, linkId?: string, pushHistory?: boolean) => Promise<void>;
   closeDetail: () => void;
   resetDetailOnPopState: (nextLinkedJobId: string | null) => void;
   activateDetailSnapshot: (snapshot: Snapshot | null) => void;
@@ -58,11 +58,16 @@ export function useJobDetail({
   const resetDetailOnPopState = useCallback((nextLinkedJobId: string | null) => {
     ++detailRequest.current;
     setSelected(null);
+    setDetailNavIds(null);
     setDetailLoading(false);
     setLinkedJobId(nextLinkedJobId);
   }, []);
 
   const closeDetail = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.state?.overlay === 'job') {
+      window.history.back();
+      return;
+    }
     ++detailRequest.current;
     setLinkedJobId(null);
     setSelected(null);
@@ -71,8 +76,26 @@ export function useJobDetail({
   }, []);
 
   const openDetail = useCallback(
-    async (job: Job, linkId = job.id) => {
+    async (job: Job, linkId = job.id, pushHistory = true) => {
       setLinkedJobId(linkId);
+      if (pushHistory && typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('job', linkId);
+        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+        if (window.history.state?.overlay === 'job') {
+          window.history.replaceState(
+            { ...window.history.state, overlay: 'job', jobId: linkId },
+            '',
+            nextUrl,
+          );
+        } else {
+          window.history.pushState(
+            { ...window.history.state, overlay: 'job', jobId: linkId },
+            '',
+            nextUrl,
+          );
+        }
+      }
       missingLink.current = null;
       const request = ++detailRequest.current;
       setDetailError('');
@@ -152,7 +175,7 @@ export function useJobDetail({
       const snapshot = data || previewData;
       const found = snapshot && resolveJobId(snapshot.jobs, linkedJobId);
       if (found && selected?.id !== found.id) {
-        const timer = setTimeout(() => void openDetail(found, linkedJobId), 0);
+        const timer = setTimeout(() => void openDetail(found, linkedJobId, false), 0);
         return () => clearTimeout(timer);
       }
       if (!found && data && !loading && missingLink.current !== linkedJobId) {

@@ -145,16 +145,20 @@ export function useUrlSync({
     const currentSearch = window.location.search;
     if (currentSearch !== newQuery) {
       const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
-      window.history.replaceState({ jobId: linkedJobId }, '', newUrl);
+      window.history.replaceState({ ...window.history.state, jobId: linkedJobId }, '', newUrl);
     }
   }, [ready, filters, linkedJobId, requestedEmployerId, page]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const onPopState = () => {
+    const onPopState = (event: PopStateEvent) => {
       const urlState = parseUrlState(window.location.search);
       selectEmployerId(urlState.employerId || null);
-      resetDetailOnPopState(urlState.jobId || null);
+      const nextJobId =
+        event.state?.overlay === 'job'
+          ? urlState.jobId || event.state.jobId || null
+          : urlState.jobId || null;
+      resetDetailOnPopState(nextJobId);
       setFilters(
         urlState.filters
           ? restoreBrowsing({ filters: urlState.filters }).filters
@@ -242,12 +246,17 @@ export function useUrlSync({
     (view: Filters['view']) => {
       if (view === filters.view && view === 'all') return;
       if (filters.view === 'all') discoveryFilters.current = filters;
-      setFilters(
-        view === 'all' ? { ...discoveryFilters.current, view: 'all' } : personalViewFilters(view),
-      );
+      const nextFilters =
+        view === 'all' ? { ...discoveryFilters.current, view: 'all' } : personalViewFilters(view);
+      setFilters(nextFilters);
       setPage(1);
+      if (typeof window !== 'undefined') {
+        const newQuery = formatUrlQuery(nextFilters, linkedJobId, requestedEmployerId, 1);
+        const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
+        window.history.pushState({ view, jobId: linkedJobId }, '', newUrl);
+      }
     },
-    [filters],
+    [filters, linkedJobId, requestedEmployerId],
   );
 
   const handleApplyBrowsing = useCallback(

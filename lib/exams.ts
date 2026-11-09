@@ -641,5 +641,9 @@ export function flattenAndFilterExamPositions(
       });
     }
   }
-  return rows;
+  return rows.sort((a, b) => {
+    const aSummary = a.row_id.endsWith('-summary-0') ? 1 : 0;
+    const bSummary = b.row_id.endsWith('-summary-0') ? 1 : 0;
+    return aSummary - bSummary;
+  });
 }

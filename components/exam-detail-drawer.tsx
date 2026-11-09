@@ -3,24 +3,18 @@
 import { useMemo, useState } from 'react';
 import {
   Bookmark,
-  Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Download,
   ExternalLink,
-  FileSpreadsheet,
-  FileText,
-  Phone,
   Search,
   Share2,
-  ShieldCheck,
-  Sparkles,
+  Star,
   Target,
   X,
 } from 'lucide-react';
 import {
-  computeExamStageLabel,
   evaluateExamPositionEligibility,
   EXAM_TRACK_STAGES,
   isExamProfileActive,
@@ -32,6 +26,7 @@ import type {
   ExamTrackStatus,
   ExamUserProfile,
 } from '@/lib/exams';
+import { bianzhiLabel, categoryLabel, ExamSheet, formatShortDate, StagePill } from '@/components/exam-ui';
 
 interface ExamDetailDrawerProps {
   exam: ExamAnnouncement | null;
@@ -42,6 +37,7 @@ interface ExamDetailDrawerProps {
   onSelectExam: (exam: ExamAnnouncement) => void;
   onToggleSave: (examId: string) => void;
   onUpdatePersonal: (examId: string, patch: Partial<ExamPersonalRecord>) => void;
+  onChangeStatus: (examId: string, status: ExamTrackStatus) => void;
   onNotify: (msg: string) => void;
 }
 
@@ -54,549 +50,543 @@ export function ExamDetailDrawer({
   onSelectExam,
   onToggleSave,
   onUpdatePersonal,
+  onChangeStatus,
   onNotify,
 }: ExamDetailDrawerProps) {
   const [posQuery, setPosQuery] = useState('');
   const [onlyMatchedPos, setOnlyMatchedPos] = useState(false);
 
-  const currentIndex = useMemo(() => {
-    if (!exam) return -1;
-    return exams.findIndex((item) => item.id === exam.id);
-  }, [exam, exams]);
+  const currentIndex = useMemo(
+    () => (exam ? exams.findIndex((item) => item.id === exam.id) : -1),
+    [exam, exams],
+  );
 
+  return (
+    <ExamSheet open={Boolean(exam)} onClose={onClose} label="招考公告详情" width={880}>
+      {exam && (
+        <DrawerContent
+          exam={exam}
+          exams={exams}
+          currentIndex={currentIndex}
+          profile={profile}
+          personal={personal}
+          posQuery={posQuery}
+          setPosQuery={setPosQuery}
+          onlyMatchedPos={onlyMatchedPos}
+          setOnlyMatchedPos={setOnlyMatchedPos}
+          onClose={onClose}
+          onSelectExam={onSelectExam}
+          onToggleSave={onToggleSave}
+          onUpdatePersonal={onUpdatePersonal}
+          onChangeStatus={onChangeStatus}
+          onNotify={onNotify}
+        />
+      )}
+    </ExamSheet>
+  );
+}
+
+function DrawerContent({
+  exam,
+  exams,
+  currentIndex,
+  profile,
+  personal,
+  posQuery,
+  setPosQuery,
+  onlyMatchedPos,
+  setOnlyMatchedPos,
+  onClose,
+  onSelectExam,
+  onToggleSave,
+  onUpdatePersonal,
+  onChangeStatus,
+  onNotify,
+}: {
+  exam: ExamAnnouncement;
+  exams: ExamAnnouncement[];
+  currentIndex: number;
+  profile: ExamUserProfile;
+  personal?: ExamPersonalRecord;
+  posQuery: string;
+  setPosQuery: (v: string) => void;
+  onlyMatchedPos: boolean;
+  setOnlyMatchedPos: (v: boolean) => void;
+  onClose: () => void;
+  onSelectExam: (exam: ExamAnnouncement) => void;
+  onToggleSave: (examId: string) => void;
+  onUpdatePersonal: (examId: string, patch: Partial<ExamPersonalRecord>) => void;
+  onChangeStatus: (examId: string, status: ExamTrackStatus) => void;
+  onNotify: (msg: string) => void;
+}) {
   const prevExam = currentIndex > 0 ? exams[currentIndex - 1] : null;
   const nextExam = currentIndex >= 0 && currentIndex < exams.length - 1 ? exams[currentIndex + 1] : null;
-
-  if (!exam) return null;
-
-  const stageMeta = computeExamStageLabel(exam.stage);
   const isSaved = Boolean(personal?.saved);
   const trackStatus = personal?.status || 'none';
   const savedPosIds = personal?.savedPositionIds || [];
   const positions = exam.positions || [];
   const profileActive = isExamProfileActive(profile);
+  const onlyMatched = onlyMatchedPos || profile.onlyMatchProfile;
+  const applyHref = exam.registration_url || exam.source_url;
+  const attachments = exam.attachments || [];
+  const evidence = exam.schedule.raw_evidence || [];
 
-  const filteredPositions = positions.filter((pos) => {
-    const elig = evaluateExamPositionEligibility(pos, profile);
-    if ((onlyMatchedPos || profile.onlyMatchProfile) && !elig.matched) return false;
-    if (posQuery.trim()) {
+  const rows = positions
+    .map((pos) => ({ pos, elig: evaluateExamPositionEligibility(pos, profile) }))
+    .filter(({ pos, elig }) => {
+      if (onlyMatched && !elig.matched) return false;
       const q = posQuery.trim().toLowerCase();
-      const hay = `${pos.department} ${pos.employer} ${pos.position_name} ${pos.position_code || ''} ${pos.major_raw} ${pos.education} ${pos.political_status} ${pos.fresh_grad_rule} ${pos.other_conditions || ''}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
+      if (!q) return true;
+      return `${pos.department} ${pos.employer} ${pos.position_name} ${pos.position_code || ''} ${pos.major_raw} ${pos.education}`
+        .toLowerCase()
+        .includes(q);
+    });
 
-  const toggleCandidatePos = (pos: ExamPositionRow) => {
+  const toggleCandidate = (pos: ExamPositionRow) => {
     const exists = savedPosIds.includes(pos.row_id);
-    const nextIds = exists
-      ? savedPosIds.filter((id) => id !== pos.row_id)
-      : [...savedPosIds, pos.row_id];
     onUpdatePersonal(exam.id, {
       saved: true,
-      savedPositionIds: nextIds,
+      savedPositionIds: exists ? savedPosIds.filter((id) => id !== pos.row_id) : [...savedPosIds, pos.row_id],
       status: trackStatus === 'none' ? 'comparing' : trackStatus,
     });
-    onNotify(exists ? '已从候选岗位移除' : `已将「${pos.position_name}」加入候选对比`);
+    onNotify(exists ? '已移出候选岗位' : `已加入候选：${pos.position_name}`);
   };
 
-  const lockTargetPos = (pos: ExamPositionRow) => {
-    const label = `${pos.employer} · ${pos.position_name}${pos.position_code ? ` (${pos.position_code})` : ''}`;
+  const lockTarget = (pos: ExamPositionRow) => {
+    const label = `${pos.employer} · ${pos.position_name}${pos.position_code ? `（${pos.position_code}）` : ''}`;
     onUpdatePersonal(exam.id, {
       saved: true,
       targetPositionCode: label,
       status: trackStatus === 'none' ? 'comparing' : trackStatus,
     });
-    onNotify(`已锁定主报岗位：${label}`);
+    onNotify(`已设为主报岗位：${label}`);
   };
 
   const copyShare = async () => {
     const text = [
-      `【${exam.exam_category}】${exam.title}`,
-      `编制类型：${exam.bianzhi_types.join(' / ')} | 规模：${exam.total_positions}岗 / 招${exam.total_headcount}人`,
-      `笔试科目：${exam.exam_subjects.join(' + ')} | 学历要求：${exam.education_min}`,
-      `报名时间：${exam.schedule.reg_start || ''} ~ ${exam.schedule.reg_end || '见公告'}`,
-      `原公告：${exam.source_url}`,
+      exam.title,
+      `${exam.total_positions} 岗 / 招 ${exam.total_headcount} 人 · ${exam.bianzhi_types.join('、')}`,
+      `报名：${exam.schedule.reg_start || ''} ~ ${exam.schedule.reg_end || '见公告'}`,
+      exam.source_url,
     ].join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      onNotify('招考简章摘要与链接已复制');
+      onNotify('已复制公告摘要与链接');
     } catch {
-      onNotify('复制失败，请手动复制地址栏链接');
+      onNotify('复制失败，请手动复制');
     }
   };
 
-  const scrollToSection = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  const applyHref = exam.registration_url || exam.source_url;
+  const timeline = [
+    {
+      label: '网上报名',
+      value:
+        exam.schedule.reg_start && exam.schedule.reg_end
+          ? `${formatShortDate(exam.schedule.reg_start)} – ${formatShortDate(exam.schedule.reg_end)}`
+          : exam.schedule.reg_end
+            ? `截至 ${formatShortDate(exam.schedule.reg_end)}`
+            : '',
+    },
+    { label: '资格初审', value: exam.schedule.audit_end ? `截至 ${formatShortDate(exam.schedule.audit_end)}` : '' },
+    { label: '缴费确认', value: exam.schedule.payment_end ? `截至 ${formatShortDate(exam.schedule.payment_end)}` : '', warn: true },
+    { label: '准考证打印', value: formatShortDate(exam.schedule.admit_card_start) },
+    { label: '笔试', value: formatShortDate(exam.schedule.written_exam_date) },
+  ];
+
+  const facts: [string, string][] = [
+    ['招录规模', `${exam.total_positions} 个岗位 · ${exam.total_headcount} 人`],
+    ['编制性质', exam.bianzhi_types.map(bianzhiLabel).join('、')],
+    ['考试科目', exam.exam_subjects.join(' + ') || '见公告'],
+    ['开考比例', exam.exam_ratio || '见公告'],
+    ['学历学位', `${exam.education_min} · ${exam.degree_summary}`],
+    ['毕业身份', exam.fresh_grad_summary],
+    ['政治面貌', exam.political_summary],
+    ['年龄', exam.age_limit || '见公告'],
+    ['户籍', exam.hukou_summary],
+    ['报名方式', exam.registration_method],
+    ...(exam.service_years ? ([['服务年限', exam.service_years]] as [string, string][]) : []),
+    ...((exam.contact_phones?.length || 0) > 0
+      ? ([['咨询电话', exam.contact_phones!.join(' / ')]] as [string, string][])
+      : []),
+  ];
+
+  const body = (exam.body || exam.excerpt || '').split(/\n+/).filter((line) => line.trim());
 
   return (
-    <div className="drawer-backdrop">
-      <button
-        type="button"
-        className="drawer-backdrop-close"
-        aria-label="关闭简章详情弹窗"
-        onClick={onClose}
-      />
-      <aside
-        className="drawer exam-drawer"
-        aria-label="招考简章详情"
-      >
-        <header className="drawer-head">
-          <div className="drawer-head-main">
-            <div className="exam-card-badges">
-              <span className="exam-badge is-category">{exam.exam_category}</span>
-              {exam.bianzhi_types.map((bz) => (
-                <span key={bz} className="exam-badge is-bianzhi">
-                  <ShieldCheck size={12} /> {bz}
-                </span>
-              ))}
-              <span className={`exam-stage-pill is-${stageMeta.tone}`}>{stageMeta.label}</span>
-            </div>
-            <h2>{exam.title}</h2>
-            <p className="drawer-meta">
-              <span>主管机关：{exam.organizer}</span>
-              <span>·</span>
-              <span>来源：{exam.source_name}</span>
-              {exam.published_at && (
-                <>
-                  <span>·</span>
-                  <span>发布：{exam.published_at}</span>
-                </>
-              )}
-            </p>
+    <>
+      <header className="exw-dh">
+        <div className="exw-dh-top">
+          <div className="exw-card-meta">
+            <StagePill stage={exam.stage} />
+            <span className="exw-tag">{categoryLabel(exam.exam_category)}</span>
+            {exam.bianzhi_types.slice(0, 3).map((bz) => (
+              <span key={bz} className="exw-tag is-outline">
+                {bianzhiLabel(bz)}
+              </span>
+            ))}
           </div>
-          <button type="button" className="icon-btn" aria-label="关闭详情" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </header>
-
-        <div className="drawer-body">
-          <div className="detail-sticky-bar">
-            <div className="detail-actions">
-              <button
-                type="button"
-                className={`btn btn-sm ${isSaved ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => onToggleSave(exam.id)}
-              >
-                <Bookmark size={14} />
-                {isSaved ? '已收藏简章' : '收藏简章'}
-              </button>
-
-              <select
-                className={`exam-status-select ${trackStatus !== 'none' ? 'is-active' : ''}`}
-                aria-label="选择报考阶段"
-                value={trackStatus}
-                onChange={(e) =>
-                  onUpdatePersonal(exam.id, { status: e.target.value as ExamTrackStatus, saved: true })
-                }
-              >
-                <option value="none">报考进度：未标记</option>
-                {EXAM_TRACK_STAGES.map((st) => (
-                  <option key={st.key} value={st.key}>
-                    阶段：{st.label}
-                  </option>
-                ))}
-              </select>
-
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => void copyShare()}>
-                <Share2 size={14} /> 复制分享
-              </button>
-
-              <div className="detail-sticky-cta">
-                {exam.registration_url && exam.registration_url !== exam.source_url && (
-                  <a
-                    className="btn btn-secondary btn-sm detail-sticky-source"
-                    href={exam.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    原公告 <ExternalLink size={13} />
-                  </a>
-                )}
-                <a
-                  className="btn btn-primary btn-sm detail-sticky-apply"
-                  href={applyHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
+          <div className="exw-dh-nav">
+            {exams.length > 1 && currentIndex >= 0 && (
+              <>
+                <button
+                  type="button"
+                  className="exw-icon-btn"
+                  aria-label="上一条"
+                  disabled={!prevExam}
+                  onClick={() => prevExam && onSelectExam(prevExam)}
                 >
-                  {exam.registration_url ? '前往报名系统' : '查看官方原公告'} <ExternalLink size={14} />
-                </a>
-              </div>
-            </div>
-
-            <div className="detail-subbar">
-              {exams.length > 1 && (
-                <div className="detail-nav-group">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={!prevExam}
-                    onClick={() => prevExam && onSelectExam(prevExam)}
-                  >
-                    <ChevronLeft size={15} /> 上一条
-                  </button>
-                  <span className="detail-nav-pos">
-                    {currentIndex + 1} / {exams.length}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={!nextExam}
-                    onClick={() => nextExam && onSelectExam(nextExam)}
-                  >
-                    下一条 <ChevronRight size={15} />
-                  </button>
-                </div>
-              )}
-              <nav className="detail-jump-nav" aria-label="简章章节导航">
-                <button type="button" onClick={() => scrollToSection('exam-sec-overview')}>
-                  考务要素
+                  <ChevronLeft size={16} />
                 </button>
-                {positions.length > 0 && (
-                  <button type="button" onClick={() => scrollToSection('exam-sec-positions')}>
-                    岗位汇总表 ({positions.length})
-                  </button>
-                )}
-                <button type="button" onClick={() => scrollToSection('exam-sec-tracker')}>
-                  报考备忘
-                </button>
-                <button type="button" onClick={() => scrollToSection('exam-sec-body')}>
-                  简章正文
-                </button>
-                {(exam.attachments?.length || 0) > 0 && (
-                  <button type="button" onClick={() => scrollToSection('exam-sec-attachments')}>
-                    官方附件 ({exam.attachments?.length})
-                  </button>
-                )}
-              </nav>
-            </div>
-          </div>
-
-          {/* Section 1: 考务全要素与时间节点 */}
-          <section className="detail-section" id="exam-sec-overview">
-            <div className="section-title-row">
-              <h3>考务核心要素与时间轴</h3>
-              <span className="text-muted">报名前请仔细核对年龄、应届界定与专业目录</span>
-            </div>
-
-            <div className="exam-schedule-strip is-detail">
-              <div className={`exam-schedule-node ${exam.schedule.reg_end ? 'is-set' : ''}`}>
-                <span className="node-k"><Calendar size={13} /> 网上报名时间</span>
-                <span className="node-v">
-                  {exam.schedule.reg_start && exam.schedule.reg_end
-                    ? `${exam.schedule.reg_start} 至 ${exam.schedule.reg_end}`
-                    : exam.schedule.reg_end || '详见下方正文'}
+                <span className="exw-dh-pos">
+                  {currentIndex + 1} / {exams.length}
                 </span>
-              </div>
-              <div className={`exam-schedule-node ${exam.schedule.audit_end ? 'is-set' : ''}`}>
-                <span className="node-k">资格初审查询</span>
-                <span className="node-v">{exam.schedule.audit_end || '报名期间同步初审'}</span>
-              </div>
-              <div className={`exam-schedule-node ${exam.schedule.payment_end ? 'is-set is-warn' : ''}`}>
-                <span className="node-k">网上缴费确认</span>
-                <span className="node-v">{exam.schedule.payment_end || '初审通过后按规定时间缴费'}</span>
-              </div>
-              <div className={`exam-schedule-node ${exam.schedule.written_exam_date ? 'is-set' : ''}`}>
-                <span className="node-k">笔试时间</span>
-                <span className="node-v">{exam.schedule.written_exam_date || '详见笔试通知'}</span>
-              </div>
-            </div>
-
-            {(exam.schedule.raw_evidence?.length || 0) > 0 && (
-              <div className="exam-evidence-box">
-                <strong>考务时间原文条款：</strong>
-                <ul>
-                  {exam.schedule.raw_evidence!.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              </div>
+                <button
+                  type="button"
+                  className="exw-icon-btn"
+                  aria-label="下一条"
+                  disabled={!nextExam}
+                  onClick={() => nextExam && onSelectExam(nextExam)}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </>
             )}
+            <button type="button" className="exw-icon-btn" aria-label="关闭详情" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
+        </div>
 
-            <dl className="detail-facts exam-detail-facts">
-              <div>
-                <dt>招录规模</dt>
-                <dd>{exam.total_positions} 个岗位 / 计划招录 {exam.total_headcount} 人</dd>
-              </div>
-              <div>
-                <dt>编制与管理性质</dt>
-                <dd>{exam.bianzhi_types.join('、')}</dd>
-              </div>
-              <div>
-                <dt>笔试/考核科目</dt>
-                <dd>{exam.exam_subjects.join(' + ')}</dd>
-              </div>
-              <div>
-                <dt>开考比例</dt>
-                <dd>{exam.exam_ratio || '1:3'}</dd>
-              </div>
-              <div>
-                <dt>学历与学位起点</dt>
-                <dd>{exam.education_min} · {exam.degree_summary}</dd>
-              </div>
-              <div>
-                <dt>应届与人员范围</dt>
-                <dd>{exam.fresh_grad_summary}</dd>
-              </div>
-              <div>
-                <dt>政治面貌要求</dt>
-                <dd>{exam.political_summary}</dd>
-              </div>
-              <div>
-                <dt>年龄与户籍限制</dt>
-                <dd>{exam.age_limit || '35周岁以下'} · {exam.hukou_summary}</dd>
-              </div>
-              <div>
-                <dt>报名方式</dt>
-                <dd>
-                  {exam.registration_method}
-                  {exam.service_years ? `（${exam.service_years}）` : ''}
-                </dd>
-              </div>
-              {(exam.contact_phones?.length || 0) > 0 && (
-                <div>
-                  <dt>政策咨询电话</dt>
-                  <dd>
-                    <Phone size={12} style={{ display: 'inline', marginRight: 4 }} />
-                    {exam.contact_phones!.join(' / ')}
-                  </dd>
-                </div>
-              )}
-            </dl>
-          </section>
+        <h2 className="exw-dh-title">{exam.title}</h2>
+        <p className="exw-dh-sub">
+          {exam.organizer} · {exam.source_name}
+          {exam.published_at ? ` · ${formatShortDate(exam.published_at)}发布` : ''}
+        </p>
 
-          {/* Section 2: 结构化岗位汇总表 */}
-          {positions.length > 0 && (
-            <section className="detail-section" id="exam-sec-positions">
-              <div className="section-title-row">
-                <h3>
-                  <FileSpreadsheet size={16} style={{ display: 'inline', marginRight: 6 }} />
-                  结构化招聘岗位汇总表（共 {positions.length} 个岗位）
-                </h3>
-                <div className="exam-pos-toolbar">
-                  <div className="exam-pos-search">
-                    <Search size={14} />
-                    <input
-                      type="text"
-                      placeholder="搜单位、岗位名、代码、专业..."
-                      value={posQuery}
-                      onChange={(e) => setPosQuery(e.target.value)}
-                    />
-                  </div>
-                  <label className="exam-pos-toggle">
-                    <input
-                      type="checkbox"
-                      checked={onlyMatchedPos || profile.onlyMatchProfile}
-                      onChange={(e) => setOnlyMatchedPos(e.target.checked)}
-                    />
-                    <Sparkles size={13} />
-                    <span>仅看我可报岗位</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="exam-positions-table-wrap">
-                <table className="exam-positions-table">
-                  <thead>
-                    <tr>
-                      <th>用人单位 / 主管部门</th>
-                      <th>岗位名称 & 代码</th>
-                      <th>招录数</th>
-                      <th>学历 / 学位</th>
-                      <th>专业要求</th>
-                      <th>政治面貌 / 应届 / 其他限制</th>
-                      <th>条件核验 & 选岗</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPositions.map((pos) => {
-                      const elig = evaluateExamPositionEligibility(pos, profile);
-                      const isCand = savedPosIds.includes(pos.row_id);
-                      const isLocked =
-                        personal?.targetPositionCode?.includes(pos.position_name) &&
-                        personal?.targetPositionCode?.includes(pos.employer);
-
-                      return (
-                        <tr
-                          key={pos.row_id}
-                          className={`${elig.matched && profileActive ? 'is-eligible' : ''} ${isLocked ? 'is-locked-target' : ''}`}
-                        >
-                          <td>
-                            <strong>{pos.employer}</strong>
-                            {pos.department && pos.department !== pos.employer && (
-                              <div className="text-muted text-xs">{pos.department}</div>
-                            )}
-                            {pos.city && <div className="text-muted text-xs">📍 {pos.city}</div>}
-                          </td>
-                          <td>
-                            <strong>{pos.position_name}</strong>
-                            {pos.position_code && (
-                              <div className="exam-code-tag">代码：{pos.position_code}</div>
-                            )}
-                            <div className="text-muted text-xs">{pos.bianzhi}</div>
-                          </td>
-                          <td>
-                            <strong className="exam-hc-badge">{pos.recruit_count} 人</strong>
-                            {pos.exam_ratio && <div className="text-muted text-xs">比例 {pos.exam_ratio}</div>}
-                          </td>
-                          <td>
-                            <div>{pos.education}</div>
-                            {pos.degree && <div className="text-muted text-xs">{pos.degree}</div>}
-                          </td>
-                          <td className="exam-major-cell">{pos.major_raw}</td>
-                          <td>
-                            <div className="text-xs">政治面貌：{pos.political_status || '不限'}</div>
-                            <div className="text-xs">范围：{pos.fresh_grad_rule || '不限'}</div>
-                            {pos.other_conditions && (
-                              <div className="text-muted text-xs">{pos.other_conditions}</div>
-                            )}
-                          </td>
-                          <td>
-                            {elig.matched ? (
-                              <span className="elig-badge is-ok">
-                                <CheckCircle2 size={12} /> 符合条件
-                              </span>
-                            ) : (
-                              <span className="elig-badge is-conflict" title={elig.conflicts.join('；')}>
-                                {elig.conflicts[0]}
-                              </span>
-                            )}
-                            <div className="exam-pos-row-actions">
-                              <button
-                                type="button"
-                                className={`btn btn-sm ${isCand ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => toggleCandidatePos(pos)}
-                              >
-                                {isCand ? '★ 已候选' : '☆ 候选'}
-                              </button>
-                              <button
-                                type="button"
-                                className={`btn btn-sm ${isLocked ? 'btn-primary' : 'btn-ghost'}`}
-                                onClick={() => lockTargetPos(pos)}
-                                title="设为本次招考主报岗位"
-                              >
-                                <Target size={12} /> {isLocked ? '主报岗' : '锁定'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {filteredPositions.length === 0 && (
-                  <p className="text-muted" style={{ padding: '16px', textAlign: 'center' }}>
-                    没有匹配当前筛选条件的岗位行，请放宽搜索词或取消「仅看我可报岗位」。
-                  </p>
-                )}
-              </div>
-            </section>
+        <div className="exw-dh-actions">
+          <button
+            type="button"
+            className={`btn btn-sm ${isSaved ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => onToggleSave(exam.id)}
+          >
+            <Bookmark size={14} fill={isSaved ? 'currentColor' : 'none'} />
+            {isSaved ? '已收藏' : '收藏'}
+          </button>
+          <select
+            className={`exw-select is-sm${trackStatus !== 'none' ? ' is-on' : ''}`}
+            aria-label="报考进度"
+            value={trackStatus}
+            onChange={(e) => onChangeStatus(exam.id, e.target.value as ExamTrackStatus)}
+          >
+            <option value="none">报考进度：未跟进</option>
+            {EXAM_TRACK_STAGES.map((st) => (
+              <option key={st.key} value={st.key}>
+                {st.label}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copyShare()}>
+            <Share2 size={14} />
+            分享
+          </button>
+          <span className="exw-spacer" />
+          {exam.registration_url && exam.registration_url !== exam.source_url && (
+            <a className="btn btn-secondary btn-sm" href={exam.source_url} target="_blank" rel="noopener noreferrer">
+              原公告
+            </a>
           )}
+          <a className="btn btn-primary btn-sm" href={applyHref} target="_blank" rel="noopener noreferrer">
+            {exam.registration_url ? '前往报名' : '查看原公告'}
+            <ExternalLink size={13} />
+          </a>
+        </div>
 
-          {/* Section 3: 个人报考跟进与备忘 */}
-          <section className="detail-section" id="exam-sec-tracker">
-            <div className="section-title-row">
-              <h3>个人报考跟进与准考证备忘</h3>
-              <span className="text-muted">仅保存在当前浏览器本地</span>
-            </div>
+        <nav className="exw-dh-tabs" aria-label="章节导航">
+          <button type="button" onClick={() => jump('exw-sec-time')}>
+            时间安排
+          </button>
+          <button type="button" onClick={() => jump('exw-sec-req')}>
+            报考要求
+          </button>
+          {positions.length > 0 && (
+            <button type="button" onClick={() => jump('exw-sec-pos')}>
+              岗位表 <span>{positions.length}</span>
+            </button>
+          )}
+          <button type="button" onClick={() => jump('exw-sec-note')}>
+            我的记录
+          </button>
+          {attachments.length > 0 && (
+            <button type="button" onClick={() => jump('exw-sec-att')}>
+              附件 <span>{attachments.length}</span>
+            </button>
+          )}
+          <button type="button" onClick={() => jump('exw-sec-body')}>
+            公告原文
+          </button>
+        </nav>
+      </header>
 
-            <div className="exam-tracker-panel">
-              <div className="exam-stage-buttons">
-                {EXAM_TRACK_STAGES.map((st) => (
-                  <button
-                    key={st.key}
-                    type="button"
-                    className={`btn btn-sm ${trackStatus === st.key ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => onUpdatePersonal(exam.id, { status: st.key, saved: true })}
-                  >
-                    {st.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="exam-tracker-grid">
-                <label>
-                  <span>锁定主报岗位（单位 + 岗位名 + 代码）</span>
-                  <input
-                    type="text"
-                    placeholder="如：济南市财政局 · 综合文字岗 (002)"
-                    value={personal?.targetPositionCode || ''}
-                    onChange={(e) =>
-                      onUpdatePersonal(exam.id, { targetPositionCode: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>报名序号 / 准考证号</span>
-                  <input
-                    type="text"
-                    placeholder="记录报名确认号或准考证号，防遗忘"
-                    value={personal?.regNumber || ''}
-                    onChange={(e) => onUpdatePersonal(exam.id, { regNumber: e.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>笔试成绩 / 进面分数线记录</span>
-                  <input
-                    type="text"
-                    placeholder="如：行测71.5 + 申论74.0 = 145.5（进面线141.0）"
-                    value={personal?.writtenScore || ''}
-                    onChange={(e) => onUpdatePersonal(exam.id, { writtenScore: e.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>考点地址 / 资格复审材料备忘</span>
-                  <input
-                    type="text"
-                    placeholder="记录考点学校、缴费提醒或复审所需盖章材料..."
-                    value={personal?.notes || ''}
-                    onChange={(e) => onUpdatePersonal(exam.id, { notes: e.target.value })}
-                  />
-                </label>
-              </div>
-            </div>
-          </section>
-
-          {/* Section 4: 附件下载 */}
-          {(exam.attachments?.length || 0) > 0 && (
-            <section className="detail-section" id="exam-sec-attachments">
-              <h3>官方岗位表与报名附件下载 ({exam.attachments!.length})</h3>
-              <ul className="attachment-list">
-                {exam.attachments!.map((att, idx) => (
-                  <li key={idx}>
-                    <a href={att.url} target="_blank" rel="noopener noreferrer">
-                      <Download size={14} />
-                      <span>{att.title || `官方附件 ${idx + 1}`}</span>
-                      {att.parse_status === 'parsed' && (
-                        <span className="exam-parsed-tag">已自动解析岗位表</span>
-                      )}
-                    </a>
-                  </li>
+      <div className="exw-db">
+        <section className="exw-ds" id="exw-sec-time">
+          <h3 className="exw-ds-title">时间安排</h3>
+          <ol className="exw-timeline">
+            {timeline.map((step) => (
+              <li
+                key={step.label}
+                className={`${step.value ? 'is-set' : ''}${step.warn && step.value ? ' is-warn' : ''}`}
+              >
+                <span className="exw-tl-dot" aria-hidden="true" />
+                <span className="exw-tl-label">{step.label}</span>
+                <span className="exw-tl-value">{step.value || '待公布'}</span>
+              </li>
+            ))}
+          </ol>
+          {evidence.length > 0 && (
+            <details className="exw-evidence">
+              <summary>查看公告中的时间原文</summary>
+              <ul>
+                {evidence.map((line, i) => (
+                  <li key={i}>{line}</li>
                 ))}
               </ul>
-            </section>
+            </details>
           )}
+        </section>
 
-          {/* Section 5: 简章正文 */}
-          <section className="detail-section" id="exam-sec-body">
-            <h3>
-              <FileText size={16} style={{ display: 'inline', marginRight: 6 }} />
-              招考简章正文
-            </h3>
-            <div className="detail-body-text">
-              {(exam.body || exam.excerpt)
-                .split(/\n+/)
-                .filter((line) => line.trim())
-                .map((para, i) => (
-                  <p key={i}>{para}</p>
-                ))}
+        <section className="exw-ds" id="exw-sec-req">
+          <h3 className="exw-ds-title">报考要求</h3>
+          <dl className="exw-kv">
+            {facts.map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        {positions.length > 0 && (
+          <section className="exw-ds" id="exw-sec-pos">
+            <div className="exw-ds-head">
+              <h3 className="exw-ds-title">
+                岗位表 <span className="exw-muted">{rows.length} / {positions.length}</span>
+              </h3>
+              <div className="exw-ds-tools">
+                <div className="exw-search is-sm">
+                  <Search size={14} />
+                  <input
+                    type="search"
+                    aria-label="搜索岗位"
+                    placeholder="单位、岗位、代码、专业"
+                    value={posQuery}
+                    onChange={(e) => setPosQuery(e.target.value)}
+                  />
+                </div>
+                {profileActive && (
+                  <label className="exw-switch">
+                    <input
+                      type="checkbox"
+                      checked={onlyMatched}
+                      onChange={(e) => setOnlyMatchedPos(e.target.checked)}
+                    />
+                    <span className="exw-switch-ui" aria-hidden="true" />
+                    <span>只看可报</span>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            <div className="exw-table-wrap">
+              <table className="exw-table is-compact">
+                <thead>
+                  <tr>
+                    <th>岗位</th>
+                    <th className="is-num">人数</th>
+                    <th>学历 / 专业</th>
+                    <th>其他条件</th>
+                    {profileActive && <th>资格</th>}
+                    <th aria-label="操作" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ pos, elig }) => {
+                    const isCand = savedPosIds.includes(pos.row_id);
+                    const isLocked =
+                      Boolean(personal?.targetPositionCode?.includes(pos.position_name)) &&
+                      Boolean(personal?.targetPositionCode?.includes(pos.employer));
+                    const extra = [
+                      pos.political_status && pos.political_status !== '不限' ? pos.political_status : '',
+                      pos.fresh_grad_rule && !/^(不限|应往届均可)$/.test(pos.fresh_grad_rule) ? pos.fresh_grad_rule : '',
+                      pos.other_conditions || '',
+                    ].filter(Boolean);
+                    return (
+                      <tr
+                        key={pos.row_id}
+                        className={`${profileActive && elig.matched ? 'is-ok' : ''}${isLocked ? ' is-target' : ''}`}
+                      >
+                        <td className="exw-td-main">
+                          <strong>{pos.position_name}</strong>
+                          <div className="exw-row-sub">
+                            {pos.employer}
+                            {pos.position_code ? <span className="exw-code">{pos.position_code}</span> : null}
+                          </div>
+                        </td>
+                        <td className="is-num">
+                          <strong>{pos.recruit_count}</strong>
+                        </td>
+                        <td>
+                          <div>{pos.education}</div>
+                          <div className="exw-row-sub exw-clamp" title={pos.major_raw}>
+                            {pos.major_raw}
+                          </div>
+                        </td>
+                        <td>
+                          {extra.length > 0 ? (
+                            <div className="exw-row-sub exw-clamp" title={extra.join('；')}>
+                              {extra.join('；')}
+                            </div>
+                          ) : (
+                            <span className="exw-muted">无</span>
+                          )}
+                        </td>
+                        {profileActive && (
+                          <td>
+                            {elig.matched ? (
+                              <span className="exw-elig is-ok">
+                                <CheckCircle2 size={12} />
+                                可报
+                              </span>
+                            ) : (
+                              <span className="exw-elig is-no" title={elig.conflicts.join('；')}>
+                                {elig.conflicts[0]?.slice(0, 10) || '不符'}
+                              </span>
+                            )}
+                          </td>
+                        )}
+                        <td className="is-action">
+                          <div className="exw-row-actions">
+                            <button
+                              type="button"
+                              className={`exw-icon-btn${isCand ? ' is-on' : ''}`}
+                              aria-pressed={isCand}
+                              aria-label={isCand ? '移出候选' : '加入候选'}
+                              title={isCand ? '移出候选' : '加入候选'}
+                              onClick={() => toggleCandidate(pos)}
+                            >
+                              <Star size={15} fill={isCand ? 'currentColor' : 'none'} />
+                            </button>
+                            <button
+                              type="button"
+                              className={`exw-icon-btn${isLocked ? ' is-on' : ''}`}
+                              aria-pressed={isLocked}
+                              aria-label="设为主报岗位"
+                              title="设为主报岗位"
+                              onClick={() => lockTarget(pos)}
+                            >
+                              <Target size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {rows.length === 0 && <p className="exw-empty is-inline">没有符合条件的岗位</p>}
             </div>
           </section>
-        </div>
-      </aside>
-    </div>
+        )}
+
+        <section className="exw-ds" id="exw-sec-note">
+          <div className="exw-ds-head">
+            <h3 className="exw-ds-title">我的记录</h3>
+            <span className="exw-muted">仅保存在本机浏览器</span>
+          </div>
+          <fieldset className="exw-stepper" aria-label="报考进度">
+            {EXAM_TRACK_STAGES.map((st, idx) => {
+              const currentIdx = EXAM_TRACK_STAGES.findIndex((s) => s.key === trackStatus);
+              const state = idx < currentIdx ? ' is-done' : idx === currentIdx ? ' is-current' : '';
+              return (
+                <button
+                  key={st.key}
+                  type="button"
+                  className={`exw-step${state}`}
+                  aria-pressed={idx === currentIdx}
+                  title={st.hint}
+                  onClick={() => onChangeStatus(exam.id, st.key)}
+                >
+                  <span className="exw-step-num">{idx + 1}</span>
+                  <span>{st.shortLabel}</span>
+                </button>
+              );
+            })}
+          </fieldset>
+          <div className="exw-form-grid">
+            <label className="exw-field">
+              <span>主报岗位</span>
+              <input
+                type="text"
+                placeholder="单位 · 岗位（代码）"
+                value={personal?.targetPositionCode || ''}
+                onChange={(e) => onUpdatePersonal(exam.id, { targetPositionCode: e.target.value })}
+              />
+            </label>
+            <label className="exw-field">
+              <span>报名序号 / 准考证号</span>
+              <input
+                type="text"
+                value={personal?.regNumber || ''}
+                onChange={(e) => onUpdatePersonal(exam.id, { regNumber: e.target.value })}
+              />
+            </label>
+            <label className="exw-field">
+              <span>笔试成绩</span>
+              <input
+                type="text"
+                placeholder="如：职测 71.5 + 综应 74"
+                value={personal?.writtenScore || ''}
+                onChange={(e) => onUpdatePersonal(exam.id, { writtenScore: e.target.value })}
+              />
+            </label>
+            <label className="exw-field">
+              <span>备注</span>
+              <input
+                type="text"
+                placeholder="考点、复审材料等"
+                value={personal?.notes || ''}
+                onChange={(e) => onUpdatePersonal(exam.id, { notes: e.target.value })}
+              />
+            </label>
+          </div>
+        </section>
+
+        {attachments.length > 0 && (
+          <section className="exw-ds" id="exw-sec-att">
+            <h3 className="exw-ds-title">附件</h3>
+            <ul className="exw-attach">
+              {attachments.map((att, idx) => (
+                <li key={`${att.url}-${idx}`}>
+                  <a href={att.url} target="_blank" rel="noopener noreferrer">
+                    <Download size={14} />
+                    <span>{att.title || `附件 ${idx + 1}`}</span>
+                    {att.parse_status === 'parsed' && <span className="exw-tag is-brand">已解析</span>}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <section className="exw-ds" id="exw-sec-body">
+          <h3 className="exw-ds-title">公告原文</h3>
+          <div className="exw-prose">
+            {body.length > 0 ? body.map((para, i) => <p key={i}>{para}</p>) : <p className="exw-muted">暂无正文，请查看原公告。</p>}
+          </div>
+        </section>
+      </div>
+    </>
   );
 }

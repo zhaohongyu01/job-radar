@@ -1,7 +1,7 @@
 'use client';
 import { loadSnapshotParts, loadIndexSnapshot, supportedBrowseIndex } from '../lib/snapshot-loader';
 import type { SnapshotIndexCache } from '../lib/snapshot-loader';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Radar,
   Search,
@@ -86,6 +86,20 @@ import { SourceStatusSheet } from '@/components/source-status-sheet';
 import { ExamWorkspace } from '@/components/exam-workspace';
 import type { WorkspaceMode } from '@/lib/exams';
 import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
+
+const subscribeNoop = () => () => {};
+function readWorkspaceFromUrl(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('workspace') === 'exams' || params.get('mode') === 'exams';
+}
+/** Keeps ?workspace=exams when the job browsing state rewrites the query. */
+function withWorkspaceParam(query: string, mode: WorkspaceMode): string {
+  if (mode !== 'exams') return query;
+  const params = new URLSearchParams(query);
+  params.delete('mode');
+  params.set('workspace', 'exams');
+  return `?${params.toString()}`;
+}
 
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
 const CARD_DENSITY_STORAGE = 'job-radar-card-density-v1';
@@ -193,17 +207,17 @@ function HomeContent() {
   const [presetRevision, setPresetRevision] = useState(0);
   const [groupRoleFilter, setGroupRoleFilter] = useState<Record<string, string>>({});
   const [showBackTop, setShowBackTop] = useState(false);
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('workspace') === 'exams' || params.get('mode') === 'exams') {
-        return 'exams';
-      }
-    }
-    return 'jobs';
-  });
+  // Read the initial workspace from the URL after hydration (server snapshot is
+  // always 'jobs'), so a shared ?workspace=exams link never causes a mismatch.
+  const urlWantsExams = useSyncExternalStore(
+    subscribeNoop,
+    readWorkspaceFromUrl,
+    () => false,
+  );
+  const [workspaceOverride, setWorkspaceOverride] = useState<WorkspaceMode | null>(null);
+  const workspaceMode: WorkspaceMode = workspaceOverride ?? (urlWantsExams ? 'exams' : 'jobs');
   const switchWorkspace = useCallback((mode: WorkspaceMode) => {
-    setWorkspaceMode(mode);
+    setWorkspaceOverride(mode);
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       if (mode === 'exams') {
@@ -217,7 +231,7 @@ function HomeContent() {
   }, []);
   const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
   const coverage = coverageReport?.as_of === data?.generated_at ? coverageReport : null;
-  const reputationEnabled = !!data;
+  const reputationEnabled = !!data && workspaceMode === 'jobs';
   const enableReputation = reputation.enable;
   useEffect(() => {
     if (!reputationEnabled) return;
@@ -437,7 +451,7 @@ function HomeContent() {
   // Browser storage is read after hydration; SSR has no access to this device state.
   useEffect(() => {
     const initialRead = setTimeout(() => {
-      void refresh();
+      if (!readWorkspaceFromUrl()) void refresh();
       setNow(Date.now());
       try {
         const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE));
@@ -476,6 +490,11 @@ function HomeContent() {
   }, [refresh, selectEmployerId]);
 
   useEffect(() => {
+    if (!ready || workspaceMode !== 'jobs' || dataRef.current || refreshController.current) return;
+    void refresh();
+  }, [ready, workspaceMode, refresh]);
+
+  useEffect(() => {
     if (!ready || !linkedJobId) return;
     const snapshot = data || previewData;
     const found = snapshot && resolveJobId(snapshot.jobs, linkedJobId);
@@ -494,13 +513,16 @@ function HomeContent() {
 
   useEffect(() => {
     if (!ready || typeof window === 'undefined') return;
-    const newQuery = formatUrlQuery(filters, linkedJobId, requestedEmployerId, page);
+    const newQuery = withWorkspaceParam(
+      formatUrlQuery(filters, linkedJobId, requestedEmployerId, page),
+      workspaceMode,
+    );
     const currentSearch = window.location.search;
     if (currentSearch !== newQuery) {
       const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
       window.history.replaceState({ jobId: linkedJobId }, '', newUrl);
     }
-  }, [ready, filters, linkedJobId, requestedEmployerId, page]);
+  }, [ready, filters, linkedJobId, requestedEmployerId, page, workspaceMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

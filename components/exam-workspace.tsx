@@ -1,27 +1,25 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
-  AlertCircle,
   Bookmark,
-  Calendar,
+  CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock3,
   Database,
   Download,
   ExternalLink,
   FileSpreadsheet,
-  Filter,
   Kanban,
+  Landmark,
   MapPin,
   RefreshCw,
-  RotateCcw,
   Search,
-  ShieldCheck,
-  Sparkles,
-  Target,
+  SlidersHorizontal,
+  Star,
   UserCheck,
   X,
 } from 'lucide-react';
@@ -46,10 +44,18 @@ import type {
 } from '@/lib/exams';
 import { ExamCard } from '@/components/exam-card';
 import { ExamDetailDrawer } from '@/components/exam-detail-drawer';
+import {
+  bianzhiLabel,
+  categoryLabel,
+  chinaToday,
+  ExamSheet,
+  formatMonthDay,
+} from '@/components/exam-ui';
 
 const EXAM_PROFILE_STORAGE = 'job-radar-exam-profile-v1';
 const EXAM_FILTERS_STORAGE = 'job-radar-exam-filters-v1';
 export const EXAM_PERSONAL_STORAGE = 'job-radar-exam-personal-v1';
+const PAGE_SIZE = 20;
 
 const SHANDONG_16_CITIES = [
   '济南', '青岛', '烟台', '潍坊', '临沂', '济宁', '淄博', '威海',
@@ -83,26 +89,27 @@ const BIANZHI_OPTIONS: BianzhiCategory[] = [
   '高层次 / 紧缺人才',
 ];
 
-const SUBJECT_OPTIONS = [
-  '全部',
-  '行测',
-  '申论',
-  '公基',
-  '职测',
-  '综应',
-  '综合写作',
-  '教基/教学',
-  '医基/临床',
-  '直接面试/面谈',
+const SUBJECT_OPTIONS = ['行测', '申论', '公基', '职测', '综应', '综合写作', '教基/教学', '医基/临床', '直接面试/面谈'];
+
+/** value → display label; values are what filterExams() expects. */
+const STAGE_OPTIONS: [string, string][] = [
+  ['可报名/进行中', '可报名'],
+  ['正在报名', '报名中'],
+  ['即将开始', '即将开始'],
+  ['考务跟进（笔面试/资审）', '考试进行中'],
+  ['报名已结束', '已结束'],
 ];
 
-const STAGE_OPTIONS = [
-  '全部',
-  '可报名/进行中',
-  '正在报名',
-  '即将开始',
-  '考务跟进（笔面试/资审）',
-  '报名已结束',
+const NOTICE_OPTIONS: [string, string][] = [
+  ['仅看招考简章', '只看招考简章'],
+  ['考务进展通知', '只看考务通知'],
+];
+
+const SORT_OPTIONS: [ExamFilters['sort'], string][] = [
+  ['smart', '报名中优先'],
+  ['published', '最新发布'],
+  ['reg_end', '报名截止最近'],
+  ['headcount', '招录人数最多'],
 ];
 
 function safeReadJson<T>(key: string, fallback: T): T {
@@ -125,11 +132,69 @@ function safeWriteJson(key: string, value: unknown): void {
   }
 }
 
+async function fetchExamSnapshot(): Promise<ExamSnapshot> {
+  const resp = await fetch('/exams.json', { cache: 'no-cache' });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return (await resp.json()) as ExamSnapshot;
+}
+
+function FilterSection({
+  title,
+  children,
+  defaultOpen = true,
+  badge,
+}: {
+  title: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+  badge?: number;
+}) {
+  return (
+    <details className="exw-fsec" open={defaultOpen}>
+      <summary>
+        <span>{title}</span>
+        {badge ? <span className="exw-fsec-badge">{badge}</span> : null}
+        <ChevronDown size={14} className="exw-fsec-caret" />
+      </summary>
+      <div className="exw-fsec-body">{children}</div>
+    </details>
+  );
+}
+
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`exw-chip${active ? ' is-on' : ''}`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface Milestone {
+  exam: ExamAnnouncement;
+  date: string;
+  type: string;
+  tone: 'urgent' | 'active' | 'info';
+}
+
 export function ExamWorkspace() {
   const [snapshot, setSnapshot] = useState<ExamSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [today, setToday] = useState('');
   const [profile, setProfile] = useState<ExamUserProfile>(() =>
     safeReadJson(EXAM_PROFILE_STORAGE, DEFAULT_EXAM_PROFILE),
   );
@@ -139,45 +204,28 @@ export function ExamWorkspace() {
   const [personal, setPersonal] = useState<ExamPersonalStore>(() => {
     if (typeof window === 'undefined') return {};
     try {
-      const rawPersonal = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
-      return rawPersonal ? (JSON.parse(rawPersonal) as ExamPersonalStore) : {};
+      const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
+      return raw ? (JSON.parse(raw) as ExamPersonalStore) : {};
     } catch {
       return {};
     }
   });
   const [selectedExam, setSelectedExam] = useState<ExamAnnouncement | null>(null);
-  const [sourceModalOpen, setSourceModalOpen] = useState(false);
-  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const pageSize = 20;
-
-  const loadSnapshot = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const resp = await fetch('/exams.json', { cache: 'no-cache' });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = (await resp.json()) as ExamSnapshot;
-      setSnapshot(data);
-    } catch {
-      setError('考公考编索引读取失败，请点击重试。');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     let active = true;
-    fetch('/exams.json', { cache: 'no-cache' })
-      .then(async (resp) => {
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        return (await resp.json()) as ExamSnapshot;
-      })
+    fetchExamSnapshot()
       .then((data) => {
-        if (active) setSnapshot(data);
+        if (!active) return;
+        setSnapshot(data);
+        setToday(chinaToday());
       })
       .catch(() => {
-        if (active) setError('考公考编索引读取失败，请点击重试。');
+        if (active) setError('考公考编数据读取失败，请稍后重试。');
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -186,6 +234,25 @@ export function ExamWorkspace() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(''), 3200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const reload = () => {
+    setLoading(true);
+    setError('');
+    fetchExamSnapshot()
+      .then((data) => {
+        setSnapshot(data);
+        setToday(chinaToday());
+        setNotice('数据已刷新');
+      })
+      .catch(() => setError('考公考编数据读取失败，请稍后重试。'))
+      .finally(() => setLoading(false));
+  };
 
   const updateProfile = (patch: Partial<ExamUserProfile>) => {
     setProfile((prev) => {
@@ -205,11 +272,8 @@ export function ExamWorkspace() {
     setPage(1);
   };
 
-  const resetAllFilters = () => {
-    const clean: ExamFilters = {
-      ...DEFAULT_EXAM_FILTERS,
-      view: filters.view,
-    };
+  const resetFilters = () => {
+    const clean: ExamFilters = { ...DEFAULT_EXAM_FILTERS, view: filters.view, sort: filters.sort };
     setFilters(clean);
     safeWriteJson(EXAM_FILTERS_STORAGE, clean);
     setPage(1);
@@ -217,35 +281,29 @@ export function ExamWorkspace() {
 
   const updatePersonalRecord = (examId: string, patch: Partial<ExamPersonalRecord>) => {
     setPersonal((prev) => {
-      const current = prev[examId] || {};
       const next: ExamPersonalStore = {
         ...prev,
-        [examId]: {
-          ...current,
-          ...patch,
-          updatedAt: new Date().toISOString(),
-        },
+        [examId]: { ...prev[examId], ...patch, updatedAt: new Date().toISOString() },
       };
       safeWriteJson(EXAM_PERSONAL_STORAGE, next);
       return next;
     });
   };
 
+  const openExam = (exam: ExamAnnouncement) => {
+    setSelectedExam(exam);
+    if (!personal[exam.id]?.readAt) {
+      updatePersonalRecord(exam.id, { readAt: new Date().toISOString() });
+    }
+  };
+
+  const closeExam = useCallback(() => setSelectedExam(null), []);
+  const closeSources = useCallback(() => setSourceOpen(false), []);
+
   const toggleSaveExam = (examId: string) => {
     const current = personal[examId]?.saved;
     updatePersonalRecord(examId, { saved: !current });
-    setNotice(!current ? '已收藏招考简章' : '已取消收藏');
-  };
-
-  const changeTrackStatus = (examId: string, status: ExamTrackStatus) => {
-    updatePersonalRecord(examId, {
-      status,
-      saved: status !== 'none' ? true : personal[examId]?.saved,
-    });
-    if (status !== 'none') {
-      const label = EXAM_TRACK_STAGES.find((s) => s.key === status)?.label || status;
-      setNotice(`已更新报考状态为「${label}」`);
-    }
+    setNotice(!current ? '已收藏' : '已取消收藏');
   };
 
   const toggleCity = (city: string) => {
@@ -258,111 +316,139 @@ export function ExamWorkspace() {
     updateFilters({ cities: next.length > 0 ? next : ['全部'] });
   };
 
-  const allExams = useMemo(() => snapshot?.exams || [], [snapshot]);
+  const toggleCandidate = (examId: string, rowId: string, positionName: string) => {
+    const rec = personal[examId];
+    const prevIds = rec?.savedPositionIds || [];
+    const exists = prevIds.includes(rowId);
+    updatePersonalRecord(examId, {
+      saved: true,
+      savedPositionIds: exists ? prevIds.filter((id) => id !== rowId) : [...prevIds, rowId],
+      status: !rec?.status || rec.status === 'none' ? 'comparing' : rec.status,
+    });
+    setNotice(exists ? '已移出候选岗位' : `已加入候选：${positionName}`);
+  };
 
+  const allExams = useMemo(() => snapshot?.exams || [], [snapshot]);
   const filteredExams = useMemo(
     () => filterExams(allExams, filters, profile, personal),
     [allExams, filters, profile, personal],
   );
-
   const flattenedPositions = useMemo(
     () => flattenAndFilterExamPositions(allExams, filters, profile),
     [allExams, filters, profile],
   );
-
   const savedCount = useMemo(
     () =>
-      Object.values(personal).filter(
-        (r) => r.saved || (r.savedPositionIds && r.savedPositionIds.length > 0),
-      ).length,
+      Object.values(personal).filter((r) => r.saved || (r.savedPositionIds?.length ?? 0) > 0).length,
     [personal],
   );
-
   const trackedCount = useMemo(
     () => Object.values(personal).filter((r) => r.status && r.status !== 'none').length,
     [personal],
   );
 
-  // Upcoming exam calendar milestones
-  const calendarMilestones = useMemo(() => {
-    const items: {
-      exam: ExamAnnouncement;
-      date: string;
-      type: string;
-      tone: 'urgent' | 'active' | 'info';
-    }[] = [];
+  const milestones = useMemo<Milestone[]>(() => {
+    if (!today) return [];
+    const items: Milestone[] = [];
     for (const ex of allExams) {
-      if (ex.schedule.reg_end && ['registering', 'closing_soon', 'upcoming'].includes(ex.stage)) {
+      const s = ex.schedule;
+      if (s.reg_end && ['registering', 'closing_soon', 'upcoming'].includes(ex.stage)) {
         items.push({
           exam: ex,
-          date: ex.schedule.reg_end,
-          type: ex.stage === 'closing_soon' ? '报名即将截止' : '网上报名截止',
+          date: s.reg_end,
+          type: '报名截止',
           tone: ex.stage === 'closing_soon' ? 'urgent' : 'active',
         });
       }
-      if (ex.schedule.payment_end) {
-        items.push({
-          exam: ex,
-          date: ex.schedule.payment_end,
-          type: '缴费确认截止',
-          tone: 'urgent',
-        });
-      }
-      if (ex.schedule.written_exam_date) {
-        items.push({
-          exam: ex,
-          date: ex.schedule.written_exam_date,
-          type: '笔试开考日',
-          tone: 'info',
-        });
-      }
+      if (s.payment_end) items.push({ exam: ex, date: s.payment_end, type: '缴费截止', tone: 'urgent' });
+      if (s.written_exam_date) items.push({ exam: ex, date: s.written_exam_date, type: '笔试', tone: 'info' });
     }
     return items
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 12);
-  }, [allExams]);
+      .filter((m) => m.date.slice(0, 10) >= today)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 10);
+  }, [allExams, today]);
 
-  const exportExamCalendarIcs = () => {
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Job Radar//Civil Exam Calendar//CN',
-    ];
-    for (const m of calendarMilestones) {
-      const cleanDate = m.date.replace(/-/g, '').slice(0, 8);
-      if (!/^\d{8}$/.test(cleanDate)) continue;
+  const exportCalendar = () => {
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Job Radar//Civil Exam Calendar//CN'];
+    for (const m of milestones) {
+      const day = m.date.replace(/-/g, '').slice(0, 8);
+      if (!/^\d{8}$/.test(day)) continue;
       lines.push(
         'BEGIN:VEVENT',
         `UID:exam-${m.exam.id}-${m.type}@job-radar`,
-        `DTSTART;VALUE=DATE:${cleanDate}`,
+        `DTSTART;VALUE=DATE:${day}`,
         `SUMMARY:【${m.type}】${m.exam.title}`,
-        `DESCRIPTION:主管机关：${m.exam.organizer}\\n原公告：${m.exam.source_url}`,
+        `DESCRIPTION:${m.exam.organizer}\\n${m.exam.source_url}`,
         'END:VEVENT',
       );
     }
     lines.push('END:VCALENDAR');
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = '考公考编关键考务日历.ics';
+    a.download = '考公考编考务日历.ics';
     a.click();
     URL.revokeObjectURL(url);
-    setNotice('已导出考务日历 (.ics)，可导入手机或电脑日历设置提醒');
+    setNotice('已导出日历文件，可导入手机或电脑日历');
   };
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(
-      (filters.view === 'positions' ? flattenedPositions.length : filteredExams.length) / pageSize,
-    ),
-  );
-  const pagedExams = filteredExams.slice((page - 1) * pageSize, page * pageSize);
-  const pagedPositions = flattenedPositions.slice((page - 1) * pageSize, page * pageSize);
   const profileActive = isExamProfileActive(profile);
+  const profileSummary = [
+    profile.education !== '全部' ? profile.education : '',
+    profile.majorQuery.trim() ? profile.majorQuery.trim() : '',
+    profile.politicalStatus !== '不限' ? profile.politicalStatus : '',
+    profile.gradIdentity !== '不限' ? profile.gradIdentity : '',
+    profile.hukouCity !== '全部' ? `${profile.hukouCity}户籍` : '',
+    profile.grassrootsYears > 0 ? `基层 ${profile.grassrootsYears} 年` : '',
+  ].filter(Boolean);
+
+  const selectedCities = filters.cities.filter((c) => c !== '全部');
+  const activeFilters: { key: string; label: string; clear: () => void }[] = [
+    ...selectedCities.map((c) => ({ key: `city-${c}`, label: c, clear: () => toggleCity(c) })),
+    ...(filters.category !== '全部'
+      ? [{ key: 'cat', label: categoryLabel(filters.category), clear: () => updateFilters({ category: '全部' }) }]
+      : []),
+    ...(filters.bianzhi !== '全部'
+      ? [{ key: 'bz', label: bianzhiLabel(filters.bianzhi), clear: () => updateFilters({ bianzhi: '全部' }) }]
+      : []),
+    ...(filters.stage !== '全部'
+      ? [{
+          key: 'stage',
+          label: STAGE_OPTIONS.find(([v]) => v === filters.stage)?.[1] ?? filters.stage,
+          clear: () => updateFilters({ stage: '全部' }),
+        }]
+      : []),
+    ...(filters.subject !== '全部'
+      ? [{ key: 'subj', label: filters.subject, clear: () => updateFilters({ subject: '全部' }) }]
+      : []),
+    ...(filters.noticeRole !== '全部'
+      ? [{
+          key: 'role',
+          label: NOTICE_OPTIONS.find(([v]) => v === filters.noticeRole)?.[1] ?? filters.noticeRole,
+          clear: () => updateFilters({ noticeRole: '全部' }),
+        }]
+      : []),
+    ...(filters.unlimitedMajorOnly
+      ? [{ key: 'major', label: '含不限专业', clear: () => updateFilters({ unlimitedMajorOnly: false }) }]
+      : []),
+  ];
+
+  const listLength = filters.view === 'positions' ? flattenedPositions.length : filteredExams.length;
+  const totalPages = Math.max(1, Math.ceil(listLength / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedExams = filteredExams.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedPositions = flattenedPositions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const tabs: { key: ExamFilters['view']; label: string; icon: typeof Landmark; count: number }[] = [
+    { key: 'announcements', label: '招考公告', icon: Landmark, count: filteredExams.length },
+    { key: 'positions', label: '职位库', icon: FileSpreadsheet, count: flattenedPositions.length },
+    { key: 'saved', label: '收藏', icon: Bookmark, count: savedCount },
+    { key: 'tracker', label: '报考进度', icon: Kanban, count: trackedCount },
+  ];
 
   return (
-    <div className="exam-workspace">
+    <div className="exw">
       {notice && (
         <output className="toast">
           <span>{notice}</span>
@@ -372,114 +458,124 @@ export function ExamWorkspace() {
         </output>
       )}
 
-      {/* Top Hero & One-Click Eligibility Profile Card */}
-      <section className="exam-hero-panel" aria-label="考公考编总览与个人报考画像">
-        <div className="exam-hero-top">
-          <div className="exam-hero-title-group">
-            <div className="exam-eyebrow">
-              <ShieldCheck size={15} />
-              <span>独立考公考编工作台 · 与企业求职职位物理隔离</span>
-            </div>
-            <h1 className="exam-main-title">
-              山东省级 & 16地市 · 公务员 / 选调生 / 事业单位 / 教师医疗 / 军队文职
-            </h1>
-            <p className="exam-main-desc">
-              聚合官方招考简章、考务进展通知与附件《岗位汇总表》，支持按编制性质、政治面貌、应届身份、专业代码跨简章一键选岗。
-            </p>
+      {/* ---------- Header ---------- */}
+      <header className="exw-head">
+        <div className="exw-head-text">
+          <p className="exw-eyebrow">山东省直 · 16 地市 · 国考 / 军队文职</p>
+          <h1 className="exw-title">考公考编</h1>
+        </div>
+        <div className="exw-stats">
+          <div className="exw-stat">
+            <strong>{snapshot ? snapshot.total_exams : '—'}</strong>
+            <span>招考公告</span>
           </div>
-
-          <div className="exam-hero-stats">
-            <div className="exam-stat-box">
-              <span>收录招考公告</span>
-              <strong>{snapshot ? snapshot.total_exams : '—'}</strong>
-              <small>含简章与考务通知</small>
-            </div>
-            <div className="exam-stat-box">
-              <span>结构化岗位表</span>
-              <strong>{snapshot ? snapshot.total_positions : '—'}</strong>
-              <small>支持跨简章选岗</small>
-            </div>
-            <div className="exam-stat-box">
-              <span>累计招录名额</span>
-              <strong>{snapshot ? snapshot.total_headcount : '—'}</strong>
-              <small>编制/控总/专项</small>
-            </div>
-            <div className="exam-stat-actions">
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setSourceModalOpen(true)}
-              >
-                <Database size={14} />
-                <span>官方招考渠道 ({snapshot?.sources.length || 0})</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => void loadSnapshot()}
-                disabled={loading}
-              >
-                <RefreshCw size={14} className={loading ? 'spinning' : ''} />
-                <span>刷新</span>
-              </button>
-            </div>
+          <div className="exw-stat">
+            <strong>{snapshot ? snapshot.total_positions : '—'}</strong>
+            <span>结构化岗位</span>
+          </div>
+          <div className="exw-stat">
+            <strong>{snapshot ? snapshot.total_headcount.toLocaleString('zh-CN') : '—'}</strong>
+            <span>招录名额</span>
           </div>
         </div>
+        <div className="exw-head-actions">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSourceOpen(true)}>
+            <Database size={15} />
+            信息来源 {snapshot ? snapshot.sources.length : ''}
+          </button>
+          <button
+            type="button"
+            className="exw-icon-btn"
+            aria-label="刷新数据"
+            title="刷新数据"
+            onClick={reload}
+            disabled={loading}
+          >
+            <RefreshCw size={15} className={loading ? 'spinning' : ''} />
+          </button>
+        </div>
+      </header>
 
-        {/* Personal Exam Profile Bar (我的报考条件一键匹配卡) */}
-        <div className={`exam-profile-bar ${profile.onlyMatchProfile ? 'is-active' : ''}`}>
-          <div className="exam-profile-head">
-            <div className="exam-profile-label">
-              <UserCheck size={16} />
-              <strong>我的考公报考画像（一键排雷硬性限制）</strong>
-              <span className="text-muted">保存在本机浏览器，自动比对岗位表中的学历、党员、应届、户籍与专业要求</span>
-            </div>
-            <label className="exam-profile-switch">
-              <input
-                type="checkbox"
-                checked={profile.onlyMatchProfile}
-                onChange={(e) => updateProfile({ onlyMatchProfile: e.target.checked })}
-              />
-              <Sparkles size={14} />
-              <span>只看我符合条件可报的简章与岗位</span>
-            </label>
+      {/* ---------- Eligibility profile ---------- */}
+      <section className={`exw-profile${profile.onlyMatchProfile ? ' is-on' : ''}`} aria-label="我的报考条件">
+        <div className="exw-profile-row">
+          <span className="exw-profile-icon" aria-hidden="true">
+            <UserCheck size={18} />
+          </span>
+          <div className="exw-profile-text">
+            <strong>我的报考条件</strong>
+            {profileSummary.length > 0 ? (
+              <span className="exw-profile-summary">
+                {profileSummary.map((s) => (
+                  <span key={s} className="exw-pill">
+                    {s}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span className="exw-muted">填写学历、专业等条件，自动标出你能报的岗位</span>
+            )}
           </div>
+          <label className="exw-switch">
+            <input
+              type="checkbox"
+              checked={profile.onlyMatchProfile}
+              onChange={(e) => updateProfile({ onlyMatchProfile: e.target.checked })}
+            />
+            <span className="exw-switch-ui" aria-hidden="true" />
+            <span>只看可报</span>
+          </label>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            aria-expanded={profileOpen}
+            onClick={() => setProfileOpen((v) => !v)}
+          >
+            {profileOpen ? '收起' : profileActive ? '修改' : '填写条件'}
+            <ChevronDown size={14} className={profileOpen ? 'exw-rot' : ''} />
+          </button>
+        </div>
 
-          <div className="exam-profile-controls">
-            <label className="exam-profile-field">
+        {profileOpen && (
+          <div className="exw-profile-form">
+            <label className="exw-field">
               <span>最高学历</span>
               <select
                 value={profile.education}
-                onChange={(e) =>
-                  updateProfile({ education: e.target.value as ExamUserProfile['education'] })
-                }
+                onChange={(e) => updateProfile({ education: e.target.value as ExamUserProfile['education'] })}
               >
-                <option value="全部">不限 / 全部学历</option>
-                <option value="专科">专科（大专）</option>
-                <option value="本科">大学本科</option>
+                <option value="全部">不限</option>
+                <option value="专科">专科</option>
+                <option value="本科">本科</option>
                 <option value="硕士研究生">硕士研究生</option>
                 <option value="博士研究生">博士研究生</option>
               </select>
             </label>
-
-            <label className="exam-profile-field is-wide">
-              <span>所学专业关键词（支持填本硕多个专业）</span>
+            <label className="exw-field">
+              <span>学位</span>
+              <select
+                value={profile.hasDegree ? 'yes' : 'no'}
+                onChange={(e) => updateProfile({ hasDegree: e.target.value === 'yes' })}
+              >
+                <option value="yes">已取得相应学位</option>
+                <option value="no">无学位</option>
+              </select>
+            </label>
+            <label className="exw-field is-wide">
+              <span>专业关键词</span>
               <input
                 type="text"
-                placeholder="如：计算机 软件工程 法学 会计学 汉语言文学..."
+                placeholder="如：计算机 法学 会计（空格分隔多个）"
                 value={profile.majorQuery}
                 onChange={(e) => updateProfile({ majorQuery: e.target.value })}
               />
             </label>
-
-            <label className="exam-profile-field">
+            <label className="exw-field">
               <span>政治面貌</span>
               <select
                 value={profile.politicalStatus}
                 onChange={(e) =>
-                  updateProfile({
-                    politicalStatus: e.target.value as ExamUserProfile['politicalStatus'],
-                  })
+                  updateProfile({ politicalStatus: e.target.value as ExamUserProfile['politicalStatus'] })
                 }
               >
                 <option value="不限">不限</option>
@@ -488,729 +584,549 @@ export function ExamWorkspace() {
                 <option value="群众">群众</option>
               </select>
             </label>
-
-            <label className="exam-profile-field">
-              <span>应届毕业生身份</span>
+            <label className="exw-field">
+              <span>毕业身份</span>
               <select
                 value={profile.gradIdentity}
                 onChange={(e) =>
-                  updateProfile({
-                    gradIdentity: e.target.value as ExamUserProfile['gradIdentity'],
-                  })
+                  updateProfile({ gradIdentity: e.target.value as ExamUserProfile['gradIdentity'] })
                 }
               >
-                <option value="不限">不限身份</option>
-                <option value="当年应届">2026当年应届生</option>
-                <option value="择业期应届">择业期内应届生</option>
+                <option value="不限">不限</option>
+                <option value="当年应届">当年应届生</option>
+                <option value="择业期应届">择业期内毕业生</option>
                 <option value="在职/社会人员">在职 / 社会人员</option>
               </select>
             </label>
-
-            <label className="exam-profile-field">
+            <label className="exw-field">
               <span>户籍 / 生源地</span>
-              <select
-                value={profile.hukouCity}
-                onChange={(e) => updateProfile({ hukouCity: e.target.value })}
-              >
-                <option value="全部">不限户籍</option>
+              <select value={profile.hukouCity} onChange={(e) => updateProfile({ hukouCity: e.target.value })}>
+                <option value="全部">不限</option>
                 {SHANDONG_16_CITIES.map((c) => (
                   <option key={c} value={c}>
-                    {c}市户籍/生源
+                    {c}
                   </option>
                 ))}
               </select>
             </label>
-
+            <label className="exw-field">
+              <span>基层工作经历</span>
+              <select
+                value={profile.grassrootsYears}
+                onChange={(e) => updateProfile({ grassrootsYears: Number(e.target.value) })}
+              >
+                <option value={0}>无</option>
+                <option value={1}>1 年</option>
+                <option value={2}>2 年</option>
+                <option value={3}>3 年</option>
+                <option value={5}>5 年及以上</option>
+              </select>
+            </label>
             {profileActive && (
               <button
                 type="button"
-                className="btn btn-ghost btn-sm"
+                className="text-btn exw-profile-clear"
                 onClick={() => {
                   setProfile(DEFAULT_EXAM_PROFILE);
                   safeWriteJson(EXAM_PROFILE_STORAGE, DEFAULT_EXAM_PROFILE);
                 }}
               >
-                <RotateCcw size={13} /> 清空画像
+                清空条件
               </button>
             )}
           </div>
-        </div>
+        )}
       </section>
 
-      {/* Sub-navigation Tabs */}
-      <div className="exam-subnav-bar">
-        <div className="exam-subnav-tabs" role="tablist" aria-label="考公考编视图切换">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filters.view === 'announcements'}
-            className={`exam-tab-btn ${filters.view === 'announcements' ? 'is-active' : ''}`}
-            onClick={() => updateFilters({ view: 'announcements' })}
-          >
-            <ShieldCheck size={16} />
-            <span>招考简章流</span>
-            <span className="exam-tab-count">{filteredExams.length}</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filters.view === 'positions'}
-            className={`exam-tab-btn ${filters.view === 'positions' ? 'is-active' : ''}`}
-            onClick={() => updateFilters({ view: 'positions' })}
-          >
-            <FileSpreadsheet size={16} />
-            <span>跨简章选岗器（职位库）</span>
-            <span className="exam-tab-count">{flattenedPositions.length}</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filters.view === 'saved'}
-            className={`exam-tab-btn ${filters.view === 'saved' ? 'is-active' : ''}`}
-            onClick={() => updateFilters({ view: 'saved' })}
-          >
-            <Bookmark size={16} />
-            <span>我的收藏与候选岗</span>
-            <span className="exam-tab-count">{savedCount}</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filters.view === 'tracker'}
-            className={`exam-tab-btn ${filters.view === 'tracker' ? 'is-active' : ''}`}
-            onClick={() => updateFilters({ view: 'tracker' })}
-          >
-            <Kanban size={16} />
-            <span>报考进度看板</span>
-            <span className="exam-tab-count">{trackedCount}</span>
-          </button>
+      {/* ---------- Toolbar ---------- */}
+      <div className="exw-toolbar">
+        <div className="exw-tabs" role="tablist" aria-label="视图切换">
+          {tabs.map((t) => {
+            const Icon = t.icon;
+            const on = filters.view === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                className={`exw-tab${on ? ' is-on' : ''}`}
+                onClick={() => updateFilters({ view: t.key })}
+              >
+                <Icon size={15} />
+                <span>{t.label}</span>
+                <span className="exw-tab-count">{t.count}</span>
+              </button>
+            );
+          })}
         </div>
-
+        <div className="exw-search">
+          <Search size={16} />
+          <input
+            type="search"
+            aria-label="搜索公告、单位、岗位或专业"
+            placeholder="搜索公告、单位、岗位或专业"
+            value={filters.query}
+            onChange={(e) => updateFilters({ query: e.target.value })}
+          />
+          {filters.query && (
+            <button type="button" aria-label="清空搜索" onClick={() => updateFilters({ query: '' })}>
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <select
+          className="exw-select"
+          aria-label="排序"
+          value={filters.sort}
+          onChange={(e) => updateFilters({ sort: e.target.value as ExamFilters['sort'] })}
+        >
+          {SORT_OPTIONS.map(([v, label]) => (
+            <option key={v} value={v}>
+              {label}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
-          className="btn btn-secondary btn-sm exam-mobile-filter-btn"
-          onClick={() => setMobileFilterOpen(!mobileFilterOpen)}
+          className="btn btn-secondary btn-sm exw-filter-toggle"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen((v) => !v)}
         >
-          <Filter size={14} /> 筛选条件
+          <SlidersHorizontal size={14} />
+          筛选{activeFilters.length > 0 ? ` · ${activeFilters.length}` : ''}
         </button>
       </div>
 
-      {error && (
-        <div className="inline-alert is-danger" role="alert">
-          <AlertCircle size={16} />
-          <span>{error}</span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadSnapshot()}>
-            重试
-          </button>
-        </div>
-      )}
-
-      {/* Main 3-Column Grid */}
-      <div className="page-grid exam-page-grid">
-        {/* Left Filter Sidebar */}
-        <aside className={`filters-panel exam-filters-panel ${mobileFilterOpen ? 'is-mobile-open' : ''}`} aria-label="考公考编筛选栏">
-          <div className="filters-header">
-            <h2>考公考编筛选</h2>
-            <button type="button" className="text-btn" onClick={resetAllFilters}>
-              重置筛选
-            </button>
+      <div className="exw-layout">
+        {/* ---------- Filters ---------- */}
+        <aside className={`exw-filters${filtersOpen ? ' is-open' : ''}`} aria-label="筛选条件">
+          <div className="exw-filters-head">
+            <span>筛选</span>
+            {activeFilters.length > 0 && (
+              <button type="button" className="text-btn" onClick={resetFilters}>
+                重置
+              </button>
+            )}
           </div>
 
-          <div className="filter-group">
-            <span className="filter-label">山东 16 地市 / 考区范围</span>
-            <div className="city-pills">
-              <button
-                type="button"
-                className={`chip ${filters.cities.includes('全部') ? 'is-active' : ''}`}
-                onClick={() => toggleCity('全部')}
-              >
-                全部地区
-              </button>
+          <FilterSection title="地区" badge={selectedCities.length}>
+            <div className="exw-chip-grid">
+              <Chip active={selectedCities.length === 0} onClick={() => toggleCity('全部')}>
+                全部
+              </Chip>
               {SHANDONG_16_CITIES.map((city) => (
-                <button
-                  key={city}
-                  type="button"
-                  className={`chip ${filters.cities.includes(city) ? 'is-active' : ''}`}
-                  onClick={() => toggleCity(city)}
-                >
+                <Chip key={city} active={filters.cities.includes(city)} onClick={() => toggleCity(city)}>
                   {city}
-                </button>
+                </Chip>
               ))}
             </div>
-          </div>
+          </FilterSection>
 
-          <div className="filter-group">
-            <span className="filter-label">招考大类</span>
-            <div className="chip-group">
-              <button
-                type="button"
-                className={`chip ${filters.category === '全部' ? 'is-active' : ''}`}
-                onClick={() => updateFilters({ category: '全部' })}
-              >
-                全部类别
-              </button>
+          <FilterSection title="报名状态" badge={filters.stage !== '全部' ? 1 : 0}>
+            <div className="exw-chip-wrap">
+              <Chip active={filters.stage === '全部'} onClick={() => updateFilters({ stage: '全部' })}>
+                全部
+              </Chip>
+              {STAGE_OPTIONS.map(([v, label]) => (
+                <Chip key={v} active={filters.stage === v} onClick={() => updateFilters({ stage: v })}>
+                  {label}
+                </Chip>
+              ))}
+            </div>
+          </FilterSection>
+
+          <FilterSection title="招考类别" badge={filters.category !== '全部' ? 1 : 0}>
+            <div className="exw-chip-wrap">
+              <Chip active={filters.category === '全部'} onClick={() => updateFilters({ category: '全部' })}>
+                全部
+              </Chip>
               {EXAM_CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  className={`chip ${filters.category === cat ? 'is-active' : ''}`}
-                  onClick={() => updateFilters({ category: cat })}
-                >
-                  {cat}
-                </button>
+                <Chip key={cat} active={filters.category === cat} onClick={() => updateFilters({ category: cat })}>
+                  {categoryLabel(cat)}
+                </Chip>
               ))}
             </div>
-          </div>
+          </FilterSection>
 
-          <div className="filter-group">
-            <span className="filter-label">编制与管理性质</span>
-            <div className="chip-group">
-              <button
-                type="button"
-                className={`chip ${filters.bianzhi === '全部' ? 'is-active' : ''}`}
-                onClick={() => updateFilters({ bianzhi: '全部' })}
-              >
-                全部编制
-              </button>
+          <FilterSection title="编制性质" badge={filters.bianzhi !== '全部' ? 1 : 0}>
+            <div className="exw-chip-wrap">
+              <Chip active={filters.bianzhi === '全部'} onClick={() => updateFilters({ bianzhi: '全部' })}>
+                全部
+              </Chip>
               {BIANZHI_OPTIONS.map((bz) => (
-                <button
-                  key={bz}
-                  type="button"
-                  className={`chip ${filters.bianzhi === bz ? 'is-active' : ''}`}
-                  onClick={() => updateFilters({ bianzhi: bz })}
-                >
-                  {bz}
-                </button>
+                <Chip key={bz} active={filters.bianzhi === bz} onClick={() => updateFilters({ bianzhi: bz })}>
+                  {bianzhiLabel(bz)}
+                </Chip>
               ))}
             </div>
-          </div>
+          </FilterSection>
 
-          <div className="filter-group">
-            <span className="filter-label">笔试 / 考试科目</span>
-            <div className="chip-group">
-              {SUBJECT_OPTIONS.map((subj) => (
-                <button
-                  key={subj}
-                  type="button"
-                  className={`chip ${filters.subject === subj ? 'is-active' : ''}`}
-                  onClick={() => updateFilters({ subject: subj })}
-                >
-                  {subj === '全部' ? '全部科目' : subj}
-                </button>
+          <FilterSection
+            title="更多"
+            defaultOpen={false}
+            badge={
+              (filters.subject !== '全部' ? 1 : 0) +
+              (filters.noticeRole !== '全部' ? 1 : 0) +
+              (filters.unlimitedMajorOnly ? 1 : 0)
+            }
+          >
+            <p className="exw-fsub">考试科目</p>
+            <div className="exw-chip-wrap">
+              <Chip active={filters.subject === '全部'} onClick={() => updateFilters({ subject: '全部' })}>
+                全部
+              </Chip>
+              {SUBJECT_OPTIONS.map((s) => (
+                <Chip key={s} active={filters.subject === s} onClick={() => updateFilters({ subject: s })}>
+                  {s}
+                </Chip>
               ))}
             </div>
-          </div>
-
-          <div className="filter-group">
-            <span className="filter-label">考务阶段</span>
-            <div className="chip-group">
-              {STAGE_OPTIONS.map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  className={`chip ${filters.stage === st ? 'is-active' : ''}`}
-                  onClick={() => updateFilters({ stage: st })}
-                >
-                  {st}
-                </button>
+            <p className="exw-fsub">公告类型</p>
+            <div className="exw-chip-wrap">
+              <Chip active={filters.noticeRole === '全部'} onClick={() => updateFilters({ noticeRole: '全部' })}>
+                全部
+              </Chip>
+              {NOTICE_OPTIONS.map(([v, label]) => (
+                <Chip key={v} active={filters.noticeRole === v} onClick={() => updateFilters({ noticeRole: v })}>
+                  {label}
+                </Chip>
               ))}
             </div>
-          </div>
-
-          <div className="filter-group">
-            <span className="filter-label">公告性质</span>
-            <div className="chip-group">
-              {['全部', '仅看招考简章', '考务进展通知'].map((role) => (
-                <button
-                  key={role}
-                  type="button"
-                  className={`chip ${filters.noticeRole === role ? 'is-active' : ''}`}
-                  onClick={() => updateFilters({ noticeRole: role })}
-                >
-                  {role}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="filter-group">
-            <label className="exam-checkbox-row">
+            <label className="exw-switch is-block">
               <input
                 type="checkbox"
                 checked={filters.unlimitedMajorOnly}
                 onChange={(e) => updateFilters({ unlimitedMajorOnly: e.target.checked })}
               />
-              <span>仅看含「不限专业」岗位的招考</span>
+              <span className="exw-switch-ui" aria-hidden="true" />
+              <span>只看含「不限专业」岗位</span>
             </label>
-          </div>
+          </FilterSection>
         </aside>
 
-        {/* Center Results Section */}
-        <section className="results-col exam-results-col" aria-label="考公考编检索结果">
-          {/* Search & Sort Toolbar */}
-          <div className="search-box-wrap">
-            <div className="search-row">
-              <div className="search-field">
-                <Search size={18} />
-                <input
-                  type="text"
-                  aria-label="搜索招考简章、用人单位、岗位代码或专业"
-                  placeholder="搜索招考简章、招录机关、岗位名称、专业（如：省属事业编、选调、教师、法学、计算机）"
-                  value={filters.query}
-                  onChange={(e) => updateFilters({ query: e.target.value })}
-                />
-                {filters.query && (
+        {/* ---------- Results ---------- */}
+        <section className="exw-results" aria-label="检索结果">
+          {error && (
+            <div className="exw-alert">
+              <span>{error}</span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>
+                重试
+              </button>
+            </div>
+          )}
+
+          {filters.view === 'announcements' && milestones.length > 0 && (
+            <section className="exw-upcoming" aria-label="近期考务节点">
+              <div className="exw-upcoming-head">
+                <h2>
+                  <CalendarClock size={15} />
+                  近期考务节点
+                </h2>
+                <button type="button" className="text-btn" onClick={exportCalendar}>
+                  <Download size={14} />
+                  导出日历
+                </button>
+              </div>
+              <div className="exw-upcoming-list">
+                {milestones.map((m) => (
                   <button
+                    key={`${m.exam.id}-${m.type}-${m.date}`}
                     type="button"
-                    className="icon-btn"
-                    aria-label="清空搜索"
-                    onClick={() => updateFilters({ query: '' })}
+                    className={`exw-up is-${m.tone}`}
+                    onClick={() => openExam(m.exam)}
                   >
-                    <X size={15} />
+                    <span className="exw-up-date">
+                      <b>{formatMonthDay(m.date)}</b>
+                      <small>{m.type}</small>
+                    </span>
+                    <span className="exw-up-title">{m.exam.title}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {filters.view !== 'tracker' && (
+            <div className="exw-results-head">
+              <p className="exw-count">
+                共 <strong>{listLength}</strong> {filters.view === 'positions' ? '个岗位' : '条公告'}
+                {profile.onlyMatchProfile && <span className="exw-muted"> · 已按我的条件过滤</span>}
+              </p>
+              {activeFilters.length > 0 && (
+                <div className="exw-active-filters">
+                  {activeFilters.map((f) => (
+                    <button key={f.key} type="button" className="exw-active-chip" onClick={f.clear}>
+                      {f.label}
+                      <X size={12} />
+                    </button>
+                  ))}
+                  <button type="button" className="text-btn" onClick={resetFilters}>
+                    清除
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Announcements & saved */}
+          {(filters.view === 'announcements' || filters.view === 'saved') &&
+            (loading && !snapshot ? (
+              <div className="exw-skeleton-list" aria-label="加载中">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="exw-skeleton" />
+                ))}
+              </div>
+            ) : pagedExams.length === 0 ? (
+              <div className="exw-empty">
+                <p>{filters.view === 'saved' ? '还没有收藏的公告' : '没有符合条件的公告'}</p>
+                {activeFilters.length > 0 && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={resetFilters}>
+                    清除筛选条件
                   </button>
                 )}
               </div>
-
-              <select
-                className="exam-sort-select"
-                aria-label="排序方式"
-                value={filters.sort}
-                onChange={(e) => updateFilters({ sort: e.target.value as ExamFilters['sort'] })}
-              >
-                <option value="smart">智能排序（正在报名优先）</option>
-                <option value="published">按发布日期最新</option>
-                <option value="reg_end">按报名截止最近</option>
-                <option value="headcount">按招录人数最多</option>
-              </select>
-            </div>
-
-            <div className="search-hints">
-              <span>热门检索</span>
-              {['事业单位', '选调', '公务员', '教师', '医院', '控制总量', '文职', '三支一扶', '人才引进'].map(
-                (kw) => (
-                  <button
-                    key={kw}
-                    type="button"
-                    onClick={() => updateFilters({ query: kw })}
-                  >
-                    {kw}
-                  </button>
-                ),
-              )}
-            </div>
-          </div>
-
-          {/* View 1 & 3: Announcements / Saved View */}
-          {(filters.view === 'announcements' || filters.view === 'saved') && (
-            <>
-              <div className="results-toolbar">
-                <span className="results-count">
-                  共找到 <strong>{filteredExams.length}</strong> 条招考公告
-                  {profile.onlyMatchProfile ? '（已开启个人报考画像过滤）' : ''}
-                </span>
-                <div className="exam-view-switch-inline">
-                  <button
-                    type="button"
-                    className="text-btn"
-                    onClick={() => updateFilters({ view: 'positions' })}
-                  >
-                    切换到「跨简章职位表选岗器 ({flattenedPositions.length} 岗)」→
-                  </button>
-                </div>
+            ) : (
+              <div className="exw-list">
+                {pagedExams.map((exam) => (
+                  <ExamCard
+                    key={exam.id}
+                    exam={exam}
+                    profile={profile}
+                    personal={personal[exam.id]}
+                    onSelect={openExam}
+                    onToggleSave={toggleSaveExam}
+                  />
+                ))}
               </div>
+            ))}
 
-              {loading && !snapshot ? (
-                <div className="empty-state">正在加载考公考编招考数据…</div>
-              ) : pagedExams.length === 0 ? (
-                <div className="empty-state">
-                  <p>没有匹配的招考简章。</p>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={resetAllFilters}>
-                    清空筛选条件
-                  </button>
-                </div>
-              ) : (
-                <div className="job-list exam-card-list">
-                  {pagedExams.map((exam) => (
-                    <ExamCard
-                      key={exam.id}
-                      exam={exam}
-                      profile={profile}
-                      personal={personal[exam.id]}
-                      onSelect={(item) => setSelectedExam(item)}
-                      onToggleSave={toggleSaveExam}
-                      onChangeStatus={changeTrackStatus}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* View 2: Cross-Announcement Position Selector (跨简章选岗器) */}
-          {filters.view === 'positions' && (
-            <div className="exam-selector-panel">
-              <div className="results-toolbar">
-                <span className="results-count">
-                  跨简章职位库检索：共匹配 <strong>{flattenedPositions.length}</strong> 个具体招考岗位行
-                </span>
-                <span className="text-muted text-xs">
-                  点击任意岗位可打开对应招考简章核对报名时间与原表附件
-                </span>
+          {/* Positions */}
+          {filters.view === 'positions' &&
+            (pagedPositions.length === 0 ? (
+              <div className="exw-empty">
+                <p>没有符合条件的岗位</p>
               </div>
-
-              <div className="exam-positions-table-wrap">
-                <table className="exam-positions-table">
+            ) : (
+              <div className="exw-table-wrap">
+                <table className="exw-table">
                   <thead>
                     <tr>
-                      <th>地区 / 招考简章</th>
-                      <th>招聘单位 / 主管部门</th>
-                      <th>岗位名称 & 代码</th>
-                      <th>编制 / 人数</th>
-                      <th>学历 / 专业要求</th>
-                      <th>政治面貌 / 应届 / 其他</th>
-                      <th>核验 & 操作</th>
+                      <th>岗位</th>
+                      <th>地区</th>
+                      <th className="is-num">人数</th>
+                      <th>学历 / 专业</th>
+                      <th>其他条件</th>
+                      {profileActive && <th>资格</th>}
+                      <th aria-label="候选" />
                     </tr>
                   </thead>
                   <tbody>
                     {pagedPositions.map((row) => {
-                      const rec = personal[row.exam.id];
-                      const isCand = rec?.savedPositionIds?.includes(row.row_id);
+                      const isCand = personal[row.exam.id]?.savedPositionIds?.includes(row.row_id);
+                      const extra = [
+                        row.political_status && row.political_status !== '不限' ? row.political_status : '',
+                        row.fresh_grad_rule && !/^(不限|应往届均可)$/.test(row.fresh_grad_rule)
+                          ? row.fresh_grad_rule
+                          : '',
+                      ].filter(Boolean);
                       return (
-                        <tr
-                          key={row.row_id}
-                          className={row.eligibility.matched && profileActive ? 'is-eligible' : ''}
-                        >
+                        <tr key={row.row_id} className={profileActive && row.eligibility.matched ? 'is-ok' : ''}>
+                          <td className="exw-td-main">
+                            <button type="button" className="exw-row-title" onClick={() => openExam(row.exam)}>
+                              {row.position_name}
+                            </button>
+                            <div className="exw-row-sub">
+                              {row.employer}
+                              {row.position_code ? <span className="exw-code">{row.position_code}</span> : null}
+                            </div>
+                            <div className="exw-row-src" title={row.exam.title}>
+                              {row.exam.title}
+                            </div>
+                          </td>
+                          <td className="exw-nowrap">{row.city || row.exam.cities[0] || row.exam.province}</td>
+                          <td className="is-num">
+                            <strong>{row.recruit_count}</strong>
+                          </td>
                           <td>
-                            <span className="exam-badge is-city">
-                              <MapPin size={11} /> {row.city || row.exam.cities[0] || row.exam.province}
-                            </span>
+                            <div>{row.education}</div>
+                            <div className="exw-row-sub exw-clamp" title={row.major_raw}>
+                              {row.major_raw}
+                            </div>
+                          </td>
+                          <td>
+                            {extra.length > 0 ? (
+                              <div className="exw-row-tags">
+                                {extra.map((t) => (
+                                  <span key={t} className="exw-tag">
+                                    {t}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="exw-muted">无</span>
+                            )}
+                          </td>
+                          {profileActive && (
+                            <td>
+                              {row.eligibility.matched ? (
+                                <span className="exw-elig is-ok">
+                                  <CheckCircle2 size={12} />
+                                  可报
+                                </span>
+                              ) : (
+                                <span className="exw-elig is-no" title={row.eligibility.conflicts.join('；')}>
+                                  不符
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          <td className="is-action">
                             <button
                               type="button"
-                              className="exam-link-title"
-                              onClick={() => setSelectedExam(row.exam)}
+                              className={`exw-icon-btn${isCand ? ' is-on' : ''}`}
+                              aria-pressed={Boolean(isCand)}
+                              aria-label={isCand ? '移出候选' : '加入候选'}
+                              title={isCand ? '移出候选' : '加入候选'}
+                              onClick={() => toggleCandidate(row.exam.id, row.row_id, row.position_name)}
                             >
-                              {row.exam.title}
+                              <Star size={15} fill={isCand ? 'currentColor' : 'none'} />
                             </button>
-                          </td>
-                          <td>
-                            <strong>{row.employer}</strong>
-                            {row.department && row.department !== row.employer && (
-                              <div className="text-muted text-xs">{row.department}</div>
-                            )}
-                          </td>
-                          <td>
-                            <strong>{row.position_name}</strong>
-                            {row.position_code && (
-                              <div className="exam-code-tag">代码：{row.position_code}</div>
-                            )}
-                          </td>
-                          <td>
-                            <div>{row.bianzhi}</div>
-                            <strong className="exam-hc-badge">招 {row.recruit_count} 人</strong>
-                          </td>
-                          <td className="exam-major-cell">
-                            <div><strong>{row.education}</strong></div>
-                            <div>{row.major_raw}</div>
-                          </td>
-                          <td>
-                            <div className="text-xs">政治面貌：{row.political_status}</div>
-                            <div className="text-xs">范围：{row.fresh_grad_rule}</div>
-                            {row.other_conditions && (
-                              <div className="text-muted text-xs">{row.other_conditions}</div>
-                            )}
-                          </td>
-                          <td>
-                            {row.eligibility.matched ? (
-                              <span className="elig-badge is-ok">
-                                <CheckCircle2 size={12} /> 可报考
-                              </span>
-                            ) : (
-                              <span className="elig-badge is-conflict">
-                                {row.eligibility.conflicts[0]}
-                              </span>
-                            )}
-                            <div className="exam-pos-row-actions">
-                              <button
-                                type="button"
-                                className={`btn btn-sm ${isCand ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => {
-                                  const prevIds = rec?.savedPositionIds || [];
-                                  const nextIds = isCand
-                                    ? prevIds.filter((id) => id !== row.row_id)
-                                    : [...prevIds, row.row_id];
-                                  updatePersonalRecord(row.exam.id, {
-                                    saved: true,
-                                    savedPositionIds: nextIds,
-                                    status:
-                                      !rec?.status || rec.status === 'none'
-                                        ? 'comparing'
-                                        : rec.status,
-                                  });
-                                  setNotice(isCand ? '已移出候选岗位' : `已加入候选对比：${row.position_name}`);
-                                }}
-                              >
-                                {isCand ? '★ 已候选' : '☆ 候选'}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setSelectedExam(row.exam)}
-                              >
-                                详情
-                              </button>
-                            </div>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
-                {pagedPositions.length === 0 && (
-                  <div className="empty-state">
-                    没有符合当前筛选条件的岗位表行，请尝试放宽筛选或搜索词。
-                  </div>
-                )}
               </div>
-            </div>
-          )}
+            ))}
 
-          {/* View 4: 7-Stage Exam Application Tracker Kanban */}
-          {filters.view === 'tracker' && (
-            <div className="exam-kanban-wrap">
-              <div className="results-toolbar">
-                <span className="results-count">
-                  考公考编全周期跟进看板（已跟进 <strong>{trackedCount}</strong> 项招考）
-                </span>
-                <span className="text-muted text-xs">
-                  重点盯防「初审通过待缴费」与「准考证打印」，避免错过缴费确认导致报名作废
-                </span>
+          {/* Tracker */}
+          {filters.view === 'tracker' &&
+            (trackedCount === 0 ? (
+              <div className="exw-empty">
+                <Kanban size={28} />
+                <p>还没有跟进中的报考</p>
+                <span className="exw-muted">打开任一公告，在详情中设置「报考进度」即可加入看板</span>
               </div>
-
-              <div className="exam-kanban-grid">
+            ) : (
+              <div className="exw-kanban">
                 {EXAM_TRACK_STAGES.map((stage) => {
-                  const stageExams = allExams.filter(
-                    (ex) => personal[ex.id]?.status === stage.key,
-                  );
+                  const stageExams = allExams.filter((ex) => personal[ex.id]?.status === stage.key);
                   return (
-                    <div key={stage.key} className="exam-kanban-col">
-                      <div className="exam-kanban-col-head">
-                        <strong>{stage.label}</strong>
-                        <span className="exam-tab-count">{stage.key === 'audited' && stageExams.length > 0 ? `⚠️ ${stageExams.length}` : stageExams.length}</span>
-                      </div>
-                      <p className="exam-kanban-hint">{stage.hint}</p>
-                      <div className="exam-kanban-cards">
+                    <section key={stage.key} className={`exw-kcol${stage.key === 'audited' ? ' is-warn' : ''}`}>
+                      <header className="exw-kcol-head">
+                        <span>{stage.shortLabel}</span>
+                        <span className="exw-kcount">{stageExams.length}</span>
+                      </header>
+                      <div className="exw-kcards">
                         {stageExams.map((ex) => {
                           const rec = personal[ex.id];
                           return (
-                            <button
-                              key={ex.id}
-                              type="button"
-                              className="exam-kanban-card"
-                              onClick={() => setSelectedExam(ex)}
-                            >
-                              <div className="exam-kanban-card-top">
-                                <span className="exam-badge is-category">{ex.exam_category}</span>
-                                <span className="text-xs text-muted">{ex.cities[0] || ex.province}</span>
-                              </div>
-                              <h4>{ex.title}</h4>
+                            <button key={ex.id} type="button" className="exw-kcard" onClick={() => openExam(ex)}>
+                              <span className="exw-kcard-title">{ex.title}</span>
+                              <span className="exw-kcard-meta">
+                                <MapPin size={11} />
+                                {ex.cities[0] || ex.province} · {categoryLabel(ex.exam_category)}
+                              </span>
                               {rec?.targetPositionCode && (
-                                <div className="exam-kanban-target">
-                                  <Target size={12} /> {rec.targetPositionCode}
-                                </div>
+                                <span className="exw-kcard-note">主报：{rec.targetPositionCode}</span>
                               )}
-                              {rec?.regNumber && (
-                                <div className="text-xs text-muted">序号/准考证：{rec.regNumber}</div>
+                              {(ex.schedule.payment_end || ex.schedule.written_exam_date) && (
+                                <span className="exw-kcard-date">
+                                  {ex.schedule.payment_end
+                                    ? `缴费截止 ${formatMonthDay(ex.schedule.payment_end)}`
+                                    : `笔试 ${formatMonthDay(ex.schedule.written_exam_date)}`}
+                                </span>
                               )}
-                              {rec?.writtenScore && (
-                                <div className="text-xs text-muted">成绩：{rec.writtenScore}</div>
-                              )}
-                              <div className="exam-kanban-dates">
-                                {ex.schedule.reg_end && <span>报名截止：{ex.schedule.reg_end}</span>}
-                                {ex.schedule.payment_end && (
-                                  <span className="is-warn">缴费截止：{ex.schedule.payment_end}</span>
-                                )}
-                                {ex.schedule.written_exam_date && (
-                                  <span>笔试：{ex.schedule.written_exam_date}</span>
-                                )}
-                              </div>
                             </button>
                           );
                         })}
-                        {stageExams.length === 0 && (
-                          <div className="exam-kanban-empty">暂无记录</div>
-                        )}
+                        {stageExams.length === 0 && <p className="exw-kempty">—</p>}
                       </div>
-                    </div>
+                    </section>
                   );
                 })}
               </div>
-            </div>
-          )}
+            ))}
 
-          {/* Pagination */}
           {filters.view !== 'tracker' && totalPages > 1 && (
-            <div className="pager">
-              <span className="pager-range">
-                第 {page} / {totalPages} 页
-              </span>
-              <div className="pager-nav">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  <ChevronLeft size={14} /> 上一页
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  下一页 <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Right Exam Calendar & Reminders Rail */}
-        <aside className="action-rail exam-agenda-rail" aria-label="考务关键节点日历">
-          <div className="rail-card">
-            <div className="rail-card-head">
-              <div>
-                <h3>
-                  <Calendar size={16} style={{ display: 'inline', marginRight: 6 }} />
-                  考务关键时间轴
-                </h3>
-                <p className="text-muted text-xs">报名截止、缴费确认与笔试日程</p>
-              </div>
+            <nav className="exw-pager" aria-label="分页">
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={exportExamCalendarIcs}
-                title="导出考务日历到手机/电脑日历"
+                disabled={currentPage <= 1}
+                onClick={() => setPage(currentPage - 1)}
               >
-                <Download size={13} /> 导出日历
+                <ChevronLeft size={14} />
+                上一页
               </button>
-            </div>
-
-            <div className="exam-milestone-list">
-              {calendarMilestones.map((item, idx) => (
-                <button
-                  key={`${item.exam.id}-${item.type}-${idx}`}
-                  type="button"
-                  className={`exam-milestone-item is-${item.tone}`}
-                  onClick={() => setSelectedExam(item.exam)}
-                >
-                  <div className="milestone-top">
-                    <span className={`milestone-tag is-${item.tone}`}>{item.type}</span>
-                    <strong className="milestone-date">
-                      <Clock3 size={12} /> {item.date}
-                    </strong>
-                  </div>
-                  <p className="milestone-title">{item.exam.title}</p>
-                  <span className="milestone-meta">
-                    {item.exam.cities[0] || item.exam.province} · {item.exam.exam_category} · 招{' '}
-                    {item.exam.total_headcount} 人
-                  </span>
-                </button>
-              ))}
-              {calendarMilestones.length === 0 && (
-                <p className="text-muted text-xs">暂无近期考务时间节点</p>
-              )}
-            </div>
-          </div>
-
-          <div className="rail-card">
-            <h3>考公考编避坑提醒</h3>
-            <ul className="exam-tips-list">
-              <li>
-                <strong>严格区分「事业编」与「控制总量」</strong>：山东省属及各地市高校、医院多采用「人员控制总量备案制」，在工资福利、职称评聘上与事业编一致，卡片均已明确标注。
-              </li>
-              <li>
-                <strong>切勿漏掉「网上缴费确认」</strong>：初审通过不代表报名成功！每年均有大量考生通过初审后忘记在截止前缴费而痛失考试资格。
-              </li>
-              <li>
-                <strong>应届身份界定</strong>：请仔细核对简章中是否包含「择业期内未落实工作单位的高校毕业生」或仅限「当年应届毕业生」。
-              </li>
-            </ul>
-          </div>
-        </aside>
+              <span>
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                下一页
+                <ChevronRight size={14} />
+              </button>
+            </nav>
+          )}
+        </section>
       </div>
 
-      {/* Exam Detail Drawer */}
       <ExamDetailDrawer
         exam={selectedExam}
         exams={filteredExams}
         profile={profile}
         personal={selectedExam ? personal[selectedExam.id] : undefined}
-        onClose={() => setSelectedExam(null)}
-        onSelectExam={(ex) => setSelectedExam(ex)}
+        onClose={closeExam}
+        onSelectExam={openExam}
         onToggleSave={toggleSaveExam}
         onUpdatePersonal={updatePersonalRecord}
-        onNotify={(msg) => setNotice(msg)}
+        onChangeStatus={(examId: string, status: ExamTrackStatus) => {
+          updatePersonalRecord(examId, { status, saved: status !== 'none' ? true : personal[examId]?.saved });
+          if (status !== 'none') {
+            setNotice(`报考进度：${EXAM_TRACK_STAGES.find((s) => s.key === status)?.label ?? status}`);
+          }
+        }}
+        onNotify={setNotice}
       />
 
-      {/* Official Sources Modal */}
-      {sourceModalOpen && (
-        <div className="drawer-backdrop">
-          <button
-            type="button"
-            className="drawer-backdrop-close"
-            aria-label="关闭渠道列表弹窗"
-            onClick={() => setSourceModalOpen(false)}
-          />
-          <aside
-            className="drawer"
-            style={{ maxWidth: 680 }}
-            aria-label="考公考编官方渠道列表"
-          >
-            <header className="drawer-head">
-              <div>
-                <h2>考公考编官方信息渠道矩阵</h2>
-                <p className="drawer-meta">
-                  覆盖国家统考、山东省直、山东 16 地市人社局及高校招考专栏
-                </p>
-              </div>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="关闭渠道列表"
-                onClick={() => setSourceModalOpen(false)}
-              >
-                <X size={20} />
-              </button>
-            </header>
-            <div className="drawer-body">
-              <div className="exam-sources-grid">
-                {(snapshot?.sources || []).map((src) => (
-                  <div key={src.id} className="exam-source-item">
-                    <div>
-                      <strong>{src.name}</strong>
-                      <div className="text-muted text-xs">
-                        {src.level || '官方招考源'} · {src.city || '山东 / 全国'} · 收录 {src.count ?? 0} 条
-                      </div>
-                    </div>
-                    <a
-                      href={src.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-secondary btn-sm"
-                    >
-                      官网 <ExternalLink size={12} />
-                    </a>
-                  </div>
-                ))}
-              </div>
+      <ExamSheet open={sourceOpen} onClose={closeSources} label="信息来源" width={560}>
+        <header className="exw-dh">
+          <div className="exw-dh-top">
+            <div>
+              <h2 className="exw-dh-title">信息来源</h2>
+              <p className="exw-dh-sub">国家统考、山东省直、16 地市人社局及高校招考专栏</p>
             </div>
-          </aside>
+            <button type="button" className="exw-icon-btn" aria-label="关闭" onClick={closeSources}>
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <div className="exw-db">
+          <ul className="exw-source-list">
+            {(snapshot?.sources || []).map((src) => (
+              <li key={src.id}>
+                <div>
+                  <strong>{src.name}</strong>
+                  <span className="exw-muted">
+                    {src.city || src.level || '官方'} · {src.count ?? 0} 条
+                  </span>
+                </div>
+                <a href={src.url} target="_blank" rel="noopener noreferrer" className="exw-card-link">
+                  官网
+                  <ExternalLink size={12} />
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
-      )}
+      </ExamSheet>
     </div>
   );
 }

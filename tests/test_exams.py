@@ -1,8 +1,11 @@
 import unittest
 
+from scripts.collect_exams import is_civil_exam_record, is_in_shandong_or_national_scope
 from scripts.parse_exam_positions import (
+    clean_exam_title,
     compute_exam_stage,
     enrich_exam_record,
+    extract_exam_organizer,
     extract_exam_schedule,
     infer_bianzhi_types,
     infer_exam_category,
@@ -25,11 +28,70 @@ class ExamParserTests(unittest.TestCase):
         self.assertEqual(category, "事业单位统考")
         self.assertEqual(infer_notice_role(title), "招考简章")
 
-    def test_extract_schedule_and_stage(self):
+    def test_clean_title_and_extract_organizer(self):
+        self.assertEqual(
+            clean_exam_title("主题：2026年临沂市技师学院公开招聘教师简章 10000-15000元 日期："),
+            "2026年临沂市技师学院公开招聘教师简章",
+        )
+        # Do not trust campus forwarding portal host over county/city in title
+        org_yanggu = extract_exam_organizer(
+            "2026年阳谷县事业单位综合类岗位青年人才引进公告",
+            raw_company="山东第二医科大学",
+        )
+        self.assertEqual(org_yanggu, "阳谷县人力资源和社会保障局")
+
+        # Extract true institution from body intro for clickbait titles
+        org_clickbait = extract_exam_organizer(
+            "14人！这家驻济省属事业单位公开招聘了",
+            raw_company="济南市政府",
+            body="一、招聘单位简介 山东第一医科大学附属颈肩腰腿痛医院为山东第一医科大学直属省级中医骨伤专科医院。",
+        )
+        self.assertEqual(org_clickbait, "山东第一医科大学附属颈肩腰腿痛医院")
+
+    def test_scope_and_noise_filtering(self):
+        # Valid Shandong county exam
+        self.assertTrue(
+            is_civil_exam_record({
+                "title": "2026年阳谷县事业单位综合类岗位青年人才引进公告",
+                "company": "山东第二医科大学",
+                "source_id": "sdsmu-announcements",
+            })
+        )
+        # Valid National exam
+        self.assertTrue(
+            is_civil_exam_record({
+                "title": "中央机关及其直属机构2027年度考试录用公务员公告",
+                "company": "国家公务员局",
+                "source_id": "sdu-announcements",
+            })
+        )
+        # Reject non-Shandong local college from campus feed
+        self.assertFalse(
+            is_civil_exam_record({
+                "title": "上海电机学院2026年公开招聘公告 15000-20000元",
+                "company": "上海电机学院",
+                "source_id": "nankai-announcements",
+            })
+        )
+        # Reject single-position online directory row ("单位 · 岗位")
+        self.assertFalse(
+            is_civil_exam_record({
+                "title": "山东第二医科大学 · 公务员",
+                "company": "山东第二医科大学",
+                "source_id": "sdsmu-positions",
+            })
+        )
+        # Reject general political news containing "考察"
+        self.assertFalse(
+            is_in_shandong_or_national_scope("上海电机学院2026年公开招聘公告", source_id="campus-exam-hub")
+        )
+
+    def test_extract_schedule_and_stage_with_collapsed_lines(self):
+        # Even when newlines are collapsed into spaces by HTML cleaner, sentence splitting extracts all dates
         text = (
-            "一、报名时间：2026年3月10日9:00—3月14日16:00。\n"
-            "二、查询时间：2026年3月10日11:00—3月15日16:00。\n"
-            "三、缴费时间：2026年3月10日11:00—3月16日16:00。\n"
+            "一、报名时间：2026年3月10日9:00—3月14日16:00。"
+            "二、查询时间：2026年3月10日11:00—3月15日16:00。"
+            "三、缴费时间：2026年3月10日11:00—3月16日16:00。"
             "四、笔试时间：2026年3月28日上午9:00—11:30。"
         )
         schedule = extract_exam_schedule(text, "2026-03-05")

@@ -4,9 +4,8 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import io
-import json
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import openpyxl
@@ -29,9 +28,23 @@ except ImportError:
     from scripts.city_registry import PROVINCE_CITIES, cities_in_text
 
 try:
-    from parse_positions import clean_cell, split_majors, _table_to_grid
+    from parse_positions import (
+        clean_cell,
+        split_majors,
+        _table_to_grid,
+        parse_excel_bytes,
+        parse_pdf_bytes,
+        extract_positions_from_text,
+    )
 except ImportError:
-    from scripts.parse_positions import clean_cell, split_majors, _table_to_grid
+    from scripts.parse_positions import (
+        clean_cell,
+        split_majors,
+        _table_to_grid,
+        parse_excel_bytes,
+        parse_pdf_bytes,
+        extract_positions_from_text,
+    )
 
 SHANDONG_CITIES = list(PROVINCE_CITIES.get('山东', []))
 
@@ -68,13 +81,168 @@ EXAM_HEADER_KEYWORD = re.compile(
     re.I,
 )
 
+CAMPUS_PORTAL_HOSTS = {
+    '山东省大学生就业服务平台',
+    '山东大学就业信息网',
+    '南开大学就业网',
+    '学生就业指导中心 代发',
+    '学生就业创业指导中心',
+    '招聘单位待核实',
+    '未知',
+    '济南市政府',
+    '济南人社',
+    '军队人才网',
+    '官方招考主管部门',
+}
+
+
+def clean_exam_title(raw_title: str) -> str:
+    """Normalize announcement title by stripping portal prefixes, trailing dates, and salary tags."""
+    if not raw_title:
+        return ''
+    title = re.sub(r'\s+', ' ', str(raw_title)).strip()
+    title = re.sub(r'^(?:主题[：:]\s*|招聘\s*[|｜]\s*|事业单位\s*[|｜]\s*)', '', title)
+    title = re.sub(r'\s*日期[：:]?\s*$', '', title)
+    title = re.sub(r'\s+\d{3,6}\s*[-~—至]\s*\d{3,6}\s*元(?:/月|·\d+薪)?\s*$', '', title)
+    title = re.sub(r'\*+$', '', title).strip()
+    return title
+
+
+def extract_exam_organizer(title: str, raw_company: str = '', body: str = '', source_name: str = '') -> str:
+    """Extract the true recruiting authority or institution from announcement title and body."""
+    cleaned_title = clean_exam_title(title)
+    comp = re.sub(r'\s+', ' ', (raw_company or '')).strip()
+
+    # 1. National / Provincial / Military canonical authorities
+    if re.search(r'中央机关及其直属机构.*考试录用公务员', cleaned_title):
+        return '国家公务员局'
+    if re.search(r'山东省.*选拔录用选调生', cleaned_title):
+        return '中共山东省委组织部'
+    if re.search(r'山东省.*三支一扶', cleaned_title):
+        return '山东省人力资源和社会保障厅'
+    if '北部战区陆军' in cleaned_title:
+        return '北部战区陆军'
+    for theater in ('北部战区', '南部战区', '东部战区', '西部战区', '中部战区'):
+        if theater in cleaned_title:
+            return theater
+    if '火箭军' in cleaned_title:
+        return '中国人民解放军火箭军'
+    if '武警部队' in cleaned_title:
+        return '中国人民武装警察部队'
+    if '联勤保障部队' in cleaned_title:
+        return '联勤保障部队'
+    if '军事科学院' in cleaned_title:
+        return '中国人民解放军军事科学院'
+    m_nudt = re.search(r'(国防科技大学[\u4e00-\u9fa5]{0,12}?(?:学院)?)', cleaned_title)
+    if m_nudt:
+        return m_nudt.group(1)
+    if re.search(r'(?:^|共\d+人[！!]?)陆军.*文职', cleaned_title):
+        return '中国人民解放军陆军'
+    if re.search(r'(?:^|共\d+人[！!]?)空军.*(?:文职|人才)', cleaned_title):
+        return '中国人民解放军空军'
+    if re.search(r'(?:^|共\d+人[！!]?)海军.*文职', cleaned_title):
+        return '中国人民解放军海军'
+    if re.search(r'军队文职人员公开招考', cleaned_title):
+        return '中央军委政治工作部'
+
+    # 2. Extract explicit organization from title
+    stripped = re.sub(
+        r'^(?:【[^】]+】\s*)?(?:重磅[！!]?\s*|正在报名中[！!]?\s*)?(?:共?\d+人[！!]*\s*|快来报名[！!]?\s*|不要错过[！!]?\s*)?(?:202\d年(?:度|下半年|上半年)?\s*)?',
+        '',
+        cleaned_title,
+    ).strip()
+
+    org_m = re.match(
+        r'^([\u4e00-\u9fa5（）()]{2,30}?(?:'
+        r'人力资源和社会保障厅|人力资源和社会保障局|人社厅|人社局|委员会组织部|市委组织部|县委组织部|区委组织部|'
+        r'教育厅|教育和体育局|教育体育局|教育局|卫生健康委员会|卫生健康局|卫健委|卫健局|'
+        r'自然资源和规划局|应急管理局|国资委|文化和旅游厅|文化和旅游局|体育局|司法局|退役军人事务局|税务局|'
+        r'出入境边防检查总站|水利委员会[\u4e00-\u9fa5]{2,12}(?:院|所|局)|'
+        r'科学研究院[\u4e00-\u9fa5]{2,14}(?:院|所)|研究院[\u4e00-\u9fa5]{0,8}(?:分院|院|所)?|科学院[\u4e00-\u9fa5]{0,14}(?:所|院)?|'
+        r'党校（[\u4e00-\u9fa5]+）|党校|大学城管委会|'
+        r'大学(?:[\u4e00-\u9fa5]{0,8}?(?:附属)?[\u4e00-\u9fa5]{2,12}?(?:医院|学院|研究院|学校|中学|小学))?|'
+        r'学院附属[\u4e00-\u9fa5]{2,10}|学院|技师学院|高等专科学校|专科学校|学校|中学|小学|幼儿园|'
+        r'医院(?:[\u4e00-\u9fa5]{2,8}?医院)?|妇幼保健院|医疗中心|临床中心|精神卫生中心|保健院|广播电视台|实验室|交流服务中心|服务中心|管委会'
+        r'))',
+        stripped,
+    )
+    if org_m:
+        cand = org_m.group(1)
+        if not any(w in cand for w in ('这家', '这些', '这个', '这两家', '公开招聘', '招聘', '招考', '选聘', '遴选', '引进')):
+            return cand
+
+    # County/Municipal system patterns in title (e.g. 2026年阳谷县事业单位..., 2026年邹平市教育系统..., 2026年寿光市卫健系统...)
+    sys_edu = re.search(
+        r'(?:202\d年[度]?)?(?:山东省)?([\u4e00-\u9fa5]{2,14}?(?:市|县|区|高新区|起步区|开发区))(?:市属|市直|区属|县属)?(?:教育系统|教育体育系统|教育类|公开招聘教师)',
+        cleaned_title,
+    )
+    if sys_edu:
+        return f'{sys_edu.group(1)}教育和体育局'
+
+    sys_med = re.search(
+        r'(?:202\d年[度]?)?(?:山东省)?([\u4e00-\u9fa5]{2,14}?(?:市|县|区|高新区|起步区|开发区))(?:市属|市直|区属|县属)?(?:卫生健康系统|卫健系统|医疗卫生|卫生类|卫生事业单位)',
+        cleaned_title,
+    )
+    if sys_med:
+        return f'{sys_med.group(1)}卫生健康局'
+
+    sys_sydw = re.search(
+        r'(?:202\d年[度]?)?(?:山东省)?([\u4e00-\u9fa5]{2,14}?(?:市|县|区|高新区|起步区|开发区))(?:市属|市直|区属|县属|部分)?事业单位',
+        cleaned_title,
+    )
+    if sys_sydw and not any(w in sys_sydw.group(1) for w in ('这家', '这些', '这个', '省属')):
+        place = sys_sydw.group(1)
+        if place in ('山东省', '山东'):
+            return '山东省人力资源和社会保障厅'
+        return f'{place}人力资源和社会保障局'
+
+    # 3. Extract from body intro for clickbait titles ("14人！这家驻济省属事业单位公开招聘了")
+    if body:
+        head_text = re.sub(r'\s+', ' ', body[:600]).strip()
+        intro_patterns = [
+            r'(?:招聘单位简介|单位简介|学校简介|学院简介|医院简介|简介)\s*([\u4e00-\u9fa5（）()]{2,28}?(?:(?:大学|学院)(?:[\u4e00-\u9fa5]{0,4}?附属[\u4e00-\u9fa5]{2,12}?(?:医院|小学|中学|学校))?|技师学院|医院|研究院|研究所|科学院|精神卫生中心|公共卫生临床中心|开发局|广播电视台|学校|小学|中学|保健院))',
+            r'一、([\u4e00-\u9fa5]{2,20}?(?:大学|学院|医院|研究院|科学院|广播电视台|中心|局))简介',
+            r'(?:现将|根据)\s*([\u4e00-\u9fa5（）()]{2,24}?(?:大学|学院|医院|研究院|研究所|科学院|交流服务中心|公共卫生临床中心|保健院|卫生健康委员会|卫生健康局|教育和体育局|教育局|管委会))(?:所属[\u4e00-\u9fa5（）()]{1,10})?\s*(?:公开招聘|人员空缺|202\d)',
+            r'^\s*(?:202\d年[度]?)?\s*([\u4e00-\u9fa5（）()]{2,24}?(?:(?:大学|学院)(?:[\u4e00-\u9fa5]{0,4}?附属[\u4e00-\u9fa5]{2,12}?(?:医院|小学|中学|学校))?|技师学院|医院|妇幼保健院|公共卫生临床中心|精神卫生中心|广播电视台|教育和体育局|教育局|卫生健康委员会|卫生健康局|管委会|教育系统|卫健系统|学校|中心))\s*(?:是|为|坐落|位于|创建于|始建于|成立于|202\d年|所属|第二次|教育系统|卫健系统|公开招聘|本次计划|拟公开)',
+        ]
+        for pat in intro_patterns:
+            m = re.search(pat, head_text)
+            if m:
+                cand = m.group(1).strip()
+                cand = re.sub(r'^(?:根据|现将|202\d年[度]?)', '', cand).strip()
+                if cand.endswith('教育系统'):
+                    cand = cand[:-4] + '教育和体育局'
+                elif cand.endswith('卫健系统'):
+                    cand = cand[:-4] + '卫生健康局'
+                if 4 <= len(cand) <= 30 and not any(w in cand for w in ('这家', '这些', '这个')):
+                    return cand
+
+    # 4. Validate raw_company (reject campus forwarding portals when title doesn't match them)
+    if (
+        comp
+        and comp not in CAMPUS_PORTAL_HOSTS
+        and comp != cleaned_title
+        and not comp.endswith('公')
+        and len(comp) <= 32
+    ):
+        # If raw_company is a university name, only trust it if the title actually refers to that university
+        if re.search(r'大学|学院', comp) and comp[:4] not in cleaned_title and '附属' not in cleaned_title:
+            pass
+        else:
+            return comp
+
+    src_prefix = (source_name or '').split(' · ')[0].strip()
+    if src_prefix and src_prefix not in CAMPUS_PORTAL_HOSTS:
+        return src_prefix
+    return '山东省人力资源和社会保障厅' if '山东' in cleaned_title or '省属' in cleaned_title else '官方招考主管部门'
+
 
 def infer_bianzhi_types(title: str, text: str = '') -> List[str]:
     combined = f'{title}\n{text[:3000]}'
     types: List[str] = []
     if re.search(r'选调生|选调应届|优选选调|常规选调', combined):
         types.append('选调生')
-    if re.search(r'考试录用公务员|公务员招录|公务员考试|中央机关及其直属机构|行政编', combined):
+    if re.search(r'考试录用公务员|公务员招录|公务员考试|中央机关及其直属机构|公开遴选公务员|选调公务员|行政编', combined):
         types.append('公务员（行政编）')
     if re.search(r'参照公务员法|参公管理|参公单位', combined):
         types.append('参公管理')
@@ -84,7 +252,7 @@ def infer_bianzhi_types(title: str, text: str = '') -> List[str]:
         types.append('三支一扶 / 基层项目')
     if re.search(r'控制总量|人员控制总量|备案制|员额制', combined):
         types.append('控制总量 / 备案制')
-    if re.search(r'中小学.*教师|幼儿园.*教师|教育系统.*公开招聘|教体局.*招聘|公开招聘.*教师|教师公开招聘', combined):
+    if re.search(r'中小学.*教师|幼儿园.*教师|教育系统.*公开招聘|教体局.*招聘|公开招聘.*教师|教师公开招聘|公费师范', combined):
         types.append('教师编')
     if re.search(r'卫生健康|卫健|医院.*公开招聘|医疗卫生|妇幼保健|疾控中心|医共体', combined):
         types.append('医疗卫生编')
@@ -102,19 +270,19 @@ def infer_exam_category(title: str, text: str = '') -> str:
         return '公务员国考'
     if re.search(r'选调生|选调应届优秀|鲁选|青年人才选调', title):
         return '选调生招录'
-    if re.search(r'考试录用公务员|省级机关及其直属机构|省考|公务员招考', combined):
+    if re.search(r'考试录用公务员|省级机关及其直属机构|省考|公务员招考|公开遴选公务员|选调公务员', combined):
         return '公务员省考'
-    if re.search(r'军队文职|公开招考.*文职人员|战区.*文职', combined):
+    if re.search(r'军队文职|公开招考.*文职人员|战区.*文职|文职方阵|直接引进文职人员', combined):
         return '军队文职招考'
     if re.search(r'三支一扶|西部计划|社区工作者|网格员|特岗教师', combined):
         return '三支一扶 / 基层'
     if re.search(r'初级综合类|统一公开招聘|事业单位统考|省属事业单位公开招聘', title):
         return '事业单位统考'
-    if re.search(r'教育系统|教体局|中小学教师|幼儿教师|公开招聘.*教师|教师招考|师范', title):
+    if re.search(r'教育系统|教体局|教育和体育局|中小学教师|幼儿教师|公开招聘.*教师|教师招考|公费师范|附属小学|附属学校', title):
         return '教师公开招聘'
-    if re.search(r'卫健|卫生健康|医院|医疗卫生|妇幼保健|疾控|中医药', title):
+    if re.search(r'卫健|卫生健康|医院|医疗卫生|妇幼保健|疾控|中医药|公共卫生|精神卫生|荣军优抚', title):
         return '医疗卫生招聘'
-    if re.search(r'大学|学院|研究院|科学院|科研院所|技师学院', title) and not re.search(r'毕业生|直通名校', title):
+    if re.search(r'大学|学院|研究院|科学院|科研院所|技师学院|党校', title) and not re.search(r'毕业生|直通名校', title):
         return '高校 / 科研院所'
     if re.search(r'引进.*人才|青年人才|急需紧缺|优才|高层次人才|人才引进|硕博', title):
         return '人才引进 / 优才'
@@ -126,11 +294,11 @@ def infer_notice_role(title: str) -> str:
         return '报名统计'
     if re.search(r'准考证|笔试通知|笔试安排|笔试时间|笔试考点|笔试温馨', title):
         return '准考证/笔试'
-    if re.search(r'成绩查询|笔试成绩|合格分数线|进入面试范围', title):
+    if re.search(r'成绩查询|笔试成绩|综合成绩|面试成绩|合格分数线|进入面试范围|入围人员名单', title):
         return '成绩/进面'
-    if re.search(r'资格审查|资格复审|面试通知|面试安排|面试时间|面谈', title):
+    if re.search(r'资格审查|资格复审|面试通知|面试安排|面试时间|面试有关事宜|面谈', title):
         return '资格复审/面试'
-    if re.search(r'体检|考察|政审|递补|拟聘用|拟录用|公示', title):
+    if re.search(r'体检|考察|政审|递补|拟聘用|拟录用|拟录取|公示', title):
         return '体检/递补/公示'
     if re.search(r'补充公告|更正公告|延期|延长报名', title):
         return '补充公告'
@@ -166,16 +334,21 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
         'raw_evidence': [],
     }
 
-    lines = [re.sub(r'\s+', ' ', ln).strip() for ln in text.splitlines() if ln.strip()]
-    for line in lines:
-        if any(k in line for k in ('报名时间', '网上报名', '查询时间', '初审时间', '缴费时间', '网上缴费', '准考证', '笔试时间')):
-            if 8 <= len(line) <= 140 and len(schedule['raw_evidence']) < 6:
+    # Split on both line breaks and Chinese sentence punctuation so space-collapsed bodies still parse cleanly
+    segments = [
+        re.sub(r'\s+', ' ', seg).strip()
+        for seg in re.split(r'[\r\n。；;！!]+', text or '')
+        if seg and seg.strip()
+    ]
+    for line in segments:
+        if any(k in line for k in ('报名时间', '网上报名', '报名起止', '查询时间', '初审时间', '资格初审', '缴费时间', '网上缴费', '准考证', '笔试时间')):
+            if 8 <= len(line) <= 160 and len(schedule['raw_evidence']) < 6 and line not in schedule['raw_evidence']:
                 schedule['raw_evidence'].append(line)
 
         # 1. Registration window: e.g. 报名时间：2026年3月18日9:00—3月22日16:00 or 2026年11月10日至2026年11月14日
-        if not schedule['reg_end'] and re.search(r'报名时间|网上报名|报名起止', line):
+        if not schedule['reg_end'] and re.search(r'报名时间|网上报名|报名起止|报名期限|报名方式及时间', line):
             range_m = re.search(
-                r'(?:(202\d)\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*\d{1,2}[：:]\d{2})?\s*(?:至|到|—|-|–|~|～)\s*(?:(202\d)\s*年\s*)?(?:(\d{1,2})\s*月\s*)?(\d{1,2})\s*日',
+                r'(?:(202\d)\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*\d{1,2}[：:时]\d{0,2}分?)?\s*(?:至|到|—|-|–|~|～|起至)\s*(?:(202\d)\s*年\s*)?(?:(\d{1,2})\s*月\s*)?(\d{1,2})\s*日',
                 line,
             )
             if range_m:
@@ -188,12 +361,20 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
                 schedule['reg_start'] = _normalize_cn_date(y1, m1, d1)
                 schedule['reg_end'] = _normalize_cn_date(y2, m2, d2)
             else:
-                iso_m = re.findall(r'(202\d)-(\d{1,2})-(\d{1,2})', line)
+                iso_m = re.findall(r'(202\d)[-.](\d{1,2})[-.](\d{1,2})', line)
                 if len(iso_m) >= 2:
                     schedule['reg_start'] = _normalize_cn_date(*iso_m[0])
                     schedule['reg_end'] = _normalize_cn_date(*iso_m[1])
                 elif len(iso_m) == 1 and re.search(r'截止|截至|前', line):
                     schedule['reg_end'] = _normalize_cn_date(*iso_m[0])
+                else:
+                    single_cn = re.search(r'(?:截止|截至)[^0-9]{0,8}?(?:(202\d)\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日', line)
+                    if single_cn:
+                        schedule['reg_end'] = _normalize_cn_date(
+                            single_cn.group(1) or default_year,
+                            single_cn.group(2),
+                            single_cn.group(3),
+                        )
 
         # 2. Audit window
         if not schedule['audit_end'] and re.search(r'查询时间|资格初审|初审时间', line):
@@ -210,7 +391,7 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
                 schedule['payment_end'] = _normalize_cn_date(last[0] or default_year, last[1], last[2])
 
         # 4. Admit card printing
-        if not schedule['admit_card_start'] and re.search(r'准考证.*打印|打印准考证', line):
+        if not schedule['admit_card_start'] and re.search(r'准考证.*打印|打印准考证|领取准考证', line):
             dates = re.findall(r'(?:(202\d)\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日', line)
             if dates:
                 first = dates[0]
@@ -249,27 +430,42 @@ def extract_exam_subjects(title: str, text: str) -> List[str]:
             subjects = ['行测', '申论']
         elif '教师' in title or '教育' in title:
             subjects = ['公基', '教基/教学']
-        elif '医院' in title or '卫健' in title or '医疗' in title:
+        elif '医院' in title or '卫健' in title or '医疗' in title or '卫生' in title:
             subjects = ['公基', '医基/临床']
         else:
             subjects = ['公基', '综合写作']
     return subjects[:4]
 
 
-def parse_exam_table_grid(grid: List[List[str]], exam_id: str, default_bianzhi: str = '事业编', default_city: str = '') -> List[Dict[str, Any]]:
+def parse_exam_table_grid(
+    grid: List[List[str]],
+    exam_id: str,
+    default_bianzhi: str = '事业编',
+    default_city: str = '',
+    default_employer: str = '',
+) -> List[Dict[str, Any]]:
     """Parse a 2D table grid from an exam announcement or XLSX/PDF attachment into ExamPositionRow items."""
     if not grid or len(grid) < 2:
         return []
 
     def is_header_row(cells: List[str]) -> bool:
         non_empty = [clean_cell(c) for c in cells if clean_cell(c)]
-        if len(non_empty) < 3:
+        if len(non_empty) < 2:
             return False
-        hits = sum(1 for c in non_empty if EXAM_HEADER_KEYWORD.fullmatch(c) or COL_POS_NAME.search(c) or COL_MAJORS.search(c) or COL_EMPLOYER.search(c))
+        hits = sum(
+            1
+            for c in non_empty
+            if EXAM_HEADER_KEYWORD.fullmatch(c)
+            or COL_POS_NAME.search(c)
+            or COL_MAJORS.search(c)
+            or COL_EMPLOYER.search(c)
+            or COL_COUNT.search(c)
+            or COL_EDUCATION.search(c)
+        )
         return hits >= 2 and hits >= len(non_empty) // 2 and all(len(c) <= 45 for c in non_empty)
 
     best_header: Optional[Tuple[int, int, int, Dict[str, int]]] = None
-    for start_r in range(min(8, len(grid))):
+    for start_r in range(min(10, len(grid))):
         for depth in (1, 2, 3):
             if start_r + depth > len(grid):
                 continue
@@ -331,7 +527,7 @@ def parse_exam_table_grid(grid: List[List[str]], exam_id: str, default_bianzhi: 
                 elif 'notes' not in mapping and COL_NOTES.search(cell):
                     mapping['notes'] = c_idx
 
-            if 'position_name' in mapping or 'majors' in mapping or 'employer' in mapping:
+            if ('position_name' in mapping or 'majors' in mapping or 'employer' in mapping) and len(mapping) >= 2:
                 score = len(mapping) * 10 + depth
                 if best_header is None or score > best_header[0]:
                     best_header = (score, start_r, depth, mapping)
@@ -354,14 +550,17 @@ def parse_exam_table_grid(grid: List[List[str]], exam_id: str, default_bianzhi: 
         if not row or all(not clean_cell(c) for c in row):
             continue
         pos_name = get_col(row, 'position_name')
-        employer = get_col(row, 'employer')
-        department = get_col(row, 'department')
+        employer = get_col(row, 'employer') or default_employer
+        department = get_col(row, 'department') or employer
         major_raw = get_col(row, 'majors')
 
-        # Skip summary/total rows
-        if re.search(r'^(?:合计|总计|小计|汇总|注[：:])', pos_name or employer or department):
+        # Skip summary/total/note rows
+        first_non_empty = next((clean_cell(c) for c in row if clean_cell(c)), '')
+        if re.search(r'^(?:合计|总计|小计|汇总|注[：:]|说明[：:]|填表说明)', first_non_empty) or re.search(
+            r'^(?:合计|总计|小计|汇总|注[：:])', pos_name or employer or department
+        ):
             continue
-        if not pos_name and not major_raw and not employer:
+        if not pos_name and not major_raw and not get_col(row, 'employer'):
             continue
 
         edu = get_col(row, 'education') or get_col(row, 'edu_degree') or '本科及以上'
@@ -372,6 +571,8 @@ def parse_exam_table_grid(grid: List[List[str]], exam_id: str, default_bianzhi: 
         raw_count = get_col(row, 'recruit_count')
         count_m = re.search(r'(\d+)', raw_count)
         recruit_count = int(count_m.group(1)) if count_m else 1
+        if recruit_count <= 0 or recruit_count > 5000:
+            recruit_count = 1
 
         city_val = get_col(row, 'city') or default_city
         if not city_val:
@@ -419,6 +620,93 @@ def parse_exam_table_grid(grid: List[List[str]], exam_id: str, default_bianzhi: 
         })
 
     return rows_out
+
+
+def parse_exam_excel_bytes(
+    file_bytes: bytes,
+    exam_id: str,
+    default_bianzhi: str = '事业编',
+    default_city: str = '',
+    default_employer: str = '',
+    filename: str = '',
+) -> List[Dict[str, Any]]:
+    """Parse an XLSX attachment into ExamPositionRow items."""
+    if not file_bytes:
+        return []
+    rows: List[Dict[str, Any]] = []
+    if openpyxl is not None:
+        wb = None
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+            for sheet_name in wb.sheetnames:
+                sheet = wb[sheet_name]
+                grid = [[clean_cell(c) for c in r] for r in sheet.iter_rows(values_only=True)]
+                parsed = parse_exam_table_grid(
+                    grid,
+                    exam_id=exam_id,
+                    default_bianzhi=default_bianzhi,
+                    default_city=default_city,
+                    default_employer=default_employer,
+                )
+                for p in parsed:
+                    p['source_file'] = filename or sheet_name
+                rows.extend(parsed)
+        except Exception:
+            pass
+        finally:
+            try:
+                if wb is not None:
+                    wb.close()
+            except Exception:
+                pass
+    if not rows:
+        # Fallback to generic parse_excel_bytes
+        generic = parse_excel_bytes(file_bytes, filename=filename)
+        for p in generic:
+            rows.append(p)
+    return rows
+
+
+def parse_exam_pdf_bytes(
+    file_bytes: bytes,
+    exam_id: str,
+    default_bianzhi: str = '事业编',
+    default_city: str = '',
+    default_employer: str = '',
+    filename: str = '',
+) -> List[Dict[str, Any]]:
+    """Parse a PDF attachment into ExamPositionRow items."""
+    if not file_bytes:
+        return []
+    rows: List[Dict[str, Any]] = []
+    if fitz is not None:
+        try:
+            doc = fitz.open(stream=file_bytes, filetype='pdf')
+            for page_idx in range(min(len(doc), 15)):
+                page = doc[page_idx]
+                try:
+                    tables = page.find_tables()
+                    if tables and tables.tables:
+                        for t in tables.tables:
+                            grid = [[clean_cell(c) for c in r] for r in t.extract()]
+                            parsed = parse_exam_table_grid(
+                                grid,
+                                exam_id=exam_id,
+                                default_bianzhi=default_bianzhi,
+                                default_city=default_city,
+                                default_employer=default_employer,
+                            )
+                            for p in parsed:
+                                p['source_file'] = filename or f'第{page_idx + 1}页'
+                            rows.extend(parsed)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    if not rows:
+        generic = parse_pdf_bytes(file_bytes, filename=filename, max_pages=15)
+        rows.extend(generic)
+    return rows
 
 
 def compute_exam_stage(
@@ -479,60 +767,111 @@ def enrich_exam_record(
 ) -> Dict[str, Any]:
     """Convert a raw announcement or job record into a comprehensive ExamAnnouncement object."""
     today = today_str or dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).strftime('%Y-%m-%d')
-    title = (raw_item.get('title') or '').strip()
+    title = clean_exam_title(raw_item.get('title') or '')
     body = (raw_item.get('body') or raw_item.get('excerpt') or '').strip()
-    combined = f'{title}\n{body}'
     published_at = raw_item.get('published_at')
     exam_id = raw_item.get('id') or hashlib.sha256((raw_item.get('source_url') or title).encode('utf-8')).hexdigest()[:20]
 
+    # Organizer extraction before title enrichment
+    organizer = extract_exam_organizer(
+        title=title,
+        raw_company=raw_item.get('company') or '',
+        body=body,
+        source_name=raw_item.get('source_name') or '',
+    )
+
+    # Disambiguate clickbait titles like "14人！这家驻济省属事业单位公开招聘了" using the extracted organizer
+    if (
+        any(w in title for w in ('这家', '这些', '这个', '这两家'))
+        and organizer
+        and organizer not in CAMPUS_PORTAL_HOSTS
+        and organizer[:4] not in title
+        and not organizer.endswith(('人社局', '人力资源和社会保障局', '人社厅', '人力资源和社会保障厅'))
+    ):
+        title = f'{organizer} · {title}'
+
+    combined = f'{title}\n{body}'
     bianzhi_types = infer_bianzhi_types(title, body)
     exam_category = infer_exam_category(title, body)
     notice_role = infer_notice_role(title)
     schedule = extract_exam_schedule(combined, published_at)
     if not schedule.get('reg_end') and raw_item.get('deadline'):
-        schedule['reg_end'] = str(raw_item['deadline'])[:10]
+        dl = str(raw_item['deadline'])[:10]
+        # Avoid synthetic year-end placeholder 2026-12-31 unless explicitly mentioned in body
+        if not dl.endswith('-12-31') or '12月31日' in combined or '12-31' in combined:
+            schedule['reg_end'] = dl
 
     exam_subjects = extract_exam_subjects(title, body)
     stage = compute_exam_stage(schedule, notice_role, published_at, today)
 
     # Cities & Region Level
-    cities = list(raw_item.get('cities') or [])
-    if not cities:
-        cities = cities_in_text(title, infer_counties=True) or cities_in_text(body[:1500], infer_counties=True)
-    if not cities and raw_item.get('source_city'):
-        cities = [raw_item['source_city']]
+    title_org = f'{title} {organizer}'
+    title_org_cities = list(cities_in_text(title_org, infer_counties=True))
+    inst_city_rules = [
+        (r'驻济|莱芜|山东大学|山东师范大学|山东财经大学|山东建筑大学|齐鲁工业大学|山东第一医科大学|山东中医药大学|山东交通学院|山东女子学院|山东管理学院|山东青年政治学院|山东艺术学院|山东工艺美术学院|山东体育学院|山东警察学院|山东政法学院|山东农业工程学院|山东协和学院|山东英才学院|山东现代学院|山东圣翰财贸职业学院|山东职业学院|山东商业职业技术学院|山东劳动职业技术学院|山东特殊教育职业学院|山东旅游职业学院|山东医学高等专科学校|山东城市建设职业学院|山东司法警官职业学院|山东技师学院|中共山东省委党校|山东行政学院|中国工业互联网研究院山东分院|山东省食品药品检验研究院|山东省药学科学院|山东省地质矿产勘查开发局|山东省公共卫生临床中心|山东省妇幼保健院|山东广播电视台|山东省教育厅|山东省体育局|山东省文化和旅游厅', '济南'),
+        (r'康复大学|中国海洋大学|中国石油大学|山东科技大学|青岛大学|青岛理工大学|青岛科技大学|青岛农业大学|黄海水产研究所', '青岛'),
+        (r'山东第二医科大学', '潍坊'),
+        (r'山东理工大学', '淄博'),
+        (r'山东农业大学|泰山学院', '泰安'),
+        (r'鲁东大学|滨州医学院|山东工商学院|山东城市服务职业学院', '烟台'),
+        (r'曲阜师范大学|济宁医学院', '济宁'),
+        (r'山东外国语职业技术大学', '日照'),
+        (r'山东航空学院', '滨州'),
+        (r'鲁南', '临沂'),
+    ]
+    for pat, inst_city in inst_city_rules:
+        if re.search(pat, title_org) and inst_city not in title_org_cities:
+            title_org_cities.append(inst_city)
+
+    sd_title_cities = [c for c in title_org_cities if c in SHANDONG_CITIES]
+    source_city = (raw_item.get('source_city') or '').strip()
+
+    if sd_title_cities:
+        cities = sd_title_cities
+    elif source_city and source_city in SHANDONG_CITIES:
+        cities = [source_city]
+    else:
+        raw_cities = list(raw_item.get('cities') or []) or list(cities_in_text(body[:1200], infer_counties=True))
+        sd_raw_cities = [c for c in raw_cities if c in SHANDONG_CITIES]
+        if sd_raw_cities and ('山东' in combined or '省属' in combined or '驻济' in combined):
+            cities = sd_raw_cities[:6]
+        else:
+            cities = []
 
     region_level = '市级'
-    if re.search(r'中央机关|国家公务员|全军|北部战区|陆军|海军|空军|武警', title):
+    if re.search(r'中央机关|国家公务员|全军|北部战区|南部战区|西部战区|东部战区|中部战区|陆军|海军|空军|火箭军|武警|联勤保障|军事科学院|国防科技大学|出入境边防检查|水利部|中国科学院|中国水产科学研究院', f'{title} {organizer}'):
         region_level = '国家级'
-    elif re.search(r'山东省属|山东省省属|省级机关|山东省202\d|省直', title):
+    elif re.search(r'山东省属|山东省省属|省级机关|山东省202\d|省直|驻济省属|省属驻济|山东省高校毕业生', title):
         region_level = '省级'
-    elif re.search(r'大学|学院|医院|研究院|中心', title) and not re.search(r'市属|区属|县属', title):
+    elif re.search(r'大学|学院|医院|研究院|中心|学校|保健院', f'{title} {organizer}') and not re.search(r'市属|区属|县属', title):
         region_level = '高校/医院单招'
     elif re.search(r'区|县|街道|镇', title) and not re.search(r'市直|市属', title):
         region_level = '区县级'
 
-    # Organizer
-    organizer = (raw_item.get('company') or '').strip()
-    if not organizer or organizer in ('招聘单位待核实', '未知'):
-        org_m = re.match(r'^(?:202\d年[度]?)?([\u4e00-\u9fa5]{3,18}?(?:人社局|人力资源和社会保障局|组织部|教育局|教育和体育局|卫健委|卫生健康局|大学|学院|医院|委员会|厅|局))', title)
-        organizer = org_m.group(1) if org_m else (raw_item.get('source_name', '').split(' · ')[0] or '官方招考主管部门')
-
     # Convert or extract positions
-    default_city = cities[0] if cities else '山东'
+    default_city = cities[0] if cities else ('山东' if '山东' in combined or '省属' in combined else '全国')
     default_bz = bianzhi_types[0] if bianzhi_types else '事业编'
     exam_positions: List[Dict[str, Any]] = []
 
-    raw_positions = raw_item.get('exam_positions') or raw_item.get('positions') or []
+    raw_positions = list(raw_item.get('exam_positions') or raw_item.get('positions') or [])
+    if not raw_positions and body:
+        # Attempt text-table extraction from body
+        raw_positions = extract_positions_from_text(body, max_rows=50)
+
     for idx, p in enumerate(raw_positions):
         if not isinstance(p, dict):
             continue
         if 'position_name' in p and 'employer' in p:
-            exam_positions.append(p)
+            p_copy = dict(p)
+            if p_copy.get('department') in CAMPUS_PORTAL_HOSTS or not p_copy.get('department'):
+                p_copy['department'] = organizer
+            if p_copy.get('employer') in CAMPUS_PORTAL_HOSTS or not p_copy.get('employer'):
+                p_copy['employer'] = organizer
+            exam_positions.append(p_copy)
             continue
         # Convert from generic PositionRequirement
         pos_name = (p.get('name') or '').strip()
-        if not pos_name:
+        if not pos_name or pos_name in ('其它相关职位', '其他相关职位'):
             continue
         cnt_m = re.search(r'(\d+)', str(p.get('count') or ''))
         cnt = int(cnt_m.group(1)) if cnt_m else 1
@@ -565,28 +904,7 @@ def enrich_exam_record(
             'source_url': p.get('source_url'),
         })
 
-    # Headcount & position count extraction from text if not in table
-    total_positions = len(exam_positions)
-    total_headcount = sum(int(p.get('recruit_count') or 1) for p in exam_positions)
-
-    hc_match = re.search(r'(?:公开招聘|计划招聘|拟招聘|共招聘|招录|招考|招募|引进)[^。\n]{0,20}?(\d{1,4})\s*[名人人]', combined)
-    if hc_match:
-        text_hc = int(hc_match.group(1))
-        if text_hc > total_headcount and text_hc <= 50000:
-            total_headcount = text_hc
-
-    pos_match = re.search(r'(\d{1,4})\s*个(?:招聘)?(?:岗位|职位)', combined)
-    if pos_match:
-        text_pos = int(pos_match.group(1))
-        if text_pos > total_positions and text_pos <= 20000:
-            total_positions = text_pos
-
-    if total_positions == 0 and notice_role == '招考简章':
-        total_positions = 1
-    if total_headcount == 0 and notice_role == '招考简章':
-        total_headcount = max(1, total_positions)
-
-    # Extract key condition summaries from body
+    # Extract key condition summaries from body first so prose/summary rows can use them
     ratio_m = re.search(r'开考比例[^。\n]{0,15}?(1\s*[：:]\s*\d+)', combined)
     exam_ratio = ratio_m.group(1).replace('：', ':').replace(' ', '') if ratio_m else '1:3'
 
@@ -601,7 +919,7 @@ def enrich_exam_record(
         hukou_summary = '部分岗位限本地户籍/生源'
 
     fresh_grad_summary = '应往届均可（按岗位区分）'
-    if re.search(r'专项招聘.*高校毕业生|仅限.*应届|面向202\d届', combined):
+    if re.search(r'专项招聘.*高校毕业生|仅限.*应届|面向202\d届|202\d届.*公费师范', combined):
         fresh_grad_summary = '主要面向应届高校毕业生（含择业期）'
     elif re.search(r'选调', title):
         fresh_grad_summary = '限应届优秀高校毕业生'
@@ -611,9 +929,9 @@ def enrich_exam_record(
         political_summary = '要求中共党员（含预备党员）或主要学生干部'
 
     edu_min = '本科及以上'
-    if re.search(r'博士研究生|博士学位', combined) and not re.search(r'本科|硕士', combined):
+    if re.search(r'博士研究生|博士学位|招聘博士', combined) and not re.search(r'本科|硕士', combined):
         edu_min = '博士研究生'
-    elif re.search(r'硕士研究生及以上|硕士及以上', combined) and not re.search(r'本科及以上|大学本科', combined):
+    elif re.search(r'硕士研究生及以上|硕士及以上|硕士学位', combined) and not re.search(r'本科及以上|大学本科', combined):
         edu_min = '硕士研究生及以上'
     elif re.search(r'专科及以上|大专及以上|高中|中专', combined):
         edu_min = '专科及以上'
@@ -622,7 +940,7 @@ def enrich_exam_record(
 
     all_majors = list(dict.fromkeys(
         list(raw_item.get('majors') or []) +
-        [m for p in exam_positions for m in (p.get('majors') or [])]
+        [m for p in exam_positions for m in (p.get('majors') or []) if m not in ('详见岗位表', '详见附件岗位表')]
     ))[:20]
 
     has_unlimited_major = bool(
@@ -630,18 +948,60 @@ def enrich_exam_record(
         any('不限' in str(p.get('major_raw') or '') for p in exam_positions)
     )
 
-    # If no tabular positions were extracted yet for a 招考简章, synthesize prose/summary position rows
+    # Headcount & position count extraction from title + body
+    total_positions = len(exam_positions)
+    total_headcount = sum(int(p.get('recruit_count') or 1) for p in exam_positions)
+
+    # Check title first for explicit headcount like "140人！" or "（325人）" or "共1537人！"
+    title_hc_m = re.search(r'(?:^|[·\s（(【]|共)\s*(\d{1,4})\s*[名人人](?:[！!）)】\s]|$)', title)
+    if title_hc_m:
+        thc = int(title_hc_m.group(1))
+        if thc > total_headcount and thc <= 50000:
+            total_headcount = thc
+
+    title_pos_m = re.search(r'(\d{1,4})\s*个(?:招聘)?(?:岗位|职位)', title)
+    if title_pos_m:
+        tpos = int(title_pos_m.group(1))
+        if tpos > total_positions and tpos <= 20000:
+            total_positions = tpos
+
+    hc_matches = re.findall(
+        r'(?:公开招聘|计划招聘|拟招聘|拟公开招聘|共招聘|招录|招考|招募|引进)[^。\n；;]{0,28}?(\d{1,4})\s*[名人人]',
+        combined,
+    )
+    for m_str in hc_matches:
+        text_hc = int(m_str)
+        if text_hc > total_headcount and text_hc <= 50000:
+            total_headcount = text_hc
+
+    pos_matches = re.findall(r'(\d{1,4})\s*个(?:招聘)?(?:岗位|职位)', combined)
+    for p_str in pos_matches:
+        text_pos = int(p_str)
+        if text_pos > total_positions and text_pos <= 20000:
+            total_positions = text_pos
+
+    if total_positions == 0 and notice_role == '招考简章':
+        total_positions = 1
+    if total_headcount == 0 and notice_role == '招考简章':
+        total_headcount = max(1, total_positions)
+    if total_headcount < total_positions:
+        total_headcount = total_positions
+
+    # If no tabular positions were extracted yet for a 招考简章, extract prose positions from body
     if not exam_positions and notice_role == '招考简章':
-        # Try extracting prose items like "XX教师2名" or "XX岗位3人"
         prose_matches = re.findall(
-            r'([\u4e00-\u9fa5]{2,14}?(?:教师|医师|护士|护理|医生|干事|科员|专员|工作人员|岗位|职位|人才|人员|管理岗|技术岗|财务岗|会计|审计|文秘|法务|辅导员))'
-            r'[：:\s（(]*?(?:招聘|招录|计划|拟聘)?\s*(\d{1,3})\s*[名人人]',
+            r'([\u4e00-\u9fa5A-Za-z]{2,16}?(?:专业技术岗位|专业技术人员|管理岗位|教师岗位|骨干教师|专任教师|教师|医师|护士|护理|医生|干事|科员|专员|工作人员|岗位|职位|人才|管理岗|技术岗|财务岗|会计|审计|文秘|法务|辅导员))'
+            r'[：:\s（(]*?(?:招聘|招录|计划|拟聘|共)?\s*(\d{1,3})\s*[名人人]',
             combined,
         )
         seen_prose = set()
         for idx, (p_name, p_cnt) in enumerate(prose_matches[:12]):
-            p_name = re.sub(r'^(?:其中|共计|合计|招聘|计划|拟聘|招考|引进)', '', p_name).strip()
-            if len(p_name) < 2 or p_name in seen_prose or p_name in ('工作人员', '人员', '人才'):
+            p_name = re.sub(
+                r'^(?:其中|共计|合计|本次|此次|学校|单位|医院|包含|包括|拟|现|计划|公开招聘|招聘|招录|招考|引进|面向社会|公开)+',
+                '',
+                p_name,
+            ).strip()
+            if len(p_name) < 2 or p_name in seen_prose or p_name in ('工作人员', '人员', '人才', '岗位', '职位'):
                 continue
             seen_prose.add(p_name)
             exam_positions.append({
@@ -674,8 +1034,8 @@ def enrich_exam_record(
                 'exam_id': exam_id,
                 'department': organizer,
                 'employer': organizer,
-                'position_name': f'{exam_category}综合岗位（详见岗位表）',
-                'position_code': '001',
+                'position_name': f'{organizer}公开招聘岗位（详见岗位汇总表）',
+                'position_code': '汇总',
                 'position_category': exam_category,
                 'bianzhi': default_bz,
                 'recruit_count': total_headcount,
@@ -701,12 +1061,19 @@ def enrich_exam_record(
     elif re.search(r'现场报名|现场资格', combined) and not reg_url:
         reg_method = '现场报名 / 见原公告'
 
+    is_sd = (
+        any(c in SHANDONG_CITIES for c in cities)
+        or '山东' in combined
+        or '省属' in combined
+        or '驻济' in combined
+    )
+
     return {
         'id': exam_id,
         'title': title,
         'organizer': organizer,
         'region_level': region_level,
-        'province': '山东' if any(c in SHANDONG_CITIES for c in cities) or '山东' in combined else '全国',
+        'province': '山东' if is_sd else '全国',
         'cities': cities,
         'bianzhi_types': bianzhi_types,
         'exam_category': exam_category,

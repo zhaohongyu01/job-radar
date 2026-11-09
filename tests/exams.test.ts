@@ -191,4 +191,18 @@ void test('flattenAndFilterExamPositions flattens and filters position rows by p
   assert.equal(rowsMatchedOnly.length, 1);
   assert.equal(rowsMatchedOnly[0].position_name, '综合文秘岗');
   assert.equal(computeExamStageLabel('registering').label, '正在报名');
+
+  const summaryExam = makeExam({
+    id: 'exam-summary',
+    positions: [
+      makePosition({
+        row_id: 'exam-summary-summary-0',
+        exam_id: 'exam-summary',
+        position_name: '山东省人社厅公开招聘岗位（详见岗位汇总表）',
+      }),
+    ],
+  });
+  const orderedRows = flattenAndFilterExamPositions([summaryExam, exam], DEFAULT_EXAM_FILTERS, DEFAULT_EXAM_PROFILE);
+  assert.equal(orderedRows[0].row_id, 'pos-1');
+  assert.equal(orderedRows[orderedRows.length - 1].row_id, 'exam-summary-summary-0');
 });

@@ -196,8 +196,18 @@ export function ExamWorkspace() {
   const [snapshot, setSnapshot] = useState<ExamSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
+      if (raw) validateExamPersonal(JSON.parse(raw));
+      return '';
+    } catch {
+      return '本地考编记录格式异常，已重置为默认状态';
+    }
+  });
   const [today, setToday] = useState('');
+  const [nowMs, setNowMs] = useState(0);
   const [profile, setProfile] = useState<ExamUserProfile>(() => {
     if (typeof window === 'undefined') return DEFAULT_EXAM_PROFILE;
     try {
@@ -241,12 +251,6 @@ export function ExamWorkspace() {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
-      if (raw) validateExamPersonal(JSON.parse(raw));
-    } catch {
-      setNotice('本地考编记录格式异常，已重置为默认状态');
-    }
     const onStorage = (event: StorageEvent) => {
       if (event.key === EXAM_PERSONAL_STORAGE) {
         try {
@@ -276,6 +280,7 @@ export function ExamWorkspace() {
         if (!active) return;
         setSnapshot(data);
         setToday(chinaToday());
+        setNowMs(Date.now());
       })
       .catch(() => {
         if (active) setError('考公考编数据读取失败，请稍后重试。');
@@ -301,6 +306,7 @@ export function ExamWorkspace() {
       .then((data) => {
         setSnapshot(data);
         setToday(chinaToday());
+        setNowMs(Date.now());
         setNotice('数据已刷新');
       })
       .catch(() => setError('考公考编数据读取失败，请稍后重试。'))
@@ -394,14 +400,14 @@ export function ExamWorkspace() {
     [allExams],
   );
   const freshnessMeta = useMemo(() => {
-    if (!snapshot?.generated_at) return null;
+    if (!snapshot?.generated_at || !nowMs) return null;
     const ms = Date.parse(snapshot.generated_at);
     if (!Number.isFinite(ms)) return null;
-    const hours = Math.max(0, Math.round((Date.now() - ms) / 3600_000));
+    const hours = Math.max(0, Math.round((nowMs - ms) / 3600_000));
     const stale = hours > 36;
     const label = hours < 1 ? '刚刚更新' : `更新于 ${hours} 小时前`;
     return { hours, stale, label };
-  }, [snapshot?.generated_at]);
+  }, [snapshot, nowMs]);
   const filteredExams = useMemo(
     () => filterExams(allExams, filters, profile, personal),
     [allExams, filters, profile, personal],

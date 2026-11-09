@@ -3,6 +3,19 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
+## 2026-11-09 全站优化重构 · 阶段一（数据真实性、备份完整性、安全头与 SEO）已完成（本地已提交，待推进阶段二或推送部署）
+
+按照四阶段全站优化方案完成阶段一全部 13 项任务（`T1.1`–`T1.13`）：
+- **备份升级 v5 (`T1.1`)**：`lib/personal-backup.ts` 升级至 `version: 5`，纳入考编个人记录 `exam_records`（`validateExamPersonal`）与画像 `exam_profile`（`validateExamProfile`），兼容导入 v1–v4，考编工作台支持 `storage` 事件跨标签页同步。
+- **样式与可访问性 (`T1.2`、`T1.10`)**：在 `app/design.css` 将 `.btn-outline` 定义为 `.btn-secondary` 的别名；`--ink-4` 提亮对比度至 `#6f6a5e`（AA 达标），文字颜色禁用 `--ink-5`，全站最小字号提升至 `12px`。
+- **考编数据真实性与三态资格判定 (`T1.3`–`T1.6`、`T1.12`)**：
+  1. `scripts/parse_exam_positions.py` 与 `scripts/collect_exams.py` 移除所有编造默认条件（不再填充兜底“本科及以上”“35周岁及以下”“1:3”“不限专业”等），移除 `-summary-0` 占位汇总行，新增 prose 岗位名黑名单校验与 `positions_status`（`parsed` / `prose` / `attachment_only` / `none`）。
+  2. `lib/exams.ts` 资格判定升级为三态 `eligible` / `ineligible` / `unknown`，补齐山东 16 地市与“省外”户籍校验、出生年份 `birthYear` 年龄上限校验，“只看可报”改为“隐藏不符合的”（保留 `unknown` 待核实岗位）。
+  3. 修复全角连接符 `－`（U+FF0D）报名时间提取，新增长期招聘 `reg_mode: 'rolling'` 与 `rolling_until` 识别，收紧 `deadline` 兜底规则，并在前端通过 `deriveExamStage(exam, today)` 动态重算报名状态；默认展示“可报名/进行中”公告，页头如实展示在招公告数、岗位明细数与数据更新时间。
+- **考编定时采集与质量门禁 (`T1.7`)**：新增 `scripts/exams_guard.py` 并在 `daily-collect.yml` 与 `nas-universities.yml` 接入定时采集与回退保护，`download_public.py` 同步保留线上 `/exams.json`。
+- **缓存安全头、SEO 与错误页 (`T1.8`、`T1.9`、`T1.11`、`T1.13`)**：新增 `public/_headers` 与 `middleware.ts` 安全响应头；新增 `scripts/make_brand_assets.py` 生成 `og.png` 及多尺寸图标，补齐 `app/robots.ts`、`app/sitemap.ts`、`app/manifest.ts`；求职详情抽屉冻结 `detailNavIds` 导航序列并同步分页；生产环境隐藏错误页 `error.stack` 并新增 `app/not-found.tsx`。
+- **验证**：`npm run lint`（0 warning / 0 error）、`npx tsc --noEmit`、`npm run build`、22 项 Node 单测、12 项 Python 单测及 `tests/smoke_pages.py` 双端冒烟测试全部通过。
+
 ## 2026-11-08 工作台 UI/UX 全面升级与山东全类型采集渠道扩容（已提交并推送）
 
 用户批准实施 5 阶段前端 UI/UX 与模块化升级，并扩充山东省内全类型（政事基层、山东龙头国企名企、银行保险券商、驻鲁高校）采集渠道：

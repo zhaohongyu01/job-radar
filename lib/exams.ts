@@ -375,6 +375,13 @@ export interface PositionEligibilityResult {
   unknowns: string[];
 }
 
+export function tokenizeQuery(q: string): string[] {
+  return q
+    .split(/[\s,，、;/；]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 export function evaluateExamPositionEligibility(
   row: ExamPositionRow,
   profile: ExamUserProfile,
@@ -486,10 +493,7 @@ export function evaluateExamPositionEligibility(
   }
 
   // 7. 专业匹配校验
-  const queryTerms = profile.majorQuery
-    .split(/[\s,，、;/；]+/)
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+  const queryTerms = tokenizeQuery(profile.majorQuery);
 
   if (queryTerms.length > 0) {
     const rawStr = row.major_raw || row.majors.join(' ') || '';
@@ -609,11 +613,7 @@ export function filterExams(
   profile: ExamUserProfile,
   personal: ExamPersonalStore,
 ): ExamAnnouncement[] {
-  const queryTerms = filters.query
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  const queryTerms = tokenizeQuery(filters.query);
 
   const selectedCities = filters.cities.filter((c) => c && c !== '全部');
 
@@ -764,7 +764,7 @@ export function flattenAndFilterExamPositions(
   profile: ExamUserProfile,
 ): FlattenedExamPosition[] {
   const filteredExams = filterExams(exams, { ...filters, view: 'announcements' }, { ...profile, onlyMatchProfile: false }, {});
-  const queryTerms = filters.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const queryTerms = tokenizeQuery(filters.query);
   const selectedCities = filters.cities.filter((c) => c && c !== '全部');
 
   const rows: FlattenedExamPosition[] = [];

@@ -200,12 +200,17 @@ export interface ExamFilters {
   sort: 'smart' | 'published' | 'reg_end' | 'headcount';
 }
 
+export const EXAM_PERSONAL_STORAGE = 'job-radar-exam-personal-v1';
+export const EXAM_PROFILE_STORAGE = 'job-radar-exam-profile-v1';
+export const EXAM_FILTERS_STORAGE = 'job-radar-exam-filters-v1';
+
 export interface ExamPersonalRecord {
   saved?: boolean;
   hidden?: boolean;
   status?: ExamTrackStatus;
   savedPositionIds?: string[];
   targetPositionCode?: string;
+  targetRowId?: string;
   regNumber?: string;
   writtenScore?: string;
   interviewDate?: string;
@@ -226,6 +231,74 @@ export const DEFAULT_EXAM_PROFILE: ExamUserProfile = {
   hukouCity: '全部',
   onlyMatchProfile: false,
 };
+
+const TRACK_KEYS = new Set<string>(['none', ...EXAM_TRACK_STAGES.map((s) => s.key)]);
+const PROFILE_EDU = new Set<ExamUserProfile['education']>(['全部', '专科', '本科', '硕士研究生', '博士研究生']);
+const PROFILE_POL = new Set<ExamUserProfile['politicalStatus']>(['不限', '群众', '共青团员', '中共党员']);
+const PROFILE_GRAD = new Set<ExamUserProfile['gradIdentity']>(['不限', '当年应届', '择业期应届', '在职/社会人员']);
+
+export function validateExamPersonal(input: unknown): ExamPersonalStore {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('考编记录格式不正确');
+  const out: ExamPersonalStore = {};
+  for (const [id, raw] of Object.entries(input as Record<string, unknown>)) {
+    if (!/^[\w-]{1,80}$/.test(id) || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw Error('考编记录不正确');
+    const r = raw as Record<string, unknown>;
+    const rec: ExamPersonalRecord = {};
+    for (const k of ['saved', 'hidden'] as const) {
+      if (r[k] !== undefined) {
+        if (typeof r[k] !== 'boolean') throw Error('考编记录不正确');
+        rec[k] = r[k] as boolean;
+      }
+    }
+    if (r.status !== undefined) {
+      if (typeof r.status !== 'string' || !TRACK_KEYS.has(r.status)) throw Error('报考进度不正确');
+      rec.status = r.status as ExamTrackStatus;
+    }
+    if (r.savedPositionIds !== undefined) {
+      if (!Array.isArray(r.savedPositionIds) || r.savedPositionIds.length > 200 || !r.savedPositionIds.every((x) => typeof x === 'string' && x.length <= 120)) {
+        throw Error('候选岗位不正确');
+      }
+      rec.savedPositionIds = r.savedPositionIds as string[];
+    }
+    for (const k of ['targetPositionCode', 'targetRowId', 'regNumber', 'writtenScore', 'interviewDate', 'readAt', 'updatedAt'] as const) {
+      if (r[k] !== undefined) {
+        if (typeof r[k] !== 'string' || (r[k] as string).length > 200) throw Error('考编记录字段不正确');
+        (rec as Record<string, unknown>)[k] = r[k];
+      }
+    }
+    if (r.notes !== undefined) {
+      if (typeof r.notes !== 'string' || r.notes.length > 2000) throw Error('考编备注过长');
+      rec.notes = r.notes;
+    }
+    out[id] = rec;
+  }
+  return out;
+}
+
+export function validateExamProfile(input: unknown): ExamUserProfile {
+  const out: ExamUserProfile = { ...DEFAULT_EXAM_PROFILE };
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return out;
+  const r = input as Record<string, unknown>;
+  if (typeof r.education === 'string' && PROFILE_EDU.has(r.education as ExamUserProfile['education'])) {
+    out.education = r.education as ExamUserProfile['education'];
+  }
+  if (typeof r.hasDegree === 'boolean') out.hasDegree = r.hasDegree;
+  if (typeof r.majorQuery === 'string') out.majorQuery = r.majorQuery.slice(0, 200);
+  if (typeof r.politicalStatus === 'string' && PROFILE_POL.has(r.politicalStatus as ExamUserProfile['politicalStatus'])) {
+    out.politicalStatus = r.politicalStatus as ExamUserProfile['politicalStatus'];
+  }
+  if (typeof r.gradIdentity === 'string' && PROFILE_GRAD.has(r.gradIdentity as ExamUserProfile['gradIdentity'])) {
+    out.gradIdentity = r.gradIdentity as ExamUserProfile['gradIdentity'];
+  }
+  if (typeof r.grassrootsYears === 'number' && Number.isFinite(r.grassrootsYears) && r.grassrootsYears >= 0 && r.grassrootsYears <= 30) {
+    out.grassrootsYears = Math.floor(r.grassrootsYears);
+  }
+  if (typeof r.hukouCity === 'string' && r.hukouCity.length > 0 && r.hukouCity.length <= 40) {
+    out.hukouCity = r.hukouCity;
+  }
+  if (typeof r.onlyMatchProfile === 'boolean') out.onlyMatchProfile = r.onlyMatchProfile;
+  return out;
+}
 
 export const DEFAULT_EXAM_FILTERS: ExamFilters = {
   query: '',

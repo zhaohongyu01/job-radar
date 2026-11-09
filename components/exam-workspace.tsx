@@ -26,10 +26,15 @@ import {
 import {
   DEFAULT_EXAM_FILTERS,
   DEFAULT_EXAM_PROFILE,
+  EXAM_FILTERS_STORAGE,
+  EXAM_PERSONAL_STORAGE,
+  EXAM_PROFILE_STORAGE,
   EXAM_TRACK_STAGES,
   filterExams,
   flattenAndFilterExamPositions,
   isExamProfileActive,
+  validateExamPersonal,
+  validateExamProfile,
 } from '@/lib/exams';
 import type {
   BianzhiCategory,
@@ -52,9 +57,6 @@ import {
   formatMonthDay,
 } from '@/components/exam-ui';
 
-const EXAM_PROFILE_STORAGE = 'job-radar-exam-profile-v1';
-const EXAM_FILTERS_STORAGE = 'job-radar-exam-filters-v1';
-export const EXAM_PERSONAL_STORAGE = 'job-radar-exam-personal-v1';
 const PAGE_SIZE = 20;
 
 const SHANDONG_16_CITIES = [
@@ -195,9 +197,15 @@ export function ExamWorkspace() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [today, setToday] = useState('');
-  const [profile, setProfile] = useState<ExamUserProfile>(() =>
-    safeReadJson(EXAM_PROFILE_STORAGE, DEFAULT_EXAM_PROFILE),
-  );
+  const [profile, setProfile] = useState<ExamUserProfile>(() => {
+    if (typeof window === 'undefined') return DEFAULT_EXAM_PROFILE;
+    try {
+      const raw = window.localStorage.getItem(EXAM_PROFILE_STORAGE);
+      return raw ? validateExamProfile(JSON.parse(raw)) : DEFAULT_EXAM_PROFILE;
+    } catch {
+      return DEFAULT_EXAM_PROFILE;
+    }
+  });
   const [filters, setFilters] = useState<ExamFilters>(() =>
     safeReadJson(EXAM_FILTERS_STORAGE, DEFAULT_EXAM_FILTERS),
   );
@@ -205,7 +213,7 @@ export function ExamWorkspace() {
     if (typeof window === 'undefined') return {};
     try {
       const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
-      return raw ? (JSON.parse(raw) as ExamPersonalStore) : {};
+      return raw ? validateExamPersonal(JSON.parse(raw)) : {};
     } catch {
       return {};
     }
@@ -215,6 +223,35 @@ export function ExamWorkspace() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
+      if (raw) validateExamPersonal(JSON.parse(raw));
+    } catch {
+      setNotice('本地考编记录格式异常，已重置为默认状态');
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === EXAM_PERSONAL_STORAGE) {
+        try {
+          const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
+          setPersonal(raw ? validateExamPersonal(JSON.parse(raw)) : {});
+        } catch {
+          setPersonal({});
+          setNotice('本地考编记录格式异常，已重置为默认状态');
+        }
+      } else if (event.key === EXAM_PROFILE_STORAGE) {
+        try {
+          const raw = window.localStorage.getItem(EXAM_PROFILE_STORAGE);
+          setProfile(raw ? validateExamProfile(JSON.parse(raw)) : DEFAULT_EXAM_PROFILE);
+        } catch {
+          setProfile(DEFAULT_EXAM_PROFILE);
+        }
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     let active = true;

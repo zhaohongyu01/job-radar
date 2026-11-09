@@ -52,6 +52,7 @@ export function BackupImportSheet({
           <div className="application-tracker">
             <p>岗位记录 {Object.keys(importPreview.records).length} 条，活动记录 {Object.keys(importPreview.event_records || {}).length} 条。</p>
             {!!importPreview.employer_records && <p>企业个人记录 {Object.keys(importPreview.employer_records).length} 条，包含意向评分与备注。</p>}
+            {!!importPreview.exam_records && <p>考编记录 {Object.keys(importPreview.exam_records).length} 条。</p>}
             <p>有 {personalConflicts(personal, importPreview.records).length} 条个人状态或备注缺少可区分新旧的更新时间；请选择冲突处理方式。可比较时间的记录采用较新状态。</p>
             {personalConflicts(personal, importPreview.records).slice(0, 20).map((id) => (
               <details key={id}>

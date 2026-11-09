@@ -134,7 +134,7 @@ await test('newer clears survive old backups; equal timestamps obey the selected
 await test('v4 exports company notes and accepts v1/v2/v3 without clearing existing company records', () => {
   const storage = memory(); storage.setItem(EMPLOYER_PERSONAL_STORAGE, JSON.stringify({ [entity.id]: record }));
   const exported = createBackup({}, storage);
-  assert.equal(exported.version, 4); assert.deepEqual(exported.employer_records, { [entity.id]: record });
+  assert.equal(exported.version, 5); assert.deepEqual(exported.employer_records, { [entity.id]: record });
   const restored = memory(); writeBackup(validateBackup(JSON.parse(JSON.stringify(exported))), restored);
   assert.deepEqual(readEmployerRecords(restored), { [entity.id]: record });
   for (const version of [1, 2, 3]) {

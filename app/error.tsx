@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, AlertTriangle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { EXAM_FILTERS_STORAGE } from '@/lib/exams';
 
 export default function ErrorBoundary({
   error,
@@ -23,6 +24,7 @@ export default function ErrorBoundary({
       localStorage.removeItem('job-radar-page-size-v1');
       localStorage.removeItem('job-radar-presets-v1');
       localStorage.removeItem('job-radar-active-preset-v1');
+      localStorage.removeItem(EXAM_FILTERS_STORAGE);
     } catch {}
     window.location.reload();
   };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, Star } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { employerLabel, employerResearchLinks } from '@/lib/employers';
@@ -39,31 +39,103 @@ export default function EmployerDrawer({ profile, job, jobs, now, complete, onDe
     catch { setShareMessage('复制失败，可从浏览器地址栏复制当前企业链接'); }
   };
   const [edits, setEdits] = useState<Edits>({}), [saving, setSaving] = useState(false), [message, setMessage] = useState('');
+  const [hasError, setHasError] = useState(false);
+  const debounceTimerRef = useRef<number | null>(null);
   const current = { rating: record?.rating == null ? '' : String(record.rating), notes: record?.notes || '' };
-  const value = (key: keyof Edits) => edits[key]?.value ?? current[key];
+  const value = (key: keyof Edits, sourceEdits: Edits = edits) => sourceEdits[key]?.value ?? current[key];
   const conflicts = (Object.keys(edits) as (keyof Edits)[]).filter(key =>
     edits[key]!.base !== current[key] && edits[key]!.value !== current[key]);
-  const edit = (key: keyof Edits, input: string) => {
-    setMessage(''); setEdits(previous => {
-      const next = { ...previous };
-      if (input === current[key]) delete next[key];
-      else next[key] = { value: input, base: previous[key]?.base ?? current[key] };
-      return next;
-    });
+
+  const clearDebounce = () => {
+    if (debounceTimerRef.current !== null) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
   };
-  const submit = async (overwrite = false) => {
-    if (!ready || saving || (conflicts.length && !overwrite)) return;
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current !== null) {
+        window.clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const formatSavedTime = () =>
+    new Date().toLocaleTimeString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
+  const submitWithEdits = async (targetEdits: Edits, overwrite = false) => {
+    const activeConflicts = (Object.keys(targetEdits) as (keyof Edits)[]).filter(
+      key => targetEdits[key]!.base !== current[key] && targetEdits[key]!.value !== current[key],
+    );
+    if (!ready || saving || (activeConflicts.length && !overwrite)) return;
     const patch: EmployerPatch = {};
-    if (edits.rating && value('rating') !== current.rating) patch.rating = value('rating') ? Number(value('rating')) : null;
-    if (edits.notes && value('notes') !== current.notes) patch.notes = value('notes');
-    if (!Object.keys(patch).length) { setEdits({}); setMessage('没有需要保存的修改'); return; }
+    if (targetEdits.rating && value('rating', targetEdits) !== current.rating) {
+      patch.rating = value('rating', targetEdits) ? Number(value('rating', targetEdits)) : null;
+    }
+    if (targetEdits.notes && value('notes', targetEdits) !== current.notes) {
+      patch.notes = value('notes', targetEdits);
+    }
+    if (!Object.keys(patch).length) {
+      setEdits({});
+      return;
+    }
     setSaving(true);
     try {
       const result = await onSave(patch, record, overwrite);
-      if (result.ok) { setEdits({}); setMessage('企业个人记录已保存'); }
-      else setMessage(result.message || '未保存，草稿已保留。');
-    } catch { setMessage('未保存，草稿已保留，请稍后重试。'); }
-    finally { setSaving(false); }
+      if (result.ok) {
+        setEdits(prev => {
+          const remaining = { ...prev };
+          if (patch.rating !== undefined && remaining.rating?.value === targetEdits.rating?.value) delete remaining.rating;
+          if (patch.notes !== undefined && remaining.notes?.value === targetEdits.notes?.value) delete remaining.notes;
+          return remaining;
+        });
+        setHasError(false);
+        setMessage(`已保存 · ${formatSavedTime()}`);
+      } else {
+        setHasError(true);
+        setMessage(result.message || '未保存，草稿已保留。');
+      }
+    } catch {
+      setHasError(true);
+      setMessage('未保存，草稿已保留，请稍后重试。');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeRating = (input: string) => {
+    setMessage('');
+    const nextEdits: Edits = { ...edits };
+    if (input === current.rating) delete nextEdits.rating;
+    else nextEdits.rating = { value: input, base: edits.rating?.base ?? current.rating };
+    setEdits(nextEdits);
+    void submitWithEdits(nextEdits);
+  };
+
+  const changeNotes = (input: string) => {
+    setMessage('');
+    const nextEdits: Edits = { ...edits };
+    if (input === current.notes) delete nextEdits.notes;
+    else nextEdits.notes = { value: input, base: edits.notes?.base ?? current.notes };
+    setEdits(nextEdits);
+    clearDebounce();
+    if (input !== current.notes) {
+      debounceTimerRef.current = window.setTimeout(() => {
+        debounceTimerRef.current = null;
+        void submitWithEdits(nextEdits);
+      }, 800);
+    }
+  };
+
+  const flushNotes = () => {
+    clearDebounce();
+    void submitWithEdits(edits);
   };
   const scopeText = profile.scope === 'department'
     ? '本档案仅对应所列品牌下的招聘部门，不代表其他子公司或部门。'
@@ -126,22 +198,27 @@ export default function EmployerDrawer({ profile, job, jobs, now, complete, onDe
           <h3><Star size={16} />我的意向评分</h3>
           <p className="small muted">这是你的投递意愿，仅保存在当前浏览器，不计入企业公众口碑；可随个人备份导出。</p>
           {error && <p role="alert">{error}</p>}
-          <label className="employer-field">意向评分<select aria-label="意向评分" disabled={!ready || saving} value={value('rating')} onChange={event => edit('rating', event.target.value)}>
+          <label className="employer-field">意向评分<select aria-label="意向评分" disabled={!ready || saving} value={value('rating')} onChange={event => changeRating(event.target.value)}>
             <option value="">尚未评分</option><option value="1">1分 · 暂不考虑</option><option value="2">2分 · 兴趣较低</option>
             <option value="3">3分 · 了解后决定</option><option value="4">4分 · 愿意投递</option><option value="5">5分 · 优先投递</option>
           </select></label>
           <label className="employer-field">个人备注<textarea aria-label="个人备注" rows={4} maxLength={2000} disabled={!ready || saving} value={value('notes')}
-            placeholder="例如：重点确认双休、薪资结构、实际工作部门；也可记录你查到的评价链接。" onChange={event => edit('notes', event.target.value)} /></label>
+            placeholder="例如：重点确认双休、薪资结构、实际工作部门；也可记录你查到的评价链接。" onChange={event => changeNotes(event.target.value)} onBlur={flushNotes} /></label>
           {!!conflicts.length && <div role="alert"><p>其他页面更新了{conflicts.map(key => labels[key]).join('、')}，你的草稿已保留。</p>
-            <div className="employer-form-actions"><button className="btn btn-outline" disabled={saving} onClick={() => { setEdits({}); setMessage('已读取最新保存内容'); }}>读取已保存内容</button>
-              <button className="btn btn-outline" disabled={saving} onClick={() => void submit(true)}>以当前输入覆盖冲突</button></div>
+            <div className="employer-form-actions"><button className="btn btn-outline" disabled={saving} onClick={() => { clearDebounce(); setEdits({}); setHasError(false); setMessage('已读取最新保存内容'); }}>读取已保存内容</button>
+              <button className="btn btn-outline" disabled={saving} onClick={() => { clearDebounce(); void submitWithEdits(edits, true); }}>以当前输入覆盖冲突</button></div>
           </div>}
-          <div className="employer-form-actions"><button className="btn btn-primary" disabled={!ready || saving || !!conflicts.length} onClick={() => void submit()}>{saving ? '正在保存…' : '保存我的企业评价'}</button>
+          <div className="employer-form-actions">
+            {hasError && !conflicts.length && (
+              <button className="btn btn-outline btn-sm" disabled={!ready || saving} onClick={() => void submitWithEdits(edits)}>重试保存</button>
+            )}
             <button className="btn btn-outline" disabled={!ready || saving} onClick={() => {
-              setEdits({ rating: { value: '', base: current.rating }, notes: { value: '', base: current.notes } });
-              setMessage('已清空输入，点击保存后生效');
+              clearDebounce();
+              const cleared: Edits = { rating: { value: '', base: current.rating }, notes: { value: '', base: current.notes } };
+              setEdits(cleared);
+              void submitWithEdits(cleared);
             }}>清空评分和备注</button></div>
-          <output aria-live="polite">{message}</output>
+          <output aria-live="polite">{saving ? '正在保存…' : message}</output>
           {record && <p className="small muted">上次保存 {new Date(record.updated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>}
         </section>
         <section className="employer-section"><h3>投递前可确认</h3><ul className="employer-questions">

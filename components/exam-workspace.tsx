@@ -44,6 +44,7 @@ import { ExamPositionTable } from '@/components/exams/exam-position-table';
 import { ExamTrackerBoard } from '@/components/exams/exam-tracker-board';
 import { ExamSourcesSheet } from '@/components/exams/exam-sources-sheet';
 import { formatMonthDay } from '@/components/exam-ui';
+import { useToast } from '@/components/toast-provider';
 import { useExamSnapshot } from '@/hooks/use-exam-snapshot';
 import { useExamPersonal } from '@/hooks/use-exam-personal';
 
@@ -64,16 +65,21 @@ interface Milestone {
 }
 
 export function ExamWorkspace() {
-  const [notice, setNotice] = useState(() => {
-    if (typeof window === 'undefined') return '';
+  const { toast } = useToast();
+  const setNotice = useCallback(
+    (msg: string) => {
+      if (msg) toast(msg);
+    },
+    [toast],
+  );
+  useEffect(() => {
     try {
       const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
       if (raw) validateExamPersonal(JSON.parse(raw));
-      return '';
     } catch {
-      return '本地考编记录格式异常，已重置为默认状态';
+      toast({ message: '本地考编记录格式异常，已重置为默认状态', tone: 'error' });
     }
-  });
+  }, [toast]);
   const [selectedExam, setSelectedExam] = useState<ExamAnnouncement | null>(null);
   const [linkedExamId, setLinkedExamId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -116,12 +122,6 @@ export function ExamWorkspace() {
     savedCount,
     trackedCount,
   } = useExamPersonal({ onNotice: setNotice, onPageReset: resetPage });
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(''), 3200);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
 
   useEffect(() => {
     if (!linkedExamId || allExams.length === 0) return;
@@ -300,15 +300,6 @@ export function ExamWorkspace() {
 
   return (
     <div className="exw">
-      {notice && (
-        <output className="toast">
-          <span>{notice}</span>
-          <button type="button" aria-label="关闭提示" onClick={() => setNotice('')}>
-            <X size={15} />
-          </button>
-        </output>
-      )}
-
       {/* ---------- Header ---------- */}
       <header className="exw-head">
         <div className="exw-head-text">

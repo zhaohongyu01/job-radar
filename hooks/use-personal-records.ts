@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { isUnread, personalFor } from '@/lib/jobs';
 import type { Filters, Job, Personal, PersonalRecord } from '@/lib/jobs';
 import { APPLICATION_STAGES } from '@/lib/personal-records';
+import { useToast } from '@/components/toast-provider';
 import {
   commitPersonalRecords,
   patchPersonalRecord,
@@ -35,6 +36,7 @@ export function usePersonalRecords({
   onNotice,
 }: UsePersonalRecordsOptions): UsePersonalRecordsResult {
   const [personal, setPersonal] = useState<Personal>({});
+  const { toast } = useToast();
 
   const syncPersonal = useCallback(() => {
     try {
@@ -105,30 +107,14 @@ export function usePersonalRecords({
 
   const toggle = useCallback(
     (job: Job, key: 'saved' | 'applied' | 'hidden') => {
-      if (key === 'applied') {
-        let current: PersonalRecord = {};
-        try {
-          current = personalFor(job, readPersonalRecords(localStorage));
-        } catch {
-          // ignore
-        }
-        const stage = current.application_stage;
-        if (
-          current.applied &&
-          stage &&
-          stage !== 'planned' &&
-          stage !== 'applied' &&
-          !window.confirm(
-            `当前投递进度为「${APPLICATION_STAGES[stage]}」。取消“已投递”会把进度改回“待投递”，确定继续？`,
-          )
-        ) {
-          return;
-        }
-      }
+      let snapshotRecord: PersonalRecord | null = null;
+      let nextBool = false;
       void save((latest) => {
         const old = personalFor(job, latest);
+        snapshotRecord = { ...old };
+        nextBool = !old[key];
         const stamp = new Date().toISOString();
-        const patch: PersonalRecord = { [key]: !old[key] };
+        const patch: PersonalRecord = { [key]: nextBool };
         if (key === 'applied') {
           const stage = old.application_stage;
           // Marking as applied never rolls a later stage (test/interview/offer…) back.
@@ -140,9 +126,53 @@ export function usePersonalRecords({
           patch.applied_at = patch.applied ? old.applied_at || stamp : null;
         }
         return patchPersonalRecord(latest, job, patch, stamp);
+      }).then((ok) => {
+        if (!ok || !snapshotRecord) return;
+        const previous = snapshotRecord;
+        if (key === 'applied' && !nextBool) {
+          toast({
+            message: '已改回待投递',
+            tone: 'info',
+            action: {
+              label: '撤销',
+              onClick: () => {
+                void save((latest) =>
+                  patchPersonalRecord(
+                    latest,
+                    job,
+                    {
+                      applied: true,
+                      application_stage: previous.application_stage || 'applied',
+                      applied_at: previous.applied_at ?? new Date().toISOString(),
+                    },
+                    new Date().toISOString(),
+                  ),
+                );
+              },
+            },
+          });
+        } else if (key === 'hidden' && nextBool) {
+          toast({
+            message: '已设为不感兴趣',
+            tone: 'info',
+            action: {
+              label: '撤销',
+              onClick: () => {
+                void save((latest) =>
+                  patchPersonalRecord(
+                    latest,
+                    job,
+                    { ...previous, hidden: false },
+                    new Date().toISOString(),
+                  ),
+                );
+              },
+            },
+          });
+        }
       });
     },
-    [save],
+    [save, toast],
   );
 
   const changeStage = useCallback(

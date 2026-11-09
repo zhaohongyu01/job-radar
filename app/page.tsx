@@ -49,6 +49,7 @@ import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
 import { AppHeader } from '@/components/jobs/app-header';
 import { OnboardingCard } from '@/components/jobs/onboarding-card';
+import { ToastProvider, useToast } from '@/components/toast-provider';
 import { loadRadarPresets, RADAR_ACTIVE_PRESET_STORAGE, saveRadarPresets } from '@/lib/radar';
 import { useJobSnapshot } from '@/hooks/use-job-snapshot';
 import { usePersonalRecords } from '@/hooks/use-personal-records';
@@ -57,17 +58,26 @@ import { useBackup } from '@/hooks/use-backup';
 import { PAGE_SIZE_STORAGE, PAGE_SIZES, useUrlSync, useVisibleOpportunitiesTool } from '@/hooks/use-url-sync';
 
 export default function Home() {
-  return <EmployerWorkspace><HomeContent /></EmployerWorkspace>;
+  return (
+    <ToastProvider>
+      <EmployerWorkspace>
+        <HomeContent />
+      </EmployerWorkspace>
+    </ToastProvider>
+  );
 }
 
 function HomeContent() {
+  const { toast } = useToast();
+  const setNotice = useCallback((msg: string) => {
+    if (msg) toast(msg);
+  }, [toast]);
   const employerRecords = useEmployerRecords();
   const reputation = useEmployerReputation();
   const { register: registerEmployerCatalog, selectId: selectEmployerId, requestedId: requestedEmployerId, missing: missingEmployer } = useEmployerNavigation();
   const [ready, setReady] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
-  const [notice, setNotice] = useState('');
   const resultsTopRef = useRef<HTMLDivElement>(null);
   const [searchIndex, setSearchIndex] = useState<Record<string, string> | null>(null);
   const [searchError, setSearchError] = useState('');
@@ -447,15 +457,6 @@ function HomeContent() {
               </fieldset>
             )}
           </div>
-        )}
-
-        {notice && (
-          <output className="toast">
-            <span>{notice}</span>
-            <button aria-label="关闭提示" onClick={() => setNotice('')}>
-              <X size={15} />
-            </button>
-          </output>
         )}
 
         {error && (

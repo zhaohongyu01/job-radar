@@ -4034,3 +4034,54 @@ button.chip:hover {
   color: var(--brand);
   font-weight: 600;
 }
+
+/* ---------- T2.5 Toast Stack ---------- */
+.toast-stack {
+  position: fixed;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px) + var(--bottom-bar-h, 0px));
+  left: 50%;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: min(92vw, 560px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.toast-stack .toast {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  justify-content: space-between;
+  pointer-events: auto;
+}
+.toast-stack .toast.is-error {
+  background: var(--urgent);
+  color: #fff;
+}
+.toast-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.toast-stack .toast .toast-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toast-stack .toast .toast-action-btn:hover {
+  background: rgba(255, 255, 255, 0.24);
+}

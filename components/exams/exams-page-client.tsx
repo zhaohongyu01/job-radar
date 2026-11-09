@@ -2,11 +2,12 @@
 
 import { Radar } from 'lucide-react';
 import { ExamWorkspace } from '@/components/exam-workspace';
+import { ToastProvider } from '@/components/toast-provider';
 import { WorkspaceSwitch } from '@/components/workspace-switch';
 
 export function ExamsPageClient() {
   return (
-    <>
+    <ToastProvider>
       <a className="skip-to-results" href="#exam-results">
         跳到考编检索结果
       </a>
@@ -26,6 +27,6 @@ export function ExamsPageClient() {
       <main className="page">
         <ExamWorkspace />
       </main>
-    </>
+    </ToastProvider>
   );
 }

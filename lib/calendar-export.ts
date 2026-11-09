@@ -1,8 +1,8 @@
 import type { TalkEvent } from './jobs.ts';
 
-const text = (value: string) => value.replace(/\\/g, '\\\\').replace(/\r\n|\r|\n/g, '\\n').replace(/;/g, '\\;').replace(/,/g, '\\,');
-const stamp = (date: number) => new Date(date).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-function fold(line: string): string {
+export const text = (value: string) => value.replace(/\\/g, '\\\\').replace(/\r\n|\r|\n/g, '\\n').replace(/;/g, '\\;').replace(/,/g, '\\,');
+export const stamp = (date: number) => new Date(date).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+export function fold(line: string): string {
   let result = '', length = 0;
   for (const point of line) {
     const bytes = new TextEncoder().encode(point).length;
@@ -42,5 +42,5 @@ export function downloadCalendar(entries: { event: TalkEvent; title: string }[],
   const blob = new Blob([exportCalendar(entries, now)], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a'); link.href = url; link.download = '职讯雷达-我的日程.ics'; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

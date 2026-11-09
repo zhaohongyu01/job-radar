@@ -39,16 +39,22 @@ export type ExamStage =
 
 export type ExamTrackStatus =
   | 'none'
-  | 'comparing'    // 选岗对比中
-  | 'registered'   // 已报名待初审
-  | 'audited'      // 初审通过待缴费
-  | 'paid'         // 已缴费待笔试
-  | 'written_done' // 笔试已考待出分
-  | 'interview'    // 进面 / 资格复审
-  | 'admitted';    // 体检考察 / 拟录用
+  | 'comparing'       // 选岗对比中
+  | 'registered'      // 已报名待初审
+  | 'audited'         // 初审通过待缴费
+  | 'paid'            // 已缴费待笔试
+  | 'written_done'    // 笔试已考待出分
+  | 'interview'       // 进面 / 资格复审
+  | 'admitted'        // 体检考察 / 拟录用
+  | 'failed_audit'    // 初审未通过
+  | 'not_shortlisted' // 未进面或未录用
+  | 'withdrawn';      // 主动放弃
+
+export type ExamTerminalTrackStatus = 'failed_audit' | 'not_shortlisted' | 'withdrawn';
+export type ExamLinearTrackStatus = Exclude<ExamTrackStatus, 'none' | ExamTerminalTrackStatus>;
 
 export const EXAM_TRACK_STAGES: {
-  key: Exclude<ExamTrackStatus, 'none'>;
+  key: ExamLinearTrackStatus;
   label: string;
   shortLabel: string;
   hint: string;
@@ -61,6 +67,29 @@ export const EXAM_TRACK_STAGES: {
   { key: 'interview', label: '进面 / 资格复审', shortLabel: '进面复审', hint: '准备现场资格审查材料与结构化/专业面试' },
   { key: 'admitted', label: '体检考察 / 拟录用', shortLabel: '体检公示', hint: '进入体检、政审考察及拟录用公示阶段' },
 ];
+
+export const EXAM_TERMINAL_STAGES: {
+  key: ExamTerminalTrackStatus;
+  label: string;
+  shortLabel: string;
+  hint: string;
+}[] = [
+  { key: 'failed_audit', label: '初审未通过', shortLabel: '初审未过', hint: '资格初审未通过或无法改报' },
+  { key: 'not_shortlisted', label: '未进面或未录用', shortLabel: '未进面/未录', hint: '笔试未过线或面试/考察未录用' },
+  { key: 'withdrawn', label: '主动放弃', shortLabel: '主动放弃', hint: '主动放弃报名、缴费、笔试或录用' },
+];
+
+export function isTerminalTrackStatus(status?: ExamTrackStatus): status is ExamTerminalTrackStatus {
+  return status === 'failed_audit' || status === 'not_shortlisted' || status === 'withdrawn';
+}
+
+export function getTrackStageInfo(status?: ExamTrackStatus) {
+  if (!status || status === 'none') return undefined;
+  return (
+    EXAM_TRACK_STAGES.find((s) => s.key === status) ||
+    EXAM_TERMINAL_STAGES.find((s) => s.key === status)
+  );
+}
 
 export interface ExamSchedule {
   reg_start?: string | null;
@@ -245,7 +274,11 @@ export const DEFAULT_EXAM_PROFILE: ExamUserProfile = {
   onlyMatchProfile: false,
 };
 
-const TRACK_KEYS = new Set<string>(['none', ...EXAM_TRACK_STAGES.map((s) => s.key)]);
+const TRACK_KEYS = new Set<string>([
+  'none',
+  ...EXAM_TRACK_STAGES.map((s) => s.key),
+  ...EXAM_TERMINAL_STAGES.map((s) => s.key),
+]);
 const PROFILE_EDU = new Set<ExamUserProfile['education']>(['全部', '专科', '本科', '硕士研究生', '博士研究生']);
 const PROFILE_POL = new Set<ExamUserProfile['politicalStatus']>(['不限', '群众', '共青团员', '中共党员']);
 const PROFILE_GRAD = new Set<ExamUserProfile['gradIdentity']>(['不限', '当年应届', '择业期应届', '在职/社会人员']);
@@ -590,6 +623,66 @@ export function computeExamStageLabel(stage: ExamStage): {
 
 const dayDiff = (a: string, b: string) =>
   Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86400000);
+
+export function computeDaysLeft(dateStr: string | null | undefined, today: string): number | null {
+  if (!dateStr || !today) return null;
+  const cleanDate = dateStr.trim().slice(0, 10);
+  const cleanToday = today.trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate) || !/^\d{4}-\d{2}-\d{2}$/.test(cleanToday)) return null;
+  return dayDiff(cleanDate, cleanToday);
+}
+
+export interface ExamNextStepInfo {
+  label: string;
+  date: string | null;
+  daysLeft: number | null;
+}
+
+export function computeExamNextStep(
+  exam: ExamAnnouncement,
+  status: ExamTrackStatus | undefined,
+  today: string,
+): ExamNextStepInfo | null {
+  if (!status || status === 'none' || isTerminalTrackStatus(status)) return null;
+  const s = exam.schedule || {};
+  let label = '';
+  let date: string | null = null;
+  switch (status) {
+    case 'comparing':
+      label = '网上报名';
+      date = s.reg_end || null;
+      break;
+    case 'registered':
+      label = '资格初审';
+      date = s.audit_end || s.payment_end || s.reg_end || null;
+      break;
+    case 'audited':
+      label = '缴费确认';
+      date = s.payment_end || null;
+      break;
+    case 'paid':
+      label = s.admit_card_start ? '准考证打印' : '笔试';
+      date = s.admit_card_start || s.written_exam_date || null;
+      break;
+    case 'written_done':
+      label = '成绩查询 / 面试';
+      date = s.interview_date || null;
+      break;
+    case 'interview':
+      label = '资格复审 / 面试';
+      date = s.interview_date || null;
+      break;
+    case 'admitted':
+      label = '体检考察 / 公示';
+      date = null;
+      break;
+  }
+  return {
+    label,
+    date,
+    daysLeft: computeDaysLeft(date, today),
+  };
+}
 
 export function deriveExamStage(exam: ExamAnnouncement, today: string): ExamStage {
   if (exam.notice_role !== '招考简章') {

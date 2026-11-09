@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
-  Download,
   FileSpreadsheet,
   Kanban,
   Landmark,
@@ -19,11 +18,12 @@ import {
 } from 'lucide-react';
 import {
   DEFAULT_EXAM_FILTERS,
+  evaluateExamPositionEligibility,
   EXAM_PERSONAL_STORAGE,
-  EXAM_TRACK_STAGES,
   filterExams,
   flattenAndFilterExamPositions,
   formatExamUrl,
+  getTrackStageInfo,
   isExamProfileActive,
   parseExamUrl,
   validateExamPersonal,
@@ -32,6 +32,7 @@ import type {
   ExamAnnouncement,
   ExamFilters,
   ExamTrackStatus,
+  FlattenedExamPosition,
 } from '@/lib/exams';
 import { ExamCard } from '@/components/exam-card';
 import { ExamDetailDrawer } from '@/components/exam-detail-drawer';
@@ -88,6 +89,7 @@ export function ExamWorkspace() {
   });
   const [sourceOpen, setSourceOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [savedSubTab, setSavedSubTab] = useState<'announcements' | 'candidates' | 'hidden'>('announcements');
   const [page, setPage] = useState(() => {
     if (typeof window === 'undefined') return 1;
     return parseExamUrl(window.location.search).page || 1;
@@ -118,10 +120,13 @@ export function ExamWorkspace() {
     resetFilters,
     updatePersonalRecord,
     toggleSaveExam,
+    toggleHideExam,
+    cleanupStalePositions,
     toggleCity,
     toggleCandidate,
     savedCount,
     trackedCount,
+    hiddenCount,
   } = useExamPersonal({ onNotice: setNotice, onPageReset: resetPage });
 
   useEffect(() => {
@@ -236,6 +241,43 @@ export function ExamWorkspace() {
     [allExams, filters, profile],
   );
 
+  const { validPositionRowIds, candidateRows, staleCandidateCount } = useMemo(() => {
+    const validIds = new Set<string>();
+    const cands: FlattenedExamPosition[] = [];
+    for (const exam of allExams) {
+      const savedSet = new Set(personal[exam.id]?.savedPositionIds || []);
+      for (const pos of exam.positions || []) {
+        validIds.add(pos.row_id);
+        if (savedSet.has(pos.row_id)) {
+          cands.push({
+            ...pos,
+            exam_title: exam.title,
+            exam,
+            eligibility: evaluateExamPositionEligibility(pos, profile),
+          });
+        }
+      }
+    }
+    let stale = 0;
+    if (allExams.length > 0) {
+      for (const rec of Object.values(personal)) {
+        for (const id of rec.savedPositionIds || []) {
+          if (!validIds.has(id)) stale += 1;
+        }
+      }
+    }
+    return { validPositionRowIds: validIds, candidateRows: cands, staleCandidateCount: stale };
+  }, [allExams, personal, profile]);
+
+  const savedAnnouncementExams = useMemo(
+    () => filteredExams.filter((ex) => personal[ex.id]?.saved && !personal[ex.id]?.hidden),
+    [filteredExams, personal],
+  );
+  const hiddenExams = useMemo(
+    () => allExams.filter((ex) => Boolean(personal[ex.id]?.hidden)),
+    [allExams, personal],
+  );
+
   const milestones = useMemo<Milestone[]>(() => {
     if (!today) return [];
     const items: Milestone[] = [];
@@ -258,38 +300,25 @@ export function ExamWorkspace() {
       .slice(0, 10);
   }, [allExams, today]);
 
-  const exportCalendar = () => {
-    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Job Radar//Civil Exam Calendar//CN'];
-    for (const m of milestones) {
-      const day = m.date.replace(/-/g, '').slice(0, 8);
-      if (!/^\d{8}$/.test(day)) continue;
-      lines.push(
-        'BEGIN:VEVENT',
-        `UID:exam-${m.exam.id}-${m.type}@job-radar`,
-        `DTSTART;VALUE=DATE:${day}`,
-        `SUMMARY:【${m.type}】${m.exam.title}`,
-        `DESCRIPTION:${m.exam.organizer}\\n${m.exam.source_url}`,
-        'END:VEVENT',
-      );
-    }
-    lines.push('END:VCALENDAR');
-    const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '考公考编考务日历.ics';
-    a.click();
-    URL.revokeObjectURL(url);
-    setNotice('已导出日历文件，可导入手机或电脑日历');
-  };
-
   const profileActive = isExamProfileActive(profile);
 
   const activeFilters = buildActiveExamFilters(filters, toggleCity, updateFilters);
 
-  const listLength = filters.view === 'positions' ? flattenedPositions.length : filteredExams.length;
+  const activeExamList =
+    filters.view === 'saved'
+      ? savedSubTab === 'hidden'
+        ? hiddenExams
+        : savedAnnouncementExams
+      : filteredExams;
+  const listLength =
+    filters.view === 'positions'
+      ? flattenedPositions.length
+      : filters.view === 'saved' && savedSubTab === 'candidates'
+        ? candidateRows.length
+        : activeExamList.length;
   const totalPages = Math.max(1, Math.ceil(listLength / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const pagedExams = filteredExams.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pagedExams = activeExamList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const pagedPositions = flattenedPositions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const tabs: { key: ExamFilters['view']; label: string; icon: typeof Landmark; count: number }[] = [
@@ -437,10 +466,6 @@ export function ExamWorkspace() {
                   <CalendarClock size={15} />
                   近期考务节点
                 </h2>
-                <button type="button" className="text-btn" onClick={exportCalendar}>
-                  <Download size={14} />
-                  导出日历
-                </button>
               </div>
               <div className="exw-upcoming-list">
                 {milestones.map((m) => (
@@ -461,10 +486,57 @@ export function ExamWorkspace() {
             </section>
           )}
 
+          {filters.view === 'saved' && (
+            <div className="exw-tabs" role="tablist" aria-label="收藏子视图" style={{ marginBottom: 12 }}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={savedSubTab === 'announcements'}
+                className={`exw-tab${savedSubTab === 'announcements' ? ' is-on' : ''}`}
+                onClick={() => {
+                  setSavedSubTab('announcements');
+                  setPage(1);
+                }}
+              >
+                <span>收藏公告</span>
+                <span className="exw-tab-count">{savedAnnouncementExams.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={savedSubTab === 'candidates'}
+                className={`exw-tab${savedSubTab === 'candidates' ? ' is-on' : ''}`}
+                onClick={() => {
+                  setSavedSubTab('candidates');
+                  setPage(1);
+                }}
+              >
+                <span>候选岗位</span>
+                <span className="exw-tab-count">{candidateRows.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={savedSubTab === 'hidden'}
+                className={`exw-tab${savedSubTab === 'hidden' ? ' is-on' : ''}`}
+                onClick={() => {
+                  setSavedSubTab('hidden');
+                  setPage(1);
+                }}
+              >
+                <span>已隐藏</span>
+                <span className="exw-tab-count">{hiddenCount}</span>
+              </button>
+            </div>
+          )}
+
           {filters.view !== 'tracker' && (
             <div className="exw-results-head">
               <p className="exw-count">
-                共 <strong>{listLength}</strong> {filters.view === 'positions' ? '个岗位' : '条公告'}
+                共 <strong>{listLength}</strong>{' '}
+                {filters.view === 'positions' || (filters.view === 'saved' && savedSubTab === 'candidates')
+                  ? '个岗位'
+                  : '条公告'}
                 {profile.onlyMatchProfile && <span className="exw-muted"> · 已按我的条件过滤</span>}
               </p>
               {activeFilters.length > 0 && (
@@ -483,8 +555,8 @@ export function ExamWorkspace() {
             </div>
           )}
 
-          {/* Announcements & saved */}
-          {(filters.view === 'announcements' || filters.view === 'saved') &&
+          {/* Announcements & saved announcements / hidden */}
+          {(filters.view === 'announcements' || (filters.view === 'saved' && savedSubTab !== 'candidates')) &&
             (loading && !snapshot ? (
               <div className="exw-skeleton-list" aria-label="加载中">
                 {[0, 1, 2, 3].map((i) => (
@@ -493,7 +565,13 @@ export function ExamWorkspace() {
               </div>
             ) : pagedExams.length === 0 ? (
               <div className="exw-empty">
-                <p>{filters.view === 'saved' ? '还没有收藏的公告' : '没有符合条件的公告'}</p>
+                <p>
+                  {filters.view === 'saved'
+                    ? savedSubTab === 'hidden'
+                      ? '还没有隐藏的公告'
+                      : '还没有收藏的公告'
+                    : '没有符合条件的公告'}
+                </p>
                 {activeFilters.length > 0 && (
                   <button type="button" className="btn btn-secondary btn-sm" onClick={resetFilters}>
                     清除筛选条件
@@ -510,10 +588,23 @@ export function ExamWorkspace() {
                     personal={personal[exam.id]}
                     onSelect={openExam}
                     onToggleSave={toggleSaveExam}
+                    onToggleHide={toggleHideExam}
                   />
                 ))}
               </div>
             ))}
+
+          {/* Saved candidate compare */}
+          {filters.view === 'saved' && savedSubTab === 'candidates' && (
+            <ExamPositionTable
+              variant="candidates"
+              rows={candidateRows}
+              staleCount={staleCandidateCount}
+              onCleanupStale={() => cleanupStalePositions(validPositionRowIds)}
+              onSelectExam={openExam}
+              onToggleCandidate={toggleCandidate}
+            />
+          )}
 
           {/* Positions */}
           {filters.view === 'positions' && (
@@ -533,11 +624,13 @@ export function ExamWorkspace() {
               allExams={allExams}
               personal={personal}
               trackedCount={trackedCount}
+              today={today}
               onSelectExam={openExam}
+              onNotify={setNotice}
             />
           )}
 
-          {filters.view !== 'tracker' && totalPages > 1 && (
+          {filters.view !== 'tracker' && !(filters.view === 'saved' && savedSubTab === 'candidates') && totalPages > 1 && (
             <nav className="exw-pager" aria-label="分页">
               <button
                 type="button"
@@ -585,11 +678,12 @@ export function ExamWorkspace() {
         onClose={closeExam}
         onSelectExam={(nextExam) => openExam(nextExam, false)}
         onToggleSave={toggleSaveExam}
+        onToggleHide={toggleHideExam}
         onUpdatePersonal={updatePersonalRecord}
         onChangeStatus={(examId: string, status: ExamTrackStatus) => {
           updatePersonalRecord(examId, { status, saved: status !== 'none' ? true : personal[examId]?.saved });
           if (status !== 'none') {
-            setNotice(`报考进度：${EXAM_TRACK_STAGES.find((s) => s.key === status)?.label ?? status}`);
+            setNotice(`报考进度：${getTrackStageInfo(status)?.label ?? status}`);
           }
         }}
         onNotify={setNotice}

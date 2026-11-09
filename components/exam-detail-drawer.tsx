@@ -3,10 +3,12 @@
 import { useMemo, useState } from 'react';
 import {
   Bookmark,
+  CalendarPlus,
   ChevronLeft,
   ChevronRight,
   Download,
   ExternalLink,
+  EyeOff,
   MoreHorizontal,
   Search,
   Share2,
@@ -19,8 +21,10 @@ import {
 } from '@/components/ui/popover';
 import {
   evaluateExamPositionEligibility,
+  EXAM_TERMINAL_STAGES,
   EXAM_TRACK_STAGES,
   isExamProfileActive,
+  isTerminalTrackStatus,
 } from '@/lib/exams';
 import type {
   ExamAnnouncement,
@@ -29,6 +33,7 @@ import type {
   ExamTrackStatus,
   ExamUserProfile,
 } from '@/lib/exams';
+import { downloadExamCalendar } from '@/lib/exam-calendar';
 import { bianzhiLabel, categoryLabel, ExamSheet, formatShortDate, StagePill } from '@/components/exam-ui';
 import { ExamPositionTable } from '@/components/exams/exam-position-table';
 
@@ -40,6 +45,7 @@ interface ExamDetailDrawerProps {
   onClose: () => void;
   onSelectExam: (exam: ExamAnnouncement) => void;
   onToggleSave: (examId: string) => void;
+  onToggleHide?: (examId: string) => void;
   onUpdatePersonal: (examId: string, patch: Partial<ExamPersonalRecord>) => void;
   onChangeStatus: (examId: string, status: ExamTrackStatus) => void;
   onNotify: (msg: string) => void;
@@ -53,6 +59,7 @@ export function ExamDetailDrawer({
   onClose,
   onSelectExam,
   onToggleSave,
+  onToggleHide,
   onUpdatePersonal,
   onChangeStatus,
   onNotify,
@@ -81,6 +88,7 @@ export function ExamDetailDrawer({
           onClose={onClose}
           onSelectExam={onSelectExam}
           onToggleSave={onToggleSave}
+          onToggleHide={onToggleHide}
           onUpdatePersonal={onUpdatePersonal}
           onChangeStatus={onChangeStatus}
           onNotify={onNotify}
@@ -103,6 +111,7 @@ function DrawerContent({
   onClose,
   onSelectExam,
   onToggleSave,
+  onToggleHide,
   onUpdatePersonal,
   onChangeStatus,
   onNotify,
@@ -119,6 +128,7 @@ function DrawerContent({
   onClose: () => void;
   onSelectExam: (exam: ExamAnnouncement) => void;
   onToggleSave: (examId: string) => void;
+  onToggleHide?: (examId: string) => void;
   onUpdatePersonal: (examId: string, patch: Partial<ExamPersonalRecord>) => void;
   onChangeStatus: (examId: string, status: ExamTrackStatus) => void;
   onNotify: (msg: string) => void;
@@ -127,6 +137,7 @@ function DrawerContent({
   const nextExam = currentIndex >= 0 && currentIndex < exams.length - 1 ? exams[currentIndex + 1] : null;
   const [moreOpen, setMoreOpen] = useState(false);
   const isSaved = Boolean(personal?.saved);
+  const isHidden = Boolean(personal?.hidden);
   const trackStatus = personal?.status || 'none';
   const savedPosIds = personal?.savedPositionIds || [];
   const positions = exam.positions || [];
@@ -152,7 +163,6 @@ function DrawerContent({
     onUpdatePersonal(exam.id, {
       saved: true,
       savedPositionIds: exists ? savedPosIds.filter((id) => id !== pos.row_id) : [...savedPosIds, pos.row_id],
-      status: trackStatus === 'none' ? 'comparing' : trackStatus,
     });
     onNotify(exists ? '已移出候选岗位' : `已加入候选：${pos.position_name}`);
   };
@@ -161,6 +171,7 @@ function DrawerContent({
     const label = `${pos.employer} · ${pos.position_name}${pos.position_code ? `（${pos.position_code}）` : ''}`;
     onUpdatePersonal(exam.id, {
       saved: true,
+      targetRowId: pos.row_id,
       targetPositionCode: label,
       status: trackStatus === 'none' ? 'comparing' : trackStatus,
     });
@@ -168,18 +179,19 @@ function DrawerContent({
   };
 
   const copyShare = async () => {
-    const text = [
-      exam.title,
-      `${exam.total_positions ?? '—'} 岗 / 招 ${exam.total_headcount ?? '—'} 人 · ${exam.bianzhi_types.join('、')}`,
-      `报名：${exam.schedule.reg_start || ''} ~ ${exam.schedule.reg_end || '见公告'}`,
-      exam.source_url,
-    ].join('\n');
+    const deepLink = `https://sites-project.job-radar.workers.dev/exams?exam=${encodeURIComponent(exam.id)}`;
+    const text = [exam.title, deepLink, exam.source_url].filter(Boolean).join('\n');
     try {
       await navigator.clipboard.writeText(text);
       onNotify('已复制公告摘要与链接');
     } catch {
       onNotify('复制失败，请手动复制');
     }
+  };
+
+  const addToCalendar = () => {
+    downloadExamCalendar([exam], Date.now());
+    onNotify('已导出当前公告考务日历（.ics）');
   };
 
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -293,6 +305,17 @@ function DrawerContent({
                   type="button"
                   className="opp-more-item"
                   onClick={() => {
+                    addToCalendar();
+                    setMoreOpen(false);
+                  }}
+                >
+                  <CalendarPlus size={14} />
+                  <span>添加到日历</span>
+                </button>
+                <button
+                  type="button"
+                  className="opp-more-item"
+                  onClick={() => {
                     void copyShare();
                     setMoreOpen(false);
                   }}
@@ -300,6 +323,19 @@ function DrawerContent({
                   <Share2 size={14} />
                   <span>分享</span>
                 </button>
+                {onToggleHide && (
+                  <button
+                    type="button"
+                    className="opp-more-item is-danger"
+                    onClick={() => {
+                      onToggleHide(exam.id);
+                      setMoreOpen(false);
+                    }}
+                  >
+                    <EyeOff size={14} />
+                    <span>{isHidden ? '恢复显示' : '不感兴趣'}</span>
+                  </button>
+                )}
               </PopoverContent>
             </Popover>
             <button type="button" className="exw-icon-btn" aria-label="关闭详情" onClick={onClose}>
@@ -335,7 +371,16 @@ function DrawerContent({
                 {st.label}
               </option>
             ))}
+            {EXAM_TERMINAL_STAGES.map((st) => (
+              <option key={st.key} value={st.key}>
+                {st.label}
+              </option>
+            ))}
           </select>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={addToCalendar}>
+            <CalendarPlus size={14} />
+            添加到日历
+          </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copyShare()}>
             <Share2 size={14} />
             分享
@@ -462,7 +507,25 @@ function DrawerContent({
         <section className="exw-ds" id="exw-sec-note">
           <div className="exw-ds-head">
             <h3 className="exw-ds-title">我的记录</h3>
-            <span className="exw-muted">仅保存在本机浏览器</span>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <select
+                className={`exw-select is-sm${isTerminalTrackStatus(trackStatus) ? ' is-on' : ''}`}
+                aria-label="结束跟进"
+                value={isTerminalTrackStatus(trackStatus) ? trackStatus : ''}
+                onChange={(e) => {
+                  const val = e.target.value as ExamTrackStatus;
+                  if (val) onChangeStatus(exam.id, val);
+                }}
+              >
+                <option value="">结束跟进 ▾</option>
+                {EXAM_TERMINAL_STAGES.map((st) => (
+                  <option key={st.key} value={st.key}>
+                    {st.label}
+                  </option>
+                ))}
+              </select>
+              <span className="exw-muted">仅保存在本机浏览器</span>
+            </div>
           </div>
           <fieldset className="exw-stepper" aria-label="报考进度">
             {EXAM_TRACK_STAGES.map((st, idx) => {

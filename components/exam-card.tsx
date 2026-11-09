@@ -1,9 +1,15 @@
 'use client';
 
-import { Bookmark, CheckCircle2, ExternalLink, MapPin } from 'lucide-react';
+import { useState } from 'react';
+import { Bookmark, CheckCircle2, ExternalLink, EyeOff, MapPin, MoreHorizontal } from 'lucide-react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   evaluateExamPositionEligibility,
-  EXAM_TRACK_STAGES,
+  getTrackStageInfo,
   isExamProfileActive,
 } from '@/lib/exams';
 import type { ExamAnnouncement, ExamPersonalRecord, ExamUserProfile } from '@/lib/exams';
@@ -21,14 +27,14 @@ interface ExamCardProps {
   personal?: ExamPersonalRecord;
   onSelect: (exam: ExamAnnouncement) => void;
   onToggleSave: (examId: string) => void;
+  onToggleHide?: (examId: string) => void;
 }
 
-export function ExamCard({ exam, profile, personal, onSelect, onToggleSave }: ExamCardProps) {
+export function ExamCard({ exam, profile, personal, onSelect, onToggleSave, onToggleHide }: ExamCardProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
   const isSaved = Boolean(personal?.saved);
-  const trackStage =
-    personal?.status && personal.status !== 'none'
-      ? EXAM_TRACK_STAGES.find((s) => s.key === personal.status)
-      : undefined;
+  const isHidden = Boolean(personal?.hidden);
+  const trackStage = getTrackStageInfo(personal?.status);
   const isNotice = exam.notice_role !== '招考简章';
   const positions = exam.positions || [];
   const profileActive = isExamProfileActive(profile);
@@ -143,6 +149,41 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave }: Ex
           {exam.registration_url ? '报名' : '原文'}
           <ExternalLink size={12} />
         </a>
+        {onToggleHide && (
+          <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+            <PopoverTrigger
+              type="button"
+              className="exw-icon-btn"
+              aria-label="更多操作"
+              title="更多操作"
+            >
+              <MoreHorizontal size={16} />
+            </PopoverTrigger>
+            <PopoverContent align="end" sideOffset={6} className="opp-more-menu">
+              <a
+                href={exam.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="opp-more-item"
+                onClick={() => setMoreOpen(false)}
+              >
+                <ExternalLink size={14} />
+                <span>查看原公告</span>
+              </a>
+              <button
+                type="button"
+                className="opp-more-item is-danger"
+                onClick={() => {
+                  onToggleHide(exam.id);
+                  setMoreOpen(false);
+                }}
+              >
+                <EyeOff size={14} />
+                <span>{isHidden ? '恢复显示' : '不感兴趣'}</span>
+              </button>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
     </article>
   );

@@ -1,6 +1,7 @@
 'use client';
 
-import { CheckCircle2, Star, Target } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowUpDown, CheckCircle2, Star, Target } from 'lucide-react';
 import type {
   ExamAnnouncement,
   ExamPersonalRecord,
@@ -10,7 +11,7 @@ import type {
   PositionEligibilityResult,
 } from '@/lib/exams';
 
-function EligibilityCell({ eligibility }: { eligibility: PositionEligibilityResult }) {
+export function EligibilityCell({ eligibility }: { eligibility: PositionEligibilityResult }) {
   if (eligibility.status === 'eligible') {
     return (
       <span
@@ -67,9 +68,192 @@ export interface DrawerPositionTableProps {
   onLockTarget: (pos: ExamPositionRow) => void;
 }
 
-export type ExamPositionTableProps = WorkspacePositionTableProps | DrawerPositionTableProps;
+export interface CandidateCompareTableProps {
+  variant: 'candidates';
+  rows: FlattenedExamPosition[];
+  staleCount?: number;
+  onCleanupStale?: () => void;
+  onSelectExam: (exam: ExamAnnouncement) => void;
+  onToggleCandidate: (examId: string, rowId: string, positionName: string) => void;
+}
+
+export type ExamPositionTableProps =
+  | WorkspacePositionTableProps
+  | DrawerPositionTableProps
+  | CandidateCompareTableProps;
 
 export function ExamPositionTable(props: ExamPositionTableProps) {
+  const [sortByRecruit, setSortByRecruit] = useState<'none' | 'desc' | 'asc'>('none');
+
+  if (props.variant === 'candidates') {
+    const { rows, staleCount = 0, onCleanupStale, onSelectExam, onToggleCandidate } = props;
+    const sortedRows =
+      sortByRecruit === 'none'
+        ? rows
+        : [...rows].sort((a, b) => {
+            const ca = a.recruit_count ?? 0;
+            const cb = b.recruit_count ?? 0;
+            return sortByRecruit === 'desc' ? cb - ca : ca - cb;
+          });
+    const cycleSort = () => {
+      setSortByRecruit((prev) => (prev === 'none' ? 'desc' : prev === 'desc' ? 'asc' : 'none'));
+    };
+
+    return (
+      <div className="exw-pos-container">
+        {staleCount > 0 && (
+          <div className="exw-alert" style={{ marginBottom: 12 }}>
+            <span>岗位已下线或已更新（{staleCount}）</span>
+            {onCleanupStale && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onCleanupStale}>
+                清理
+              </button>
+            )}
+          </div>
+        )}
+        {sortedRows.length === 0 ? (
+          <div className="exw-empty">
+            <p>还没有加入候选的岗位</p>
+            <span className="exw-muted">在职位库或公告详情中点击星标即可将岗位加入候选对比</span>
+          </div>
+        ) : (
+          <>
+            <div className="exw-table-wrap exw-pos-desktop">
+              <table className="exw-table">
+                <thead>
+                  <tr>
+                    <th>岗位</th>
+                    <th>单位</th>
+                    <th className="is-num">
+                      <button
+                        type="button"
+                        className="text-btn"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        onClick={cycleSort}
+                      >
+                        人数
+                        <ArrowUpDown size={12} />
+                      </button>
+                    </th>
+                    <th>学历</th>
+                    <th>专业</th>
+                    <th>开考比例</th>
+                    <th>资格状态</th>
+                    <th>所属公告</th>
+                    <th aria-label="候选" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRows.map((row) => (
+                    <tr key={row.row_id} className={row.eligibility.matched ? 'is-ok' : ''}>
+                      <td className="exw-td-main">
+                        <button
+                          type="button"
+                          className="exw-row-title"
+                          onClick={() => onSelectExam(row.exam)}
+                        >
+                          {row.position_name}
+                        </button>
+                        {row.position_code && <span className="exw-code">{row.position_code}</span>}
+                      </td>
+                      <td>{row.employer}</td>
+                      <td className="is-num">
+                        <strong>{row.recruit_count ?? '—'}</strong>
+                      </td>
+                      <td className="exw-nowrap">{row.education || '见公告'}</td>
+                      <td>
+                        <div className="exw-row-sub exw-clamp" title={row.major_raw || '见公告'}>
+                          {row.major_raw || '见公告'}
+                        </div>
+                      </td>
+                      <td className="exw-nowrap">
+                        {row.exam_ratio || row.exam.exam_ratio || '见公告'}
+                      </td>
+                      <td>
+                        <EligibilityCell eligibility={row.eligibility} />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="exw-row-src text-btn"
+                          title={row.exam.title}
+                          onClick={() => onSelectExam(row.exam)}
+                        >
+                          {row.exam.title}
+                        </button>
+                      </td>
+                      <td className="is-action">
+                        <button
+                          type="button"
+                          className="exw-icon-btn is-on"
+                          aria-pressed={true}
+                          aria-label="移出候选"
+                          title="移出候选"
+                          onClick={() =>
+                            onToggleCandidate(row.exam.id, row.row_id, row.position_name)
+                          }
+                        >
+                          <Star size={15} fill="currentColor" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="exw-pos-cards" aria-label="候选岗位卡片列表">
+              {sortedRows.map((row) => {
+                const loc = row.city || row.exam.cities[0] || row.exam.province;
+                return (
+                  <article
+                    key={row.row_id}
+                    className={`exw-pos-card${row.eligibility.matched ? ' is-ok' : ''}`}
+                  >
+                    <div className="exw-pos-card-head">
+                      <div>
+                        <button
+                          type="button"
+                          className="exw-row-title"
+                          onClick={() => onSelectExam(row.exam)}
+                        >
+                          {row.position_name}
+                        </button>
+                        <p className="exw-row-sub">
+                          {row.employer} · {loc} · 招 <strong>{row.recruit_count ?? '—'}</strong> 人
+                          {row.exam_ratio || row.exam.exam_ratio
+                            ? ` · 比例 ${row.exam_ratio || row.exam.exam_ratio}`
+                            : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="exw-icon-btn is-on"
+                        aria-pressed={true}
+                        aria-label="移出候选"
+                        onClick={() =>
+                          onToggleCandidate(row.exam.id, row.row_id, row.position_name)
+                        }
+                      >
+                        <Star size={15} fill="currentColor" />
+                      </button>
+                    </div>
+                    <p className="exw-pos-card-req">
+                      {row.education || '学历见公告'} · {row.major_raw || '专业见公告'}
+                    </p>
+                    <div className="exw-pos-card-foot">
+                      <span className="exw-row-src">{row.exam.title}</span>
+                      <EligibilityCell eligibility={row.eligibility} />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
   if (props.variant === 'workspace') {
     const { rows, profileActive, personal, onSelectExam, onToggleCandidate } = props;
     if (rows.length === 0) {
@@ -242,9 +426,7 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
           <tbody>
             {rows.map(({ pos, elig }) => {
               const isCand = savedPosIds.includes(pos.row_id);
-              const isLocked =
-                Boolean(personal?.targetPositionCode?.includes(pos.position_name)) &&
-                Boolean(personal?.targetPositionCode?.includes(pos.employer));
+              const isLocked = Boolean(personal?.targetRowId && pos.row_id === personal.targetRowId);
               const extra = [
                 pos.political_status && pos.political_status !== '不限' ? pos.political_status : '',
                 pos.fresh_grad_rule && !/^(不限|应往届均可)$/.test(pos.fresh_grad_rule)
@@ -323,9 +505,7 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
       <div className="exw-pos-cards" aria-label="岗位卡片列表">
         {rows.map(({ pos, elig }) => {
           const isCand = savedPosIds.includes(pos.row_id);
-          const isLocked =
-            Boolean(personal?.targetPositionCode?.includes(pos.position_name)) &&
-            Boolean(personal?.targetPositionCode?.includes(pos.employer));
+          const isLocked = Boolean(personal?.targetRowId && pos.row_id === personal.targetRowId);
           return (
             <article
               key={pos.row_id}

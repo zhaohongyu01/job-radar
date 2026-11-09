@@ -200,11 +200,39 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
       updatePersonalRecord(examId, {
         saved: true,
         savedPositionIds: exists ? prevIds.filter((id) => id !== rowId) : [...prevIds, rowId],
-        status: !rec?.status || rec.status === 'none' ? 'comparing' : rec.status,
       });
       onNotice(exists ? '已移出候选岗位' : `已加入候选：${positionName}`);
     },
     [personal, updatePersonalRecord, onNotice],
+  );
+
+  const toggleHideExam = useCallback(
+    (examId: string) => {
+      const current = Boolean(personal[examId]?.hidden);
+      updatePersonalRecord(examId, { hidden: !current });
+      onNotice(!current ? '已标记为不感兴趣' : '已恢复显示');
+    },
+    [personal, updatePersonalRecord, onNotice],
+  );
+
+  const cleanupStalePositions = useCallback(
+    (validRowIds: Set<string>) => {
+      setPersonal((prev) => {
+        const next: ExamPersonalStore = {};
+        for (const [examId, rec] of Object.entries(prev)) {
+          if (rec.savedPositionIds && rec.savedPositionIds.length > 0) {
+            const cleaned = rec.savedPositionIds.filter((id) => validRowIds.has(id));
+            next[examId] = { ...rec, savedPositionIds: cleaned, updatedAt: new Date().toISOString() };
+          } else {
+            next[examId] = rec;
+          }
+        }
+        safeWriteExamJson(EXAM_PERSONAL_STORAGE, next);
+        return next;
+      });
+      onNotice('已清理已下线或已更新的候选岗位');
+    },
+    [onNotice],
   );
 
   const savedCount = useMemo(
@@ -215,6 +243,10 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
   );
   const trackedCount = useMemo(
     () => Object.values(personal).filter((r) => r.status && r.status !== 'none').length,
+    [personal],
+  );
+  const hiddenCount = useMemo(
+    () => Object.values(personal).filter((r) => Boolean(r.hidden)).length,
     [personal],
   );
 
@@ -231,9 +263,12 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     resetFilters,
     updatePersonalRecord,
     toggleSaveExam,
+    toggleHideExam,
+    cleanupStalePositions,
     toggleCity,
     toggleCandidate,
     savedCount,
     trackedCount,
+    hiddenCount,
   };
 }

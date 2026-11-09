@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  computeExamNextStep,
   computeExamStageLabel,
   DEFAULT_EXAM_FILTERS,
   DEFAULT_EXAM_PROFILE,
@@ -10,7 +11,9 @@ import {
   flattenAndFilterExamPositions,
   formatExamUrl,
   isExamProfileActive,
+  isTerminalTrackStatus,
   parseExamUrl,
+  validateExamPersonal,
   type ExamAnnouncement,
   type ExamPositionRow,
   type ExamUserProfile,
@@ -366,5 +369,32 @@ void test('parseExamUrl and formatExamUrl round-trip filters, examId, and omit d
     cities: ['济南', '青岛'],
     stage: '正在报名',
     category: '事业单位统考',
+  });
+});
+
+void test('validateExamPersonal accepts terminal statuses and targetRowId, and computeExamNextStep computes days left', () => {
+  const store = validateExamPersonal({
+    'exam-1': {
+      saved: true,
+      status: 'failed_audit',
+      targetRowId: 'row-abc-123',
+      targetPositionCode: '省数据中心 · 信息技术岗（20260101）',
+    },
+    'exam-2': {
+      status: 'audited',
+    },
+  });
+  assert.equal(store['exam-1'].status, 'failed_audit');
+  assert.equal(store['exam-1'].targetRowId, 'row-abc-123');
+  assert.equal(isTerminalTrackStatus(store['exam-1'].status), true);
+  assert.equal(isTerminalTrackStatus(store['exam-2'].status), false);
+
+  const exam = makeExam();
+  assert.equal(computeExamNextStep(exam, 'failed_audit', '2026-11-10'), null);
+  const nextAudited = computeExamNextStep(exam, 'audited', '2026-11-10');
+  assert.deepEqual(nextAudited, {
+    label: '缴费确认',
+    date: '2026-11-17',
+    daysLeft: 7,
   });
 });

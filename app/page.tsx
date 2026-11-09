@@ -201,6 +201,7 @@ function HomeContent() {
     [now, setNow] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false),
     [detailError, setDetailError] = useState('');
+  const [detailNavIds, setDetailNavIds] = useState<string[] | null>(null);
   const [dataOrigin, setDataOrigin] = useState('site');
   const [importPreview, setImportPreview] = useState<PersonalBackup | null>(null);
   const [importing, setImporting] = useState(false);
@@ -736,17 +737,36 @@ function HomeContent() {
   const filtered = useMemo(() => filterByReputation(baseFiltered, filters, reputation.index, employerRecords, now),
     [baseFiltered, filters, reputation.index, employerRecords, now]);
 
-  const selectedIndex = useMemo(
-    () => (selected ? filtered.findIndex((j) => j.id === selected.id) : -1),
-    [selected, filtered],
+  const openDetailFromList = useCallback(
+    (job: Job) => {
+      setDetailNavIds(filtered.map((j) => j.id));
+      void openDetail(job);
+    },
+    [filtered, openDetail],
   );
+
+  const selectedIndex = useMemo(() => {
+    if (!selected) return -1;
+    if (detailNavIds) return detailNavIds.indexOf(selected.id);
+    return filtered.findIndex((j) => j.id === selected.id);
+  }, [selected, detailNavIds, filtered]);
+
   const navigateDetail = useCallback(
     (delta: -1 | 1) => {
       if (selectedIndex < 0) return;
-      const nextJob = filtered[selectedIndex + delta];
-      if (nextJob) void openDetail(nextJob);
+      const navIds = detailNavIds ?? filtered.map((j) => j.id);
+      const nextIdx = selectedIndex + delta;
+      const nextId = navIds[nextIdx];
+      if (!nextId) return;
+      const nextJob = allJobs.find((j) => j.id === nextId) ?? filtered.find((j) => j.id === nextId);
+      if (!nextJob) return;
+      void openDetail(nextJob);
+      const filteredIdx = filtered.findIndex((j) => j.id === nextId);
+      const pageIdx = filters.onlyUnread || filteredIdx < 0 ? nextIdx : filteredIdx;
+      const nextPage = Math.floor(pageIdx / pageSize) + 1;
+      if (nextPage !== page) setPage(nextPage);
     },
-    [selectedIndex, filtered, openDetail],
+    [selectedIndex, detailNavIds, filtered, allJobs, openDetail, filters.onlyUnread, pageSize, page],
   );
 
   // Snapshot-wide facts used to hide filters that currently cannot match and
@@ -1573,7 +1593,7 @@ function HomeContent() {
                         personal={personal}
                         ready={ready}
                         now={now}
-                        onDetail={(job) => void openDetail(job)}
+                        onDetail={openDetailFromList}
                         onRead={markRead}
                         onReadChange={setRead}
                         onToggle={toggle}
@@ -1589,7 +1609,7 @@ function HomeContent() {
                           now={now}
                           since={since}
                           density={cardDensity}
-                          onDetail={(j) => void openDetail(j)}
+                          onDetail={openDetailFromList}
                           onRead={markRead}
                           onReadChange={setRead}
                           onToggle={toggle}
@@ -1625,7 +1645,7 @@ function HomeContent() {
                           key={item.id || `${group.id}-role-${idx}`}
                           type="button"
                           className={`opp-group-role-chip${isActive ? ' is-active' : ''}${stateClass}`}
-                          onClick={() => void openDetail(item)}
+                          onClick={() => openDetailFromList(item)}
                           title={`${roleItem.rawRole}${roleItem.tooltipMeta ? ` · ${roleItem.tooltipMeta}` : ''}${itemApplied ? '（已投递）' : itemSaved ? '（已收藏）' : ''}（点击查看岗位详情与投递链接）`}
                         >
                           {itemApplied && <span className="opp-group-role-status" aria-hidden="true">✓</span>}
@@ -1900,7 +1920,7 @@ function HomeContent() {
         detailLoading={detailLoading}
         detailError={detailError}
         currentIndex={selectedIndex}
-        totalCount={filtered.length}
+        totalCount={detailNavIds ? detailNavIds.length : filtered.length}
         onNavigate={navigateDetail}
         siblingJobs={selectedGroupJobs}
         onSelectJob={(job) => void openDetail(job)}
@@ -1908,6 +1928,7 @@ function HomeContent() {
           ++detailRequest.current;
           setLinkedJobId(null);
           setSelected(null);
+          setDetailNavIds(null);
           setDetailLoading(false);
         }}
         onRead={markRead}

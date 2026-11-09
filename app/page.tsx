@@ -17,6 +17,8 @@ import {
   ChevronRight,
   ArrowUp,
   Info,
+  Briefcase,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Select,
@@ -81,6 +83,8 @@ import { filterByReputation } from '@/lib/reputation';
 import { ApplicationOverview } from '@/components/application-overview';
 import { BackupImportSheet } from '@/components/backup-import-sheet';
 import { SourceStatusSheet } from '@/components/source-status-sheet';
+import { ExamWorkspace } from '@/components/exam-workspace';
+import type { WorkspaceMode } from '@/lib/exams';
 import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
 
 const BROWSING_STORAGE = 'job-radar-browsing-v1';
@@ -189,6 +193,28 @@ function HomeContent() {
   const [presetRevision, setPresetRevision] = useState(0);
   const [groupRoleFilter, setGroupRoleFilter] = useState<Record<string, string>>({});
   const [showBackTop, setShowBackTop] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('workspace') === 'exams' || params.get('mode') === 'exams') {
+        return 'exams';
+      }
+    }
+    return 'jobs';
+  });
+  const switchWorkspace = useCallback((mode: WorkspaceMode) => {
+    setWorkspaceMode(mode);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (mode === 'exams') {
+        url.searchParams.set('workspace', 'exams');
+      } else {
+        url.searchParams.delete('workspace');
+        url.searchParams.delete('mode');
+      }
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    }
+  }, []);
   const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
   const coverage = coverageReport?.as_of === data?.generated_at ? coverageReport : null;
   const reputationEnabled = !!data;
@@ -619,7 +645,13 @@ function HomeContent() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const allJobs = useMemo(() => mergeDuplicateOpportunities(data?.jobs ?? []), [data?.jobs]);
+  const allJobs = useMemo(
+    () =>
+      mergeDuplicateOpportunities(
+        (data?.jobs ?? []).filter((j) => j.source_id !== 'sdei-civil-exams'),
+      ),
+    [data?.jobs],
+  );
   const employerCatalogReady = !!data;
   useEffect(() => { registerEmployerCatalog({ jobs: allJobs, complete: employerCatalogReady, onDetail: job => { void openDetail(job); } }); }, [allJobs, openDetail, registerEmployerCatalog, employerCatalogReady]);
   const previewJobs = useMemo(() => !data && filters.view === 'all' && !(filters.query.trim() && previewData?.search_url)
@@ -965,34 +997,67 @@ function HomeContent() {
             <Radar size={26} />
             <div className="brand-text">
               <strong>职讯雷达</strong>
-              <small>求职工作台</small>
+              <small>{workspaceMode === 'exams' ? '考公考编工作台' : '求职工作台'}</small>
             </div>
           </div>
-          <nav className="app-nav" aria-label="工作台导航">
-            <button className="app-nav-item" aria-current={filters.view === 'all' ? 'page' : undefined} onClick={() => openView('all')}>
-              发现机会
-            </button>
-            <button className="app-nav-item" aria-current={filters.view === 'saved' ? 'page' : undefined} onClick={() => openView('saved')}>
-              我的收藏 <span className="app-nav-count">{data ? savedCount : '—'}</span>
-            </button>
-            <button className="app-nav-item" aria-current={filters.view === 'planned' ? 'page' : undefined} onClick={() => openView('planned')}>待投递</button>
+
+          <div className="workspace-mode-switcher" role="tablist" aria-label="工作台模式切换">
             <button
-              className="app-nav-item"
-              aria-current={filters.view === 'pipeline' || filters.view === 'applied' ? 'page' : undefined}
-              onClick={() => openView('pipeline')}
+              type="button"
+              role="tab"
+              aria-selected={workspaceMode === 'jobs'}
+              className={`workspace-mode-btn ${workspaceMode === 'jobs' ? 'is-active' : ''}`}
+              onClick={() => switchWorkspace('jobs')}
             >
-              投递看板 <span className="app-nav-count">{data ? appliedCount : '—'}</span>
+              <Briefcase size={15} />
+              <span>企业求职</span>
             </button>
-          </nav>
-          <div className="app-bar-actions">
-            <button className="btn btn-ghost btn-sm" onClick={() => setSourceOpen(true)}>
-              <Database size={15} />
-              <span>信息来源</span>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceMode === 'exams'}
+              className={`workspace-mode-btn is-exam ${workspaceMode === 'exams' ? 'is-active' : ''}`}
+              onClick={() => switchWorkspace('exams')}
+            >
+              <ShieldCheck size={15} />
+              <span>考公考编</span>
             </button>
           </div>
+
+          {workspaceMode === 'jobs' && (
+            <>
+              <nav className="app-nav" aria-label="工作台导航">
+                <button className="app-nav-item" aria-current={filters.view === 'all' ? 'page' : undefined} onClick={() => openView('all')}>
+                  发现机会
+                </button>
+                <button className="app-nav-item" aria-current={filters.view === 'saved' ? 'page' : undefined} onClick={() => openView('saved')}>
+                  我的收藏 <span className="app-nav-count">{data ? savedCount : '—'}</span>
+                </button>
+                <button className="app-nav-item" aria-current={filters.view === 'planned' ? 'page' : undefined} onClick={() => openView('planned')}>待投递</button>
+                <button
+                  className="app-nav-item"
+                  aria-current={filters.view === 'pipeline' || filters.view === 'applied' ? 'page' : undefined}
+                  onClick={() => openView('pipeline')}
+                >
+                  投递看板 <span className="app-nav-count">{data ? appliedCount : '—'}</span>
+                </button>
+              </nav>
+              <div className="app-bar-actions">
+                <button className="btn btn-ghost btn-sm" onClick={() => setSourceOpen(true)}>
+                  <Database size={15} />
+                  <span>信息来源</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
+      {workspaceMode === 'exams' ? (
+        <main className="page">
+          <ExamWorkspace />
+        </main>
+      ) : (
       <main className="page">
         <div className="page-head">
           <div className="page-head-intro">
@@ -1736,6 +1801,7 @@ function HomeContent() {
           <div className="plan-desktop"><ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
         </div>
       </main>
+      )}
 
 
       <Sheet open={mobileFilterOpen} onOpenChange={setMobileFilterOpen}>

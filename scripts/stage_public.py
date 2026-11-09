@@ -48,6 +48,8 @@ def stage(public, dist):
         shutil.copy2(public/path.lstrip('/'), destination/path.lstrip('/'))
     for name in ('jobs.json', 'snapshot-manifest.json'):
         shutil.copy2(public/name, destination/name)
+    if (public/'exams.json').is_file():
+        shutil.copy2(public/'exams.json', destination/'exams.json')
     for path in destination.rglob('*'):
         if path.is_file() and path.stat().st_size > MAX_ASSET_BYTES:
             raise ValueError(f'Built asset exceeds 25 MiB: {path.relative_to(destination)}')

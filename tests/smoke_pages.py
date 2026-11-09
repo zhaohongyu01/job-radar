@@ -11,13 +11,18 @@ PAGES = [('jobs', '/'), ('exams', '/?workspace=exams')]
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--port', type=int, default=5199); a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(['npx.cmd', 'vinext', 'dev', '--port', str(a.port), '--hostname', '127.0.0.1'],
-                            cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = f'http://127.0.0.1:{a.port}'
+    proc = None
     try:
-        for _ in range(60):
-            try: urllib.request.urlopen(base + '/favicon.svg', timeout=1); break
-            except Exception: time.sleep(0.5)
+        urllib.request.urlopen(base + '/favicon.svg', timeout=1)
+    except Exception:
+        proc = subprocess.Popen(['npx.cmd', 'vinext', 'dev', '--port', str(a.port), '--hostname', '127.0.0.1'],
+                                cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        if proc is not None:
+            for _ in range(60):
+                try: urllib.request.urlopen(base + '/favicon.svg', timeout=5); break
+                except Exception: time.sleep(0.5)
         failures = 0
         with sync_playwright() as p:
             b = p.chromium.launch(channel='msedge')
@@ -38,7 +43,8 @@ def main():
             b.close()
         sys.exit(1 if failures else 0)
     finally:
-        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if proc is not None:
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 if __name__ == '__main__':
     main()

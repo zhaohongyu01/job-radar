@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 import { createHash } from 'node:crypto';
-import { projectBrowsingJobs, validateBrowsingJob } from '../lib/browse-index.ts';
+import { BROWSE_EXCERPT_LIMIT, projectBrowsingJobs, validateBrowsingJob } from '../lib/browse-index.ts';
 import { buildBrowseIndex } from '../scripts/build_browse_index.mjs';
 import { defaultFilters, filterJobs, getLifecycleStage, hasRecentJobChange, mergeDuplicateOpportunities, parseSalaryRange, personalFor } from '../lib/jobs.ts';
 import type { Job, Snapshot } from '../lib/jobs.ts';
@@ -29,7 +29,7 @@ await test('browsing abbreviates only presentation; salary/stage/change facts re
     validateBrowsingJob(projected);
     assert.equal(projected.timeline, undefined);
     assert.equal(projected.duplicate_sources, undefined);
-    assert.ok(Array.from(projected.excerpt).length <= 120);
+    assert.ok(Array.from(projected.excerpt).length <= BROWSE_EXCERPT_LIMIT);
     assert.equal(excerpts[projected.id], variants[i].excerpt);
     assert.deepEqual(parseSalaryRange(projected), parseSalaryRange(variants[i]));
     assert.deepEqual(extractSalary(projected), extractSalary(variants[i]));

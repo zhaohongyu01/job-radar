@@ -4,6 +4,15 @@ import { duplicateSourceNames, hasLongTermText, hasSelectionNotice, meaningfulCh
 import { extractSalary } from './salary-display.ts';
 import { buildCardSummaries, extractCardSummary, validateCardSummary } from './card-summary.ts';
 
+export const BROWSE_EXCERPT_LIMIT = 90;
+
+function trimBrowseExcerpt(value: string): string {
+  const chars = Array.from(value || '');
+  return chars.length <= BROWSE_EXCERPT_LIMIT
+    ? value || ''
+    : chars.slice(0, BROWSE_EXCERPT_LIMIT - 1).join('').trimEnd() + '…';
+}
+
 /** Build with the same domain functions used by legacy browsers. Full records
  * remain canonical; only the optional browsing projection is abbreviated. */
 export function projectBrowsingJobs(input: Job[], fullText: Readonly<Record<string, string>> = {}) {
@@ -33,11 +42,11 @@ export function projectBrowsingJobs(input: Job[], fullText: Readonly<Record<stri
     // Version 2 keeps one display string, avoiding a second copy of the source
     // preview in every row. Original excerpts stay in canonical assets/search;
     // salary/stage/change facts above always use the original source record.
-    result.excerpt = Array.from(job.excerpt || '').slice(0, 120).join('');
+    result.excerpt = trimBrowseExcerpt(job.excerpt || '');
     const summary = summaries.get(job.id) || extractCardSummary(job);
     if (summary.kind !== 'notice') {
       const { text, ...metadata } = summary;
-      result.excerpt = text;
+      result.excerpt = trimBrowseExcerpt(text);
       result.card_summary = metadata;
     }
     return result;

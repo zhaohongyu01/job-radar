@@ -9,10 +9,24 @@ const SECURITY_HEADERS: [string, string][] = [
   ['Content-Security-Policy', "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"],
 ];
 
-export function middleware(_request: NextRequest) {
-  const response = NextResponse.next();
+function applySecurityHeaders(response: NextResponse) {
   for (const [key, value] of SECURITY_HEADERS) {
     response.headers.set(key, value);
   }
   return response;
+}
+
+export function middleware(request: NextRequest) {
+  const { pathname, searchParams } = request.nextUrl;
+  if (
+    pathname === '/' &&
+    (searchParams.get('workspace') === 'exams' || searchParams.get('mode') === 'exams')
+  ) {
+    const dest = request.nextUrl.clone();
+    dest.pathname = '/exams';
+    dest.searchParams.delete('workspace');
+    dest.searchParams.delete('mode');
+    return applySecurityHeaders(NextResponse.redirect(dest, 307));
+  }
+  return applySecurityHeaders(NextResponse.next());
 }

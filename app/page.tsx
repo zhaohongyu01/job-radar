@@ -49,7 +49,6 @@ import { filterByReputation } from '@/lib/reputation';
 import { ApplicationOverview } from '@/components/application-overview';
 import { BackupImportSheet } from '@/components/backup-import-sheet';
 import { SourceStatusSheet } from '@/components/source-status-sheet';
-import { ExamWorkspace } from '@/components/exam-workspace';
 import { ResultsPagination, ResultsToolbar } from '@/components/jobs/results-toolbar';
 import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
@@ -141,8 +140,6 @@ function HomeContent() {
     groupCompanies,
     setGroupCompanies,
     now,
-    workspaceMode,
-    switchWorkspace,
     queryDraft,
     updateQuery,
     change,
@@ -182,7 +179,7 @@ function HomeContent() {
     onNotice: setNotice,
   });
 
-  const reputationEnabled = !!data && workspaceMode === 'jobs';
+  const reputationEnabled = !!data;
   const enableReputation = reputation.enable;
   useEffect(() => {
     if (!reputationEnabled) return;
@@ -191,9 +188,9 @@ function HomeContent() {
   }, [reputationEnabled, enableReputation]);
 
   useEffect(() => {
-    if (!ready || workspaceMode !== 'jobs') return;
+    if (!ready) return;
     refreshIfIdle();
-  }, [ready, workspaceMode, refreshIfIdle]);
+  }, [ready, refreshIfIdle]);
 
   useEffect(() => {
     if (!ready) return;
@@ -414,8 +411,6 @@ function HomeContent() {
       <a className="skip-to-results" href="#opportunities">跳到招聘结果</a>
       <input type="file" accept="application/json,.json" ref={fileRef} hidden onChange={(e) => void importPersonal(e.target.files?.[0])} />
       <AppHeader
-        workspaceMode={workspaceMode}
-        onSwitchWorkspace={switchWorkspace}
         activeView={filters.view}
         onOpenView={openView}
         hasData={Boolean(data)}
@@ -424,11 +419,6 @@ function HomeContent() {
         onOpenSources={() => setSourceOpen(true)}
       />
 
-      {workspaceMode === 'exams' ? (
-        <main className="page">
-          <ExamWorkspace />
-        </main>
-      ) : (
       <main className="page">
         <div className="page-head">
           <div className="page-head-intro">
@@ -778,7 +768,6 @@ function HomeContent() {
           <div className="plan-desktop"><ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
         </div>
       </main>
-      )}
 
 
       <Sheet open={mobileFilterOpen} onOpenChange={setMobileFilterOpen}>

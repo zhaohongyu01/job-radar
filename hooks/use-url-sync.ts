@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { defaultFilters, selectedWorkCities, validatePersonal } from '@/lib/jobs';
 import type { Filters, Job, Personal } from '@/lib/jobs';
@@ -12,23 +12,6 @@ import {
 } from '@/lib/browsing';
 import type { CardDensity, ViewMode } from '@/lib/browsing';
 import { personalViewFilters } from '@/lib/workspace';
-import type { WorkspaceMode } from '@/lib/exams';
-
-const subscribeNoop = () => () => {};
-
-export function readWorkspaceFromUrl(): boolean {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('workspace') === 'exams' || params.get('mode') === 'exams';
-}
-
-/** Keeps ?workspace=exams when the job browsing state rewrites the query. */
-export function withWorkspaceParam(query: string, mode: WorkspaceMode): string {
-  if (mode !== 'exams') return query;
-  const params = new URLSearchParams(query);
-  params.delete('mode');
-  params.set('workspace', 'exams');
-  return `?${params.toString()}`;
-}
 
 export const BROWSING_STORAGE = 'job-radar-browsing-v1';
 export const CARD_DENSITY_STORAGE = 'job-radar-card-density-v1';
@@ -71,30 +54,6 @@ export function useUrlSync({
   const [groupCompanies, setGroupCompanies] = useState(false);
   const [now, setNow] = useState(0);
 
-  // Read the initial workspace from the URL after hydration (server snapshot is
-  // always 'jobs'), so a shared ?workspace=exams link never causes a mismatch.
-  const urlWantsExams = useSyncExternalStore(
-    subscribeNoop,
-    readWorkspaceFromUrl,
-    () => false,
-  );
-  const [workspaceOverride, setWorkspaceOverride] = useState<WorkspaceMode | null>(null);
-  const workspaceMode: WorkspaceMode = workspaceOverride ?? (urlWantsExams ? 'exams' : 'jobs');
-
-  const switchWorkspace = useCallback((mode: WorkspaceMode) => {
-    setWorkspaceOverride(mode);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      if (mode === 'exams') {
-        url.searchParams.set('workspace', 'exams');
-      } else {
-        url.searchParams.delete('workspace');
-        url.searchParams.delete('mode');
-      }
-      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
-    }
-  }, []);
-
   const discoveryFilters = useRef<Filters>(defaultFilters);
   const preferencesWarning = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -131,7 +90,12 @@ export function useUrlSync({
   // Browser storage is read after hydration; SSR has no access to this device state.
   useEffect(() => {
     const initialRead = setTimeout(() => {
-      if (!readWorkspaceFromUrl()) void refresh();
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get('workspace') === 'exams' || searchParams.get('mode') === 'exams') {
+        window.location.replace('/exams');
+        return;
+      }
+      void refresh();
       setNow(Date.now());
       try {
         const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE));
@@ -177,16 +141,13 @@ export function useUrlSync({
 
   useEffect(() => {
     if (!ready || typeof window === 'undefined') return;
-    const newQuery = withWorkspaceParam(
-      formatUrlQuery(filters, linkedJobId, requestedEmployerId, page),
-      workspaceMode,
-    );
+    const newQuery = formatUrlQuery(filters, linkedJobId, requestedEmployerId, page);
     const currentSearch = window.location.search;
     if (currentSearch !== newQuery) {
       const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
       window.history.replaceState({ jobId: linkedJobId }, '', newUrl);
     }
-  }, [ready, filters, linkedJobId, requestedEmployerId, page, workspaceMode]);
+  }, [ready, filters, linkedJobId, requestedEmployerId, page]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -340,8 +301,6 @@ export function useUrlSync({
     groupCompanies,
     setGroupCompanies,
     now,
-    workspaceMode,
-    switchWorkspace,
     queryDraft,
     updateQuery,
     change,

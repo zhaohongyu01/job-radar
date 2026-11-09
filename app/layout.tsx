@@ -3,7 +3,6 @@ import './globals.css';
 import './design.css';
 import './data-health.css';
 import './feature-updates.css';
-import './exams.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://sites-project.job-radar.workers.dev'),

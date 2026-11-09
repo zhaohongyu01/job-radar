@@ -12,6 +12,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/:path*', headers: security }];
   },
+  async redirects() {
+    return [
+      { source: '/', has: [{ type: 'query', key: 'workspace', value: 'exams' }], destination: '/exams', permanent: false },
+      { source: '/', has: [{ type: 'query', key: 'mode', value: 'exams' }], destination: '/exams', permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

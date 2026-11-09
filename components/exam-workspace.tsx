@@ -1,5 +1,6 @@
 'use client';
 
+import '@/app/exams.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Bookmark,
@@ -321,7 +322,7 @@ export function ExamWorkspace() {
         />
 
         {/* ---------- Results ---------- */}
-        <section className="exw-results" aria-label="检索结果">
+        <section className="exw-results" id="exam-results" aria-label="检索结果">
           {error && (
             <div className="exw-alert">
               <span>{error}</span>

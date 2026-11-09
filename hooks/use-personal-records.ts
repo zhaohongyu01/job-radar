@@ -106,7 +106,12 @@ export function usePersonalRecords({
   const toggle = useCallback(
     (job: Job, key: 'saved' | 'applied' | 'hidden') => {
       if (key === 'applied') {
-        const current = personalFor(job, personal);
+        let current: PersonalRecord = {};
+        try {
+          current = personalFor(job, readPersonalRecords(localStorage));
+        } catch {
+          // ignore
+        }
         const stage = current.application_stage;
         if (
           current.applied &&
@@ -137,7 +142,7 @@ export function usePersonalRecords({
         return patchPersonalRecord(latest, job, patch, stamp);
       });
     },
-    [personal, save],
+    [save],
   );
 
   const changeStage = useCallback(

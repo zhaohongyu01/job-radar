@@ -71,7 +71,7 @@ export function GroupedResults({
                 key={job.id}
                 job={job}
                 filters={filters}
-                personal={personal}
+                record={personalFor(job, personal)}
                 ready={ready}
                 now={now}
                 since={since}

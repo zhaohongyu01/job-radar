@@ -22,6 +22,7 @@ import {
   filterJobs,
   countByLocationScope,
   mergeDuplicateOpportunities,
+  personalFor,
   selectedWorkCities,
   workCitiesLabel,
   parseSalaryRange,
@@ -671,8 +672,8 @@ function HomeContent() {
 
             {loading && !data ? (
               <div className="opp-list" aria-label="首批预览" aria-busy="true">
-                {previewJobs.map((job) => <JobCard key={job.id} job={job} filters={filters} personal={personal} ready={ready} now={now} since={since}
-                  density={cardDensity} onDetail={(candidate) => void openDetail(candidate)} onRead={markRead} onReadChange={setRead} onToggle={toggle} onStageChange={changeStage} onCopy={copyJob} />)}
+                {previewJobs.map((job) => <JobCard key={job.id} job={job} filters={filters} record={personalFor(job, personal)} ready={ready} now={now} since={since}
+                  density={cardDensity} onDetail={openDetailFromList} onRead={markRead} onReadChange={setRead} onToggle={toggle} onStageChange={changeStage} onCopy={copyJob} />)}
                 {!previewJobs.length && <><div className="opp-skeleton" /><div className="opp-skeleton" /></>}
               </div>
             ) : (

@@ -1288,6 +1288,17 @@ export function buildJobSearchText(j: Job, extraSearchText?: string): string {
     .toLowerCase();
 }
 
+export function buildJobSearchMap(
+  jobs: Job[],
+  searchIndex: Record<string, string>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const job of jobs) {
+    map.set(job.id, buildJobSearchText(job, searchIndex[job.id] ?? ''));
+  }
+  return map;
+}
+
 function matchesPersonalConditions(
   j: Job,
   f: Filters,

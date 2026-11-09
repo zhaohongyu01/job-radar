@@ -1152,11 +1152,48 @@ void test('brand department display, PICC/China Life formatting, card title dedu
 
 import {
   applyPersonalView,
+  buildJobSearchMap,
+  buildJobSearchText,
   chinaDayStart,
   countActiveFilters,
+  countByLocationScope,
   filterJobsByContent,
   resetFilters,
 } from '../lib/jobs.ts';
+
+void test('prebuilt searchText map matches cloned search_text filtering without copying job objects', () => {
+  const now = Date.parse('2026-09-10T12:00:00+08:00');
+  const rawJobs: Job[] = [
+    { ...job, id: 's-1', title: '海信集团校园招聘', company: '海信集团', body: undefined, cities: ['青岛'] },
+    { ...job, id: 's-2', title: '齐鲁制药社招公告', company: '齐鲁制药', body: undefined, cities: ['济南'] },
+    { ...job, id: 's-3', title: '浪潮软件研发工程师', company: '浪潮软件', body: undefined, cities: ['济南'] },
+  ];
+  const searchIndex: Record<string, string> = {
+    's-1': '嵌入式C++ 图像算法 青岛研发中心',
+    's-2': '药物合成制剂 临床试验CRA 生物工程',
+    's-3': '分布式存储 Go语言 云原生架构',
+  };
+  const legacyCloned = rawJobs.map((j) => ({ ...j, search_text: searchIndex[j.id] ?? '' }));
+  const searchMap = buildJobSearchMap(rawJobs, searchIndex);
+  const lookup = (j: Job) => searchMap.get(j.id) ?? buildJobSearchText(j);
+
+  for (const query of ['图像算法', '药物合成 生物工程', '浪潮 云原生', '不存在关键词']) {
+    const f = { ...defaultFilters, city: '全部城市', query };
+    assert.deepEqual(
+      filterJobs(rawJobs, f, {}, null, now, lookup).map((j) => j.id),
+      filterJobs(legacyCloned, f, {}, null, now).map((j) => j.id),
+    );
+    assert.deepEqual(
+      filterJobsByContent(rawJobs, f, now, null, lookup).map((j) => j.id),
+      filterJobsByContent(legacyCloned, f, now, null).map((j) => j.id),
+    );
+    const cityFilter = { ...defaultFilters, city: '济南', query };
+    assert.deepEqual(
+      countByLocationScope(rawJobs, cityFilter, {}, null, now, lookup),
+      countByLocationScope(legacyCloned, cityFilter, {}, null, now),
+    );
+  }
+});
 
 void test('chinaDayStart returns Beijing midnight timestamp and only changes across CST day boundaries', () => {
   const morning = Date.parse('2026-10-28T08:15:00+08:00');

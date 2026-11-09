@@ -22,6 +22,8 @@ import {
   filterJobs,
   filterJobsByContent,
   applyPersonalView,
+  buildJobSearchMap,
+  buildJobSearchText,
   countByLocationScope,
   mergeDuplicateOpportunities,
   personalFor,
@@ -282,17 +284,19 @@ function HomeContent() {
   }, [filters.query, searchError]);
 
   const searchPending = needsSearch && !searchIndex;
-  // While the full-text index loads, keep matching on the listing fields (title,
-  // employer, positions…) instead of blanking the list; the count area keeps
-  // saying the result is preliminary until the index is complete.
-  const searchableJobs = useMemo(() => {
-    if (!needsSearch || !searchIndex) return allJobs;
-    return allJobs.map((j) => ({ ...j, search_text: searchIndex[j.id] ?? '' }));
-  }, [allJobs, needsSearch, searchIndex]);
+  // Build the pre-lowercased full-text lookup Map once per searchIndex load without cloning allJobs.
+  const searchMap = useMemo(
+    () => (searchIndex ? buildJobSearchMap(allJobs, searchIndex) : null),
+    [allJobs, searchIndex],
+  );
+  const getSearchText = useCallback(
+    (job: Job) => searchMap?.get(job.id) ?? buildJobSearchText(job),
+    [searchMap],
+  );
 
   const contentFiltered = useMemo(
-    () => filterJobsByContent(searchableJobs, filters, today, since),
-    [searchableJobs, filters, today, since],
+    () => filterJobsByContent(allJobs, filters, today, since, getSearchText),
+    [allJobs, filters, today, since, getSearchText],
   );
   const baseFiltered = useMemo(
     () => applyPersonalView(contentFiltered, filters, personal, today),
@@ -355,7 +359,7 @@ function HomeContent() {
 
   const locationOptions = useMemo(() => {
     if (!workCities.length) return [];
-    const counts = countByLocationScope(searchableJobs, filters, personal, since, today);
+    const counts = countByLocationScope(allJobs, filters, personal, since, today, getSearchText);
     return (['exact', 'possible', 'unknown'] as const).map((scope) => ({
       scope,
       label:
@@ -366,7 +370,7 @@ function HomeContent() {
             : '地点未明确',
       count: counts[scope],
     }));
-  }, [workCities, searchableJobs, filters, personal, since, today]);
+  }, [workCities, allJobs, filters, personal, since, today, getSearchText]);
 
   const groups = useMemo(() => groupJobs(filtered, groupCompanies), [filtered, groupCompanies]);
   const selectedGroupJobs = useMemo(() => {

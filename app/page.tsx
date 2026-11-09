@@ -3,7 +3,6 @@ import { loadSnapshotParts, loadIndexSnapshot, supportedBrowseIndex } from '../l
 import type { SnapshotIndexCache } from '../lib/snapshot-loader';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  Radar,
   Search,
   SlidersHorizontal,
   Clock3,
@@ -11,14 +10,11 @@ import {
   X,
   RefreshCw,
   Bell,
-  Database,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ArrowUp,
   Info,
-  Briefcase,
-  ShieldCheck,
 } from 'lucide-react';
 import {
   Select,
@@ -84,6 +80,7 @@ import { ExamWorkspace } from '@/components/exam-workspace';
 import { ResultsToolbar } from '@/components/jobs/results-toolbar';
 import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
+import { AppHeader } from '@/components/jobs/app-header';
 import type { WorkspaceMode } from '@/lib/exams';
 import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
 
@@ -1032,67 +1029,16 @@ function HomeContent() {
     <>
       <a className="skip-to-results" href="#opportunities">跳到招聘结果</a>
       <input type="file" accept="application/json,.json" ref={fileRef} hidden onChange={(e) => void importPersonal(e.target.files?.[0])} />
-      <header className="app-bar">
-        <div className="app-bar-inner">
-          <div className="brand-mark">
-            <Radar size={26} />
-            <div className="brand-text">
-              <strong>职讯雷达</strong>
-              <small>{workspaceMode === 'exams' ? '考公考编工作台' : '求职工作台'}</small>
-            </div>
-          </div>
-
-          <div className="workspace-mode-switcher" role="tablist" aria-label="工作台模式切换">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={workspaceMode === 'jobs'}
-              className={`workspace-mode-btn ${workspaceMode === 'jobs' ? 'is-active' : ''}`}
-              onClick={() => switchWorkspace('jobs')}
-            >
-              <Briefcase size={15} />
-              <span>企业求职</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={workspaceMode === 'exams'}
-              className={`workspace-mode-btn is-exam ${workspaceMode === 'exams' ? 'is-active' : ''}`}
-              onClick={() => switchWorkspace('exams')}
-            >
-              <ShieldCheck size={15} />
-              <span>考公考编</span>
-            </button>
-          </div>
-
-          {workspaceMode === 'jobs' && (
-            <>
-              <nav className="app-nav" aria-label="工作台导航">
-                <button className="app-nav-item" aria-current={filters.view === 'all' ? 'page' : undefined} onClick={() => openView('all')}>
-                  发现机会
-                </button>
-                <button className="app-nav-item" aria-current={filters.view === 'saved' ? 'page' : undefined} onClick={() => openView('saved')}>
-                  我的收藏 <span className="app-nav-count">{data ? savedCount : '—'}</span>
-                </button>
-                <button className="app-nav-item" aria-current={filters.view === 'planned' ? 'page' : undefined} onClick={() => openView('planned')}>待投递</button>
-                <button
-                  className="app-nav-item"
-                  aria-current={filters.view === 'pipeline' || filters.view === 'applied' ? 'page' : undefined}
-                  onClick={() => openView('pipeline')}
-                >
-                  投递看板 <span className="app-nav-count">{data ? appliedCount : '—'}</span>
-                </button>
-              </nav>
-              <div className="app-bar-actions">
-                <button className="btn btn-ghost btn-sm" onClick={() => setSourceOpen(true)}>
-                  <Database size={15} />
-                  <span>信息来源</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </header>
+      <AppHeader
+        workspaceMode={workspaceMode}
+        onSwitchWorkspace={switchWorkspace}
+        activeView={filters.view}
+        onOpenView={openView}
+        hasData={Boolean(data)}
+        savedCount={savedCount}
+        appliedCount={appliedCount}
+        onOpenSources={() => setSourceOpen(true)}
+      />
 
       {workspaceMode === 'exams' ? (
         <main className="page">

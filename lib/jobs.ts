@@ -11,6 +11,12 @@ export function shanghaiDay(value: string | number): string {
   return Number.isFinite(timestamp) ? new Date(timestamp + 8 * 3600000).toISOString().slice(0, 10) : '';
 }
 
+export function chinaDayStart(ms: number): number {
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  const dayIndex = Math.floor((ms + 8 * 3600000) / 86400000);
+  return dayIndex * 86400000 - 8 * 3600000;
+}
+
 export function isTodayOpportunity(job: Job, now: number): boolean {
   const today = shanghaiDay(now);
   return shanghaiDay(job.published_at || '') === today || shanghaiDay(job.first_seen_at) === today;
@@ -215,6 +221,8 @@ export type Snapshot = {
   index_count?: number;
   search_shards?: string[];
   coverage_url?: string;
+  partial?: boolean;
+  partial_total?: number;
   cities: string[];
   jobs: Job[];
   sources: Source[];
@@ -1256,6 +1264,283 @@ function hasUpcomingTalkIn(j: Job, workCities: string[], now: number): boolean {
   ));
 }
 
+export function buildJobSearchText(j: Job, extraSearchText?: string): string {
+  return [
+    j.title,
+    j.company,
+    employerBrand(j.source_id),
+    ...(j.talk_events?.map((event) => `${event.city ?? ''} ${event.school} ${event.venue} ${event.date}`) ?? []),
+    // Version-2 browsing excerpts are display summaries (which may be
+    // attributed to another exact-name company announcement). Search
+    // continues to use this job's complete canonical text, not that bio.
+    j.card_summary ? '' : j.excerpt,
+    j.education,
+    ...(j.directions ?? []),
+    ...(j.sectors ?? []),
+    ...(j.location_evidence ?? []),
+    ...(j.sample_positions ?? []),
+    ...(j.majors ?? []),
+    ...(j.positions?.map((p) => `${p.name} ${(p.majors ?? []).join(' ')} ${p.city ?? ''}`) ?? []),
+    extraSearchText ?? j.search_text ?? '',
+    j.body ?? '',
+  ]
+    .join(' ')
+    .toLowerCase();
+}
+
+function matchesPersonalConditions(
+  j: Job,
+  f: Filters,
+  personal: Personal,
+  now: number,
+): boolean {
+  const p = personalFor(j, personal);
+  if (f.view === 'planned' && !isPendingApplication(j, p, now)) return false;
+  if (f.view === 'pipeline' && (p.hidden || !(p.saved || p.applied || p.application_stage))) return false;
+  if (
+    f.view === 'pipeline' &&
+    f.applicationStage &&
+    f.applicationStage !== 'all' &&
+    (p.application_stage || (p.applied ? 'applied' : 'planned')) !== f.applicationStage
+  ) {
+    return false;
+  }
+  if (f.onlyUnread && !isUnread(j, personal)) return false;
+  if (
+    (f.view === 'saved' && !p.saved) ||
+    (f.view === 'applied' && !p.applied) ||
+    (f.view === 'hidden' && !p.hidden)
+  ) {
+    return false;
+  }
+  if (f.view === 'all' && p.hidden) return false;
+  return true;
+}
+
+function matchesContentConditions(
+  j: Job,
+  f: Filters,
+  workCities: string[],
+  keywords: string[],
+  since: string | null,
+  now: number,
+  ignoreLocationScope = false,
+  searchText?: (job: Job) => string,
+): boolean {
+  if (f.view === 'all' && j.talk_attached_to) return false;
+  if (!f.showExpired && isExpired(j, now)) return false;
+  if (f.kind !== '全部' && j.kind !== f.kind) return false;
+  if (f.view === 'all' && !isDomestic(j)) return false;
+  if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
+  if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
+  if (workCities.length && !ignoreLocationScope) {
+    const location = jobLocation(j, workCities);
+    const talkInCity = Boolean(
+      f.includeRelatedTalks && f.locationScope === 'exact' && hasUpcomingTalkIn(j, workCities, now),
+    );
+    if (location !== f.locationScope && !talkInCity) return false;
+  }
+  if (f.validity && f.validity !== 'all' && assessOpportunityValidity(j, now).status !== f.validity) return false;
+  if (
+    f.employmentType &&
+    f.employmentType !== 'all' &&
+    j.employment_type !== f.employmentType &&
+    !(f.includeUncertain && (!j.employment_type || j.employment_type === 'unknown'))
+  ) {
+    return false;
+  }
+  const positions = j.position_matches || j.positions;
+  if (positions?.length && (f.education || f.major || workCities.length || f.year !== '全部')) {
+    if (
+      !positions.some((position) =>
+        positionMatches(position, {
+          cities: workCities,
+          education: f.education,
+          major: f.major || '',
+          year: f.type === '校招' ? f.year : '全部',
+          includeUnknown: f.includeUncertain,
+        }),
+      )
+    ) {
+      return false;
+    }
+  } else if (
+    f.major &&
+    !j.majors?.some((major) => major.includes(f.major!)) &&
+    !(f.includeUncertain && !j.majors?.length)
+  ) {
+    return false;
+  }
+  const effectiveTypes = effectiveJobTypes(j);
+  if (
+    f.type !== '全部' &&
+    !effectiveTypes.includes(f.type) &&
+    !(f.includeUncertain && effectiveTypes.length === 0)
+  ) {
+    return false;
+  }
+  if (
+    f.type === '校招' &&
+    f.year !== '全部' &&
+    !positions?.length &&
+    !j.graduation_years.includes(f.year) &&
+    !(f.includeUncertain && j.graduation_years.length === 0)
+  ) {
+    return false;
+  }
+  if (f.sector !== '全部') {
+    if ([UNKNOWN_SECTOR, '综合（高校 / 平台公告）', '综合'].includes(f.sector)) {
+      if (j.sectors.some((sector) => !['综合', '综合（高校 / 平台公告）', UNKNOWN_SECTOR].includes(sector))) {
+        return false;
+      }
+    } else if (!j.sectors.includes(f.sector)) {
+      return false;
+    }
+  }
+  if (f.direction !== '全部' && !j.directions.includes(f.direction)) return false;
+  if (
+    f.education &&
+    !positions?.length &&
+    !j.education.includes(f.education) &&
+    !(
+      f.includeUncertain &&
+      (j.education.includes('未明确') || formatEducationDisplay(j.education, '未明确').includes('未明确'))
+    )
+  ) {
+    return false;
+  }
+  if (f.salary && f.salary !== '全部') {
+    const threshold = salaryThreshold(f.salary);
+    const sal = parseSalaryRange(j);
+    if (!sal || sal.max < threshold) return false;
+  }
+  if (f.changeType && f.changeType !== '全部') {
+    const hasChange = hasRecentJobChange(j, now);
+    const stage = getLifecycleStage(j, now).stage;
+    const isRecentJob = isRecentDate(j.updated_at || j.published_at || j.first_seen_at, now);
+    const hasRecentChangeObj = Boolean(j.recent_change && isRecentDate(j.recent_change.date, now));
+
+    if (f.changeType === '有变更' && !hasChange) return false;
+    if (
+      f.changeType === '截止延期' &&
+      (stage !== 'extended' || !isRecentJob) &&
+      !(deadlineChangeKind(j.recent_change) === 'extended' && hasRecentChangeObj)
+    ) {
+      return false;
+    }
+    if (
+      f.changeType === '补录招募' &&
+      (stage !== 'supplemental' || !isRecentJob) &&
+      !(j.recent_change?.type === 'supplemental' && hasRecentChangeObj)
+    ) {
+      return false;
+    }
+    if (
+      f.changeType === '岗位调整' &&
+      !(j.recent_change?.type === 'positions_updated' && hasRecentChangeObj) &&
+      !positionChangeDates(j).some((date) => isRecentDate(date, now))
+    ) {
+      return false;
+    }
+    if (
+      f.changeType === '考核阶段' &&
+      (stage !== 'selection' || !isRecentJob) &&
+      !(j.recent_change?.type === 'selection_stage' && hasRecentChangeObj)
+    ) {
+      return false;
+    }
+  }
+  if (f.radarFocus && f.radarFocus !== 'none') {
+    if (f.radarFocus === 'today') {
+      if (!isTodayOpportunity(j, now)) return false;
+    } else if (f.radarFocus === 'supplement') {
+      if (!isSupplementOpportunity(j)) return false;
+    } else if (f.radarFocus === 'urgent') {
+      const countdown = getDeadlineCountdown(j.deadline, now);
+      if (!countdown || countdown.urgency !== 'urgent') return false;
+    } else if (f.radarFocus === 'change') {
+      if (!hasRecentJobChange(j, now)) return false;
+    }
+  }
+  if (keywords.length) {
+    const searchable = searchText ? searchText(j) : buildJobSearchText(j);
+    if (!keywords.every((kw) => searchable.includes(kw))) return false;
+  }
+  if (
+    f.onlyNew &&
+    (!since ||
+      (Date.parse(j.first_seen_at) <= Date.parse(since) &&
+        Date.parse(j.updated_at) <= Date.parse(since)))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function filterJobsByContent(
+  jobs: Job[],
+  f: Filters,
+  now = Date.now(),
+  since: string | null = null,
+  searchText?: (job: Job) => string,
+): Job[] {
+  const workCities = selectedWorkCities(f);
+  const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return jobs.filter((j) =>
+    matchesContentConditions(j, f, workCities, keywords, since, now, false, searchText),
+  );
+}
+
+export function applyPersonalView(
+  jobs: Job[],
+  f: Filters,
+  personal: Personal,
+  now = Date.now(),
+): Job[] {
+  const matches = jobs.filter((j) => matchesPersonalConditions(j, f, personal, now));
+  // Parse dates and salaries once per matching row instead of once per comparison.
+  // This cache belongs to this call: edits, clock changes and new snapshots cannot
+  // leave stale sort keys behind.
+  const keys = new Map(
+    matches.map((job) => {
+      const range = f.sort === 'salary_desc' ? parseSalaryRange(job) : null;
+      const plannedTime = f.view === 'planned' ? deadlineTime(job.deadline) : NaN;
+      return [
+        job,
+        {
+          published: f.view === 'planned' ? '' : publicationDate(job, now),
+          expired: f.sort === 'deadline_asc' && isExpired(job, now),
+          deadline:
+            f.view === 'planned'
+              ? Number.isFinite(plannedTime)
+                ? plannedTime
+                : Number.MAX_SAFE_INTEGER
+              : job.deadline
+                ? Date.parse(job.deadline)
+                : Number.POSITIVE_INFINITY,
+          salary: range ? (Number.isFinite(range.max) ? range.max : range.min) : -1,
+        },
+      ] as const;
+    }),
+  );
+  return matches.sort((a, b) => {
+    const ak = keys.get(a)!,
+      bk = keys.get(b)!;
+    if (f.view === 'planned') return ak.deadline - bk.deadline || a.id.localeCompare(b.id);
+    if (f.sort === 'deadline_asc') {
+      if (ak.expired !== bk.expired) return ak.expired ? 1 : -1;
+      if (Number.isFinite(ak.deadline) && Number.isFinite(bk.deadline)) {
+        return ak.deadline - bk.deadline || bk.published.localeCompare(ak.published) || a.id.localeCompare(b.id);
+      }
+      if (Number.isFinite(ak.deadline) !== Number.isFinite(bk.deadline)) {
+        return Number.isFinite(ak.deadline) ? -1 : 1;
+      }
+    }
+    if (f.sort === 'salary_desc' && ak.salary !== bk.salary) return bk.salary - ak.salary;
+    return bk.published.localeCompare(ak.published) || a.id.localeCompare(b.id);
+  });
+}
+
 function matchingJobs(
   jobs: Job[],
   f: Filters,
@@ -1263,149 +1548,43 @@ function matchingJobs(
   since: string | null,
   now = Date.now(),
   ignoreLocationScope = false,
+  searchText?: (job: Job) => string,
 ) {
   const workCities = selectedWorkCities(f);
   const keywords = f.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return jobs
-    .filter((j) => {
-      const p = personalFor(j, personal);
-      if (f.view === 'planned' && !isPendingApplication(j, p, now)) return false;
-      if (f.view === 'pipeline' && (p.hidden || !(p.saved || p.applied || p.application_stage))) return false;
-      if (f.view === 'pipeline' && f.applicationStage && f.applicationStage !== 'all' &&
-          (p.application_stage || (p.applied ? 'applied' : 'planned')) !== f.applicationStage) return false;
-      if (f.view === 'all' && j.talk_attached_to) return false;
-      if (f.onlyUnread && !isUnread(j, personal)) return false;
-      if (
-        (f.view === 'saved' && !p.saved) ||
-        (f.view === 'applied' && !p.applied) ||
-        (f.view === 'hidden' && !p.hidden)
-      )
-        return false;
-      if (f.view === 'all' && p.hidden) return false;
-      if (!f.showExpired && isExpired(j, now)) return false;
-      if (f.kind !== '全部' && j.kind !== f.kind) return false;
-      if (f.view === 'all' && !isDomestic(j)) return false;
-      if (f.provenance === '高校 / 政府' && j.provenance === '第三方线索') return false;
-      if (f.provenance === '第三方线索' && j.provenance !== '第三方线索') return false;
-      if (workCities.length && !ignoreLocationScope) {
-        const location = jobLocation(j, workCities);
-        const talkInCity = Boolean(f.includeRelatedTalks && f.locationScope === 'exact' && hasUpcomingTalkIn(j, workCities, now));
-        if (location !== f.locationScope && !talkInCity) return false;
-      }
-      if (f.validity && f.validity !== 'all' && assessOpportunityValidity(j, now).status !== f.validity) return false;
-      if (f.employmentType && f.employmentType !== 'all' && j.employment_type !== f.employmentType && !(f.includeUncertain && (!j.employment_type || j.employment_type === 'unknown'))) return false;
-      const positions = j.position_matches || j.positions;
-      if (positions?.length && (f.education || f.major || workCities.length || f.year !== '全部')) {
-        if (!positions.some((position) => positionMatches(position, { cities: workCities, education: f.education,
-          major: f.major || '', year: f.type === '校招' ? f.year : '全部', includeUnknown: f.includeUncertain }))) return false;
-      } else if (f.major && !(j.majors?.some((major) => major.includes(f.major!))) && !(f.includeUncertain && !j.majors?.length)) return false;
-      const effectiveTypes = effectiveJobTypes(j);
-      if (
-        f.type !== '全部' &&
-        !effectiveTypes.includes(f.type) &&
-        !(f.includeUncertain && effectiveTypes.length === 0)
-      )
-        return false;
-      if (
-        f.type === '校招' &&
-        f.year !== '全部' && !positions?.length &&
-        !j.graduation_years.includes(f.year) &&
-        !(f.includeUncertain && j.graduation_years.length === 0)
-      )
-        return false;
-      if (f.sector !== '全部') {
-        if ([UNKNOWN_SECTOR, '综合（高校 / 平台公告）', '综合'].includes(f.sector)) {
-          if (j.sectors.some((sector) => !['综合', '综合（高校 / 平台公告）', UNKNOWN_SECTOR].includes(sector))) return false;
-        } else if (!j.sectors.includes(f.sector)) {
-          return false;
-        }
-      }
-      if (f.direction !== '全部' && !j.directions.includes(f.direction))
-        return false;
-      if (
-        f.education && !positions?.length &&
-        !j.education.includes(f.education) &&
-        !(f.includeUncertain && (j.education.includes('未明确') || formatEducationDisplay(j.education, '未明确').includes('未明确')))
-      )
-        return false;
-      if (f.salary && f.salary !== '全部') {
-        const threshold = salaryThreshold(f.salary);
-        const sal = parseSalaryRange(j);
-        if (!sal || sal.max < threshold) return false;
-      }
-      if (f.changeType && f.changeType !== '全部') {
-        const hasChange = hasRecentJobChange(j, now);
-        const stage = getLifecycleStage(j, now).stage;
-        const isRecentJob = isRecentDate(j.updated_at || j.published_at || j.first_seen_at, now);
-        const hasRecentChangeObj = Boolean(j.recent_change && isRecentDate(j.recent_change.date, now));
-
-        if (f.changeType === '有变更' && !hasChange) return false;
-        if (f.changeType === '截止延期' && (stage !== 'extended' || !isRecentJob) && !(deadlineChangeKind(j.recent_change) === 'extended' && hasRecentChangeObj)) return false;
-        if (f.changeType === '补录招募' && (stage !== 'supplemental' || !isRecentJob) && !(j.recent_change?.type === 'supplemental' && hasRecentChangeObj)) return false;
-        if (f.changeType === '岗位调整' && !(j.recent_change?.type === 'positions_updated' && hasRecentChangeObj) && !positionChangeDates(j).some((date) => isRecentDate(date, now))) return false;
-        if (f.changeType === '考核阶段' && (stage !== 'selection' || !isRecentJob) && !(j.recent_change?.type === 'selection_stage' && hasRecentChangeObj)) return false;
-      }
-      if (f.radarFocus && f.radarFocus !== 'none') {
-        if (f.radarFocus === 'today') {
-          if (!isTodayOpportunity(j, now)) return false;
-        } else if (f.radarFocus === 'supplement') {
-          if (!isSupplementOpportunity(j)) return false;
-        } else if (f.radarFocus === 'urgent') {
-          const countdown = getDeadlineCountdown(j.deadline, now);
-          if (!countdown || countdown.urgency !== 'urgent') return false;
-        } else if (f.radarFocus === 'change') {
-          if (!hasRecentJobChange(j, now)) return false;
-        }
-      }
-      if (f.query.trim()) {
-        if (keywords.length) {
-          const searchable = [
-            j.title,
-            j.company,
-            employerBrand(j.source_id),
-            ...(j.talk_events?.map((event) => `${event.city ?? ''} ${event.school} ${event.venue} ${event.date}`) ?? []),
-            // Version-2 browsing excerpts are display summaries (which may be
-            // attributed to another exact-name company announcement). Search
-            // continues to use this job's complete canonical text, not that bio.
-            j.card_summary ? '' : j.excerpt,
-            j.education,
-            ...(j.directions ?? []),
-            ...(j.sectors ?? []),
-            ...(j.location_evidence ?? []),
-            ...(j.sample_positions ?? []),
-            ...(j.majors ?? []),
-            ...(j.positions?.map((p) => `${p.name} ${(p.majors ?? []).join(' ')} ${p.city ?? ''}`) ?? []),
-            j.search_text ?? '',
-            j.body ?? '',
-          ]
-            .join(' ')
-            .toLowerCase();
-          if (!keywords.every((kw) => searchable.includes(kw))) return false;
-        }
-      }
-      if (
-        f.onlyNew &&
-        (!since ||
-          (Date.parse(j.first_seen_at) <= Date.parse(since) &&
-            Date.parse(j.updated_at) <= Date.parse(since)))
-      )
-        return false;
-      return true;
-    });
+  return jobs.filter(
+    (j) =>
+      matchesPersonalConditions(j, f, personal, now) &&
+      matchesContentConditions(j, f, workCities, keywords, since, now, ignoreLocationScope, searchText),
+  );
 }
 
 /** Same eligibility rules as the visible list, without sorting discarded rows. */
-export function countMatchingJobs(jobs: Job[], f: Filters, personal: Personal, since: string | null, now = Date.now()): number {
-  return matchingJobs(jobs, f, personal, since, now).length;
+export function countMatchingJobs(
+  jobs: Job[],
+  f: Filters,
+  personal: Personal,
+  since: string | null,
+  now = Date.now(),
+  searchText?: (job: Job) => string,
+): number {
+  return matchingJobs(jobs, f, personal, since, now, false, searchText).length;
 }
 
 /** Counts for the three work-location scopes in one pass; each count equals
  * countMatchingJobs with that locationScope. */
-export function countByLocationScope(jobs: Job[], f: Filters, personal: Personal, since: string | null, now = Date.now()) {
+export function countByLocationScope(
+  jobs: Job[],
+  f: Filters,
+  personal: Personal,
+  since: string | null,
+  now = Date.now(),
+  searchText?: (job: Job) => string,
+) {
   const counts = { exact: 0, possible: 0, unknown: 0 };
   const workCities = selectedWorkCities(f);
   if (!workCities.length) return counts;
-  for (const j of matchingJobs(jobs, f, personal, since, now, true)) {
+  for (const j of matchingJobs(jobs, f, personal, since, now, true, searchText)) {
     const location = jobLocation(j, workCities);
     if (location === 'exact' || (f.includeRelatedTalks && hasUpcomingTalkIn(j, workCities, now))) counts.exact++;
     if (location === 'possible') counts.possible++;
@@ -1414,36 +1593,15 @@ export function countByLocationScope(jobs: Job[], f: Filters, personal: Personal
   return counts;
 }
 
-export function filterJobs(jobs: Job[], f: Filters, personal: Personal, since: string | null, now = Date.now()): Job[] {
-  const matches = matchingJobs(jobs, f, personal, since, now);
-  // Parse dates and salaries once per matching row instead of once per comparison.
-  // This cache belongs to this call: edits, clock changes and new snapshots cannot
-  // leave stale sort keys behind.
-  const keys = new Map(matches.map(job => {
-    const range = f.sort === 'salary_desc' ? parseSalaryRange(job) : null;
-    const plannedTime = f.view === 'planned' ? deadlineTime(job.deadline) : NaN;
-    return [job, {
-      published: f.view === 'planned' ? '' : publicationDate(job, now),
-      expired: f.sort === 'deadline_asc' && isExpired(job, now),
-      deadline: f.view === 'planned'
-        ? Number.isFinite(plannedTime) ? plannedTime : Number.MAX_SAFE_INTEGER
-        : job.deadline ? Date.parse(job.deadline) : Number.POSITIVE_INFINITY,
-      salary: range ? Number.isFinite(range.max) ? range.max : range.min : -1,
-    }] as const;
-  }));
-  return matches.sort((a, b) => {
-    const ak = keys.get(a)!, bk = keys.get(b)!;
-    if (f.view === 'planned') return ak.deadline - bk.deadline || a.id.localeCompare(b.id);
-    if (f.sort === 'deadline_asc') {
-      if (ak.expired !== bk.expired) return ak.expired ? 1 : -1;
-      if (Number.isFinite(ak.deadline) && Number.isFinite(bk.deadline)) {
-        return ak.deadline - bk.deadline || bk.published.localeCompare(ak.published) || a.id.localeCompare(b.id);
-      }
-      if (Number.isFinite(ak.deadline) !== Number.isFinite(bk.deadline)) return Number.isFinite(ak.deadline) ? -1 : 1;
-    }
-    if (f.sort === 'salary_desc' && ak.salary !== bk.salary) return bk.salary - ak.salary;
-    return bk.published.localeCompare(ak.published) || a.id.localeCompare(b.id);
-  });
+export function filterJobs(
+  jobs: Job[],
+  f: Filters,
+  personal: Personal,
+  since: string | null,
+  now = Date.now(),
+  searchText?: (job: Job) => string,
+): Job[] {
+  return applyPersonalView(filterJobsByContent(jobs, f, now, since, searchText), f, personal, now);
 }
 export function validatePersonal(input: unknown): Personal {
   if (!input || typeof input !== 'object' || Array.isArray(input))

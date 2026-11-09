@@ -1150,7 +1150,63 @@ void test('brand department display, PICC/China Life formatting, card title dedu
 });
 
 
-import { countActiveFilters, resetFilters } from '../lib/jobs.ts';
+import {
+  applyPersonalView,
+  chinaDayStart,
+  countActiveFilters,
+  filterJobsByContent,
+  resetFilters,
+} from '../lib/jobs.ts';
+
+void test('chinaDayStart returns Beijing midnight timestamp and only changes across CST day boundaries', () => {
+  const morning = Date.parse('2026-10-28T08:15:00+08:00');
+  const lateNight = Date.parse('2026-10-28T23:59:59+08:00');
+  const expectedMidnight = Date.parse('2026-10-28T00:00:00+08:00');
+  assert.equal(chinaDayStart(morning), expectedMidnight);
+  assert.equal(chinaDayStart(lateNight), expectedMidnight);
+  assert.equal(
+    chinaDayStart(Date.parse('2026-10-29T00:00:01+08:00')),
+    Date.parse('2026-10-29T00:00:00+08:00'),
+  );
+});
+
+void test('filterJobsByContent + applyPersonalView equals filterJobs across views and sorts', () => {
+  const now = Date.parse('2026-09-10T12:00:00+08:00');
+  const since = '2026-09-01T00:00:00Z';
+  const fixtures: Job[] = [
+    { ...job, id: 'eq-1', title: 'Java后端工程师 15k-25k', cities: ['济南'], deadline: '2026-09-20', published_at: '2026-09-05' },
+    { ...job, id: 'eq-2', title: '财务会计 8k-12k', cities: ['青岛'], deadline: '2026-09-12', published_at: '2026-09-08' },
+    { ...job, id: 'eq-3', title: '算法实习生 6k-9k', cities: ['济南'], types: ['实习'], deadline: '2026-09-05', published_at: '2026-09-02' },
+    { ...job, id: 'eq-4', title: '综合管理岗', cities: ['济南'], deadline: null, published_at: '2026-09-09', updated_at: '2026-09-09T00:00:00Z' },
+  ];
+  const personal = {
+    'eq-1': { saved: true, readAt: '2026-09-06T00:00:00Z' },
+    'eq-2': { saved: true, applied: true, application_stage: 'interview' as const },
+    'eq-4': { hidden: true },
+  };
+  const filterCases = [
+    { ...defaultFilters, city: '济南' },
+    { ...defaultFilters, city: '全部城市', sort: 'deadline_asc' as const },
+    { ...defaultFilters, city: '全部城市', sort: 'salary_desc' as const, showExpired: true },
+    { ...defaultFilters, city: '济南', onlyUnread: true },
+    { ...defaultFilters, city: '全部城市', view: 'planned' as const },
+    { ...defaultFilters, city: '全部城市', view: 'pipeline' as const, applicationStage: 'interview' as const },
+    { ...defaultFilters, city: '全部城市', view: 'saved' as const, showExpired: true },
+    { ...defaultFilters, city: '全部城市', view: 'applied' as const, showExpired: true },
+    { ...defaultFilters, city: '全部城市', view: 'hidden' as const, showExpired: true },
+    { ...defaultFilters, city: '全部城市', query: '工程师' },
+  ];
+  for (const f of filterCases) {
+    const combined = filterJobs(fixtures, f, personal, since, now).map((item) => item.id);
+    const split = applyPersonalView(
+      filterJobsByContent(fixtures, f, now, since),
+      f,
+      personal,
+      now,
+    ).map((item) => item.id);
+    assert.deepEqual(split, combined);
+  }
+});
 
 void test('countActiveFilters and resetFilters share a single 17-item filter contract excluding sort', () => {
   const cleanAllCities = { ...defaultFilters, city: '全部城市', workCities: [] as string[] };

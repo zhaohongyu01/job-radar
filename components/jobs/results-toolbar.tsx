@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bell, Check, ChevronDown, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import {
   Pagination,
@@ -356,6 +356,27 @@ export function ResultsToolbar({
   onPageChange,
   locationOptions,
 }: ResultsToolbarProps) {
+  const showCohortStat = filters.type === '校招' && filters.year !== '全部';
+  const toolbarStats = useMemo(() => {
+    let roleCount = 0;
+    let cohortExactCount = 0;
+    let cohortUncertainCount = 0;
+    for (const j of filtered) {
+      if (j.kind === '具体岗位') roleCount++;
+      if (showCohortStat) {
+        if (j.graduation_years.includes(filters.year)) cohortExactCount++;
+        if (j.graduation_years.length === 0) cohortUncertainCount++;
+      }
+    }
+    return {
+      roleCount,
+      noticeCount: filtered.length - roleCount,
+      cohortExactCount,
+      cohortUncertainCount,
+    };
+  }, [filtered, showCohortStat, filters.year]);
+  const hasSelectedCities = useMemo(() => selectedWorkCities(filters).length > 0, [filters]);
+
   return (
     <>
       <div className="result-bar">
@@ -399,19 +420,19 @@ export function ResultsToolbar({
                 <span
                   className="result-count-breakdown"
                   title={
-                    filters.type === '校招' && filters.year !== '全部'
-                      ? `明确${filters.year}届 ${filtered.filter((j) => j.graduation_years.includes(filters.year)).length} 条${filters.includeUncertain ? `（含 ${filtered.filter((j) => j.graduation_years.length === 0).length} 条届别未明确）` : ''}`
+                    showCohortStat
+                      ? `明确${filters.year}届 ${toolbarStats.cohortExactCount} 条${filters.includeUncertain ? `（含 ${toolbarStats.cohortUncertainCount} 条届别未明确）` : ''}`
                       : undefined
                   }
                 >
-                  （{filtered.filter((j) => j.kind === '具体岗位').length} 岗位 / {filtered.filter((j) => j.kind !== '具体岗位').length} 公告{groupCompanies ? ` · ${groupsCount} 组` : ''}）
+                  （{toolbarStats.roleCount} 岗位 / {toolbarStats.noticeCount} 公告{groupCompanies ? ` · ${groupsCount} 组` : ''}）
                 </span>
-                {filters.type === '校招' && filters.year !== '全部' && (
+                {showCohortStat && (
                   <span className="result-cohort-stat">
-                    明确{filters.year}届 <strong>{filtered.filter((j) => j.graduation_years.includes(filters.year)).length}</strong> 条
+                    明确{filters.year}届 <strong>{toolbarStats.cohortExactCount}</strong> 条
                     {filters.includeUncertain && (
                       <span className="text-muted">
-                        （{filtered.filter((j) => j.graduation_years.length === 0).length} 未明确）
+                        （{toolbarStats.cohortUncertainCount} 未明确）
                       </span>
                     )}
                   </span>
@@ -581,7 +602,7 @@ export function ResultsToolbar({
 
       {filters.view === 'all' && (
         <div className="result-subbar">
-          {selectedWorkCities(filters).length > 0 ? (
+          {hasSelectedCities ? (
             <div className="scope-bar">
               <fieldset className="seg" aria-label="工作地点匹配范围">
                 {locationOptions.map((option) => (

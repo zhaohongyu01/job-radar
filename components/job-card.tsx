@@ -35,6 +35,7 @@ import {
   effectiveJobTypes,
   formatEducationDisplay,
   cardJobTitle,
+  chinaDayStart,
   duplicateSourceNames,
 } from '@/lib/jobs';
 import type { Job, Personal, PersonalRecord, Filters } from '@/lib/jobs';
@@ -625,11 +626,15 @@ function samePersonalRecord(a?: PersonalRecord, b?: PersonalRecord): boolean {
 }
 
 export const JobCard = memo(JobCardInner, (prev, next) => {
+  const sameClock =
+    prev.job.talk_events?.length || next.job.talk_events?.length
+      ? prev.now === next.now
+      : prev.now === next.now || chinaDayStart(prev.now) === chinaDayStart(next.now);
   return (
     prev.job === next.job &&
     prev.filters === next.filters &&
     prev.ready === next.ready &&
-    prev.now === next.now &&
+    sameClock &&
     prev.since === next.since &&
     prev.density === next.density &&
     prev.onDetail === next.onDetail &&

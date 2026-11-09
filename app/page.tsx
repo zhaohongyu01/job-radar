@@ -20,6 +20,8 @@ import {
 import {
   defaultFilters,
   filterJobs,
+  filterJobsByContent,
+  applyPersonalView,
   countByLocationScope,
   mergeDuplicateOpportunities,
   personalFor,
@@ -121,6 +123,23 @@ function HomeContent() {
     [activateDetailSnapshot],
   );
 
+  const refreshRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const handlePartialSnapshot = useCallback(
+    (loaded: number, total: number) => {
+      toast({
+        message: `部分数据加载失败，已显示 ${loaded}/${total} 条`,
+        tone: 'error',
+        action: {
+          label: '重试',
+          onClick: () => {
+            void refreshRef.current();
+          },
+        },
+      });
+    },
+    [toast],
+  );
+
   const {
     data,
     previewData,
@@ -131,7 +150,13 @@ function HomeContent() {
     refreshIfIdle,
     coverage,
     isCurrentData,
-  } = useJobSnapshot({ onActivateSnapshot: handleActivateSnapshot });
+  } = useJobSnapshot({
+    onActivateSnapshot: handleActivateSnapshot,
+    onPartial: handlePartialSnapshot,
+  });
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   const {
     filters,
@@ -148,6 +173,7 @@ function HomeContent() {
     groupCompanies,
     setGroupCompanies,
     now,
+    today,
     queryDraft,
     updateQuery,
     change,
@@ -217,11 +243,11 @@ function HomeContent() {
   const employerCatalogReady = !!data;
   useEffect(() => { registerEmployerCatalog({ jobs: allJobs, complete: employerCatalogReady, onDetail: job => { void openDetail(job); } }); }, [allJobs, openDetail, registerEmployerCatalog, employerCatalogReady]);
   const previewJobs = useMemo(() => !data && filters.view === 'all' && !(filters.query.trim() && previewData?.search_url)
-    ? filterJobs(mergeDuplicateOpportunities(previewData?.jobs || []), filters, personal, since, now).slice(0, 10) : [],
-    [data, previewData, filters, personal, since, now]);
+    ? filterJobs(mergeDuplicateOpportunities(previewData?.jobs || []), filters, personal, since, today).slice(0, 10) : [],
+    [data, previewData, filters, personal, since, today]);
   const personalCounts = useMemo(
-    () => computePersonalCounts(allJobs, personal, now),
-    [allJobs, personal, now],
+    () => computePersonalCounts(allJobs, personal, today),
+    [allJobs, personal, today],
   );
 
   const needsSearch = !!filters.query.trim() && !!data?.search_url;
@@ -264,19 +290,28 @@ function HomeContent() {
     return allJobs.map((j) => ({ ...j, search_text: searchIndex[j.id] ?? '' }));
   }, [allJobs, needsSearch, searchIndex]);
 
-  const baseFiltered = useMemo(
-    () => filterJobs(searchableJobs, filters, personal, since, now),
-    [searchableJobs, filters, personal, since, now],
+  const contentFiltered = useMemo(
+    () => filterJobsByContent(searchableJobs, filters, today, since),
+    [searchableJobs, filters, today, since],
   );
-  const filtered = useMemo(() => filterByReputation(baseFiltered, filters, reputation.index, employerRecords, now),
-    [baseFiltered, filters, reputation.index, employerRecords, now]);
+  const baseFiltered = useMemo(
+    () => applyPersonalView(contentFiltered, filters, personal, today),
+    [contentFiltered, filters, personal, today],
+  );
+  const filtered = useMemo(() => filterByReputation(baseFiltered, filters, reputation.index, employerRecords, today),
+    [baseFiltered, filters, reputation.index, employerRecords, today]);
+
+  const filteredRef = useRef<Job[]>(filtered);
+  useEffect(() => {
+    filteredRef.current = filtered;
+  }, [filtered]);
 
   const openDetailFromList = useCallback(
     (job: Job) => {
-      setDetailNavIds(filtered.map((j) => j.id));
+      setDetailNavIds(filteredRef.current.map((j) => j.id));
       void openDetail(job);
     },
-    [filtered, openDetail, setDetailNavIds],
+    [openDetail, setDetailNavIds],
   );
 
   const selectedIndex = useMemo(() => {
@@ -308,17 +343,19 @@ function HomeContent() {
   const filterFacts = useMemo(() => {
     let verified = 0, salaryKnown = 0;
     for (const job of allJobs) {
-      const status = assessOpportunityValidity(job, now).status;
+      const status = assessOpportunityValidity(job, today).status;
       if (status === 'confirmed_open' || status === 'long_term') verified++;
       if (parseSalaryRange(job)) salaryKnown++;
     }
-    const scored = !!reputation.index?.entities.some((item) => item.score !== null && Date.parse(item.valid_until) > now);
+    const scored = !!reputation.index?.entities.some((item) => item.score !== null && Date.parse(item.valid_until) > today);
     return { verified, salaryKnown, total: allJobs.length, hasReputationScores: scored };
-  }, [allJobs, now, reputation.index]);
+  }, [allJobs, today, reputation.index]);
+
+  const workCities = useMemo(() => selectedWorkCities(filters), [filters]);
 
   const locationOptions = useMemo(() => {
-    if (!selectedWorkCities(filters).length) return [];
-    const counts = countByLocationScope(searchableJobs, filters, personal, since, now);
+    if (!workCities.length) return [];
+    const counts = countByLocationScope(searchableJobs, filters, personal, since, today);
     return (['exact', 'possible', 'unknown'] as const).map((scope) => ({
       scope,
       label:
@@ -329,27 +366,34 @@ function HomeContent() {
             : '地点未明确',
       count: counts[scope],
     }));
-  }, [searchableJobs, filters, personal, since, now]);
+  }, [workCities, searchableJobs, filters, personal, since, today]);
 
   const groups = useMemo(() => groupJobs(filtered, groupCompanies), [filtered, groupCompanies]);
   const selectedGroupJobs = useMemo(() => {
-    if (!selected) return [];
-    const allGrouped = groupCompanies ? groups : groupJobs(filtered, true);
-    const matchedGroup = allGrouped.find((g) => g.jobs.some((j) => j.id === selected.id));
+    if (!selected || !groupCompanies) return [];
+    const matchedGroup = groups.find((g) => g.jobs.some((j) => j.id === selected.id));
     return matchedGroup && matchedGroup.jobs.length > 1 ? matchedGroup.jobs : [];
-  }, [selected, filtered, groupCompanies, groups]);
+  }, [selected, groupCompanies, groups]);
   const pages = Math.max(1, Math.ceil(groups.length / pageSize));
   const currentPage = Math.min(page, pages);
-  const visibleGroups = groups.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleGroups = useMemo(
+    () => groups.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [groups, currentPage, pageSize],
+  );
 
   // Consecutive single records share one table header; grouped campaigns expand independently.
-  const displayBlocks = visibleGroups.reduce<(JobGroup & { grouped: boolean })[]>((blocks, group) => {
-    const previous = blocks.at(-1);
-    if (viewMode === 'table' && group.jobs.length === 1 && previous && !previous.grouped)
-      previous.jobs.push(...group.jobs);
-    else blocks.push({ ...group, jobs: [...group.jobs], grouped: group.jobs.length > 1 });
+  const displayBlocks = useMemo(() => {
+    const blocks: (JobGroup & { grouped: boolean })[] = [];
+    for (const group of visibleGroups) {
+      const previous = blocks.at(-1);
+      if (viewMode === 'table' && group.jobs.length === 1 && previous && !previous.grouped) {
+        blocks[blocks.length - 1] = { ...previous, jobs: [...previous.jobs, ...group.jobs] };
+      } else {
+        blocks.push({ ...group, jobs: [...group.jobs], grouped: group.jobs.length > 1 });
+      }
+    }
     return blocks;
-  }, []);
+  }, [visibleGroups, viewMode]);
 
   const returnToResults = () => {
     resultsTopRef.current?.focus({ preventScroll: true });
@@ -804,7 +848,7 @@ function HomeContent() {
       <DetailDrawer
         selected={selected}
         filters={filters}
-        city={selectedWorkCities(filters)}
+        city={workCities}
         now={now}
         personal={personal}
         ready={ready}

@@ -84,14 +84,59 @@ await test('invalid later batches never publish their records or return a partia
       await assert.rejects(loadIndexSnapshot(snapshot(), undefined, (jobs) => published.push(jobs.map((job) => job.id))));
       assert.deepEqual(published, [['first']]);
     }
-    globalThis.fetch = async (path) => path === paths[0]
-      ? new Response(JSON.stringify({ jobs: [first] })) : new Response('', { status: 503 });
+    globalThis.fetch = async () => new Response('', { status: 503 });
     await assert.rejects(loadIndexSnapshot(snapshot()), /读取失败/);
     globalThis.fetch = async () => new Response(JSON.stringify({ jobs: [] }));
     await assert.rejects(loadIndexSnapshot(snapshot()), /不完整/);
     await assert.rejects(loadIndexSnapshot({ ...snapshot(), index_count: 0 }), /声明异常/);
     await assert.rejects(loadIndexSnapshot({ ...snapshot(), index_shards: [] }), /声明异常/);
   } finally { globalThis.fetch = previous; }
+});
+
+await test('index shard network failures retry once and degrade to partial snapshot when some shards succeed', async () => {
+  const previous = globalThis.fetch;
+  const rows = paths.map((_, i) => fixtureJob({ id: `partial-${i}` }));
+  const cache: { current: SnapshotIndexCache | null } = { current: null };
+  try {
+    // 1. Transient failure on shard 1 succeeds on the single automatic retry -> full snapshot, cached
+    const attempts = new Map<string, number>();
+    globalThis.fetch = async (input) => {
+      const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const count = (attempts.get(path) ?? 0) + 1;
+      attempts.set(path, count);
+      if (path === paths[1] && count === 1) {
+        return new Response('', { status: 503 });
+      }
+      return Response.json({ jobs: [rows[paths.indexOf(path)]] });
+    };
+    const snapRetry = snapshot();
+    const recovered = await loadIndexSnapshot(snapRetry, undefined, undefined, cache);
+    assert.equal(recovered.length, 3);
+    assert.equal(snapRetry.partial, undefined);
+    assert.equal(attempts.get(paths[1]), 2);
+    assert.ok(cache.current);
+
+    // 2. Persistent network failure on shard 1 after retry -> returns partial snapshot without poisoning cache
+    cache.current = null;
+    attempts.clear();
+    globalThis.fetch = async (input) => {
+      const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      attempts.set(path, (attempts.get(path) ?? 0) + 1);
+      if (path === paths[1]) {
+        return new Response('', { status: 503 });
+      }
+      return Response.json({ jobs: [rows[paths.indexOf(path)]] });
+    };
+    const snapPartial = snapshot();
+    const partialJobs = await loadIndexSnapshot(snapPartial, undefined, undefined, cache);
+    assert.deepEqual(partialJobs.map((j) => j.id), ['partial-0', 'partial-2']);
+    assert.equal(snapPartial.partial, true);
+    assert.equal(snapPartial.partial_total, 3);
+    assert.equal(attempts.get(paths[1]), 2);
+    assert.equal(cache.current, null);
+  } finally {
+    globalThis.fetch = previous;
+  }
 });
 
 await test('aborted loads and rejected preview validation cannot continue publishing', async () => {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
+  chinaDayStart,
   countActiveFilters,
   defaultFilters,
   resetFilters as resetJobFilters,
@@ -53,11 +54,12 @@ export function useUrlSync({
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [since, setSince] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(20);
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [cardDensity, setCardDensity] = useState<CardDensity>('standard');
   const [groupCompanies, setGroupCompanies] = useState(false);
   const [now, setNow] = useState(0);
+  const [dayKey, setDayKey] = useState(0);
 
   const discoveryFilters = useRef<Filters>(defaultFilters);
   const preferencesWarning = useRef(false);
@@ -111,7 +113,9 @@ export function useUrlSync({
         return;
       }
       void refresh();
-      setNow(Date.now());
+      const currentMs = Date.now();
+      setNow(currentMs);
+      setDayKey(chinaDayStart(currentMs));
       try {
         const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE));
         if (PAGE_SIZES.includes(storedSize)) setPageSize(storedSize);
@@ -160,7 +164,12 @@ export function useUrlSync({
       }
       setReady(true);
     }, 0);
-    const timer = setInterval(() => setNow(Date.now()), 60000);
+    const timer = setInterval(() => {
+      const currentMs = Date.now();
+      setNow(currentMs);
+      const nextDay = chinaDayStart(currentMs);
+      setDayKey((prev) => (prev === nextDay ? prev : nextDay));
+    }, 60000);
     return () => {
       clearTimeout(initialRead);
       clearInterval(timer);
@@ -308,6 +317,7 @@ export function useUrlSync({
     groupCompanies,
     setGroupCompanies,
     now,
+    today: dayKey,
     queryDraft,
     updateQuery,
     change,
@@ -323,6 +333,11 @@ export function useUrlSync({
 }
 
 export function useVisibleOpportunitiesTool(filtered: Job[]): void {
+  const filteredRef = useRef<Job[]>(filtered);
+  useEffect(() => {
+    filteredRef.current = filtered;
+  }, [filtered]);
+
   useEffect(() => {
     const context = (
       document as unknown as {
@@ -351,9 +366,10 @@ export function useVisibleOpportunitiesTool(filtered: Job[]): void {
             if (!input || typeof input !== 'object' || Object.keys(input).length) {
               throw Error('Expected an empty object');
             }
+            const current = filteredRef.current;
             return {
-              count: filtered.length,
-              jobs: filtered.slice(0, 50).map((j) => ({
+              count: current.length,
+              jobs: current.slice(0, 50).map((j) => ({
                 id: j.id,
                 title: j.title,
                 url: j.source_url,
@@ -366,5 +382,5 @@ export function useVisibleOpportunitiesTool(filtered: Job[]): void {
       ),
     ).catch(() => {});
     return () => controller.abort();
-  }, [filtered]);
+  }, []);
 }

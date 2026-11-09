@@ -8,6 +8,7 @@ import type { CoverageReport } from '@/lib/city-coverage';
 
 export interface UseJobSnapshotOptions {
   onActivateSnapshot?: (snapshot: Snapshot | null) => void;
+  onPartial?: (loaded: number, total: number) => void;
 }
 
 export interface UseJobSnapshotResult {
@@ -26,6 +27,7 @@ export interface UseJobSnapshotResult {
 
 export function useJobSnapshot({
   onActivateSnapshot,
+  onPartial,
 }: UseJobSnapshotOptions = {}): UseJobSnapshotResult {
   const [data, setData] = useState<Snapshot | null>(null);
   const [previewData, setPreviewData] = useState<Snapshot | null>(null);
@@ -106,6 +108,9 @@ export function useJobSnapshot({
       setDataOrigin(origin);
       setData(json);
       setPreviewData(null);
+      if (json.partial && json.partial_total) {
+        onPartial?.(json.jobs.length, json.partial_total);
+      }
     } catch (e) {
       if (!current()) return;
       setPreviewData(null);
@@ -118,7 +123,7 @@ export function useJobSnapshot({
         refreshController.current = null;
       }
     }
-  }, [activateSnapshot]);
+  }, [activateSnapshot, onPartial]);
 
   const refreshIfIdle = useCallback(() => {
     if (!dataRef.current && !refreshController.current) {

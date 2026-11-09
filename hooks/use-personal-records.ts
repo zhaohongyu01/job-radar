@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isUnread, personalFor } from '@/lib/jobs';
 import type { Filters, Job, Personal, PersonalRecord } from '@/lib/jobs';
@@ -35,13 +35,27 @@ export function usePersonalRecords({
   ready,
   onNotice,
 }: UsePersonalRecordsOptions): UsePersonalRecordsResult {
-  const [personal, setPersonal] = useState<Personal>({});
+  const [personal, setPersonalState] = useState<Personal>({});
+  const lastPersonalJsonRef = useRef<string>('{}');
   const { toast } = useToast();
+
+  const setPersonal: Dispatch<SetStateAction<Personal>> = useCallback((action) => {
+    setPersonalState((prev) => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      const serialized = JSON.stringify(next);
+      if (serialized === lastPersonalJsonRef.current) return prev;
+      lastPersonalJsonRef.current = serialized;
+      return next;
+    });
+  }, []);
 
   const syncPersonal = useCallback(() => {
     try {
       const next = readPersonalRecords(localStorage);
-      setPersonal(next);
+      const serialized = JSON.stringify(next);
+      if (serialized === lastPersonalJsonRef.current) return;
+      lastPersonalJsonRef.current = serialized;
+      setPersonalState(next);
     } catch {
       onNotice('个人记录暂时无法读取，已保留当前显示；请先保留备份。');
     }

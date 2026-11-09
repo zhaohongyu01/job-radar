@@ -19,7 +19,6 @@ import {
 import {
   DEFAULT_EXAM_FILTERS,
   DEFAULT_EXAM_PROFILE,
-  deriveExamStage,
   EXAM_FILTERS_STORAGE,
   EXAM_PERSONAL_STORAGE,
   EXAM_PROFILE_STORAGE,
@@ -35,7 +34,6 @@ import type {
   ExamFilters,
   ExamPersonalRecord,
   ExamPersonalStore,
-  ExamSnapshot,
   ExamTrackStatus,
   ExamUserProfile,
 } from '@/lib/exams';
@@ -49,10 +47,8 @@ import {
 import { ExamPositionTable } from '@/components/exams/exam-position-table';
 import { ExamTrackerBoard } from '@/components/exams/exam-tracker-board';
 import { ExamSourcesSheet } from '@/components/exams/exam-sources-sheet';
-import {
-  chinaToday,
-  formatMonthDay,
-} from '@/components/exam-ui';
+import { formatMonthDay } from '@/components/exam-ui';
+import { useExamSnapshot } from '@/hooks/use-exam-snapshot';
 
 const PAGE_SIZE = 20;
 const EXAM_FILTERS_MIGRATED_KEY = 'job-radar-exam-filters-migrated-v2';
@@ -84,12 +80,6 @@ function safeWriteJson(key: string, value: unknown): void {
   }
 }
 
-async function fetchExamSnapshot(): Promise<ExamSnapshot> {
-  const resp = await fetch('/exams.json', { cache: 'no-cache' });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  return (await resp.json()) as ExamSnapshot;
-}
-
 interface Milestone {
   exam: ExamAnnouncement;
   date: string;
@@ -98,9 +88,6 @@ interface Milestone {
 }
 
 export function ExamWorkspace() {
-  const [snapshot, setSnapshot] = useState<ExamSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [notice, setNotice] = useState(() => {
     if (typeof window === 'undefined') return '';
     try {
@@ -111,8 +98,17 @@ export function ExamWorkspace() {
       return '本地考编记录格式异常，已重置为默认状态';
     }
   });
-  const [today, setToday] = useState('');
-  const [nowMs, setNowMs] = useState(0);
+  const {
+    snapshot,
+    loading,
+    error,
+    today,
+    reload,
+    allExams,
+    activeExamCount,
+    endedExamCount,
+    freshnessMeta,
+  } = useExamSnapshot({ onNotice: setNotice });
   const [profile, setProfile] = useState<ExamUserProfile>(() => {
     if (typeof window === 'undefined') return DEFAULT_EXAM_PROFILE;
     try {
@@ -178,44 +174,10 @@ export function ExamWorkspace() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    fetchExamSnapshot()
-      .then((data) => {
-        if (!active) return;
-        setSnapshot(data);
-        setToday(chinaToday());
-        setNowMs(Date.now());
-      })
-      .catch(() => {
-        if (active) setError('考公考编数据读取失败，请稍后重试。');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(''), 3200);
     return () => window.clearTimeout(timer);
   }, [notice]);
-
-  const reload = () => {
-    setLoading(true);
-    setError('');
-    fetchExamSnapshot()
-      .then((data) => {
-        setSnapshot(data);
-        setToday(chinaToday());
-        setNowMs(Date.now());
-        setNotice('数据已刷新');
-      })
-      .catch(() => setError('考公考编数据读取失败，请稍后重试。'))
-      .finally(() => setLoading(false));
-  };
 
   const updateProfile = (patch: Partial<ExamUserProfile>) => {
     setProfile((prev) => {
@@ -291,27 +253,6 @@ export function ExamWorkspace() {
     setNotice(exists ? '已移出候选岗位' : `已加入候选：${positionName}`);
   };
 
-  const allExams = useMemo(
-    () => (snapshot?.exams || []).map((e) => (today ? { ...e, stage: deriveExamStage(e, today) } : e)),
-    [snapshot, today],
-  );
-  const activeExamCount = useMemo(
-    () => allExams.filter((e) => ['upcoming', 'registering', 'closing_soon', 'rolling'].includes(e.stage)).length,
-    [allExams],
-  );
-  const endedExamCount = useMemo(
-    () => allExams.filter((e) => e.stage === 'ended').length,
-    [allExams],
-  );
-  const freshnessMeta = useMemo(() => {
-    if (!snapshot?.generated_at || !nowMs) return null;
-    const ms = Date.parse(snapshot.generated_at);
-    if (!Number.isFinite(ms)) return null;
-    const hours = Math.max(0, Math.round((nowMs - ms) / 3600_000));
-    const stale = hours > 36;
-    const label = hours < 1 ? '刚刚更新' : `更新于 ${hours} 小时前`;
-    return { hours, stale, label };
-  }, [snapshot, nowMs]);
   const filteredExams = useMemo(
     () => filterExams(allExams, filters, profile, personal),
     [allExams, filters, profile, personal],

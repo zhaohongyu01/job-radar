@@ -134,11 +134,11 @@
 .exw-icon-btn {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  border-radius: 8px;
-  color: var(--ink-4);
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
   transition:
     background-color var(--dur) var(--ease),
     color var(--dur) var(--ease);
@@ -152,14 +152,14 @@
   cursor: not-allowed;
 }
 .exw-icon-btn.is-on {
-  color: var(--warn);
+  color: var(--brand);
 }
 
 .exw-select {
   height: 36px;
   padding: 0 30px 0 12px;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: var(--surface)
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238d8779' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
     no-repeat right 10px center;
@@ -186,13 +186,15 @@
 .exw-tag {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   height: 22px;
-  padding: 0 8px;
-  border-radius: 6px;
+  padding: 0 7px;
+  border-radius: 4px;
   background: var(--paper-sunken);
   color: var(--ink-3);
   font-size: 12px;
   font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 .exw-tag.is-brand {
@@ -205,7 +207,7 @@
 }
 .exw-tag.is-outline {
   background: transparent;
-  box-shadow: inset 0 0 0 1px var(--line-strong);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .exw-stage {
@@ -254,12 +256,13 @@
   display: inline-flex;
   align-items: center;
   height: 22px;
-  padding: 0 9px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
   color: var(--ink-2);
   font-size: 12px;
+  font-weight: 500;
 }
 
 /* Toggle switch */
@@ -301,9 +304,9 @@
   left: 2px;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
   transition: transform var(--dur) var(--ease);
 }
 .exw-switch input:checked + .exw-switch-ui {
@@ -1284,47 +1287,25 @@
 }
 
 /* ---------- Sheet (detail drawer & sources) ---------- */
-.exw-sheet-root {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  display: flex;
-  justify-content: flex-end;
+.exw-sheet-content {
+  width: min(880px, 100vw) !important;
+  max-width: 880px !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  border-left: 1px solid var(--line) !important;
+  background: var(--paper) !important;
+  color: var(--ink) !important;
+  box-shadow: var(--shadow-pop) !important;
 }
-.exw-sheet-scrim {
-  position: absolute;
-  inset: 0;
-  background: rgba(28, 27, 24, 0.32);
-  backdrop-filter: blur(2px);
-  cursor: default;
-  animation: exw-fade 180ms var(--ease);
+.exw-sheet-content.is-sources {
+  width: min(560px, 100vw) !important;
+  max-width: 560px !important;
 }
-.exw-sheet {
-  position: relative;
-  inset: auto;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 100%;
-  height: 100%;
-  max-height: none;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: var(--paper);
-  color: inherit;
-  box-shadow: var(--shadow-pop);
-  animation: exw-slide 240ms var(--ease);
-}
-@keyframes exw-fade {
-  from {
-    opacity: 0;
-  }
-}
-@keyframes exw-slide {
-  from {
-    transform: translateX(24px);
-    opacity: 0.4;
+@media (max-width: 720px) {
+  .exw-sheet-content,
+  .exw-sheet-content.is-sources {
+    width: 100vw !important;
+    max-width: 100vw !important;
   }
 }
 .exw-dh {

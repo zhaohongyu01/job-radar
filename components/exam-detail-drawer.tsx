@@ -20,6 +20,12 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
   evaluateExamPositionEligibility,
   EXAM_TERMINAL_STAGES,
   EXAM_TRACK_STAGES,
@@ -34,7 +40,7 @@ import type {
   ExamUserProfile,
 } from '@/lib/exams';
 import { downloadExamCalendar } from '@/lib/exam-calendar';
-import { bianzhiLabel, categoryLabel, ExamSheet, formatShortDate, StagePill } from '@/components/exam-ui';
+import { bianzhiLabel, categoryLabel, formatShortDate, StagePill } from '@/components/exam-ui';
 import { ExamPositionTable } from '@/components/exams/exam-position-table';
 
 interface ExamDetailDrawerProps {
@@ -73,28 +79,35 @@ export function ExamDetailDrawer({
   );
 
   return (
-    <ExamSheet open={Boolean(exam)} onClose={onClose} label="招考公告详情" width={880}>
-      {exam && (
-        <DrawerContent
-          exam={exam}
-          exams={exams}
-          currentIndex={currentIndex}
-          profile={profile}
-          personal={personal}
-          posQuery={posQuery}
-          setPosQuery={setPosQuery}
-          onlyMatchedPos={onlyMatchedPos}
-          setOnlyMatchedPos={setOnlyMatchedPos}
-          onClose={onClose}
-          onSelectExam={onSelectExam}
-          onToggleSave={onToggleSave}
-          onToggleHide={onToggleHide}
-          onUpdatePersonal={onUpdatePersonal}
-          onChangeStatus={onChangeStatus}
-          onNotify={onNotify}
-        />
-      )}
-    </ExamSheet>
+    <Sheet
+      open={Boolean(exam)}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent side="right" showCloseButton={false} className="exw-sheet-content">
+        {exam && (
+          <DrawerContent
+            exam={exam}
+            exams={exams}
+            currentIndex={currentIndex}
+            profile={profile}
+            personal={personal}
+            posQuery={posQuery}
+            setPosQuery={setPosQuery}
+            onlyMatchedPos={onlyMatchedPos}
+            setOnlyMatchedPos={setOnlyMatchedPos}
+            onClose={onClose}
+            onSelectExam={onSelectExam}
+            onToggleSave={onToggleSave}
+            onToggleHide={onToggleHide}
+            onUpdatePersonal={onUpdatePersonal}
+            onChangeStatus={onChangeStatus}
+            onNotify={onNotify}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -362,11 +375,11 @@ function DrawerContent({
           </div>
         </div>
 
-        <h2 className="exw-dh-title">{exam.title}</h2>
-        <p className="exw-dh-sub">
+        <SheetTitle className="exw-dh-title">{exam.title}</SheetTitle>
+        <SheetDescription className="exw-dh-sub">
           {exam.organizer} · {exam.source_name}
           {exam.published_at ? ` · ${formatShortDate(exam.published_at)}发布` : ''}
-        </p>
+        </SheetDescription>
 
         <div className="exw-dh-actions">
           <button

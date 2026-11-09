@@ -17,33 +17,25 @@ import type {
   ExamPersonalStore,
   ExamUserProfile,
 } from '@/lib/exams';
+import { readStore, subscribeStore, writeStore } from '@/lib/local-store';
 
 const EXAM_FILTERS_MIGRATED_KEY = 'job-radar-exam-filters-migrated-v2';
 
-function safeReadJson<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return { ...fallback, ...JSON.parse(raw) };
-  } catch {
-    return fallback;
+function validateExamFilters(input: unknown): ExamFilters {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return DEFAULT_EXAM_FILTERS;
   }
+  return { ...DEFAULT_EXAM_FILTERS, ...(input as Partial<ExamFilters>), query: '' };
 }
 
 export function safeWriteExamJson(key: string, value: unknown): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore quota errors
-  }
+  writeStore(key, value);
 }
 
 function persistExamFilters(filters: ExamFilters): void {
   const { query: _query, ...persisted } = filters;
   void _query;
-  safeWriteExamJson(EXAM_FILTERS_STORAGE, persisted);
+  writeStore(EXAM_FILTERS_STORAGE, persisted);
 }
 
 export interface UseExamPersonalOptions {
@@ -52,20 +44,15 @@ export interface UseExamPersonalOptions {
 }
 
 export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOptions) {
-  const [profile, setProfile] = useState<ExamUserProfile>(() => {
-    if (typeof window === 'undefined') return DEFAULT_EXAM_PROFILE;
-    try {
-      const raw = window.localStorage.getItem(EXAM_PROFILE_STORAGE);
-      return raw ? validateExamProfile(JSON.parse(raw)) : DEFAULT_EXAM_PROFILE;
-    } catch {
-      return DEFAULT_EXAM_PROFILE;
-    }
-  });
+  const [profile, setProfile] = useState<ExamUserProfile>(() =>
+    readStore(EXAM_PROFILE_STORAGE, validateExamProfile, DEFAULT_EXAM_PROFILE),
+  );
   const [filters, setFilters] = useState<ExamFilters>(() => {
-    let loaded: ExamFilters = {
-      ...safeReadJson(EXAM_FILTERS_STORAGE, DEFAULT_EXAM_FILTERS),
-      query: '',
-    };
+    let loaded: ExamFilters = readStore(
+      EXAM_FILTERS_STORAGE,
+      validateExamFilters,
+      DEFAULT_EXAM_FILTERS,
+    );
     if (typeof window !== 'undefined') {
       try {
         if (!window.localStorage.getItem(EXAM_FILTERS_MIGRATED_KEY)) {
@@ -85,44 +72,34 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     }
     return loaded;
   });
-  const [personal, setPersonal] = useState<ExamPersonalStore>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
-      return raw ? validateExamPersonal(JSON.parse(raw)) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [personal, setPersonal] = useState<ExamPersonalStore>(() =>
+    readStore(EXAM_PERSONAL_STORAGE, validateExamPersonal, {}),
+  );
 
   useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === EXAM_PERSONAL_STORAGE) {
-        try {
-          const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
-          setPersonal(raw ? validateExamPersonal(JSON.parse(raw)) : {});
-        } catch {
-          setPersonal({});
-          onNotice('本地考编记录格式异常，已重置为默认状态');
-        }
-      } else if (event.key === EXAM_PROFILE_STORAGE) {
-        try {
-          const raw = window.localStorage.getItem(EXAM_PROFILE_STORAGE);
-          setProfile(raw ? validateExamProfile(JSON.parse(raw)) : DEFAULT_EXAM_PROFILE);
-        } catch {
-          setProfile(DEFAULT_EXAM_PROFILE);
-        }
+    const unsubPersonal = subscribeStore(EXAM_PERSONAL_STORAGE, () => {
+      try {
+        const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
+        setPersonal(raw ? validateExamPersonal(JSON.parse(raw)) : {});
+      } catch {
+        setPersonal({});
+        onNotice('本地考编记录格式异常，已重置为默认状态');
       }
+    });
+    const unsubProfile = subscribeStore(EXAM_PROFILE_STORAGE, () => {
+      setProfile(readStore(EXAM_PROFILE_STORAGE, validateExamProfile, DEFAULT_EXAM_PROFILE));
+    });
+    return () => {
+      unsubPersonal();
+      unsubProfile();
     };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
   }, [onNotice]);
 
   const updateProfile = useCallback(
     (patch: Partial<ExamUserProfile>) => {
       setProfile((prev) => {
         const next = { ...prev, ...patch };
-        safeWriteExamJson(EXAM_PROFILE_STORAGE, next);
+        writeStore(EXAM_PROFILE_STORAGE, next);
         return next;
       });
       onPageReset();
@@ -132,7 +109,7 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
 
   const clearProfile = useCallback(() => {
     setProfile(DEFAULT_EXAM_PROFILE);
-    safeWriteExamJson(EXAM_PROFILE_STORAGE, DEFAULT_EXAM_PROFILE);
+    writeStore(EXAM_PROFILE_STORAGE, DEFAULT_EXAM_PROFILE);
   }, []);
 
   const updateFilters = useCallback(
@@ -163,7 +140,7 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
           ...prev,
           [examId]: { ...prev[examId], ...patch, updatedAt: new Date().toISOString() },
         };
-        safeWriteExamJson(EXAM_PERSONAL_STORAGE, next);
+        writeStore(EXAM_PERSONAL_STORAGE, next);
         return next;
       });
     },
@@ -227,7 +204,7 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
             next[examId] = rec;
           }
         }
-        safeWriteExamJson(EXAM_PERSONAL_STORAGE, next);
+        writeStore(EXAM_PERSONAL_STORAGE, next);
         return next;
       });
       onNotice('已清理已下线或已更新的候选岗位');

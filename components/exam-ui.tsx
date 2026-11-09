@@ -1,7 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
-import type { ReactNode } from 'react';
 import { computeExamStageLabel } from '@/lib/exams';
 import type { BianzhiCategory, ExamCategory, ExamSchedule, ExamStage } from '@/lib/exams';
 
@@ -75,50 +73,5 @@ export function StagePill({ stage }: { stage: ExamStage }) {
       <span className="exw-stage-dot" aria-hidden="true" />
       {meta.label}
     </span>
-  );
-}
-
-/** Right-side sheet with scrim, Esc to close and body scroll lock. */
-export function ExamSheet({
-  open,
-  onClose,
-  label,
-  width,
-  children,
-}: {
-  open: boolean;
-  onClose: () => void;
-  label: string;
-  width?: number;
-  children: ReactNode;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = previous;
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
-  return (
-    <div className="exw-sheet-root">
-      <button type="button" className="exw-sheet-scrim" aria-label="关闭" onClick={onClose} />
-      <dialog
-        open
-        className="exw-sheet"
-        aria-modal="true"
-        aria-label={label}
-        style={width ? { maxWidth: width } : undefined}
-      >
-        {children}
-      </dialog>
-    </div>
   );
 }

@@ -6,6 +6,7 @@ import { isUnread, personalFor } from '@/lib/jobs';
 import type { Filters, Job, Personal, PersonalRecord } from '@/lib/jobs';
 import { APPLICATION_STAGES } from '@/lib/personal-records';
 import { useToast } from '@/components/toast-provider';
+import { report } from '@/lib/rum';
 import {
   commitPersonalRecords,
   patchPersonalRecord,
@@ -142,6 +143,9 @@ export function usePersonalRecords({
         return patchPersonalRecord(latest, job, patch, stamp);
       }).then((ok) => {
         if (!ok || !snapshotRecord) return;
+        if (key === 'saved' && nextBool) {
+          report('event', 'save');
+        }
         const previous = snapshotRecord;
         if (key === 'applied' && !nextBool) {
           toast({

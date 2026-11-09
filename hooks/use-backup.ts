@@ -11,6 +11,7 @@ import { mergePersonalRecords } from '@/lib/personal-records';
 import { readPersonalRecords, withPersonalLock } from '@/lib/personal-store';
 import { EVENT_PERSONAL_STORAGE, validateEventPersonal } from '@/lib/agenda';
 import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
+import { report } from '@/lib/rum';
 
 export interface UseBackupOptions {
   syncPersonal: () => void;
@@ -55,6 +56,7 @@ export function useBackup({
       a.download = '职讯雷达-个人记录.json';
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      report('event', 'export_backup');
       onNotice('个人记录已导出。');
     } catch (error) {
       onNotice(error instanceof Error ? error.message : '导出失败');

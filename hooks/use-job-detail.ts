@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { resolveJobId } from '@/lib/jobs';
 import type { Job, Snapshot } from '@/lib/jobs';
+import { report } from '@/lib/rum';
 
 export interface UseJobDetailOptions {
   markRead: (job: Job) => void;
@@ -82,6 +83,7 @@ export function useJobDetail({
 
   const openDetail = useCallback(
     async (job: Job, linkId = job.id, pushHistory = true) => {
+      report('event', 'open_detail');
       setLinkedJobId(linkId);
       if (pushHistory && typeof window !== 'undefined') {
         const url = new URL(window.location.href);

@@ -18,6 +18,7 @@ import {
 } from '@/lib/browsing';
 import type { CardDensity, ViewMode } from '@/lib/browsing';
 import { personalViewFilters } from '@/lib/workspace';
+import { report } from '@/lib/rum';
 
 export const BROWSING_STORAGE = 'job-radar-browsing-v1';
 export const CARD_DENSITY_STORAGE = 'job-radar-card-density-v1';
@@ -252,8 +253,12 @@ export function useUrlSync({
     (value: string, immediate = false) => {
       setQueryDraft(value);
       clearTimeout(queryTimer.current);
-      if (immediate) change('query', value);
-      else queryTimer.current = setTimeout(() => change('query', value), 250);
+      const commit = () => {
+        change('query', value);
+        if (value.trim()) report('event', 'search');
+      };
+      if (immediate) commit();
+      else queryTimer.current = setTimeout(commit, 250);
     },
     [change],
   );

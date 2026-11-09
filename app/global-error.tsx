@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { report } from '@/lib/rum';
 
 export default function GlobalError({
   error,
@@ -13,6 +14,7 @@ export default function GlobalError({
 
   useEffect(() => {
     console.error('Global Error Caught:', error);
+    report('error', error.digest || (error.message || 'global_error').slice(0, 60));
   }, [error]);
 
   const handleClearPreferences = () => {

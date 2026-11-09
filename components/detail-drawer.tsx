@@ -42,6 +42,7 @@ import { HighlightText } from '@/components/highlight-text';
 import { TalkEvents } from '@/components/talk-events';
 import { EmployerEntry } from '@/components/employer-workspace';
 import { parseAnnouncementSections } from '@/lib/card-summary';
+import { report } from '@/lib/rum';
 
 export { parseAnnouncementSections } from '@/lib/card-summary';
 
@@ -317,7 +318,10 @@ export function DetailDrawer({
                     primary
                     className="primary-link detail-sticky-apply"
                     url={selected.application_url || selected.source_url}
-                    onOpen={() => onRead(selected)}
+                    onOpen={() => {
+                      report('event', 'click_apply');
+                      onRead(selected);
+                    }}
                   >
                     {selected.application_url ? '前往投递' : '查看原公告'}
                   </OutLink>
@@ -863,7 +867,10 @@ export function DetailDrawer({
                 primary
                 className="primary-link detail-mobile-apply"
                 url={selected.application_url || selected.source_url}
-                onOpen={() => onRead(selected)}
+                onOpen={() => {
+                  report('event', 'click_apply');
+                  onRead(selected);
+                }}
               >
                 {selected.application_url ? '前往投递' : '查看原公告'}
               </OutLink>

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { Filters } from '@/lib/jobs';
 import type { ExamFilters } from '@/lib/exams';
+import { report } from '@/lib/rum';
 
 export type BottomTabBarProps =
   | {
@@ -69,7 +70,11 @@ export function BottomTabBar(props: BottomTabBarProps) {
             跟进{hasData && trackingCount > 0 ? ` ${trackingCount}` : ''}
           </span>
         </button>
-        <Link href="/exams" className="bottom-tab">
+        <Link
+          href="/exams"
+          className="bottom-tab"
+          onClick={() => report('event', 'switch_workspace')}
+        >
           <Landmark size={18} />
           <span>考编</span>
         </Link>
@@ -116,7 +121,11 @@ export function BottomTabBar(props: BottomTabBarProps) {
         <Kanban size={18} />
         <span>进度{trackedCount > 0 ? ` ${trackedCount}` : ''}</span>
       </button>
-      <Link href="/" className="bottom-tab">
+      <Link
+        href="/"
+        className="bottom-tab"
+        onClick={() => report('event', 'switch_workspace')}
+      >
         <Briefcase size={18} />
         <span>求职</span>
       </Link>

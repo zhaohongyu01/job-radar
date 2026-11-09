@@ -43,6 +43,7 @@ import { HighlightText } from '@/components/highlight-text';
 import { TalkEvents } from '@/components/talk-events';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
 import { positionMatches } from '@/lib/eligibility';
+import { report } from '@/lib/rum';
 import { extractSalary } from '@/lib/salary-display';
 import { EmployerEntry } from '@/components/employer-workspace';
 import { APPLICATION_STAGES } from '@/lib/personal-records';
@@ -479,7 +480,10 @@ function JobCardInner({
           <OutLink
             className="btn btn-primary btn-sm"
             url={job.application_url || job.source_url}
-            onOpen={() => onRead(job)}
+            onOpen={() => {
+              report('event', 'click_apply');
+              onRead(job);
+            }}
           >
             {job.application_url
               ? '前往投递'

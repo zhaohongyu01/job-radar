@@ -44,6 +44,7 @@ import type {
   ExamUserProfile,
 } from '@/lib/exams';
 import { downloadExamCalendar } from '@/lib/exam-calendar';
+import { report } from '@/lib/rum';
 import { bianzhiLabel, categoryLabel, formatShortDate, StagePill } from '@/components/exam-ui';
 import { ExamPositionTable } from '@/components/exams/exam-position-table';
 
@@ -478,7 +479,13 @@ function DrawerContent({
               原公告
             </a>
           )}
-          <a className="btn btn-primary btn-sm" href={applyHref} target="_blank" rel="noopener noreferrer">
+          <a
+            className="btn btn-primary btn-sm"
+            href={applyHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => report('event', 'click_apply')}
+          >
             {exam.registration_url ? '前往报名' : '查看原公告'}
             <ExternalLink size={13} />
           </a>
@@ -808,6 +815,7 @@ function DrawerContent({
           href={applyHref}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => report('event', 'click_apply')}
         >
           {exam.registration_url ? '前往报名' : '查看原公告'}
           <ExternalLink size={13} />

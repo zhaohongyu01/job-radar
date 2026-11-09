@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_EXAM_FILTERS,
   DEFAULT_EXAM_PROFILE,
@@ -18,6 +18,7 @@ import type {
   ExamUserProfile,
 } from '@/lib/exams';
 import { readStore, subscribeStore, writeStore } from '@/lib/local-store';
+import { report } from '@/lib/rum';
 
 const EXAM_FILTERS_MIGRATED_KEY = 'job-radar-exam-filters-migrated-v2';
 
@@ -95,6 +96,9 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     };
   }, [onNotice]);
 
+  const profileReportTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(profileReportTimer.current), []);
+
   const updateProfile = useCallback(
     (patch: Partial<ExamUserProfile>) => {
       setProfile((prev) => {
@@ -102,6 +106,8 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
         writeStore(EXAM_PROFILE_STORAGE, next);
         return next;
       });
+      clearTimeout(profileReportTimer.current);
+      profileReportTimer.current = setTimeout(() => report('event', 'exam_profile_set'), 400);
       onPageReset();
     },
     [onPageReset],
@@ -151,6 +157,7 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     (examId: string) => {
       const current = personal[examId]?.saved;
       updatePersonalRecord(examId, { saved: !current });
+      if (!current) report('event', 'save');
       onNotice(!current ? '已收藏' : '已取消收藏');
     },
     [personal, updatePersonalRecord, onNotice],
@@ -178,6 +185,7 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
         saved: true,
         savedPositionIds: exists ? prevIds.filter((id) => id !== rowId) : [...prevIds, rowId],
       });
+      if (!exists) report('event', 'save');
       onNotice(exists ? '已移出候选岗位' : `已加入候选：${positionName}`);
     },
     [personal, updatePersonalRecord, onNotice],

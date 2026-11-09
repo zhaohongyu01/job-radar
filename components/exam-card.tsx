@@ -21,6 +21,7 @@ import {
   formatShortDate,
   StagePill,
 } from '@/components/exam-ui';
+import { report } from '@/lib/rum';
 
 interface ExamCardProps {
   exam: ExamAnnouncement;
@@ -161,7 +162,13 @@ export function ExamCard({ exam, profile, personal, today = '', onSelect, onTogg
         >
           <Bookmark size={16} fill={isSaved ? 'currentColor' : 'none'} />
         </button>
-        <a className="exw-card-link" href={applyHref} target="_blank" rel="noopener noreferrer">
+        <a
+          className="exw-card-link"
+          href={applyHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => report('event', 'click_apply')}
+        >
           {exam.registration_url ? '报名' : '原文'}
           <ExternalLink size={12} />
         </a>

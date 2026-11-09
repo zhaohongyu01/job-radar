@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { RefreshCw, AlertTriangle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EXAM_FILTERS_STORAGE } from '@/lib/exams';
+import { report } from '@/lib/rum';
 
 export default function ErrorBoundary({
   error,
@@ -16,6 +17,7 @@ export default function ErrorBoundary({
 
   useEffect(() => {
     console.error('App Router Caught Error:', error);
+    report('error', error.digest || (error.message || 'render_error').slice(0, 60));
   }, [error]);
 
   const handleClearPreferences = () => {

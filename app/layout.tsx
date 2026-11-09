@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { RumObserver } from '@/components/rum-observer';
 import './globals.css';
 import './design.css';
 import './data-health.css';
@@ -35,9 +36,20 @@ export const viewport: Viewport = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const cfBeaconToken = process.env.NEXT_PUBLIC_CF_BEACON_TOKEN?.trim();
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        {children}
+        <RumObserver />
+        {cfBeaconToken ? (
+          <script
+            defer
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={JSON.stringify({ token: cfBeaconToken })}
+          />
+        ) : null}
+      </body>
     </html>
   );
 }

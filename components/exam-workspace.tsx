@@ -1,7 +1,7 @@
 'use client';
 
 import '@/app/exams.css';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bookmark,
   CalendarClock,
@@ -49,6 +49,7 @@ import { formatMonthDay } from '@/components/exam-ui';
 import { useToast } from '@/components/toast-provider';
 import { useExamSnapshot } from '@/hooks/use-exam-snapshot';
 import { useExamPersonal } from '@/hooks/use-exam-personal';
+import { report } from '@/lib/rum';
 
 const PAGE_SIZE = 20;
 
@@ -187,6 +188,7 @@ export function ExamWorkspace() {
 
   const openExam = useCallback(
     (exam: ExamAnnouncement, pushHistory = true) => {
+      report('event', 'open_detail');
       setSelectedExam(exam);
       setLinkedExamId(exam.id);
       if (typeof window !== 'undefined' && pushHistory) {
@@ -230,6 +232,20 @@ export function ExamWorkspace() {
     setSelectedExam(null);
     setLinkedExamId(null);
   }, []);
+  const searchReportTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(searchReportTimer.current), []);
+
+  const handleSearchInput = useCallback(
+    (value: string) => {
+      updateFilters({ query: value });
+      clearTimeout(searchReportTimer.current);
+      if (value.trim()) {
+        searchReportTimer.current = setTimeout(() => report('event', 'search'), 300);
+      }
+    },
+    [updateFilters],
+  );
+
   const closeSources = useCallback(() => setSourceOpen(false), []);
 
   const filteredExams = useMemo(
@@ -430,7 +446,7 @@ export function ExamWorkspace() {
             aria-label="搜索公告、单位、岗位或专业"
             placeholder="搜索公告、单位、岗位或专业"
             value={filters.query}
-            onChange={(e) => updateFilters({ query: e.target.value })}
+            onChange={(e) => handleSearchInput(e.target.value)}
           />
           {filters.query && (
             <button type="button" aria-label="清空搜索" onClick={() => updateFilters({ query: '' })}>

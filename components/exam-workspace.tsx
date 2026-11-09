@@ -33,6 +33,7 @@ import {
   filterExams,
   flattenAndFilterExamPositions,
   isExamProfileActive,
+  SHANDONG_16,
   validateExamPersonal,
   validateExamProfile,
 } from '@/lib/exams';
@@ -58,11 +59,6 @@ import {
 } from '@/components/exam-ui';
 
 const PAGE_SIZE = 20;
-
-const SHANDONG_16_CITIES = [
-  '济南', '青岛', '烟台', '潍坊', '临沂', '济宁', '淄博', '威海',
-  '泰安', '东营', '日照', '德州', '聊城', '滨州', '菏泽', '枣庄',
-];
 
 const EXAM_CATEGORIES: ExamCategory[] = [
   '公务员国考',
@@ -437,6 +433,7 @@ export function ExamWorkspace() {
     profile.politicalStatus !== '不限' ? profile.politicalStatus : '',
     profile.gradIdentity !== '不限' ? profile.gradIdentity : '',
     profile.hukouCity !== '全部' ? `${profile.hukouCity}户籍` : '',
+    profile.birthYear !== null ? `${profile.birthYear}年生` : '',
     profile.grassrootsYears > 0 ? `基层 ${profile.grassrootsYears} 年` : '',
   ].filter(Boolean);
 
@@ -560,7 +557,7 @@ export function ExamWorkspace() {
               onChange={(e) => updateProfile({ onlyMatchProfile: e.target.checked })}
             />
             <span className="exw-switch-ui" aria-hidden="true" />
-            <span>只看可报</span>
+            <span>隐藏不符合的</span>
           </label>
           <button
             type="button"
@@ -639,9 +636,24 @@ export function ExamWorkspace() {
               <span>户籍 / 生源地</span>
               <select value={profile.hukouCity} onChange={(e) => updateProfile({ hukouCity: e.target.value })}>
                 <option value="全部">不限</option>
-                {SHANDONG_16_CITIES.map((c) => (
+                {SHANDONG_16.map((c) => (
                   <option key={c} value={c}>
                     {c}
+                  </option>
+                ))}
+                <option value="省外">省外</option>
+              </select>
+            </label>
+            <label className="exw-field">
+              <span>出生年份</span>
+              <select
+                value={profile.birthYear ?? ''}
+                onChange={(e) => updateProfile({ birthYear: e.target.value ? Number(e.target.value) : null })}
+              >
+                <option value="">不填</option>
+                {Array.from({ length: 28 }, (_, i) => new Date().getFullYear() - 18 - i).map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr} 年
                   </option>
                 ))}
               </select>
@@ -752,7 +764,7 @@ export function ExamWorkspace() {
               <Chip active={selectedCities.length === 0} onClick={() => toggleCity('全部')}>
                 全部
               </Chip>
-              {SHANDONG_16_CITIES.map((city) => (
+              {SHANDONG_16.map((city) => (
                 <Chip key={city} active={filters.cities.includes(city)} onClick={() => toggleCity(city)}>
                   {city}
                 </Chip>
@@ -1006,15 +1018,35 @@ export function ExamWorkspace() {
                           </td>
                           {profileActive && (
                             <td>
-                              {row.eligibility.matched ? (
-                                <span className="exw-elig is-ok">
+                              {row.eligibility.status === 'eligible' ? (
+                                <span
+                                  className="exw-elig is-ok"
+                                  title={row.eligibility.reasons.join('；')}
+                                  aria-label={`可报：${row.eligibility.reasons.join('；')}`}
+                                >
                                   <CheckCircle2 size={12} />
                                   可报
                                 </span>
+                              ) : row.eligibility.status === 'unknown' ? (
+                                <div
+                                  title={row.eligibility.unknowns.join('；')}
+                                  aria-label={`待核实：${row.eligibility.unknowns.join('；')}`}
+                                >
+                                  <span className="exw-elig is-unknown">待核实</span>
+                                  {row.eligibility.unknowns[0] && (
+                                    <div className="exw-elig-sub">{row.eligibility.unknowns[0].slice(0, 20)}</div>
+                                  )}
+                                </div>
                               ) : (
-                                <span className="exw-elig is-no" title={row.eligibility.conflicts.join('；')}>
-                                  不符
-                                </span>
+                                <div
+                                  title={row.eligibility.conflicts.join('；')}
+                                  aria-label={`不符：${row.eligibility.conflicts.join('；')}`}
+                                >
+                                  <span className="exw-elig is-no">不符</span>
+                                  {row.eligibility.conflicts[0] && (
+                                    <div className="exw-elig-sub">{row.eligibility.conflicts[0].slice(0, 20)}</div>
+                                  )}
+                                </div>
                               )}
                             </td>
                           )}

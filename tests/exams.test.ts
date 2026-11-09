@@ -192,3 +192,111 @@ void test('flattenAndFilterExamPositions flattens and filters position rows by p
   assert.equal(rowsMatchedOnly[0].position_name, '综合文秘岗');
   assert.equal(computeExamStageLabel('registering').label, '正在报名');
 });
+
+void test('evaluateExamPositionEligibility returns unknown when major or education is unknown', () => {
+  const posEmptyMajor = makePosition({
+    education: '本科及以上',
+    degree: '学士',
+    majors: [],
+    major_raw: '',
+    political_status: '不限',
+    fresh_grad_rule: '不限',
+  });
+  const profile: ExamUserProfile = {
+    ...DEFAULT_EXAM_PROFILE,
+    education: '本科',
+    majorQuery: '计算机',
+  };
+  const resMajor = evaluateExamPositionEligibility(posEmptyMajor, profile);
+  assert.equal(resMajor.status, 'unknown');
+  assert.equal(resMajor.matched, false);
+  assert.ok(resMajor.unknowns.some((u) => u.includes('专业')));
+
+  const posAmbigEdu = makePosition({
+    education: '大学及以上',
+    degree: '不限',
+    majors: ['不限专业'],
+    major_raw: '不限专业',
+    political_status: '不限',
+    fresh_grad_rule: '不限',
+  });
+  const resEdu = evaluateExamPositionEligibility(posAmbigEdu, {
+    ...DEFAULT_EXAM_PROFILE,
+    education: '专科',
+  });
+  assert.equal(resEdu.status, 'unknown');
+  assert.ok(resEdu.unknowns.some((u) => u.includes('学历')));
+});
+
+void test('evaluateExamPositionEligibility checks hukou city and birthYear age limits', () => {
+  const posLiaocheng = makePosition({
+    education: '本科及以上',
+    degree: '不限',
+    majors: ['不限专业'],
+    major_raw: '不限专业',
+    political_status: '不限',
+    fresh_grad_rule: '不限',
+    hukou_rule: '限聊城市户籍',
+    age_limit: '35周岁及以下',
+  });
+
+  const resLiaocheng = evaluateExamPositionEligibility(posLiaocheng, {
+    ...DEFAULT_EXAM_PROFILE,
+    hukouCity: '聊城',
+  });
+  assert.equal(resLiaocheng.status, 'eligible');
+
+  const resJinan = evaluateExamPositionEligibility(posLiaocheng, {
+    ...DEFAULT_EXAM_PROFILE,
+    hukouCity: '济南',
+  });
+  assert.equal(resJinan.status, 'ineligible');
+
+  const resOutProvince = evaluateExamPositionEligibility(posLiaocheng, {
+    ...DEFAULT_EXAM_PROFILE,
+    hukouCity: '省外',
+  });
+  assert.equal(resOutProvince.status, 'ineligible');
+
+  const currentYear = new Date().getFullYear();
+  const resOverAge = evaluateExamPositionEligibility(posLiaocheng, {
+    ...DEFAULT_EXAM_PROFILE,
+    birthYear: currentYear - 38,
+  });
+  assert.equal(resOverAge.status, 'ineligible');
+  assert.ok(resOverAge.conflicts.some((c) => c.includes('年龄')));
+});
+
+void test('onlyMatchProfile keeps unknown position rows while hiding ineligible rows', () => {
+  const posUnknown = makePosition({
+    row_id: 'pos-unknown',
+    position_name: '未知专业岗',
+    education: '本科及以上',
+    degree: '不限',
+    majors: [],
+    major_raw: '',
+    political_status: '不限',
+    fresh_grad_rule: '不限',
+  });
+  const posIneligible = makePosition({
+    row_id: 'pos-ineligible',
+    position_name: '严格限制岗',
+    education: '博士研究生',
+  });
+  const exam = makeExam({ positions: [posUnknown, posIneligible] });
+  const profile: ExamUserProfile = {
+    ...DEFAULT_EXAM_PROFILE,
+    education: '本科',
+    majorQuery: '计算机',
+    onlyMatchProfile: true,
+  };
+
+  const rows = flattenAndFilterExamPositions([exam], DEFAULT_EXAM_FILTERS, profile);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].row_id, 'pos-unknown');
+  assert.equal(rows[0].eligibility?.status, 'unknown');
+
+  const exams = filterExams([exam], DEFAULT_EXAM_FILTERS, profile, {});
+  assert.equal(exams.length, 1);
+});
+

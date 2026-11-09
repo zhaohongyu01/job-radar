@@ -32,9 +32,9 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave }: Ex
   const isNotice = exam.notice_role !== '招考简章';
   const positions = exam.positions || [];
   const profileActive = isExamProfileActive(profile);
-  const matchedCount = profileActive
-    ? positions.filter((row) => evaluateExamPositionEligibility(row, profile).matched).length
-    : 0;
+  const eligList = profileActive ? positions.map((row) => evaluateExamPositionEligibility(row, profile)) : [];
+  const eligibleCount = eligList.filter((r) => r.status === 'eligible').length;
+  const unknownCount = eligList.filter((r) => r.status === 'unknown').length;
   const regWindow = formatRegWindow(exam.schedule);
   const cityLabel = exam.cities.length
     ? exam.cities.slice(0, 2).join('、') + (exam.cities.length > 2 ? ` 等${exam.cities.length}地` : '')
@@ -98,17 +98,22 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave }: Ex
           </dl>
         )}
 
-        {profileActive && !isNotice && positions.length > 0 && (
-          <p className={`exw-card-match ${matchedCount > 0 ? 'is-ok' : 'is-no'}`}>
-            {matchedCount > 0 ? (
-              <>
-                <CheckCircle2 size={13} />
-                {matchedCount} 个岗位符合你的条件
-              </>
-            ) : (
-              '暂无符合你条件的岗位'
-            )}
-          </p>
+        {profileActive && !isNotice && (
+          positions.length === 0 ? (
+            <p className="exw-card-match is-unknown">? 岗位需核实</p>
+          ) : eligibleCount > 0 || unknownCount > 0 ? (
+            <p className={`exw-card-match ${eligibleCount > 0 ? 'is-ok' : 'is-unknown'}`}>
+              {eligibleCount > 0 ? <CheckCircle2 size={13} /> : null}
+              {[
+                eligibleCount > 0 ? `✓ ${eligibleCount} 个可报` : '',
+                unknownCount > 0 ? `? ${unknownCount} 个待核实` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          ) : (
+            <p className="exw-card-match is-no">暂无符合你条件的岗位</p>
+          )
         )}
       </div>
 

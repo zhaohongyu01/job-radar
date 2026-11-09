@@ -134,7 +134,7 @@ function DrawerContent({
   const rows = positions
     .map((pos) => ({ pos, elig: evaluateExamPositionEligibility(pos, profile) }))
     .filter(({ pos, elig }) => {
-      if (onlyMatched && !elig.matched) return false;
+      if (onlyMatched && elig.status === 'ineligible') return false;
       const q = posQuery.trim().toLowerCase();
       if (!q) return true;
       return `${pos.department} ${pos.employer} ${pos.position_name} ${pos.position_code || ''} ${pos.major_raw} ${pos.education}`
@@ -398,7 +398,7 @@ function DrawerContent({
                       onChange={(e) => setOnlyMatchedPos(e.target.checked)}
                     />
                     <span className="exw-switch-ui" aria-hidden="true" />
-                    <span>只看可报</span>
+                    <span>隐藏不符合的</span>
                   </label>
                 )}
               </div>
@@ -459,15 +459,35 @@ function DrawerContent({
                         </td>
                         {profileActive && (
                           <td>
-                            {elig.matched ? (
-                              <span className="exw-elig is-ok">
+                            {elig.status === 'eligible' ? (
+                              <span
+                                className="exw-elig is-ok"
+                                title={elig.reasons.join('；')}
+                                aria-label={`可报：${elig.reasons.join('；')}`}
+                              >
                                 <CheckCircle2 size={12} />
                                 可报
                               </span>
+                            ) : elig.status === 'unknown' ? (
+                              <div
+                                title={elig.unknowns.join('；')}
+                                aria-label={`待核实：${elig.unknowns.join('；')}`}
+                              >
+                                <span className="exw-elig is-unknown">待核实</span>
+                                {elig.unknowns[0] && (
+                                  <div className="exw-elig-sub">{elig.unknowns[0].slice(0, 20)}</div>
+                                )}
+                              </div>
                             ) : (
-                              <span className="exw-elig is-no" title={elig.conflicts.join('；')}>
-                                {elig.conflicts[0]?.slice(0, 10) || '不符'}
-                              </span>
+                              <div
+                                title={elig.conflicts.join('；')}
+                                aria-label={`不符：${elig.conflicts.join('；')}`}
+                              >
+                                <span className="exw-elig is-no">不符</span>
+                                {elig.conflicts[0] && (
+                                  <div className="exw-elig-sub">{elig.conflicts[0].slice(0, 20)}</div>
+                                )}
+                              </div>
                             )}
                           </td>
                         )}

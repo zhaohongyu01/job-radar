@@ -176,6 +176,11 @@ export interface ExamSnapshot {
   }[];
 }
 
+export const SHANDONG_16 = [
+  '济南', '青岛', '烟台', '潍坊', '临沂', '济宁', '淄博', '威海',
+  '泰安', '东营', '日照', '德州', '聊城', '滨州', '菏泽', '枣庄',
+] as const;
+
 export interface ExamUserProfile {
   education: '全部' | '专科' | '本科' | '硕士研究生' | '博士研究生';
   hasDegree: boolean;
@@ -184,6 +189,7 @@ export interface ExamUserProfile {
   gradIdentity: '不限' | '当年应届' | '择业期应届' | '在职/社会人员';
   grassrootsYears: number;
   hukouCity: string;
+  birthYear: number | null;
   onlyMatchProfile: boolean;
 }
 
@@ -195,9 +201,6 @@ export interface ExamFilters {
   subject: string;
   stage: string;
   noticeRole: string;
-  education: string;
-  political: string;
-  freshGrad: string;
   unlimitedMajorOnly: boolean;
   view: 'announcements' | 'positions' | 'saved' | 'tracker';
   sort: 'smart' | 'published' | 'reg_end' | 'headcount';
@@ -232,6 +235,7 @@ export const DEFAULT_EXAM_PROFILE: ExamUserProfile = {
   gradIdentity: '不限',
   grassrootsYears: 0,
   hukouCity: '全部',
+  birthYear: null,
   onlyMatchProfile: false,
 };
 
@@ -299,6 +303,9 @@ export function validateExamProfile(input: unknown): ExamUserProfile {
   if (typeof r.hukouCity === 'string' && r.hukouCity.length > 0 && r.hukouCity.length <= 40) {
     out.hukouCity = r.hukouCity;
   }
+  if (typeof r.birthYear === 'number' && Number.isFinite(r.birthYear) && r.birthYear >= 1950 && r.birthYear <= 2015) {
+    out.birthYear = Math.floor(r.birthYear);
+  }
   if (typeof r.onlyMatchProfile === 'boolean') out.onlyMatchProfile = r.onlyMatchProfile;
   return out;
 }
@@ -311,9 +318,6 @@ export const DEFAULT_EXAM_FILTERS: ExamFilters = {
   subject: '全部',
   stage: '全部',
   noticeRole: '全部',
-  education: '全部',
-  political: '全部',
-  freshGrad: '全部',
   unlimitedMajorOnly: false,
   view: 'announcements',
   sort: 'smart',
@@ -335,13 +339,18 @@ const EDU_RANK: Record<string, number> = {
   '博士研究生': 5,
 };
 
+const isUnknownText = (s?: string | null) => !s || /详见|见附件|见公告|见原|未明确|待定|另行/.test(s);
+
 export function parseRequiredMinEduRank(eduText: string): number {
-  if (!eduText || /不限|未明确/.test(eduText)) return 0;
+  if (isUnknownText(eduText)) return -1;
+  if (/不限/.test(eduText)) return 0;
+  if (/大学及以上|^大学$/.test(eduText)) return -1;
   if (/专科|大专|高职/.test(eduText)) return 2;
   if (/本科/.test(eduText)) return 3;
   if (/硕士|研究生/.test(eduText) && !/博士/.test(eduText)) return 4;
   if (/博士/.test(eduText)) return 5;
-  return 0;
+  if (/中专|高中/.test(eduText)) return 1;
+  return -1;
 }
 
 export function parseRequiredMaxEduRank(eduText: string): number {
@@ -352,10 +361,14 @@ export function parseRequiredMaxEduRank(eduText: string): number {
   return 5;
 }
 
+export type EligibilityStatus = 'eligible' | 'ineligible' | 'unknown';
+
 export interface PositionEligibilityResult {
+  status: EligibilityStatus;
   matched: boolean;
   reasons: string[];
   conflicts: string[];
+  unknowns: string[];
 }
 
 export function evaluateExamPositionEligibility(
@@ -364,30 +377,41 @@ export function evaluateExamPositionEligibility(
 ): PositionEligibilityResult {
   const reasons: string[] = [];
   const conflicts: string[] = [];
+  const unknowns: string[] = [];
 
   // 1. 学历层次校验
   if (profile.education !== '全部') {
     const userRank = EDU_RANK[profile.education] ?? 3;
     const minRank = parseRequiredMinEduRank(row.education);
     const maxRank = parseRequiredMaxEduRank(row.education);
-    if (userRank < minRank) {
+    if (minRank === -1) {
+      unknowns.push('学历要求未提取');
+    } else if (userRank < minRank) {
       conflicts.push(`学历需「${row.education}」`);
     } else if (userRank > maxRank) {
       conflicts.push(`学历限制「${row.education}」`);
     } else if (minRank > 0) {
       reasons.push(`学历符合（${row.education}）`);
+    } else {
+      reasons.push('学历不限');
     }
   }
 
   // 2. 学位要求校验
-  if (!profile.hasDegree && row.degree && /学士|硕士|博士/.test(row.degree) && !/不限|无要求/.test(row.degree)) {
-    conflicts.push(`需取得「${row.degree}」`);
+  if (!profile.hasDegree) {
+    if (isUnknownText(row.degree)) {
+      unknowns.push('学位要求未提取');
+    } else if (/学士|硕士|博士/.test(row.degree!) && !/不限|无要求/.test(row.degree!)) {
+      conflicts.push(`需取得「${row.degree}」`);
+    }
   }
 
   // 3. 政治面貌校验
   if (profile.politicalStatus !== '不限') {
     const reqPol = row.political_status || '';
-    if (/中共党员/.test(reqPol) && !/共青团员/.test(reqPol)) {
+    if (isUnknownText(reqPol)) {
+      unknowns.push('政治面貌要求未提取');
+    } else if (/中共党员/.test(reqPol) && !/共青团员/.test(reqPol)) {
       if (profile.politicalStatus !== '中共党员') {
         conflicts.push('要求中共党员');
       } else {
@@ -399,24 +423,30 @@ export function evaluateExamPositionEligibility(
       } else {
         reasons.push('政治面貌符合');
       }
+    } else if (/不限/.test(reqPol)) {
+      reasons.push('政治面貌不限');
     }
   }
 
   // 4. 应届身份校验
   if (profile.gradIdentity !== '不限') {
     const rule = row.fresh_grad_rule || '';
-    if (/当年应届|2026届|仅限应届/.test(rule) && !/择业期/.test(rule)) {
+    if (isUnknownText(rule)) {
+      unknowns.push('应届要求未提取');
+    } else if (/当年应届|20\d{2}届|仅限应届/.test(rule) && !/择业期/.test(rule)) {
       if (profile.gradIdentity !== '当年应届') {
         conflicts.push(`限当年应届生（${rule}）`);
       } else {
         reasons.push('应届身份符合');
       }
-    } else if (/应届|高校毕业生/.test(rule)) {
+    } else if (/应届|高校毕业生/.test(rule) && !/应往届均可|不限/.test(rule)) {
       if (profile.gradIdentity === '在职/社会人员') {
-        conflicts.push(`限应届高校毕业生`);
+        conflicts.push('限应届高校毕业生');
       } else {
         reasons.push('应届/择业期符合');
       }
+    } else if (/不限|应往届均可/.test(rule)) {
+      reasons.push('应往届不限');
     }
   }
 
@@ -434,9 +464,20 @@ export function evaluateExamPositionEligibility(
   }
 
   // 6. 户籍限制校验
-  if (profile.hukouCity && profile.hukouCity !== '全部' && row.hukou_rule && !/不限/.test(row.hukou_rule)) {
-    if (!row.hukou_rule.includes(profile.hukouCity) && !row.hukou_rule.includes('山东')) {
-      conflicts.push(`户籍要求：${row.hukou_rule}`);
+  if (profile.hukouCity && profile.hukouCity !== '全部') {
+    const rule = row.hukou_rule || '';
+    if (isUnknownText(rule)) unknowns.push('户籍要求未提取');
+    else if (/不限/.test(rule)) reasons.push('户籍不限');
+    else if (profile.hukouCity === '省外') {
+      if (/山东|本省|省内|本市|本县|本区/.test(rule) || SHANDONG_16.some((c) => rule.includes(c))) {
+        conflicts.push(`户籍要求：${rule}`);
+      }
+    } else if (rule.includes(profile.hukouCity) || /山东省|本省|省内/.test(rule)) {
+      reasons.push('户籍符合');
+    } else if (SHANDONG_16.some((c) => rule.includes(c)) || /本市|本县|本区/.test(rule)) {
+      conflicts.push(`户籍要求：${rule}`);
+    } else {
+      unknowns.push(`户籍要求需核实：${rule}`);
     }
   }
 
@@ -447,26 +488,52 @@ export function evaluateExamPositionEligibility(
     .filter(Boolean);
 
   if (queryTerms.length > 0) {
-    const rawMajor = (row.major_raw || row.majors.join(' ') || '').toLowerCase();
-    const isUnlimited = !rawMajor || /不限|无限制|全部专业|所有专业/.test(rawMajor);
-    if (isUnlimited) {
-      reasons.push('不限专业');
+    const rawStr = row.major_raw || row.majors.join(' ') || '';
+    if (isUnknownText(rawStr)) {
+      unknowns.push('专业要求未提取');
     } else {
-      const hit = queryTerms.find((term) => rawMajor.includes(term) || row.position_name.toLowerCase().includes(term));
-      if (hit) {
-        reasons.push(`专业匹配「${hit}」`);
+      const rawMajor = rawStr.toLowerCase();
+      const isUnlimited = /不限|无限制|全部专业|所有专业/.test(rawMajor);
+      if (isUnlimited) {
+        reasons.push('不限专业');
       } else {
-        conflicts.push(`专业要求：${row.major_raw || row.majors.join('、')}`);
+        const hit = queryTerms.find((term) => rawMajor.includes(term) || row.position_name.toLowerCase().includes(term));
+        if (hit) {
+          reasons.push(`专业匹配「${hit}」`);
+        } else {
+          conflicts.push(`专业要求：${row.major_raw || row.majors.join('、')}`);
+        }
       }
     }
   } else if (/不限|无限制/.test(row.major_raw || '')) {
     reasons.push('不限专业');
   }
 
+  // 8. 年龄限制校验
+  if (profile.birthYear !== null && profile.birthYear !== undefined) {
+    const ageText = row.age_limit || '';
+    const ageMatch = ageText.match(/(\d{2})\s*周岁(?:及)?以下/);
+    if (ageMatch) {
+      const maxAge = Number(ageMatch[1]);
+      const curYear = new Date().getFullYear();
+      const userAge = curYear - profile.birthYear;
+      if (userAge > maxAge) {
+        conflicts.push(`年龄上限 ${maxAge} 周岁`);
+      } else {
+        reasons.push(`年龄符合（≤${maxAge}周岁）`);
+      }
+    } else {
+      unknowns.push('年龄要求未提取');
+    }
+  }
+
+  const status: EligibilityStatus = conflicts.length ? 'ineligible' : unknowns.length ? 'unknown' : 'eligible';
   return {
-    matched: conflicts.length === 0,
+    status,
+    matched: status === 'eligible',
     reasons,
     conflicts,
+    unknowns,
   };
 }
 
@@ -477,7 +544,8 @@ export function isExamProfileActive(profile: ExamUserProfile): boolean {
     Boolean(profile.majorQuery.trim()) ||
     profile.politicalStatus !== '不限' ||
     profile.gradIdentity !== '不限' ||
-    profile.hukouCity !== '全部'
+    profile.hukouCity !== '全部' ||
+    (profile.birthYear !== null && profile.birthYear !== undefined)
   );
 }
 
@@ -578,25 +646,6 @@ export function filterExams(
       if (filters.noticeRole === '考务进展通知' && exam.notice_role === '招考简章') return false;
     }
 
-    // Education filter
-    if (filters.education !== '全部') {
-      const targetRank = EDU_RANK[filters.education] ?? 3;
-      const examMinRank = parseRequiredMinEduRank(exam.education_min);
-      if (examMinRank > targetRank) return false;
-    }
-
-    // Political filter
-    if (filters.political === '不限政治面貌') {
-      if (/仅限中共党员|^中共党员$/.test(exam.political_summary)) return false;
-    }
-
-    // Fresh grad filter
-    if (filters.freshGrad === '不限应届/往届可报') {
-      if (/仅限应届|限当年应届/.test(exam.fresh_grad_summary)) return false;
-    } else if (filters.freshGrad === '应届生专项') {
-      if (!/应届|选调|毕业生/.test(exam.fresh_grad_summary + ' ' + exam.title)) return false;
-    }
-
     // Unlimited major filter
     if (filters.unlimitedMajorOnly && !exam.has_unlimited_major) {
       return false;
@@ -620,23 +669,13 @@ export function filterExams(
       if (!queryTerms.every((t) => hay.includes(t))) return false;
     }
 
-    // Profile strict filter
+    // Profile filter: hide only when all extracted positions are explicitly ineligible
     if (profile.onlyMatchProfile) {
       if (exam.positions && exam.positions.length > 0) {
-        const anyMatched = exam.positions.some((row) => evaluateExamPositionEligibility(row, profile).matched);
-        if (!anyMatched) return false;
-      } else {
-        // Fallback announcement-level check
-        if (profile.education !== '全部') {
-          const userRank = EDU_RANK[profile.education] ?? 3;
-          const minRank = parseRequiredMinEduRank(exam.education_min);
-          if (userRank < minRank) return false;
-        }
-        if (profile.majorQuery.trim()) {
-          const terms = profile.majorQuery.trim().toLowerCase().split(/[\s,，、]+/).filter(Boolean);
-          const hay = (exam.majors.join(' ') + ' ' + exam.title + ' ' + exam.excerpt).toLowerCase();
-          if (!exam.has_unlimited_major && !terms.some((t) => hay.includes(t))) return false;
-        }
+        const anyPossible = exam.positions.some(
+          (row) => evaluateExamPositionEligibility(row, profile).status !== 'ineligible',
+        );
+        if (!anyPossible) return false;
       }
     }
 
@@ -709,7 +748,7 @@ export function flattenAndFilterExamPositions(
       }
 
       const eligibility = evaluateExamPositionEligibility(pos, profile);
-      if (profile.onlyMatchProfile && !eligibility.matched) continue;
+      if (profile.onlyMatchProfile && eligibility.status === 'ineligible') continue;
 
       rows.push({
         ...pos,

@@ -912,6 +912,10 @@
   background: var(--brand-soft);
   color: var(--brand);
 }
+.exw-card-match.is-unknown {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
 .exw-card-match.is-no {
   background: var(--paper-sunken);
   color: var(--ink-4);
@@ -1131,10 +1135,21 @@
   background: var(--brand-soft);
   color: var(--brand);
 }
+.exw-elig.is-unknown {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
 .exw-elig.is-no {
   background: var(--paper-sunken);
   color: var(--ink-4);
   font-weight: 500;
+}
+.exw-elig-sub {
+  margin-top: 3px;
+  color: var(--ink-4);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 /* ---------- Kanban ---------- */

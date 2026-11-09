@@ -119,16 +119,16 @@
   align-content: start;
 }
 
-.plan-card:not(.plan-next) .plan-link {
+.plan-card .plan-link {
   color: var(--brand, #205941);
   border-color: var(--line, #ddd);
 }
 
-.plan-card:not(.plan-next) .plan-link:hover {
+.plan-card .plan-link:hover {
   color: var(--ink, #20251f);
 }
 
-.plan-card:not(.plan-next) .plan-link:disabled {
+.plan-card .plan-link:disabled {
   opacity: .5;
   cursor: default;
 }
@@ -200,36 +200,9 @@
   padding: 10px 32px 48px;
 }
 
-.page-head {
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  gap: 16px;
-  align-items: center;
-}
-
-.page-head-intro {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.page-eyebrow {
-  margin: 0 0 1px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
 .page-title {
   font-size: 20px;
   line-height: 1.15;
-}
-
-.page-lede {
-  margin: 2px 0 0;
-  font-size: 12px;
-  line-height: 1.35;
-  color: var(--ink-3);
 }
 
 /* 单行深色看板条：待投/已投 + 紧急提醒/心动提示 + 提醒弹窗 */
@@ -244,8 +217,7 @@
   max-width: 680px;
 }
 
-.top-stat-val,
-.top-stat-num {
+.top-stat-val {
   font-size: 16px;
   line-height: 1;
 }
@@ -548,26 +520,6 @@
   transform: translateX(16px);
 }
 
-.freshness {
-  font-size: 12px;
-  gap: 6px;
-}
-
-.freshness .freshness-dot {
-  width: 6px;
-  height: 6px;
-  box-shadow: 0 0 0 2px var(--brand-soft);
-}
-
-.freshness .icon-btn {
-  width: 20px;
-  height: 20px;
-  padding: 2px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .collection-health {
   margin: 0 0 10px;
 }
@@ -597,14 +549,6 @@
 }
 
 @media (max-width: 900px) {
-  .page-head {
-    flex-wrap: wrap;
-  }
-
-  .page-head-aside {
-    width: 100%;
-    justify-content: space-between;
-  }
 
   .top-action-card {
     max-width: 100%;
@@ -615,12 +559,6 @@
 @media (max-width: 700px) {
   .page {
     padding: 8px 14px 40px;
-  }
-
-  .page-head-aside {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
   }
 
   .top-action-card {
@@ -697,24 +635,11 @@
   border-color: color-mix(in srgb, var(--brand, #1f5140) 24%, transparent);
 }
 
-.opp-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 6px;
-}
-
 .opp-positions {
   margin: 6px 0 0;
   padding: 5px 10px;
   font-size: 12px;
   border-radius: 6px;
-}
-
-.opp-majors {
-  margin: 4px 0 0;
-  padding: 4px 8px;
-  font-size: 12px;
 }
 
 .opp-excerpt {
@@ -869,8 +794,6 @@
 
 /* Phones: let the first opportunity appear sooner */
 @media (max-width: 900px) {
-  .page-lede,
-  .search-hints,
   .collection-health {
     display: none;
   }
@@ -944,45 +867,12 @@
   }
 }
 
-.page-head {
-  margin-bottom: 6px;
-  padding-bottom: 6px;
-  gap: 12px;
-  align-items: center;
-}
-
 @media (min-width: 901px) {
-  .page-head-intro {
-    display: flex;
-    flex-direction: row;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 6px 10px;
-  }
 
   .page-title {
     order: 1;
     font-size: 18px;
     line-height: 1.2;
-  }
-
-  .page-eyebrow {
-    order: 2;
-    margin: 0;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--brand-soft);
-    color: var(--brand);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-  }
-
-  .page-lede {
-    order: 3;
-    margin: 0;
-    font-size: 12px;
-    color: var(--ink-4);
   }
 }
 
@@ -1017,8 +907,7 @@
   background: var(--brand-soft);
 }
 
-.top-action-card.is-calm .top-stat-val,
-.top-action-card.is-calm .top-stat-num {
+.top-action-card.is-calm .top-stat-val {
   color: var(--ink);
   font-size: 13.5px;
 }
@@ -1073,21 +962,6 @@
 .filters-trigger {
   height: 40px;
   border-radius: 10px;
-}
-
-.search-box-wrap:not(:focus-within) .search-hints {
-  display: none;
-}
-
-.search-hints {
-  margin: 6px 0 2px;
-  font-size: 12px;
-}
-
-.search-hints button {
-  height: 24px;
-  padding: 0 9px;
-  font-size: 12px;
 }
 
 /* 个人机会雷达：单行方案头 + 均衡双行大数字指标格 */
@@ -1371,51 +1245,10 @@
   padding-top: 8px;
 }
 
-.opp-countdown-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.35;
-  white-space: nowrap;
-}
-
-.opp-countdown-pill.is-urgent {
-  background: var(--danger-soft);
-  color: var(--danger);
-  border: 1px solid rgba(163, 58, 43, 0.25);
-}
-
-.opp-countdown-pill.is-warning {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  border: 1px solid rgba(181, 93, 37, 0.24);
-}
-
 .opp-stage-badge {
   background: var(--brand-soft);
   color: var(--brand);
   font-weight: 600;
-}
-
-.opp-stage-select {
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(31, 81, 64, 0.28);
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  max-width: 124px;
-}
-
-.opp-stage-select:hover {
-  border-color: var(--brand);
 }
 
 /* 2. FilterSidebar Quick-Select Pills & Active Badge */
@@ -1481,9 +1314,7 @@
   -webkit-backdrop-filter: none !important;
 }
 
-html[data-base-ui-scroll-locked] .app-bar,
-html[data-base-ui-scroll-locked] .topbar,
-html[data-base-ui-scroll-locked] .personal-radar-card {
+html[data-base-ui-scroll-locked] .app-bar {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }

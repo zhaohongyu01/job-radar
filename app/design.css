@@ -270,17 +270,14 @@ button.chip:hover {
   background: var(--brand-soft);
   color: var(--brand);
 }
-.chip-urgent,
 .chip.badge-stage-expiring {
   background: var(--urgent-soft);
   color: var(--urgent);
 }
-.chip-warn,
 .chip.badge-stage-extended {
   background: var(--warn-soft);
   color: var(--warn);
 }
-.chip-info,
 .chip.badge-stage-selection {
   background: var(--info-soft);
   color: var(--info);
@@ -554,34 +551,6 @@ button.chip:hover {
   margin: 0 auto;
   padding: 16px 32px 64px;
 }
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
-}
-.page-head-intro {
-  flex-shrink: 0;
-  min-width: 0;
-}
-.page-head-aside {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex: 1;
-  justify-content: flex-end;
-  min-width: 0;
-}
-.page-eyebrow {
-  margin: 0 0 4px;
-  color: var(--brand);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-}
 .page-title {
   margin: 0;
   color: var(--ink);
@@ -590,13 +559,6 @@ button.chip:hover {
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.01em;
-}
-.page-lede {
-  max-width: 60ch;
-  margin: 4px 0 0;
-  color: var(--ink-3);
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 /* 顶部求职行动看板卡片（深墨纸本质感，整合待投/已投/急需处理机会） */
@@ -636,8 +598,7 @@ button.chip:hover {
 .top-stat-btn.is-active {
   background: rgba(255, 255, 255, 0.14);
 }
-.top-stat-val,
-.top-stat-num {
+.top-stat-val {
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 700;
@@ -762,26 +723,12 @@ button.chip:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.freshness {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--ink-3);
-  font-size: 13px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
 .freshness-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-soft);
-}
-.freshness.is-stale .freshness-dot {
-  background: #c98a1b;
-  box-shadow: 0 0 0 3px var(--warn-soft);
 }
 .spinning {
   animation: ds-spin 0.9s linear infinite;
@@ -1046,39 +993,6 @@ button.chip:hover {
   color: #fff;
   font-size: 12px;
   font-weight: 700;
-}
-.search-hints {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0 16px;
-  color: var(--ink-4);
-  font-size: 13px;
-}
-.search-hints > span:first-child {
-  margin-right: 4px;
-}
-.search-hints button {
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  color: var(--ink-2);
-  font-size: 13px;
-  transition:
-    border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease),
-    background-color var(--dur) var(--ease);
-}
-.search-hints button:hover {
-  border-color: var(--ink-4);
-  background: var(--surface);
-  color: var(--ink);
-}
-.hint-tail {
-  margin-left: auto;
-  font-size: 12px;
 }
 
 /* ---------- Focus panel (saved presets + quick metrics) ---------- */
@@ -1389,12 +1303,6 @@ button.chip:hover {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
-.result-subbar .divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 4px;
-  background: var(--line-strong);
-}
 .pager-mini {
   display: flex;
   align-items: center;
@@ -1455,10 +1363,6 @@ button.chip:hover {
   gap: 6px 12px;
   margin: 0;
 }
-.scope-hint {
-  color: var(--ink-4);
-  font-size: 12px;
-}
 .note-line {
   display: flex;
   align-items: flex-start;
@@ -1472,21 +1376,6 @@ button.chip:hover {
   flex-shrink: 0;
   margin-top: 3px;
   color: var(--ink-4);
-}
-.due-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding: 9px 12px;
-  border-radius: var(--r-md);
-  background: var(--urgent-soft);
-  color: var(--urgent);
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.due-banner svg {
-  flex-shrink: 0;
 }
 
 /* ---------- Opportunity list & card ---------- */
@@ -1714,12 +1603,6 @@ button.chip:hover {
   color: var(--brand);
   font-weight: 550;
 }
-.opp-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
 .opp-positions {
   display: flex;
   flex-wrap: wrap;
@@ -1749,71 +1632,6 @@ button.chip:hover {
   font-size: 12px;
   font-weight: 500;
   border: 1px solid var(--line-strong);
-}
-.opp-majors {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--ink-3);
-}
-.opp-majors-label {
-  color: var(--ink-4);
-  font-size: 12px;
-  font-weight: 600;
-  margin-right: 2px;
-}
-.opp-major-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 7px;
-  border-radius: 4px;
-  background: var(--paper-sunken);
-  color: var(--ink-2);
-  font-size: 12px;
-  border: 1px solid var(--line);
-}
-.opp-extras {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--ink-3);
-}
-.opp-extra-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-size: 12px;
-  font-weight: 550;
-  border: 1px solid var(--brand-line);
-}
-.opp-email-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: var(--paper-sunken);
-  border: 1px solid var(--line);
-  color: var(--ink-2);
-  font-size: 12px;
-  font-family: var(--font-mono);
-  cursor: pointer;
-  transition: all var(--dur) var(--ease);
-}
-.opp-email-btn:hover {
-  background: var(--surface);
-  border-color: var(--ink-4);
-  color: var(--ink);
 }
 .opp-alert {
   display: flex;
@@ -1882,37 +1700,6 @@ button.chip:hover {
   gap: 4px;
   min-width: 0;
 }
-.opp-deadline {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 13px;
-}
-.opp-deadline svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  color: var(--ink-4);
-}
-.opp-deadline strong {
-  font-weight: 650;
-}
-.opp-deadline .opp-deadline-date {
-  color: var(--ink-4);
-}
-.opp-deadline.is-urgent strong,
-.opp-deadline.is-urgent svg {
-  color: var(--urgent);
-}
-.opp-deadline.is-warning strong {
-  color: var(--warn);
-}
-.opp-deadline.is-closed,
-.opp-deadline.is-closed strong {
-  color: var(--ink-4);
-}
 .opp-source {
   display: flex;
   flex-wrap: wrap;
@@ -1927,20 +1714,6 @@ button.chip:hover {
 }
 .opp-trust.is-unverified {
   color: var(--warn);
-}
-.read-toggle {
-  padding: 0 2px;
-  border-radius: 3px;
-  color: var(--ink-4);
-  font-size: 12px;
-  transition: color var(--dur) var(--ease);
-}
-.read-toggle:hover {
-  color: var(--brand);
-}
-.read-toggle.is-unread {
-  color: var(--brand);
-  font-weight: 600;
 }
 .opp-actions {
   display: flex;
@@ -2117,17 +1890,6 @@ button.chip:hover {
 .help-fold-body p {
   margin: 0;
 }
-.foot-note {
-  margin: 14px 0 0;
-  color: var(--ink-4);
-  font-size: 12px;
-  line-height: 1.8;
-}
-.foot-note .text-btn {
-  margin-left: 4px;
-  font-size: 12px;
-  vertical-align: baseline;
-}
 
 /* ---------- Plan rail ---------- */
 .plan-desktop {
@@ -2147,128 +1909,7 @@ button.chip:hover {
   border-radius: var(--r-lg);
   background: var(--surface);
 }
-.plan-next {
-  position: relative;
-  overflow: hidden;
-  border-color: var(--night);
-  background: var(--night);
-  color: var(--night-ink);
-}
 /* Concentric rings echo the radar mark without adding noise. */
-.plan-next::after {
-  content: '';
-  position: absolute;
-  top: -70px;
-  right: -70px;
-  width: 170px;
-  height: 170px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 30px rgba(255, 255, 255, 0.025),
-    0 0 0 31px rgba(255, 255, 255, 0.05),
-    0 0 0 62px rgba(255, 255, 255, 0.015);
-  pointer-events: none;
-}
-.plan-next > * {
-  position: relative;
-  z-index: 1;
-}
-.plan-kicker {
-  margin: 0;
-  color: var(--night-muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-}
-.plan-title {
-  margin: 10px 0 6px;
-  color: #fff;
-  font-family: var(--font-display);
-  font-size: 21px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-.plan-lede {
-  margin: 0;
-  color: var(--night-muted);
-  font-size: 13px;
-  line-height: 1.7;
-}
-.plan-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 18px 0 0;
-  border-top: 1px solid var(--night-line);
-}
-.plan-stats button {
-  display: grid;
-  gap: 8px;
-  padding: 16px 0 6px;
-  color: inherit;
-  text-align: left;
-}
-.plan-stats button + button {
-  padding-left: 18px;
-  border-left: 1px solid var(--night-line);
-}
-.plan-stats strong {
-  font-family: var(--font-display);
-  font-size: 34px;
-  font-weight: 600;
-  line-height: 1;
-  font-variant-numeric: lining-nums;
-}
-.plan-stats span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--night-muted);
-  font-size: 12px;
-  transition: color var(--dur) var(--ease);
-}
-.plan-stats button:hover span {
-  color: #fff;
-}
-.plan-queue {
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.plan-queue li {
-  border-top: 1px solid var(--night-line);
-}
-.plan-queue button {
-  display: grid;
-  gap: 3px;
-  width: 100%;
-  padding: 11px 0;
-  color: inherit;
-  text-align: left;
-}
-.plan-queue strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-.plan-queue button:hover strong {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.plan-queue span {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--night-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.plan-queue small {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #eab08d;
-  font-size: 12px;
-}
 .plan-empty {
   display: flex;
   flex-direction: column;
@@ -2279,11 +1920,6 @@ button.chip:hover {
   font-size: 13px;
   line-height: 1.75;
   text-align: center;
-}
-.plan-next .plan-empty {
-  margin-top: 12px;
-  border-top: 1px solid var(--night-line);
-  color: var(--night-muted);
 }
 .plan-link {
   display: flex;
@@ -2325,135 +1961,8 @@ button.chip:hover {
 }
 
 /* 高校筛选框与快捷标签 */
-.plan-school-filter-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 12px 0 6px;
-}
-
-.plan-school-select-box {
-  position: relative;
-  display: flex;
-  align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm, 6px);
-  padding: 0 8px 0 10px;
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-}
-
-.plan-school-select-box:focus-within {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 2px rgba(26, 77, 46, 0.12);
-}
-
-.plan-school-icon {
-  flex-shrink: 0;
-  color: var(--brand);
-  margin-right: 6px;
-  pointer-events: none;
-}
-
-.plan-school-select {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  background: transparent;
-  border: none;
-  color: var(--ink);
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  outline: none;
-  padding-right: 20px;
-  appearance: auto;
-}
-
-.plan-school-select option {
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 12px;
-}
-
-.plan-school-clear {
-  position: absolute;
-  right: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 50%;
-  background: var(--surface-muted);
-  color: var(--ink-3);
-  cursor: pointer;
-  padding: 0;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
-}
-
-.plan-school-clear:hover {
-  background: var(--line-strong);
-  color: var(--ink);
-}
 
 /* 快捷学校筛选标签 */
-.plan-school-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.plan-school-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 7px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink-3);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  max-width: 100%;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  transition: all var(--dur) var(--ease);
-}
-
-.plan-school-chip span {
-  display: inline-block;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-4);
-  background: var(--surface-muted);
-  border-radius: 4px;
-  padding: 0 3px;
-  line-height: 1.3;
-}
-
-.plan-school-chip:hover {
-  border-color: var(--line-strong);
-  color: var(--ink);
-  background: var(--surface-hover);
-}
-
-.plan-school-chip.is-active {
-  border-color: var(--brand);
-  background: var(--brand-surface, #e8f3ed);
-  color: var(--brand);
-  font-weight: 600;
-}
-
-.plan-school-chip.is-active span {
-  background: rgba(26, 77, 46, 0.15);
-  color: var(--brand);
-}
 
 .agenda {
   display: grid;
@@ -2575,14 +2084,6 @@ button.chip:hover {
     grid-template-columns: 220px minmax(0, 1fr);
     gap: 28px;
   }
-  .page-head {
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-  .page-head-aside {
-    width: 100%;
-    justify-content: space-between;
-  }
   .top-action-card {
     flex: 1;
     max-width: none;
@@ -2650,16 +2151,6 @@ button.chip:hover {
   .filters-trigger {
     display: inline-flex;
   }
-  .page-head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 14px;
-  }
-  .page-head-aside {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
   .top-action-card {
     flex-direction: column;
     align-items: stretch;
@@ -2706,20 +2197,8 @@ button.chip:hover {
   .page {
     padding: 18px 14px 48px;
   }
-  .page-head {
-    margin-bottom: 20px;
-    padding-bottom: 18px;
-  }
   .page-title {
     font-size: 26px;
-  }
-  .page-lede {
-    font-size: 13px;
-  }
-  .freshness {
-    flex-wrap: wrap;
-    font-size: 12px;
-    white-space: normal;
   }
   .search-field {
     height: 48px;
@@ -2732,12 +2211,8 @@ button.chip:hover {
     height: 48px;
     padding: 0 12px;
   }
-  .search-row .kbd,
-  .hint-tail {
+  .search-row .kbd {
     display: none;
-  }
-  .search-hints {
-    margin-bottom: 20px;
   }
   .focus-panel {
     margin-bottom: 24px;
@@ -2779,9 +2254,6 @@ button.chip:hover {
   }
   .result-count-num {
     font-size: 26px;
-  }
-  .result-subbar .divider {
-    display: none;
   }
   .opp-card {
     padding: 16px 16px 14px;
@@ -3036,13 +2508,6 @@ button.chip:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   color: var(--color-ink-primary);
-}
-
-.deadline-evidence {
-  font-size: 12px !important;
-  color: var(--color-ink-subtle) !important;
-  font-style: italic;
-  margin-top: 8px;
 }
 
 /* Multi-channel aggregation panel */
@@ -3642,7 +3107,6 @@ button.chip:hover {
   }
 }
 
-
 /* Workspace switcher */
 .workspace-mode-switcher {
   display: inline-flex;
@@ -3684,7 +3148,6 @@ button.chip:hover {
     padding: 0 10px;
   }
 }
-
 
 /* T2.3 Jobs IA: StatusButton, Saved Subtabs, Progress Bar, Preset Dropdown, Onboarding */
 .sr-only {
@@ -4097,7 +3560,6 @@ button.chip:hover {
 .toast-stack .toast .toast-action-btn:hover {
   background: rgba(255, 255, 255, 0.24);
 }
-
 
 /* ---------- T2.7 Mobile Bottom Tab Bar, Sticky Drawer Actions & Touch Targets ---------- */
 :root {

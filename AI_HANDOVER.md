@@ -3,6 +3,29 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
+## 2026-11-10 全站优化重构 · 阶段三（性能与工程）与阶段四（可观测与专业映射）已完成（本地已提交，待用户确认推送与线上复测）
+
+按照四阶段全站优化方案完成阶段三全部任务（`T3.1`–`T3.9`）与阶段四必选任务（`T4.1`–`T4.2`）：
+- **索引与资产瘦身 (`T3.1`、`T3.4`、`T3.5`)**：
+  1. `lib/browse-index.ts` 将浏览摘要截断至 90 字符并移除浏览投影中无前端读取方的 `location_evidence`（保留 `duplicate_ids` 供去重恢复与 `provenance` 供第三方元数据过滤），新增 `scripts/measure_browse_fields.mjs`；在线上 28 分片快照实测浏览索引体积下降 **26.58%**（减少 `5,220,762` 字节）。
+  2. `scripts/collect_exams.py`、`scripts/stage_public.py`、`scripts/download_public.py`、`scripts/exams_guard.py` 与前端抽屉将考编详情字段（`body`、`attachments`、`links`）拆分为按前缀哈希命名的 `/exam-assets/detail-<prefix>-<sha256_20>.json`（当前 153 个分片），`public/exams.json` 由 `2,801,799` 字节降至 `788,996` 字节（`-71.8%`，gzip 约 `105 KB < 200 KB`），抽屉按需 `force-cache` 拉取并带 Promise 去重缓存、骨架屏与重试按钮。
+  3. `lib/cities.ts` 将完整城市联想词表拆为按需异步 `loadAllCities()`，仅在城市输入框首次聚焦时加载，保持同步筛选归属逻辑不变。
+- **主线程重算与检索加速 (`T3.2`、`T3.3`)**：
+  1. `lib/jobs.ts` 新增北京时间日粒度 `chinaDayStart` 并将内容过滤与个人状态过滤拆分为 `filterJobsByContent` + `applyPersonalView` 两级 `useMemo`；`syncPersonal` 增加序列化相等短路；默认 `pageSize` 调整为 `20` 并为卡片启用 `content-visibility: auto`；`loadIndexSnapshot` 对网络分片失败自动重试 1 次并支持 `partial: true` 降级提示与重试。
+  2. 全文搜索索引加载后一次性预构建小写 `Map<string, string>`，移除对数万条岗位对象的浅拷贝拼接。
+- **CSS 收敛、依赖清理与 CI 门禁 (`T3.6`–`T3.8`)**：
+  1. 删除未引用的 `app/workspace.css`、暗色模式死规则与重复 `:root` token，统一字体变量 `--font-ui`、`:focus-visible` 焦点环、语义化 `--z-*` 层级 token 与 `.detail-sheet` 单一定义，移除 `.page` `pointer-events: none` hack；新增 `scripts/audit_css_usage.mjs` 清理全部无引用死类，全局 CSS 由 `10,725` 行降至 `6,805` 行（`-36.5%`，死类数 `0`）。
+  2. 删除 49 个未使用的 `components/ui/*.tsx` 组件及 `hooks/use-mobile.ts`，卸载 7 个无引用 npm 包（移除 74 个传递包，保留 `react-server-dom-webpack`），在 `package.json` 补充 `test` 与 `typecheck` 脚本。
+  3. 新增路径过滤的 `.github/workflows/python-checks.yml` 与仅支持 `workflow_dispatch` 手动触发的 `.github/workflows/browser-regressions.yml`（回归脚本新增 `BROWSER_CHANNEL` 环境变量支持），经 `actionlint` 校验 0 告警。
+- **无障碍补全 (`T3.9`)**：
+  1. 为未读圆点与同企业岗位胶囊补充 `.sr-only` 状态文本（`未读`、`已投递`、`已收藏`）；新增 `?` 键触发的快捷键面板 `components/shortcuts-dialog.tsx` 并在详情抽屉底部提示；将侧栏与日程栏城市输入升级为无障碍 `Combobox`（懒加载 `loadAllCities`）；`scrollIntoView` 尊重 `prefers-reduced-motion`；修复详情抽屉与企业口碑抽屉同时叠放问题；启用 `oxlint` `jsx-a11y` 规则（`0 warning / 0 error`）。
+- **零成本可观测性与考编专业目录映射 (`T4.1`、`T4.2`)**：
+  1. 新增零个人数据存储的 `POST /api/rum`（`app/api/rum/route.ts`、`lib/rum.ts`、`components/rum-observer.tsx`、`docs/observability.md`），支持错误 100% 上报、LCP/CLS 与 7 个核心漏斗事件（`search`、`open_detail`、`click_apply`、`save`、`switch_workspace`、`export_backup`、`exam_profile_set`）按会话 20% 采样输出结构化 Workers Logs，并支持可选环境变量 `NEXT_PUBLIC_CF_BEACON_TOKEN`。
+  2. 新增 `lib/major-groups.ts`（27 个教育部本科专业大类及常见简称同义词），考编画像升级为“专业大类 + 具体专业”两步输入，支持具体专业/简称精确命中、专业大类名命中，以及同类其他专业标注“同类专业（需核实）”（归入 `unknown` 待核实，不直接判为可报）。
+- **验证与待确认事项**：
+  - 本地验证：190 项 TS 单测、16 项考编 Python 单测（及全量 310 项 Python 单测）、`npm run lint`（0 warning / 0 error）、`npm run typecheck`、`npm run build`、`audit_css_usage.mjs`（0 死类）、`smoke_pages.py`（4 视口 `errors=0 hscroll=False`）、`usability-browser-regressions.mjs`（5/5）与 `ui-state-regressions.mjs`（18/18）全部通过。
+  - 待用户确认：1）是否推送部署并在线上采集新的性能瀑布基线写入本文件；2）是否继续执行可选任务 `T4.3`（补充一手采集源）。
+
 ## 2026-11-10 全站优化重构 · 阶段二（信息架构、双路由代码分割、操作流、移动端与考编核心体验）已完成（本地已提交）
 
 按照四阶段全站优化方案完成阶段二全部任务（`T2.0`–`T2.9` 及 `B10` 求职截止日日历导出）：

@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ArrowUp,
   Info,
 } from 'lucide-react';
 import {
@@ -51,8 +52,6 @@ import {
   selectedWorkCities,
   workCitiesLabel,
   formatCompanyDisplay,
-  formatEducationDisplay,
-  cardJobTitle,
   resolveJobId,
   parseSalaryRange,
 } from '@/lib/jobs';
@@ -61,8 +60,8 @@ import type { Job, Snapshot, Personal, Filters, PersonalRecord } from '@/lib/job
 import { restoreBrowsing, restoreCardDensity, parseUrlState, formatUrlQuery } from '@/lib/browsing';
 import type { ViewMode, CardDensity } from '@/lib/browsing';
 import { JobTable } from '@/components/job-table';
-import { groupJobs } from '@/lib/grouping';
-import type { JobGroup } from '@/lib/grouping';
+import { groupJobs, buildGroupRoleItems } from '@/lib/grouping';
+import type { JobGroup, GroupRoleItem } from '@/lib/grouping';
 import { FilterSidebar } from '@/components/filter-sidebar';
 import { JobCard, formatDate as date, extractSalary } from '@/components/job-card';
 import { DetailDrawer } from '@/components/detail-drawer';
@@ -188,6 +187,8 @@ function HomeContent() {
   const [importPreview, setImportPreview] = useState<PersonalBackup | null>(null);
   const [importing, setImporting] = useState(false);
   const [presetRevision, setPresetRevision] = useState(0);
+  const [groupRoleFilter, setGroupRoleFilter] = useState<Record<string, string>>({});
+  const [showBackTop, setShowBackTop] = useState(false);
   const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
   const coverage = coverageReport?.as_of === data?.generated_at ? coverageReport : null;
   const reputationEnabled = !!data;
@@ -608,6 +609,16 @@ function HomeContent() {
     return () => window.removeEventListener('keydown', focusSearch);
   }, []);
 
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY > 600;
+      setShowBackTop((prev) => (prev === scrolled ? prev : scrolled));
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   const allJobs = useMemo(() => mergeDuplicateOpportunities(data?.jobs ?? []), [data?.jobs]);
   const employerCatalogReady = !!data;
   useEffect(() => { registerEmployerCatalog({ jobs: allJobs, complete: employerCatalogReady, onDetail: job => { void openDetail(job); } }); }, [allJobs, openDetail, registerEmployerCatalog, employerCatalogReady]);
@@ -748,6 +759,12 @@ function HomeContent() {
   }, [searchableJobs, filters, personal, since, now]);
 
   const groups = useMemo(() => groupJobs(filtered, groupCompanies), [filtered, groupCompanies]);
+  const selectedGroupJobs = useMemo(() => {
+    if (!selected) return [];
+    const allGrouped = groupCompanies ? groups : groupJobs(filtered, true);
+    const matchedGroup = allGrouped.find((g) => g.jobs.some((j) => j.id === selected.id));
+    return matchedGroup && matchedGroup.jobs.length > 1 ? matchedGroup.jobs : [];
+  }, [selected, filtered, groupCompanies, groups]);
   const pages = Math.max(1, Math.ceil(groups.length / pageSize));
   const currentPage = Math.min(page, pages);
   const visibleGroups = groups.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -1496,38 +1513,38 @@ function HomeContent() {
                     );
                     // Groups show their newest record; the rest expand on demand so a
                     // page of N groups never renders hundreds of cards.
-                    const renderRoleChip = (item: Job, idx: number) => {
-                      const rawRole = cardJobTitle(
-                        extractSalary(item).cleanTitle,
-                        item.company,
-                        formatCompanyDisplay(item.company, item.title, item.source_id).displayCompany,
-                      );
-                      const cleanRole = rawRole.replace(/\s*[（(][A-Za-z]\d{4,}[)）]\s*$/, '').trim() || rawRole;
-                      const city = (item.cities || []).find(
-                        (c) => c && c !== '全国' && c !== '其他' && c !== '地区待确认',
-                      );
-                      const eduRaw = formatEducationDisplay(item.education);
-                      const eduShort =
-                        eduRaw === '博士研究生' || eduRaw === '博士生毕业'
-                          ? '博士'
-                          : eduRaw === '硕士研究生' || eduRaw === '硕士生毕业'
-                            ? '硕士'
-                            : eduRaw === '本科生毕业'
-                              ? '本科'
-                              : eduRaw === '学历待确认'
-                                ? ''
-                                : eduRaw;
-                      const metaParts = [city, eduShort].filter(Boolean);
+                    const roleItems = group.grouped ? buildGroupRoleItems(group.jobs, group.company) : [];
+                    const roleQueryRaw = groupRoleFilter[group.id] || '';
+                    const roleQuery = roleQueryRaw.trim().toLowerCase();
+                    const filteredRoleItems = roleQuery
+                      ? roleItems.filter((r) => r.searchText.includes(roleQuery))
+                      : roleItems;
+                    const renderRoleChip = (roleItem: GroupRoleItem, idx: number) => {
+                      const item = roleItem.job;
                       const isActive = Boolean(selected && selected.id === item.id);
+                      const rec = personalFor(item, personal);
+                      const itemApplied = Boolean(rec.applied);
+                      const itemSaved = Boolean(rec.saved);
+                      const itemUnread = isUnread(item, personal);
+                      const stateClass = itemApplied
+                        ? ' is-applied'
+                        : itemSaved
+                          ? ' is-saved'
+                          : !itemUnread
+                            ? ' is-read'
+                            : '';
                       return (
                         <button
                           key={item.id || `${group.id}-role-${idx}`}
                           type="button"
-                          className={`opp-group-role-chip${isActive ? ' is-active' : ''}`}
+                          className={`opp-group-role-chip${isActive ? ' is-active' : ''}${stateClass}`}
                           onClick={() => void openDetail(item)}
-                          title={`${rawRole}${metaParts.length ? ` · ${metaParts.join(' · ')}` : ''}（点击查看岗位详情与投递链接）`}
+                          title={`${roleItem.rawRole}${roleItem.tooltipMeta ? ` · ${roleItem.tooltipMeta}` : ''}${itemApplied ? '（已投递）' : itemSaved ? '（已收藏）' : ''}（点击查看岗位详情与投递链接）`}
                         >
-                          <span className="opp-group-role-name">{cleanRole}</span>
+                          {itemApplied && <span className="opp-group-role-status" aria-hidden="true">✓</span>}
+                          {!itemApplied && itemSaved && <span className="opp-group-role-status" aria-hidden="true">★</span>}
+                          <span className="opp-group-role-name">{roleItem.cleanRole}</span>
+                          {roleItem.suffix && <span className="opp-group-role-meta">· {roleItem.suffix}</span>}
                         </button>
                       );
                     };
@@ -1545,21 +1562,66 @@ function HomeContent() {
                           </div>
                         </div>
                         <div className="opp-group-directory" aria-label={`${group.company}在招岗位速览`}>
+                          {group.jobs.length >= 12 && (
+                            <div className="opp-group-directory-bar">
+                              <span className="opp-group-directory-label">在招岗位</span>
+                              <div className="opp-group-filter">
+                                <Search size={12} />
+                                <input
+                                  type="text"
+                                  value={roleQueryRaw}
+                                  onChange={(e) =>
+                                    setGroupRoleFilter((prev) => ({
+                                      ...prev,
+                                      [group.id]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="筛选本组岗位 / 城市 / 部门…"
+                                  aria-label={`筛选${group.company}在招岗位`}
+                                />
+                                {roleQueryRaw && (
+                                  <button
+                                    type="button"
+                                    className="opp-group-filter-clear"
+                                    aria-label="清空本组岗位筛选"
+                                    onClick={() =>
+                                      setGroupRoleFilter((prev) => {
+                                        const next = { ...prev };
+                                        delete next[group.id];
+                                        return next;
+                                      })
+                                    }
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
                           <div className="opp-group-role-list">
-                            <span className="opp-group-directory-label">在招岗位</span>
-                            {group.jobs.slice(0, 16).map((item, idx) => renderRoleChip(item, idx))}
+                            {group.jobs.length < 12 && (
+                              <span className="opp-group-directory-label">在招岗位</span>
+                            )}
+                            {(roleQuery ? filteredRoleItems : filteredRoleItems.slice(0, 16)).map((roleItem, idx) =>
+                              renderRoleChip(roleItem, idx),
+                            )}
+                            {roleQuery && filteredRoleItems.length === 0 && (
+                              <span className="opp-group-role-empty">未找到匹配的本组岗位</span>
+                            )}
                           </div>
-                          {group.jobs.length > 16 && (
+                          {!roleQuery && filteredRoleItems.length > 16 && (
                             <details className="opp-group-roles-more">
                               <summary>
                                 <span className="when-closed">
-                                  展开其余 {group.jobs.length - 16} 个岗位
+                                  展开其余 {filteredRoleItems.length - 16} 个岗位
                                 </span>
                                 <span className="when-open">收起其余岗位</span>
                                 <ChevronDown size={12} />
                               </summary>
                               <div className="opp-group-role-list opp-group-role-list-extra">
-                                {group.jobs.slice(16).map((item, idx) => renderRoleChip(item, idx + 16))}
+                                {filteredRoleItems.slice(16).map((roleItem, idx) =>
+                                  renderRoleChip(roleItem, idx + 16),
+                                )}
                               </div>
                             </details>
                           )}
@@ -1752,6 +1814,8 @@ function HomeContent() {
         currentIndex={selectedIndex}
         totalCount={filtered.length}
         onNavigate={navigateDetail}
+        siblingJobs={selectedGroupJobs}
+        onSelectJob={(job) => void openDetail(job)}
         onClose={() => {
           ++detailRequest.current;
           setLinkedJobId(null);
@@ -1765,6 +1829,19 @@ function HomeContent() {
         setNotice={setNotice}
         onPersonalSave={(job, patch, expected) => save((latest) => patchPersonalRecord(latest, job, patch, new Date().toISOString(), expected))}
       />
+
+      {showBackTop && (
+        <button
+          type="button"
+          className="back-to-top-btn"
+          onClick={returnToResults}
+          aria-label="回到列表顶部"
+          title="回到列表顶部"
+        >
+          <ArrowUp size={15} />
+          <span>顶部</span>
+        </button>
+      )}
 
       <BackupImportSheet
         importPreview={importPreview}

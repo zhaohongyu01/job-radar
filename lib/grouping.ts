@@ -1,7 +1,116 @@
 import type { Job } from './jobs.ts';
-import { employerGroupName, effectiveJobTypes } from './jobs.ts';
+import {
+  cardJobTitle,
+  effectiveJobTypes,
+  employerGroupName,
+  formatCompanyDisplay,
+  formatEducationDisplay,
+} from './jobs.ts';
+import { extractSalary } from './salary-display.ts';
 
 export type JobGroup = { id: string; company: string; label: string; jobs: Job[] };
+
+export type GroupRoleItem = {
+  job: Job;
+  rawRole: string;
+  cleanRole: string;
+  suffix: string;
+  city: string;
+  eduShort: string;
+  subUnit: string;
+  tooltipMeta: string;
+  searchText: string;
+};
+
+/** Build role chip metadata for a company group, disambiguating duplicate role names. */
+export function buildGroupRoleItems(jobs: Job[], groupCompany?: string): GroupRoleItem[] {
+  const prelim = jobs.map((item) => {
+    const displayCompany = formatCompanyDisplay(item.company, item.title, item.source_id).displayCompany;
+    const rawRole = cardJobTitle(
+      extractSalary(item).cleanTitle,
+      item.company,
+      displayCompany,
+    );
+    const cleanRole = rawRole.replace(/\s*[（(][A-Za-z]\d{4,}[)）]\s*$/, '').trim() || rawRole;
+    const baseGroup = (groupCompany || employerGroupName(item) || '').trim();
+    const rawComp = (item.company || '').trim();
+    const subCandidate =
+      rawComp && rawComp !== baseGroup
+        ? rawComp.startsWith(baseGroup)
+          ? rawComp.slice(baseGroup.length).replace(/^[·•—\-\s]+|[·•—\-\s]+$/g, '').trim()
+          : rawComp
+        : '';
+    const subUnit = subCandidate && subCandidate.length <= 14 ? subCandidate : '';
+    const city =
+      (item.cities || []).find(
+        (c) => c && c !== '全国' && c !== '其他' && c !== '地区待确认',
+      ) || '';
+    const eduRaw = formatEducationDisplay(item.education);
+    const eduShort =
+      eduRaw === '博士研究生' || eduRaw === '博士生毕业'
+        ? '博士'
+        : eduRaw === '硕士研究生' || eduRaw === '硕士生毕业'
+          ? '硕士'
+          : eduRaw === '本科生毕业' || eduRaw === '本科及以上'
+            ? '本科'
+            : eduRaw === '学历待确认' || eduRaw === '学历待核实'
+              ? ''
+              : eduRaw;
+    return { item, rawRole, cleanRole, subUnit, city, eduShort };
+  });
+
+  const roleCounts = new Map<string, number>();
+  const roleSubCounts = new Map<string, number>();
+  const roleCityCounts = new Map<string, number>();
+  for (const p of prelim) {
+    roleCounts.set(p.cleanRole, (roleCounts.get(p.cleanRole) || 0) + 1);
+    if (p.subUnit) {
+      const subKey = `${p.cleanRole}::${p.subUnit}`;
+      roleSubCounts.set(subKey, (roleSubCounts.get(subKey) || 0) + 1);
+    }
+    if (p.city) {
+      const cityKey = `${p.cleanRole}::${p.city}`;
+      roleCityCounts.set(cityKey, (roleCityCounts.get(cityKey) || 0) + 1);
+    }
+  }
+
+  return prelim.map(({ item, rawRole, cleanRole, subUnit, city, eduShort }) => {
+    let suffix = '';
+    if ((roleCounts.get(cleanRole) || 0) > 1) {
+      if (subUnit) {
+        const subKey = `${cleanRole}::${subUnit}`;
+        suffix = (roleSubCounts.get(subKey) || 0) > 1 && city ? `${subUnit}·${city}` : subUnit;
+      } else if (city) {
+        const cityKey = `${cleanRole}::${city}`;
+        suffix = (roleCityCounts.get(cityKey) || 0) > 1 && eduShort ? `${city}·${eduShort}` : city;
+      } else if (eduShort) {
+        suffix = eduShort;
+      }
+    }
+    const tooltipMeta = [subUnit, city, eduShort].filter(Boolean).join(' · ');
+    const searchText = [
+      rawRole,
+      cleanRole,
+      subUnit,
+      ...(item.cities || []),
+      eduShort,
+      item.company || '',
+    ]
+      .join(' ')
+      .toLowerCase();
+    return {
+      job: item,
+      rawRole,
+      cleanRole,
+      suffix,
+      city,
+      eduShort,
+      subUnit,
+      tooltipMeta,
+      searchText,
+    };
+  });
+}
 
 /** Presentation only: keep every matching record and its own application/read state. */
 export function groupJobs(jobs: Job[], enabled = true): JobGroup[] {

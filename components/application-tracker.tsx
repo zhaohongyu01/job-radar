@@ -59,9 +59,9 @@ export function ApplicationTracker({ job, record, onSave }: {
     <div className="agenda-dates"><label>投递阶段<select aria-label="投递阶段" disabled={saving} value={value('stage')} onChange={(event) => change('stage', event.target.value)}>
       {Object.entries(APPLICATION_STAGES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
     </select></label><label>投递时间（北京时间）<input disabled={saving} type="datetime-local" value={value('appliedAt')} onChange={(event) => change('appliedAt', event.target.value)} /></label></div>
-    <label>下一步时间（北京时间）<input disabled={saving} type="datetime-local" value={value('nextAt')} onChange={(event) => change('nextAt', event.target.value)} /></label>
-    <label>下一步安排<input disabled={saving} value={value('nextNote')} maxLength={200} placeholder="例如：准备技术面试材料" onChange={(event) => change('nextNote', event.target.value)} /></label>
-    <label>备注<textarea disabled={saving} value={value('notes')} maxLength={2000} rows={3} placeholder="联系人、面试准备或个人记录" onChange={(event) => change('notes', event.target.value)} /></label>
+    <div className="agenda-dates"><label>下一步时间（北京时间）<input disabled={saving} type="datetime-local" value={value('nextAt')} onChange={(event) => change('nextAt', event.target.value)} /></label>
+    <label>下一步安排<input disabled={saving} value={value('nextNote')} maxLength={200} placeholder="例如：准备技术面试材料" onChange={(event) => change('nextNote', event.target.value)} /></label></div>
+    <label>备注<textarea disabled={saving} value={value('notes')} maxLength={2000} rows={2} placeholder="联系人、面试准备或个人记录" onChange={(event) => change('notes', event.target.value)} /></label>
     {!!conflicts.length && <div role="alert"><p>其他页面更新了{conflicts.map((field) => labels[field]).join('、')}，当前输入已保留。请选择保留哪一份内容。</p>
       <button type="button" className="btn btn-outline" disabled={saving} onClick={() => { setEdits({}); setMessage('已读取最新保存内容'); }}>重新读取已保存内容</button>
       <button type="button" className="btn btn-outline" disabled={saving} onClick={() => void submit(true)}>以当前输入覆盖冲突</button>

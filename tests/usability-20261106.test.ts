@@ -4,7 +4,7 @@ import {
   cardChangeAlert, countByLocationScope, countMatchingJobs, deadlineChangeKind, defaultFilters, getLifecycleStage,
 } from '../lib/jobs.ts';
 import type { Filters, Job } from '../lib/jobs.ts';
-import { groupJobs } from '../lib/grouping.ts';
+import { groupJobs, buildGroupRoleItems } from '../lib/grouping.ts';
 import { formatUrlQuery, parseUrlState, restoreBrowsing, restoreCardDensity } from '../lib/browsing.ts';
 import { parseAnnouncementSections } from '../lib/card-summary.ts';
 import { talkEventsForCity } from '../lib/talk-events.ts';
@@ -112,4 +112,51 @@ void test('card density preference and structured announcement section parsing',
   assert.equal(parsed[0].heading, '一、单位简介');
   assert.equal(parsed[1].heading, '二、招聘岗位');
   assert.equal(parsed[2].heading, '三、报名条件');
+});
+
+void test('buildGroupRoleItems keeps unique roles concise and disambiguates duplicate role names', () => {
+  const hisenseJobs = [
+    {
+      ...base,
+      id: 'h1',
+      source_id: 'hisense-jobs',
+      company: '冰箱公司',
+      title: '人力资源管理 (J45001)',
+      cities: ['青岛'],
+    },
+    {
+      ...base,
+      id: 'h2',
+      source_id: 'hisense-jobs',
+      company: '空气事业部',
+      title: '人力资源管理 (J45002)',
+      cities: ['青岛'],
+    },
+    {
+      ...base,
+      id: 'h3',
+      source_id: 'hisense-jobs',
+      company: '空气事业部',
+      title: '人力资源管理 (J45003)',
+      cities: ['江门'],
+    },
+    {
+      ...base,
+      id: 'h4',
+      source_id: 'hisense-jobs',
+      company: '集团公司',
+      title: '仿真设计工程师（结构力学方向） (J44989)',
+      cities: ['青岛'],
+    },
+  ] as Job[];
+  const items = buildGroupRoleItems(hisenseJobs, '海信集团');
+  assert.deepEqual(
+    items.map((r) => [r.cleanRole, r.suffix]),
+    [
+      ['人力资源管理', '冰箱公司'],
+      ['人力资源管理', '空气事业部·青岛'],
+      ['人力资源管理', '空气事业部·江门'],
+      ['仿真设计工程师（结构力学方向）', ''],
+    ],
+  );
 });

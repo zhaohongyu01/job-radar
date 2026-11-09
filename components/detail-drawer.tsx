@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet, Clock, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -12,6 +12,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary, formatCompanyDisplay, effectiveJobTypes, formatEducationDisplay, selectedWorkCities } from '@/lib/jobs';
 import type { Filters, Job, Personal } from '@/lib/jobs';
+import { buildGroupRoleItems } from '@/lib/grouping';
+import type { GroupRoleItem } from '@/lib/grouping';
 import { positionMatches } from '@/lib/eligibility';
 import type { PersonalRecord } from '@/lib/jobs';
 import { ApplicationTracker } from '@/components/application-tracker';
@@ -42,6 +44,8 @@ export function DetailDrawer({
   currentIndex = -1,
   totalCount = 0,
   onNavigate,
+  siblingJobs = [],
+  onSelectJob,
 }: {
   filters?: Filters;
   selected: Job | null;
@@ -61,6 +65,8 @@ export function DetailDrawer({
   currentIndex?: number;
   totalCount?: number;
   onNavigate?: (delta: -1 | 1) => void;
+  siblingJobs?: Job[];
+  onSelectJob?: (job: Job) => void;
 }) {
   const [positionSearch, setPositionSearch] = useState({ jobId: '', value: '' });
   const positionFilter = positionSearch.jobId === selected?.id ? positionSearch.value : '';
@@ -154,6 +160,46 @@ export function DetailDrawer({
     () => (selected ? getLifecycleStage(selected, now) : null),
     [selected, now],
   );
+
+  const siblingRoleItems = useMemo(
+    () => (siblingJobs.length > 1 ? buildGroupRoleItems(siblingJobs) : []),
+    [siblingJobs],
+  );
+  const siblingIndex = useMemo(
+    () => (selected && siblingJobs.length > 1 ? siblingJobs.findIndex((j) => j.id === selected.id) : -1),
+    [selected, siblingJobs],
+  );
+
+  const renderSiblingChip = (roleItem: GroupRoleItem, idx: number) => {
+    const item = roleItem.job;
+    const isActive = Boolean(selected && selected.id === item.id);
+    const rec = personalFor(item, personal);
+    const itemApplied = Boolean(rec.applied);
+    const itemSaved = Boolean(rec.saved);
+    const itemUnread = isUnread(item, personal);
+    const stateClass = itemApplied
+      ? ' is-applied'
+      : itemSaved
+        ? ' is-saved'
+        : !itemUnread
+          ? ' is-read'
+          : '';
+    return (
+      <button
+        key={item.id || `sibling-role-${idx}`}
+        type="button"
+        className={`opp-group-role-chip${isActive ? ' is-active' : ''}${stateClass}`}
+        onClick={() => onSelectJob?.(item)}
+        title={`${roleItem.rawRole}${roleItem.tooltipMeta ? ` · ${roleItem.tooltipMeta}` : ''}${itemApplied ? '（已投递）' : itemSaved ? '（已收藏）' : ''}（点击切换查看此岗位）`}
+      >
+        {itemApplied && <span className="opp-group-role-status" aria-hidden="true">✓</span>}
+        {!itemApplied && itemSaved && <span className="opp-group-role-status" aria-hidden="true">★</span>}
+        <span className="opp-group-role-name">{roleItem.cleanRole}</span>
+        {roleItem.suffix && <span className="opp-group-role-meta">· {roleItem.suffix}</span>}
+      </button>
+    );
+  };
+
   return (
     <Sheet
       open={!!selected}
@@ -250,11 +296,24 @@ export function DetailDrawer({
                 <Button variant="ghost" onClick={() => onToggle(selected, 'hidden')}>
                   {personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}
                 </Button>
+                <OutLink
+                  primary
+                  className="primary-link detail-sticky-apply"
+                  url={selected.application_url || selected.source_url}
+                  onOpen={() => onRead(selected)}
+                >
+                  {selected.application_url ? '前往投递' : '查看原公告'}
+                </OutLink>
               </div>
               <nav className="detail-jump-nav" aria-label="详情章节快速跳转">
                 <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-apply')}>
                   报名入口
                 </button>
+                {siblingRoleItems.length > 1 && (
+                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-siblings')}>
+                    同企岗位 ({siblingRoleItems.length})
+                  </button>
+                )}
                 {(selected.positions ?? []).length > 0 && (
                   <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-positions')}>
                     岗位明细 ({selected.positions?.length})
@@ -354,6 +413,31 @@ export function DetailDrawer({
                   </p>
                 )}
               </div>
+              {siblingRoleItems.length > 1 && onSelectJob && (
+                <div className="detail-siblings-panel" id="drawer-sec-siblings" aria-label="同企业其余在招岗位">
+                  <div className="detail-siblings-head">
+                    <span className="opp-group-directory-label">同企业本批次在招岗位</span>
+                    <span className="detail-siblings-count">
+                      {siblingIndex >= 0 ? `当前 ${siblingIndex + 1} / 共 ${siblingRoleItems.length} 个` : `共 ${siblingRoleItems.length} 个`}
+                    </span>
+                  </div>
+                  <div className="opp-group-role-list">
+                    {siblingRoleItems.slice(0, 12).map((roleItem, idx) => renderSiblingChip(roleItem, idx))}
+                  </div>
+                  {siblingRoleItems.length > 12 && (
+                    <details className="opp-group-roles-more" open={siblingIndex >= 12 ? true : undefined}>
+                      <summary>
+                        <span className="when-closed">展开其余 {siblingRoleItems.length - 12} 个同企岗位</span>
+                        <span className="when-open">收起其余同企岗位</span>
+                        <ChevronDown size={12} />
+                      </summary>
+                      <div className="opp-group-role-list opp-group-role-list-extra">
+                        {siblingRoleItems.slice(12).map((roleItem, idx) => renderSiblingChip(roleItem, idx + 12))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
               {/* Parsed Positions Panel */}
               {(selected.positions ?? []).length > 0 && (
                 <div className="positions-panel" id="drawer-sec-positions" aria-label="岗位需求明细">

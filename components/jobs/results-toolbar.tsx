@@ -2,6 +2,11 @@
 
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from '@/components/ui/pagination';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -11,6 +16,110 @@ import {
 import { selectedWorkCities } from '@/lib/jobs';
 import type { Filters, Job, Snapshot } from '@/lib/jobs';
 import type { CardDensity, ViewMode } from '@/lib/browsing';
+import { PAGE_SIZES } from '@/hooks/use-url-sync';
+
+export function ResultsPagination({
+  page,
+  pageSize,
+  total,
+  position,
+  onPageChange,
+  onPageSizeChange,
+  grouped = false,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  grouped?: boolean;
+  position: 'top' | 'bottom';
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const unit = grouped ? '组' : '条';
+  return (
+    <div className="pager">
+      <div className="pager-size">
+        <span id={`page-size-label-${position}`}>每页显示</span>
+        <Select
+          value={String(pageSize)}
+          onValueChange={(value) => {
+            const size = Number(value);
+            if (PAGE_SIZES.includes(size)) onPageSizeChange(size);
+          }}
+        >
+          <SelectTrigger aria-labelledby={`page-size-label-${position}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZES.map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size} {unit}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="pager-range" aria-live="polite">
+          {total
+            ? `第 ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} ${unit} / 共 ${total} ${unit}`
+            : `共 0 ${unit}`}
+        </span>
+      </div>
+      {pages > 1 && (
+        <Pagination
+          className="pager-nav"
+          aria-label={position === 'top' ? '招聘结果顶部分页' : '招聘结果底部分页'}
+        >
+          <PaginationContent>
+            <PaginationItem>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={page === 1}
+                onClick={() => onPageChange(page - 1)}
+              >
+                <ChevronLeft size={14} /> 上一页
+              </button>
+            </PaginationItem>
+            <PaginationItem>
+              {pages <= 500 ? (
+                <Select value={String(page)} onValueChange={(value) => onPageChange(Number(value))}>
+                  <SelectTrigger
+                    className="pager-jump"
+                    aria-label={`跳转页码，当前第 ${page} 页，共 ${pages} 页`}
+                  >
+                    <SelectValue>
+                      {page} / {pages}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: pages }, (_, index) => (
+                      <SelectItem key={index + 1} value={String(index + 1)}>
+                        第 {index + 1} 页
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className="pager-num">
+                  {page} / {pages}
+                </span>
+              )}
+            </PaginationItem>
+            <PaginationItem>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={page === pages}
+                onClick={() => onPageChange(page + 1)}
+              >
+                下一页 <ChevronRight size={14} />
+              </button>
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
+    </div>
+  );
+}
 
 export type LocationScopeOption = {
   scope: 'exact' | 'possible' | 'unknown';

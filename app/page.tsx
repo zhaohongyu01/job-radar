@@ -1,6 +1,6 @@
 'use client';
 import { loadSnapshotParts, supportedBrowseIndex } from '../lib/snapshot-loader';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   SlidersHorizontal,
@@ -10,18 +10,9 @@ import {
   RefreshCw,
   Bell,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ArrowUp,
   Info,
 } from 'lucide-react';
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -30,15 +21,9 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-} from '@/components/ui/pagination';
-import {
   defaultFilters,
   filterJobs,
   countByLocationScope,
-  validatePersonal,
   personalFor,
   mergeDuplicateOpportunities,
   selectedWorkCities,
@@ -47,8 +32,7 @@ import {
 } from '@/lib/jobs';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
 import type { Job, Filters, Snapshot } from '@/lib/jobs';
-import { restoreBrowsing, restoreCardDensity, parseUrlState, formatUrlQuery } from '@/lib/browsing';
-import type { ViewMode, CardDensity } from '@/lib/browsing';
+import { restoreBrowsing } from '@/lib/browsing';
 import { groupJobs } from '@/lib/grouping';
 import type { JobGroup } from '@/lib/grouping';
 import { FilterSidebar } from '@/components/filter-sidebar';
@@ -66,7 +50,7 @@ import { ApplicationOverview } from '@/components/application-overview';
 import { BackupImportSheet } from '@/components/backup-import-sheet';
 import { SourceStatusSheet } from '@/components/source-status-sheet';
 import { ExamWorkspace } from '@/components/exam-workspace';
-import { ResultsToolbar } from '@/components/jobs/results-toolbar';
+import { ResultsPagination, ResultsToolbar } from '@/components/jobs/results-toolbar';
 import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
 import { AppHeader } from '@/components/jobs/app-header';
@@ -74,92 +58,7 @@ import { useJobSnapshot } from '@/hooks/use-job-snapshot';
 import { usePersonalRecords } from '@/hooks/use-personal-records';
 import { useJobDetail } from '@/hooks/use-job-detail';
 import { useBackup } from '@/hooks/use-backup';
-import type { WorkspaceMode } from '@/lib/exams';
-
-const subscribeNoop = () => () => {};
-function readWorkspaceFromUrl(): boolean {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('workspace') === 'exams' || params.get('mode') === 'exams';
-}
-/** Keeps ?workspace=exams when the job browsing state rewrites the query. */
-function withWorkspaceParam(query: string, mode: WorkspaceMode): string {
-  if (mode !== 'exams') return query;
-  const params = new URLSearchParams(query);
-  params.delete('mode');
-  params.set('workspace', 'exams');
-  return `?${params.toString()}`;
-}
-
-const BROWSING_STORAGE = 'job-radar-browsing-v1';
-const CARD_DENSITY_STORAGE = 'job-radar-card-density-v1';
-const STORAGE = 'quancheng-personal-v1',
-  VISIT = 'quancheng-last-visit-v1';
-const PAGE_SIZE_STORAGE = 'job-radar-page-size-v1';
-const PAGE_SIZES = [20, 50, 100];
-
-function ResultsPagination({
-  page, pageSize, total, position, onPageChange, onPageSizeChange, grouped = false,
-}: {
-  page: number;
-  pageSize: number;
-  total: number;
-  grouped?: boolean;
-  position: 'top' | 'bottom';
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (size: number) => void;
-}) {
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  const unit = grouped ? '组' : '条';
-  return (
-    <div className="pager">
-      <div className="pager-size">
-        <span id={`page-size-label-${position}`}>每页显示</span>
-        <Select value={String(pageSize)} onValueChange={(value) => {
-          const size = Number(value);
-          if (PAGE_SIZES.includes(size)) onPageSizeChange(size);
-        }}>
-          <SelectTrigger aria-labelledby={`page-size-label-${position}`}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size} {unit}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <span className="pager-range" aria-live="polite">
-          {total ? `第 ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} ${unit} / 共 ${total} ${unit}` : `共 0 ${unit}`}
-        </span>
-      </div>
-      {pages > 1 && (
-        <Pagination className="pager-nav" aria-label={position === 'top' ? '招聘结果顶部分页' : '招聘结果底部分页'}>
-          <PaginationContent>
-            <PaginationItem>
-              <button className="btn btn-secondary btn-sm" disabled={page === 1} onClick={() => onPageChange(page - 1)}>
-                <ChevronLeft size={14} /> 上一页
-              </button>
-            </PaginationItem>
-            <PaginationItem>
-              {pages <= 500 ? (
-                <Select value={String(page)} onValueChange={(value) => onPageChange(Number(value))}>
-                  <SelectTrigger className="pager-jump" aria-label={`跳转页码，当前第 ${page} 页，共 ${pages} 页`}>
-                    <SelectValue>{page} / {pages}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: pages }, (_, index) => <SelectItem key={index + 1} value={String(index + 1)}>第 {index + 1} 页</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              ) : <span className="pager-num">{page} / {pages}</span>}
-            </PaginationItem>
-            <PaginationItem>
-              <button className="btn btn-secondary btn-sm" disabled={page === pages} onClick={() => onPageChange(page + 1)}>
-                下一页 <ChevronRight size={14} />
-              </button>
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      )}
-    </div>
-  );
-}
+import { PAGE_SIZE_STORAGE, PAGE_SIZES, useUrlSync, useVisibleOpportunitiesTool } from '@/hooks/use-url-sync';
 
 export default function Home() {
   return <EmployerWorkspace><HomeContent /></EmployerWorkspace>;
@@ -169,45 +68,11 @@ function HomeContent() {
   const employerRecords = useEmployerRecords();
   const reputation = useEmployerReputation();
   const { register: registerEmployerCatalog, selectId: selectEmployerId, requestedId: requestedEmployerId, missing: missingEmployer } = useEmployerNavigation();
-  const [filters, setFilters] = useState<Filters>(defaultFilters),
-    [ready, setReady] = useState(false),
-    [since, setSince] = useState<string | null>(null);
-  const [sourceOpen, setSourceOpen] = useState(false),
-    [mobileFilterOpen, setMobileFilterOpen] = useState(false),
-    [page, setPage] = useState(1),
-    [pageSize, setPageSize] = useState(50),
-    [viewMode, setViewMode] = useState<ViewMode>('cards'),
-    [cardDensity, setCardDensity] = useState<CardDensity>('standard'),
-    [groupCompanies, setGroupCompanies] = useState(false),
-    [notice, setNotice] = useState(''),
-    [now, setNow] = useState(0);
-  const [showBackTop, setShowBackTop] = useState(false);
-  // Read the initial workspace from the URL after hydration (server snapshot is
-  // always 'jobs'), so a shared ?workspace=exams link never causes a mismatch.
-  const urlWantsExams = useSyncExternalStore(
-    subscribeNoop,
-    readWorkspaceFromUrl,
-    () => false,
-  );
-  const [workspaceOverride, setWorkspaceOverride] = useState<WorkspaceMode | null>(null);
-  const workspaceMode: WorkspaceMode = workspaceOverride ?? (urlWantsExams ? 'exams' : 'jobs');
-  const switchWorkspace = useCallback((mode: WorkspaceMode) => {
-    setWorkspaceOverride(mode);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      if (mode === 'exams') {
-        url.searchParams.set('workspace', 'exams');
-      } else {
-        url.searchParams.delete('workspace');
-        url.searchParams.delete('mode');
-      }
-      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
-    }
-  }, []);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const discoveryFilters = useRef<Filters>(defaultFilters);
+  const [ready, setReady] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [notice, setNotice] = useState('');
   const resultsTopRef = useRef<HTMLDivElement>(null);
-  const preferencesWarning = useRef(false);
   const [searchIndex, setSearchIndex] = useState<Record<string, string> | null>(null);
   const [searchError, setSearchError] = useState('');
   const [searchAttempt, setSearchAttempt] = useState(0);
@@ -223,32 +88,6 @@ function HomeContent() {
     toggle,
     changeStage,
   } = usePersonalRecords({ ready, onNotice: setNotice });
-
-  const handleApplyBrowsing = useCallback(
-    (browsing: { filters: Filters; viewMode: ViewMode; groupCompanies: boolean }) => {
-      setFilters(browsing.filters);
-      setViewMode(browsing.viewMode);
-      setGroupCompanies(browsing.groupCompanies);
-    },
-    [],
-  );
-
-  const {
-    fileRef,
-    triggerFilePicker,
-    importPreview,
-    setImportPreview,
-    importing,
-    presetRevision,
-    exportPersonal,
-    importPersonal,
-    confirmImport,
-    copyJob,
-  } = useBackup({
-    syncPersonal,
-    onApplyBrowsing: handleApplyBrowsing,
-    onNotice: setNotice,
-  });
 
   const {
     selected,
@@ -287,6 +126,62 @@ function HomeContent() {
     isCurrentData,
   } = useJobSnapshot({ onActivateSnapshot: handleActivateSnapshot });
 
+  const {
+    filters,
+    setFilters,
+    since,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    viewMode,
+    setViewMode,
+    cardDensity,
+    changeCardDensity,
+    groupCompanies,
+    setGroupCompanies,
+    now,
+    workspaceMode,
+    switchWorkspace,
+    queryDraft,
+    updateQuery,
+    change,
+    resetFilters,
+    openView,
+    handleApplyBrowsing,
+    activeFilterCount,
+    searchRef,
+    showBackTop,
+  } = useUrlSync({
+    ready,
+    setReady,
+    refresh,
+    selectEmployerId,
+    requestedEmployerId,
+    linkedJobId,
+    setLinkedJobId,
+    resetDetailOnPopState,
+    setPersonal,
+    onNotice: setNotice,
+  });
+
+  const {
+    fileRef,
+    triggerFilePicker,
+    importPreview,
+    setImportPreview,
+    importing,
+    presetRevision,
+    exportPersonal,
+    importPersonal,
+    confirmImport,
+    copyJob,
+  } = useBackup({
+    syncPersonal,
+    onApplyBrowsing: handleApplyBrowsing,
+    onNotice: setNotice,
+  });
+
   const reputationEnabled = !!data && workspaceMode === 'jobs';
   const enableReputation = reputation.enable;
   useEffect(() => {
@@ -294,46 +189,6 @@ function HomeContent() {
     const timer = setTimeout(enableReputation, 0);
     return () => clearTimeout(timer);
   }, [reputationEnabled, enableReputation]);
-
-  // Browser storage is read after hydration; SSR has no access to this device state.
-  useEffect(() => {
-    const initialRead = setTimeout(() => {
-      if (!readWorkspaceFromUrl()) void refresh();
-      setNow(Date.now());
-      try {
-        const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE));
-        if (PAGE_SIZES.includes(storedSize)) setPageSize(storedSize);
-        setCardDensity(restoreCardDensity(localStorage.getItem(CARD_DENSITY_STORAGE)));
-      } catch {
-        // A blocked preference store must not prevent browsing or personal-record loading.
-      }
-      let restored = restoreBrowsing(null);
-      try { restored = restoreBrowsing(JSON.parse(localStorage.getItem(BROWSING_STORAGE) || 'null')); }
-      catch { /* A shared link still works when preferences cannot be read. */ }
-      const urlState = parseUrlState(window.location.search);
-      selectEmployerId(urlState.employerId || null);
-      setLinkedJobId(urlState.jobId || null);
-      setFilters(urlState.filters ? restoreBrowsing({ filters: urlState.filters }).filters : restored.filters);
-      if (urlState.page) setPage(urlState.page);
-      setViewMode(restored.viewMode);
-      setGroupCompanies(restored.groupCompanies);
-      try {
-        const records = validatePersonal(JSON.parse(localStorage.getItem(STORAGE) || '{}'));
-        setPersonal(records);
-        const old = localStorage.getItem(VISIT);
-        setSince(old && !Number.isNaN(Date.parse(old)) ? old : null);
-        localStorage.setItem(VISIT, new Date().toISOString());
-      } catch {
-        setNotice('本机记录暂时无法读取；你仍可浏览招聘机会。');
-      }
-      setReady(true);
-    }, 0);
-    const timer = setInterval(() => setNow(Date.now()), 60000);
-    return () => {
-      clearTimeout(initialRead);
-      clearInterval(timer);
-    };
-  }, [refresh, selectEmployerId, setPersonal, setLinkedJobId]);
 
   useEffect(() => {
     if (!ready || workspaceMode !== 'jobs') return;
@@ -344,123 +199,6 @@ function HomeContent() {
     if (!ready) return;
     return resolveDeepLink(data, previewData, loading);
   }, [ready, data, previewData, loading, resolveDeepLink]);
-
-  useEffect(() => {
-    if (!ready || typeof window === 'undefined') return;
-    const newQuery = withWorkspaceParam(
-      formatUrlQuery(filters, linkedJobId, requestedEmployerId, page),
-      workspaceMode,
-    );
-    const currentSearch = window.location.search;
-    if (currentSearch !== newQuery) {
-      const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
-      window.history.replaceState({ jobId: linkedJobId }, '', newUrl);
-    }
-  }, [ready, filters, linkedJobId, requestedEmployerId, page, workspaceMode]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onPopState = () => {
-      const urlState = parseUrlState(window.location.search);
-      selectEmployerId(urlState.employerId || null);
-      resetDetailOnPopState(urlState.jobId || null);
-      setFilters(urlState.filters ? restoreBrowsing({ filters: urlState.filters }).filters : { ...defaultFilters });
-      setPage(urlState.page || 1);
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [selectEmployerId, resetDetailOnPopState]);
-
-  useEffect(() => {
-    if (!ready) return;
-    try {
-      localStorage.setItem(BROWSING_STORAGE, JSON.stringify({ filters, viewMode, groupCompanies }));
-      preferencesWarning.current = false;
-    } catch {
-      if (!preferencesWarning.current) {
-        const timer = setTimeout(() => {
-          preferencesWarning.current = true;
-          setNotice('筛选已生效，但浏览器不允许保存设置，下次打开将恢复默认条件。');
-        }, 0);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [ready, filters, viewMode, groupCompanies]);
-
-  const change = <K extends keyof Filters>(key: K, value: Filters[K]) => {
-    setFilters((f) => {
-      if (key === 'city') return { ...f, city: value as string, workCities: undefined };
-      if (key === 'workCities') {
-        const cities = value as string[];
-        return { ...f, workCities: cities, city: cities.length === 1 ? cities[0] : '全部城市' };
-      }
-      return { ...f, [key]: value };
-    });
-    setPage(1);
-  };
-
-  // The search box updates instantly; the expensive filtering, URL and
-  // localStorage writes follow 250 ms after typing pauses (Enter commits now).
-  // External changes (presets, reset, history) replace the draft.
-  const [queryDraft, setQueryDraft] = useState(filters.query);
-  const [queryBase, setQueryBase] = useState(filters.query);
-  if (queryBase !== filters.query) {
-    setQueryBase(filters.query);
-    setQueryDraft(filters.query);
-  }
-  const queryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const updateQuery = (value: string, immediate = false) => {
-    setQueryDraft(value);
-    clearTimeout(queryTimer.current);
-    if (immediate) change('query', value);
-    else queryTimer.current = setTimeout(() => change('query', value), 250);
-  };
-  useEffect(() => () => clearTimeout(queryTimer.current), []);
-
-  // Reset conditions but keep the user's chosen work cities and current list.
-  const resetFilters = useCallback(() => {
-    setFilters((f) => ({ ...defaultFilters, city: f.city, workCities: f.workCities, view: f.view }));
-    setPage(1);
-  }, []);
-
-  const changeCardDensity = (next: CardDensity) => {
-    setCardDensity(next);
-    try {
-      localStorage.setItem(CARD_DENSITY_STORAGE, next);
-    } catch {
-      // Ignore storage write error when blocked
-    }
-  };
-
-  const openView = (view: Filters['view']) => {
-    if (view === filters.view && view === 'all') return;
-    if (filters.view === 'all') discoveryFilters.current = filters;
-    setFilters(view === 'all' ? { ...discoveryFilters.current, view: 'all' } : personalViewFilters(view));
-    setPage(1);
-  };
-
-  useEffect(() => {
-    const focusSearch = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
-      if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey &&
-        !target.closest('input, textarea, [contenteditable="true"], [role="dialog"]')) {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', focusSearch);
-    return () => window.removeEventListener('keydown', focusSearch);
-  }, []);
-
-  useEffect(() => {
-    const onScroll = () => {
-      const scrolled = window.scrollY > 600;
-      setShowBackTop((prev) => (prev === scrolled ? prev : scrolled));
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
 
   const allJobs = useMemo(
     () =>
@@ -560,7 +298,7 @@ function HomeContent() {
       const nextPage = Math.floor(pageIdx / pageSize) + 1;
       if (nextPage !== page) setPage(nextPage);
     },
-    [selectedIndex, detailNavIds, filtered, allJobs, openDetail, filters.onlyUnread, pageSize, page],
+    [selectedIndex, detailNavIds, filtered, allJobs, openDetail, filters.onlyUnread, pageSize, page, setPage],
   );
 
   // Snapshot-wide facts used to hide filters that currently cannot match and
@@ -583,33 +321,6 @@ function HomeContent() {
         : filterByReputation(filterJobs(searchableJobs, { ...filters, radarFocus: 'none' }, personal, since, now), filters, reputation.index, employerRecords, now),
     [searchableJobs, filters, personal, since, now, filtered, reputation.index, employerRecords],
   );
-
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (selectedWorkCities(filters).join('|') !== selectedWorkCities(defaultFilters).join('|')) count++;
-    if (filters.employmentType !== defaultFilters.employmentType) count++;
-    if (filters.validity !== defaultFilters.validity) count++;
-    if (filters.major !== defaultFilters.major) count++;
-    if (filters.includeRelatedTalks !== defaultFilters.includeRelatedTalks) count++;
-    if (filters.type !== defaultFilters.type) count++;
-    if (filters.year !== defaultFilters.year) count++;
-    if (filters.sector !== defaultFilters.sector) count++;
-    if (filters.direction !== defaultFilters.direction) count++;
-    if (filters.education !== defaultFilters.education) count++;
-    if (filters.provenance !== defaultFilters.provenance) count++;
-    if (filters.kind !== defaultFilters.kind) count++;
-    if (filters.locationScope !== defaultFilters.locationScope) count++;
-    if (filters.onlyNew !== defaultFilters.onlyNew) count++;
-    if (filters.onlyUnread !== defaultFilters.onlyUnread) count++;
-    if (filters.includeUncertain !== defaultFilters.includeUncertain) count++;
-    if (filters.showExpired !== defaultFilters.showExpired) count++;
-    if (filters.salary !== defaultFilters.salary) count++;
-    if (filters.reputationMin !== defaultFilters.reputationMin) count++;
-    if (filters.includeUnrated !== defaultFilters.includeUnrated) count++;
-    if (filters.changeType !== defaultFilters.changeType) count++;
-    if (filters.radarFocus !== defaultFilters.radarFocus) count++;
-    return count;
-  }, [filters]);
 
   const locationOptions = useMemo(() => {
     if (!selectedWorkCities(filters).length) return [];
@@ -696,53 +407,7 @@ function HomeContent() {
     !!data?.last_success_at &&
     now - Date.parse(data.last_success_at) > 36 * 3600000;
 
-  useEffect(() => {
-    const context = (
-      document as unknown as {
-        modelContext?: {
-          registerTool: (
-            tool: unknown,
-            options: { signal: AbortSignal },
-          ) => Promise<void> | void;
-        };
-      }
-    ).modelContext;
-    if (!context?.registerTool) return;
-    const controller = new AbortController();
-    Promise.resolve(
-      context.registerTool(
-        {
-          name: 'list_visible_opportunities',
-          description: '读取当前筛选结果及原始公告地址；不会提交申请。',
-          inputSchema: {
-            type: 'object',
-            properties: {},
-            additionalProperties: false,
-          },
-          annotations: { readOnlyHint: true, untrustedContentHint: true },
-          execute: (input: unknown) => {
-            if (
-              !input ||
-              typeof input !== 'object' ||
-              Object.keys(input).length
-            )
-              throw Error('Expected an empty object');
-            return {
-              count: filtered.length,
-              jobs: filtered.slice(0, 50).map((j) => ({
-                id: j.id,
-                title: j.title,
-                url: j.source_url,
-                application_url: j.application_url,
-              })),
-            };
-          },
-        },
-        { signal: controller.signal },
-      ),
-    ).catch(() => {});
-    return () => controller.abort();
-  }, [filtered]);
+  useVisibleOpportunitiesTool(filtered);
 
   return (
     <>

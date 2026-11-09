@@ -1082,3 +1082,45 @@ export function formatExamUrl(state: {
   const qs = params.toString();
   return qs ? `?${qs}` : '';
 }
+
+export interface ExamDetailEntry {
+  body?: string;
+  attachments?: { title: string; url: string; parse_status?: string }[];
+  links?: { title: string; url: string }[];
+}
+
+export interface ExamDetailShard {
+  schema_version: 1;
+  exams: Record<string, ExamDetailEntry>;
+}
+
+const EXAM_DETAIL_SHARD_RE = /^\/exam-assets\/detail-[0-9a-z]{2}-[0-9a-f]{20}\.json$/;
+const examDetailShardCache = new Map<string, Promise<ExamDetailShard>>();
+
+export function examShardPrefix(examId: string): string {
+  const cleaned = String(examId || '').toLowerCase().replace(/[^0-9a-z]/g, '0');
+  return (cleaned + '00').slice(0, 2);
+}
+
+export function loadExamDetailShard(url: string): Promise<ExamDetailShard> {
+  if (!EXAM_DETAIL_SHARD_RE.test(url)) {
+    return Promise.reject(new Error('Invalid exam detail shard path'));
+  }
+  const cached = examDetailShardCache.get(url);
+  if (cached) return cached;
+  const promise = fetch(url, { cache: 'force-cache' }).then(async (resp) => {
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = (await resp.json()) as ExamDetailShard;
+    if (!json || json.schema_version !== 1 || !json.exams || typeof json.exams !== 'object') {
+      throw new Error('Invalid exam detail shard payload');
+    }
+    return json;
+  });
+  examDetailShardCache.set(url, promise);
+  return promise;
+}
+
+export function clearExamDetailShardCache(url?: string): void {
+  if (url) examDetailShardCache.delete(url);
+  else examDetailShardCache.clear();
+}

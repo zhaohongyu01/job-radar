@@ -6,9 +6,9 @@ from pathlib import Path
 import shutil
 
 try:
-    from snapshot_assets import ASSET, asset_paths, MAX_ASSET_BYTES
+    from snapshot_assets import ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths, MAX_ASSET_BYTES
 except ImportError:
-    from scripts.snapshot_assets import ASSET, asset_paths, MAX_ASSET_BYTES
+    from scripts.snapshot_assets import ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths, MAX_ASSET_BYTES
 
 
 def stage(public, dist):
@@ -49,6 +49,29 @@ def stage(public, dist):
     for name in ('jobs.json', 'snapshot-manifest.json'):
         shutil.copy2(public/name, destination/name)
     if (public/'exams.json').is_file():
+        exam_snapshot = json.loads((public/'exams.json').read_text(encoding='utf-8'))
+        exam_paths = exam_asset_paths(exam_snapshot)
+        for path in exam_paths:
+            match = EXAM_DETAIL_ASSET.fullmatch(path)
+            if not match:
+                raise ValueError('Unexpected exam asset path: ' + str(path))
+            source = public/path.lstrip('/')
+            if (
+                not source.resolve().is_relative_to(public)
+                or not source.is_file()
+                or source.stat().st_size > MAX_ASSET_BYTES
+                or hashlib.sha256(source.read_bytes()).hexdigest()[:20] != match[1]
+            ):
+                raise ValueError('Exam asset is missing or corrupt: ' + path)
+        exam_assets = destination/'exam-assets'
+        exam_assets.mkdir(parents=True, exist_ok=True)
+        for old in exam_assets.glob('detail-*.json'):
+            if not old.resolve().is_relative_to(destination):
+                raise ValueError('Exam asset path escaped the built client directory')
+            if '/exam-assets/'+old.name not in exam_paths:
+                old.unlink()
+        for path in exam_paths:
+            shutil.copy2(public/path.lstrip('/'), destination/path.lstrip('/'))
         shutil.copy2(public/'exams.json', destination/'exams.json')
     for path in destination.rglob('*'):
         if path.is_file() and path.stat().st_size > MAX_ASSET_BYTES:

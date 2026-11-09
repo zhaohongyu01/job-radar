@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { deriveExamStage } from '@/lib/exams';
+import { clearExamDetailShardCache, deriveExamStage } from '@/lib/exams';
 import type { ExamAnnouncement, ExamSnapshot } from '@/lib/exams';
 import { chinaToday } from '@/components/exam-ui';
 
@@ -60,6 +60,7 @@ export function useExamSnapshot({
   const reload = useCallback(() => {
     setLoading(true);
     setError('');
+    clearExamDetailShardCache();
     fetchExamSnapshot()
       .then((data) => {
         setSnapshot(data);

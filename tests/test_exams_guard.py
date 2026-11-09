@@ -1,3 +1,5 @@
+import hashlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -84,6 +86,41 @@ class ExamsGuardTests(unittest.TestCase):
             self.assertEqual(code, 0)
             saved = json.loads((pub / "exams.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["generated_at"], "2026-11-09T10:00:00+08:00")
+
+    def test_baseline_replacement_downloads_and_verifies_exam_assets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pub = Path(tmp)
+            cand = make_payload(10, generated_at="2026-11-09T14:00:00+08:00")
+            (pub / "exams.json").write_text(json.dumps(cand, ensure_ascii=False), encoding="utf-8")
+
+            shard_raw = json.dumps(
+                {"schema_version": 1, "exams": {"ex-0": {"body": "正文"}}},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            shard_hash = hashlib.sha256(shard_raw).hexdigest()[:20]
+            shard_rel = f"/exam-assets/detail-ex-{shard_hash}.json"
+
+            base = make_payload(45, generated_at="2026-11-09T10:00:00+08:00")
+            base["detail_shards"] = {"ex": shard_rel}
+            base_bytes = json.dumps(base, ensure_ascii=False).encode("utf-8")
+
+            class FakeResp(io.BytesIO):
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    self.close()
+
+            with (
+                patch("scripts.exams_guard.fetch_baseline_exams", return_value=(base_bytes, base)),
+                patch("scripts.exams_guard.urlopen", return_value=FakeResp(shard_raw)),
+            ):
+                code = guard_exams(pub, "https://sites-project.job-radar.workers.dev")
+
+            self.assertEqual(code, 0)
+            self.assertTrue((pub / shard_rel.lstrip("/")).is_file())
+            self.assertEqual((pub / shard_rel.lstrip("/")).read_bytes(), shard_raw)
 
 
 if __name__ == "__main__":

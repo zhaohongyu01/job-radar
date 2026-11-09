@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bookmark,
   CalendarPlus,
@@ -26,14 +26,18 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
+  clearExamDetailShardCache,
   evaluateExamPositionEligibility,
   EXAM_TERMINAL_STAGES,
   EXAM_TRACK_STAGES,
+  examShardPrefix,
   isExamProfileActive,
   isTerminalTrackStatus,
+  loadExamDetailShard,
 } from '@/lib/exams';
 import type {
   ExamAnnouncement,
+  ExamDetailEntry,
   ExamPersonalRecord,
   ExamPositionRow,
   ExamTrackStatus,
@@ -46,6 +50,7 @@ import { ExamPositionTable } from '@/components/exams/exam-position-table';
 interface ExamDetailDrawerProps {
   exam: ExamAnnouncement | null;
   exams: ExamAnnouncement[];
+  detailShards?: Record<string, string>;
   profile: ExamUserProfile;
   personal?: ExamPersonalRecord;
   onClose: () => void;
@@ -60,6 +65,7 @@ interface ExamDetailDrawerProps {
 export function ExamDetailDrawer({
   exam,
   exams,
+  detailShards,
   profile,
   personal,
   onClose,
@@ -90,6 +96,7 @@ export function ExamDetailDrawer({
           <DrawerContent
             exam={exam}
             exams={exams}
+            detailShards={detailShards}
             currentIndex={currentIndex}
             profile={profile}
             personal={personal}
@@ -114,6 +121,7 @@ export function ExamDetailDrawer({
 function DrawerContent({
   exam,
   exams,
+  detailShards,
   currentIndex,
   profile,
   personal,
@@ -131,6 +139,7 @@ function DrawerContent({
 }: {
   exam: ExamAnnouncement;
   exams: ExamAnnouncement[];
+  detailShards?: Record<string, string>;
   currentIndex: number;
   profile: ExamUserProfile;
   personal?: ExamPersonalRecord;
@@ -149,6 +158,47 @@ function DrawerContent({
   const prevExam = currentIndex > 0 ? exams[currentIndex - 1] : null;
   const nextExam = currentIndex >= 0 && currentIndex < exams.length - 1 ? exams[currentIndex + 1] : null;
   const [moreOpen, setMoreOpen] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
+  const [loadedDetail, setLoadedDetail] = useState<{
+    key: string;
+    entry: ExamDetailEntry | null;
+    error: boolean;
+  } | null>(null);
+
+  const shardKey = exam.id.slice(0, 2);
+  const shardUrl = detailShards?.[shardKey] ?? detailShards?.[examShardPrefix(exam.id)];
+  const needsShard = Boolean(shardUrl && exam.body === undefined);
+  const detailKey = shardUrl ? `${shardUrl}::${exam.id}::${retryToken}` : '';
+
+  useEffect(() => {
+    if (!needsShard || !shardUrl) return;
+    let active = true;
+    loadExamDetailShard(shardUrl)
+      .then((shard) => {
+        if (!active) return;
+        setLoadedDetail({
+          key: detailKey,
+          entry: shard.exams[exam.id] || {},
+          error: false,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setLoadedDetail({
+          key: detailKey,
+          entry: null,
+          error: true,
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, [needsShard, shardUrl, exam.id, detailKey]);
+
+  const detailLoading = needsShard && loadedDetail?.key !== detailKey;
+  const detailError = needsShard && loadedDetail?.key === detailKey && loadedDetail.error;
+  const resolvedEntry = needsShard && loadedDetail?.key === detailKey ? loadedDetail.entry : null;
+
   const isSaved = Boolean(personal?.saved);
   const isHidden = Boolean(personal?.hidden);
   const trackStatus = personal?.status || 'none';
@@ -157,7 +207,7 @@ function DrawerContent({
   const profileActive = isExamProfileActive(profile);
   const onlyMatched = onlyMatchedPos || profile.onlyMatchProfile;
   const applyHref = exam.registration_url || exam.source_url;
-  const attachments = exam.attachments || [];
+  const attachments = exam.attachments ?? resolvedEntry?.attachments ?? [];
   const evidence = exam.schedule.raw_evidence || [];
 
   const rows = positions
@@ -263,9 +313,11 @@ function DrawerContent({
     (st) => !(exam.exam_category === '军队文职招考' && st.key === 'audited'),
   );
   const writtenSkippable = exam.notice_role !== '招考简章' || !exam.schedule.written_exam_date;
-  const links = exam.links || [];
+  const links = exam.links ?? resolvedEntry?.links ?? [];
 
-  const body = (exam.body || exam.excerpt || '').split(/\n+/).filter((line) => line.trim());
+  const body = (exam.body ?? resolvedEntry?.body ?? exam.excerpt ?? '')
+    .split(/\n+/)
+    .filter((line) => line.trim());
   const catText = categoryLabel(exam.exam_category);
   const uniqueBianzhi = Array.from(new Set(exam.bianzhi_types.map(bianzhiLabel))).filter(
     (label) => label && label !== catText,
@@ -698,9 +750,31 @@ function DrawerContent({
 
         <section className="exw-ds" id="exw-sec-body">
           <h3 className="exw-ds-title">公告原文</h3>
-          <div className="exw-prose">
-            {body.length > 0 ? body.map((para, i) => <p key={i}>{para}</p>) : <p className="exw-muted">暂无正文，请查看原公告。</p>}
-          </div>
+          {detailLoading ? (
+            <output aria-busy="true" aria-label="正在加载公告正文" style={{ display: 'block' }}>
+              <div className="opp-skeleton" style={{ height: 18, marginBottom: 10 }} />
+              <div className="opp-skeleton" style={{ height: 18, marginBottom: 10, width: '92%' }} />
+              <div className="opp-skeleton" style={{ height: 18, width: '76%' }} />
+            </output>
+          ) : detailError ? (
+            <div className="inline-alert is-danger" role="alert">
+              <span>正文加载失败，请查看原公告</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  if (shardUrl) clearExamDetailShardCache(shardUrl);
+                  setRetryToken((n) => n + 1);
+                }}
+              >
+                重试
+              </button>
+            </div>
+          ) : (
+            <div className="exw-prose">
+              {body.length > 0 ? body.map((para, i) => <p key={i}>{para}</p>) : <p className="exw-muted">暂无正文，请查看原公告。</p>}
+            </div>
+          )}
         </section>
       </div>
       <footer className="exw-mobile-bar" aria-label="详情底部操作栏">

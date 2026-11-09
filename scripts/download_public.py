@@ -7,10 +7,10 @@ import re
 from urllib.request import Request, urlopen
 
 try:
-    from stage_public import ASSET, asset_paths
+    from stage_public import ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths
     from employer_identity import employer_identity, refine_company_facts
 except ImportError:
-    from scripts.stage_public import ASSET, asset_paths
+    from scripts.stage_public import ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths
     from scripts.employer_identity import employer_identity, refine_company_facts
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
@@ -152,6 +152,28 @@ def download(site, public, repair_zhiye_urls=False):
     (public / 'snapshot-manifest.json').write_bytes(metadata_raw)
     try:
         exams_raw = fetch('/exams.json')
+        exam_snapshot = json.loads(exams_raw)
+        exam_paths = exam_asset_paths(exam_snapshot)
+
+        def fetch_exam_asset(path):
+            match = EXAM_DETAIL_ASSET.fullmatch(path)
+            if not match:
+                raise ValueError('Invalid published exam asset path')
+            raw = fetch(path)
+            if hashlib.sha256(raw).hexdigest()[:20] != match[1]:
+                raise ValueError('Published exam asset hash mismatch')
+            target = public / path.lstrip('/')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+
+        exam_assets_dir = (public / 'exam-assets').resolve()
+        if exam_assets_dir.is_dir():
+            for old in exam_assets_dir.glob('detail-*.json'):
+                if old.resolve().is_relative_to(exam_assets_dir) and f'/exam-assets/{old.name}' not in exam_paths:
+                    old.unlink()
+        if exam_paths:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(fetch_exam_asset, sorted(exam_paths)))
         (public / 'exams.json').write_bytes(exams_raw)
     except Exception as exc:
         print(f'Skipped downloading /exams.json: {exc}')

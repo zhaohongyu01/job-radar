@@ -671,9 +671,25 @@ def load_hydrated_existing_jobs(public_dir: Path, live_site: str = 'https://site
     if exams_path.exists():
         try:
             existing_snap = json.loads(exams_path.read_text(encoding='utf-8'))
+            exam_detail_by_id: Dict[str, Dict[str, Any]] = {}
+            for shard_rel in (existing_snap.get('detail_shards') or {}).values():
+                shard_file = public_dir / str(shard_rel).lstrip('/')
+                if shard_file.is_file():
+                    try:
+                        shard_json = json.loads(shard_file.read_text(encoding='utf-8'))
+                        for eid, entry in (shard_json.get('exams') or {}).items():
+                            if isinstance(entry, dict):
+                                exam_detail_by_id[eid] = entry
+                    except Exception:
+                        pass
             for ex in existing_snap.get('exams') or []:
                 if isinstance(ex, dict) and ex.get('id') and ex.get('source_url'):
-                    jobs_by_id[ex['id']] = dict(ex)
+                    merged_ex = dict(ex)
+                    if ex['id'] in exam_detail_by_id:
+                        for k in ('body', 'attachments', 'links'):
+                            if merged_ex.get(k) is None and exam_detail_by_id[ex['id']].get(k) is not None:
+                                merged_ex[k] = exam_detail_by_id[ex['id']][k]
+                    jobs_by_id[ex['id']] = merged_ex
         except Exception:
             pass
 
@@ -1097,9 +1113,57 @@ def collect_and_export_exams(
         'sources': list(source_stats.values()),
     }
 
+    return write_exam_snapshot(payload, public_dir)
+
+
+def exam_shard_prefix(exam_id: str) -> str:
+    cleaned = re.sub(r'[^0-9a-z]', '0', str(exam_id or '').lower())
+    return (cleaned + '00')[:2]
+
+
+def write_exam_snapshot(payload: Dict[str, Any], public_dir: Path) -> Dict[str, Any]:
+    public_dir = Path(public_dir).resolve()
+    assets_dir = (public_dir / 'exam-assets').resolve()
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove old detail-*.json files inside public/exam-assets/ before generating new ones.
+    for old in assets_dir.glob('detail-*.json'):
+        if old.resolve().is_relative_to(assets_dir):
+            old.unlink()
+
+    shard_groups: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    slim_exams: List[Dict[str, Any]] = []
+
+    for exam in payload.get('exams') or []:
+        eid = str(exam.get('id') or '')
+        prefix = exam_shard_prefix(eid)
+        detail_entry: Dict[str, Any] = {}
+        for field in ('body', 'attachments', 'links'):
+            if exam.get(field) is not None:
+                detail_entry[field] = exam[field]
+        shard_groups.setdefault(prefix, {})[eid] = detail_entry
+        slim_exams.append({k: v for k, v in exam.items() if k not in ('body', 'attachments', 'links')})
+
+    detail_shards: Dict[str, str] = {}
+    for prefix, group_exams in sorted(shard_groups.items()):
+        shard_payload = {
+            'schema_version': 1,
+            'exams': group_exams,
+        }
+        raw_bytes = json.dumps(shard_payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        digest20 = hashlib.sha256(raw_bytes).hexdigest()[:20]
+        filename = f'detail-{prefix}-{digest20}.json'
+        (assets_dir / filename).write_bytes(raw_bytes)
+        detail_shards[prefix] = f'/exam-assets/{filename}'
+
+    out_payload = {
+        **payload,
+        'detail_shards': detail_shards,
+        'exams': slim_exams,
+    }
     out_path = public_dir / 'exams.json'
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-    return payload
+    out_path.write_bytes(json.dumps(out_payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
+    return out_payload
 
 
 def main() -> None:

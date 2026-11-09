@@ -1,10 +1,17 @@
+import hashlib
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 from scripts.collect_exams import (
     is_civil_exam_record,
     is_in_shandong_or_national_scope,
     link_related_exam_notices,
+    write_exam_snapshot,
 )
+from scripts.snapshot_assets import EXAM_DETAIL_ASSET
+from scripts.stage_public import stage
 from scripts.parse_exam_positions import (
     clean_exam_title,
     compute_exam_stage,
@@ -302,6 +309,113 @@ class ExamParserTests(unittest.TestCase):
         self.assertEqual(follow_up_match.get("parent_exam_id"), "exam-parent-1")
         self.assertIsNone(follow_up_unrelated_org.get("parent_exam_id"))
         self.assertIsNone(follow_up_too_old.get("parent_exam_id"))
+
+    def test_write_exam_snapshot_and_stage_public_exam_assets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pub = root / "public"
+            dist = root / "dist"
+            pub.mkdir(parents=True)
+            (pub / "exam-assets").mkdir(parents=True)
+            stale_pub_shard = pub / "exam-assets" / "detail-99-00000000000000000000.json"
+            stale_pub_shard.write_text("{}", encoding="utf-8")
+
+            raw_payload = {
+                "schema_version": 1,
+                "generated_at": "2026-11-10T00:00:00+08:00",
+                "last_success_at": "2026-11-10T00:00:00+08:00",
+                "total_exams": 2,
+                "total_positions": 1,
+                "total_headcount": 2,
+                "cities": ["济南"],
+                "exams": [
+                    {
+                        "id": "0a111111111111111111",
+                        "title": "济南招考简章A",
+                        "excerpt": "摘要A",
+                        "body": "完整正文段落A1\n完整正文段落A2",
+                        "attachments": [{"title": "岗位表.xlsx", "url": "https://example.gov.cn/a.xlsx"}],
+                        "links": [{"title": "报名入口", "url": "https://example.gov.cn/apply"}],
+                        "positions": [{"row_id": "r1", "major_raw": "计算机"}],
+                    },
+                    {
+                        "id": "1b222222222222222222",
+                        "title": "青岛招考简章B",
+                        "excerpt": "摘要B",
+                        "body": "完整正文段落B",
+                        "positions": [],
+                    },
+                ],
+                "sources": [],
+            }
+
+            out = write_exam_snapshot(raw_payload, pub)
+            self.assertFalse(stale_pub_shard.exists())
+            self.assertEqual(set(out["detail_shards"].keys()), {"0a", "1b"})
+
+            written_exams = json.loads((pub / "exams.json").read_text(encoding="utf-8"))
+            for ex in written_exams["exams"]:
+                self.assertNotIn("body", ex)
+                self.assertNotIn("attachments", ex)
+                self.assertNotIn("links", ex)
+                self.assertIn("excerpt", ex)
+                self.assertIn("positions", ex)
+
+            for prefix, rel_path in written_exams["detail_shards"].items():
+                match = EXAM_DETAIL_ASSET.fullmatch(rel_path)
+                self.assertIsNotNone(match, rel_path)
+                shard_file = pub / rel_path.lstrip("/")
+                self.assertTrue(shard_file.is_file())
+                self.assertEqual(hashlib.sha256(shard_file.read_bytes()).hexdigest()[:20], match[1])
+                shard_json = json.loads(shard_file.read_text(encoding="utf-8"))
+                self.assertEqual(shard_json["schema_version"], 1)
+                if prefix == "0a":
+                    entry = shard_json["exams"]["0a111111111111111111"]
+                    self.assertIn("完整正文段落A1", entry["body"])
+                    self.assertEqual(len(entry["attachments"]), 1)
+                    self.assertEqual(len(entry["links"]), 1)
+
+            # Prepare minimal valid jobs.json + dist/server/wrangler.json for stage_public.stage()
+            search_bytes = b'{"jobs":{}}'
+            search_hash = hashlib.sha256(search_bytes).hexdigest()[:20]
+            search_rel = f"/job-assets/search-{search_hash}.json"
+            (pub / "job-assets").mkdir(parents=True, exist_ok=True)
+            (pub / search_rel.lstrip("/")).write_bytes(search_bytes)
+
+            jobs_bytes = json.dumps(
+                {
+                    "schema_version": 3,
+                    "generated_at": "2026-11-10T00:00:00+08:00",
+                    "last_success_at": None,
+                    "schedule_enabled": True,
+                    "cities": [],
+                    "sources": [],
+                    "jobs": [],
+                    "detail_shards": {},
+                    "search_url": search_rel,
+                }
+            ).encode("utf-8")
+            (pub / "jobs.json").write_bytes(jobs_bytes)
+            (pub / "snapshot-manifest.json").write_text(
+                json.dumps({"schema_version": 1, "index_sha256": hashlib.sha256(jobs_bytes).hexdigest()}),
+                encoding="utf-8",
+            )
+
+            client_dir = dist / "client"
+            (dist / "server").mkdir(parents=True)
+            (client_dir / "exam-assets").mkdir(parents=True)
+            obsolete_staged = client_dir / "exam-assets" / "detail-ff-ffffffffffffffffffff.json"
+            obsolete_staged.write_text("{}", encoding="utf-8")
+            (dist / "server" / "wrangler.json").write_text(
+                json.dumps({"assets": {"directory": "../client"}}),
+                encoding="utf-8",
+            )
+
+            stage(pub, dist)
+            self.assertFalse(obsolete_staged.exists())
+            self.assertTrue((client_dir / "exams.json").is_file())
+            for rel_path in written_exams["detail_shards"].values():
+                self.assertTrue((client_dir / rel_path.lstrip("/")).is_file())
 
 
 if __name__ == "__main__":

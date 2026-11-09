@@ -700,6 +700,7 @@ export function ExamWorkspace() {
       <ExamDetailDrawer
         exam={selectedExam}
         exams={filteredExams}
+        detailShards={snapshot?.detail_shards}
         profile={profile}
         personal={selectedExam ? personal[selectedExam.id] : undefined}
         onClose={closeExam}

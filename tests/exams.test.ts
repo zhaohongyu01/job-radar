@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  clearExamDetailShardCache,
   computeExamNextStep,
   computeExamStageLabel,
   DEFAULT_EXAM_FILTERS,
@@ -12,6 +13,7 @@ import {
   formatExamUrl,
   isExamProfileActive,
   isTerminalTrackStatus,
+  loadExamDetailShard,
   parseExamUrl,
   validateExamPersonal,
   type ExamAnnouncement,
@@ -397,4 +399,39 @@ void test('validateExamPersonal accepts terminal statuses and targetRowId, and c
     date: '2026-11-17',
     daysLeft: 7,
   });
+});
+
+await test('loadExamDetailShard caches Promise by URL, validates path, and allows retry after cache clear', async () => {
+  const previous = globalThis.fetch;
+  const validUrl = '/exam-assets/detail-0a-0123456789abcdef0123.json';
+  let calls = 0;
+  try {
+    clearExamDetailShardCache();
+    await assert.rejects(loadExamDetailShard('https://evil.example/detail.json'), /Invalid exam detail shard path/);
+
+    globalThis.fetch = async () => {
+      calls++;
+      return Response.json({
+        schema_version: 1,
+        exams: {
+          '0a123': { body: '招考正文', attachments: [{ title: '岗位表.xlsx', url: 'https://gov.cn/1.xlsx' }] },
+        },
+      });
+    };
+
+    const [first, second] = await Promise.all([
+      loadExamDetailShard(validUrl),
+      loadExamDetailShard(validUrl),
+    ]);
+    assert.equal(calls, 1);
+    assert.equal(first, second);
+    assert.equal(first.exams['0a123']?.body, '招考正文');
+
+    clearExamDetailShardCache(validUrl);
+    await loadExamDetailShard(validUrl);
+    assert.equal(calls, 2);
+  } finally {
+    clearExamDetailShardCache();
+    globalThis.fetch = previous;
+  }
 });

@@ -3,6 +3,7 @@ import json
 import re
 
 ASSET = re.compile(r'/job-assets/(?:detail-[0-9a-f]{2}|search|index|coverage)-([0-9a-f]{20})\.json')
+EXAM_DETAIL_ASSET = re.compile(r'^/exam-assets/detail-[0-9a-z]{2}-([0-9a-f]{20})\.json$')
 MAX_ASSET_BYTES = 25 * 1024 * 1024
 CHUNK_BYTES = 4 * 1024 * 1024
 FIRST_INDEX_BYTES = 256 * 1024
@@ -14,6 +15,13 @@ def asset_paths(snapshot):
             *snapshot.get('index_shards', []), *snapshot.get('search_shards', []),
             *browse.get('shards', []), *browse.get('search_shards', []),
             *([snapshot['coverage_url']] if snapshot.get('coverage_url') else [])}
+
+
+def exam_asset_paths(exam_snapshot):
+    shards = (exam_snapshot or {}).get('detail_shards') or {}
+    if not isinstance(shards, dict):
+        raise ValueError('Invalid exam detail_shards map')
+    return set(shards.values())
 
 
 def chunks(rows, budget=CHUNK_BYTES, *, first_budget=None):

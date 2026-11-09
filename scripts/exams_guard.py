@@ -2,11 +2,18 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 from pathlib import Path
 import sys
 from typing import Any, Dict, Optional, Tuple
 from urllib.request import Request, urlopen
+
+try:
+    from snapshot_assets import EXAM_DETAIL_ASSET, exam_asset_paths
+except ImportError:
+    from scripts.snapshot_assets import EXAM_DETAIL_ASSET, exam_asset_paths
 
 USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -79,12 +86,44 @@ def validate_candidate(
     return True, 'ok'
 
 
+def download_baseline_exam_assets(site: str, public_dir: Path, baseline: Dict[str, Any]) -> None:
+    paths = exam_asset_paths(baseline)
+    assets_dir = (Path(public_dir) / 'exam-assets').resolve()
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    def fetch_one(path: str) -> Tuple[str, bytes]:
+        match = EXAM_DETAIL_ASSET.fullmatch(path)
+        if not match:
+            raise ValueError(f'invalid baseline exam asset path: {path}')
+        url = site.rstrip('/') + path
+        req = Request(url, headers={'User-Agent': USER_AGENT, 'Cache-Control': 'no-cache'})
+        with urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+        if hashlib.sha256(raw).hexdigest()[:20] != match[1]:
+            raise ValueError(f'baseline exam asset hash mismatch: {path}')
+        return path, raw
+
+    fetched: list[Tuple[str, bytes]] = []
+    if paths:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            fetched = list(pool.map(fetch_one, sorted(paths)))
+
+    for old in assets_dir.glob('detail-*.json'):
+        if old.resolve().is_relative_to(assets_dir) and f'/exam-assets/{old.name}' not in paths:
+            old.unlink()
+    for path, raw in fetched:
+        target = Path(public_dir) / path.lstrip('/')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+
+
 def guard_exams(
     public_dir: Path,
     site: str,
     require_fresh: bool = False,
 ) -> int:
-    target = Path(public_dir) / 'exams.json'
+    public_dir = Path(public_dir)
+    target = public_dir / 'exams.json'
     base_raw, base_data = fetch_baseline_exams(site)
 
     cand_data: Optional[Dict[str, Any]] = None
@@ -101,6 +140,22 @@ def guard_exams(
         ok, reason = False, parse_err
     else:
         ok, reason = validate_candidate(cand_data, baseline=base_data, require_fresh=require_fresh)
+        if ok and cand_data.get('detail_shards'):
+            try:
+                for path in exam_asset_paths(cand_data):
+                    match = EXAM_DETAIL_ASSET.fullmatch(path)
+                    source = public_dir / path.lstrip('/')
+                    if (
+                        not match
+                        or not source.is_file()
+                        or hashlib.sha256(source.read_bytes()).hexdigest()[:20] != match[1]
+                    ):
+                        ok = False
+                        reason = f'missing or corrupt candidate exam asset: {path}'
+                        break
+            except Exception as exc:
+                ok = False
+                reason = f'invalid candidate detail_shards: {exc}'
 
     if ok and cand_data is not None:
         exams = cand_data.get('exams') or []
@@ -111,11 +166,15 @@ def guard_exams(
         )
         return 0
 
-    if base_raw is not None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(base_raw)
-        print(f'::warning::exams candidate rejected: {reason}')
-        return 0
+    if base_raw is not None and base_data is not None:
+        try:
+            download_baseline_exam_assets(site, public_dir, base_data)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(base_raw)
+            print(f'::warning::exams candidate rejected: {reason}')
+            return 0
+        except Exception as exc:
+            reason = f'{reason}; failed to restore baseline exam assets: {exc}'
 
     print(f'Exams guard failed without baseline: {reason}', file=sys.stderr)
     return 1

@@ -87,7 +87,7 @@ button:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
@@ -1957,7 +1957,6 @@ button:disabled {
 
 .positions-filter-input:focus {
   width: 200px;
-  outline: none;
   border-color: #0284c7;
 }
 

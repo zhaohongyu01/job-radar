@@ -124,15 +124,16 @@ export default function GlobalError({
                 padding: '12px',
                 background: '#f3f4f6',
                 borderRadius: '6px',
-                fontSize: '11px',
+                fontSize: '12px',
                 textAlign: 'left',
                 overflowX: 'auto',
                 maxHeight: '160px',
                 color: '#374151',
                 whiteSpace: 'pre-wrap'
               }}>
-                {error.message || '未知错误'}
-                {error.stack ? `\n\n${error.stack}` : ''}
+                {process.env.NODE_ENV === 'production'
+                  ? `${error.digest ? `错误编号：${error.digest}\n` : ''}错误编号已记录，可截图反馈。`
+                  : `${error.message || '未知错误'}${error.stack ? `\n\n${error.stack}` : ''}`}
               </pre>
             )}
           </div>

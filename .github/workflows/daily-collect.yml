@@ -281,6 +281,16 @@ jobs:
         if: ${{ !inputs.deploy_only }}
         run: python scripts/audit_freshness.py --public-dir public --output data/freshness-report.json
 
+      - name: Collect Civil Service Exams snapshot
+        if: ${{ !inputs.deploy_only }}
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python scripts/collect_exams.py --public-dir public
+
+      - name: Guard exams snapshot quality
+        if: ${{ !inputs.deploy_only }}
+        run: python scripts/exams_guard.py --public-dir public --site https://sites-project.job-radar.workers.dev
+
       - name: Save Collector State
         if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}
         continue-on-error: true

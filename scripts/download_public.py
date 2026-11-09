@@ -150,6 +150,11 @@ def download(site, public, repair_zhiye_urls=False):
             print(f'Repaired {repaired_count} snapshot records (URLs, brand departments, and employer names)')
     (public / 'jobs.json').write_bytes(index)
     (public / 'snapshot-manifest.json').write_bytes(metadata_raw)
+    try:
+        exams_raw = fetch('/exams.json')
+        (public / 'exams.json').write_bytes(exams_raw)
+    except Exception as exc:
+        print(f'Skipped downloading /exams.json: {exc}')
     print(f'Reused published snapshot with {snapshot.get("index_count", len(snapshot["jobs"]))} records; no collection performed')
 
 

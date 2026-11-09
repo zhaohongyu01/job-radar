@@ -320,6 +320,9 @@ jobs:
       - name: Build lightweight browsing index without collection
         run: node --experimental-strip-types scripts/build_browse_index.mjs --public-dir public
 
+      - name: Keep latest exams snapshot
+        run: python scripts/exams_guard.py --public-dir public --site https://sites-project.job-radar.workers.dev --require-fresh
+
       - name: Attach Validated Data to Application
         run: python scripts/stage_public.py --public-dir public --dist-dir dist
 

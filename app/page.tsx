@@ -48,6 +48,7 @@ import { ResultsPagination, ResultsToolbar } from '@/components/jobs/results-too
 import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
 import { AppHeader } from '@/components/jobs/app-header';
+import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { OnboardingCard } from '@/components/jobs/onboarding-card';
 import { ToastProvider, useToast } from '@/components/toast-provider';
 import { loadRadarPresets, RADAR_ACTIVE_PRESET_STORAGE, saveRadarPresets } from '@/lib/radar';
@@ -492,14 +493,6 @@ function HomeContent() {
           />
 
           <section className="results-col" id="opportunities" aria-label="招聘机会">
-            <details className="plan-mobile">
-              <summary>
-                <span>校园日程<small>宣讲会与校园活动</small></span>
-                <ChevronDown size={16} />
-              </summary>
-              <ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} />
-            </details>
-
             {filters.view === 'all' && showOnboarding && (
               <OnboardingCard
                 onDismiss={dismissOnboarding}
@@ -738,6 +731,14 @@ function HomeContent() {
               <ResultsPagination page={currentPage} pageSize={pageSize} total={groups.length} grouped={groupCompanies} position="bottom" onPageChange={changePage} onPageSizeChange={changePageSize} />
             )}
 
+            <details className="plan-mobile">
+              <summary>
+                <span>校园日程<small>宣讲会与校园活动</small></span>
+                <ChevronDown size={16} />
+              </summary>
+              <ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} />
+            </details>
+
             <details className="help-fold">
               <summary>
                 <Info size={14} />
@@ -876,6 +877,15 @@ function HomeContent() {
         open={sourceOpen}
         onOpenChange={setSourceOpen}
         data={data}
+      />
+
+      <BottomTabBar
+        workspace="jobs"
+        activeView={filters.view}
+        onOpenView={openView}
+        hasData={!!data}
+        pendingCount={personalCounts.pending}
+        trackingCount={personalCounts.tracking}
       />
     </>
   );

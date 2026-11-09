@@ -924,16 +924,24 @@
 }
 
 @media (max-width: 900px) {
-  .result-tools .sort-trigger,
   .result-tools > .seg,
   .result-toggles .toggle-merge {
     display: none;
   }
+
+  .result-tools .sort-trigger {
+    min-width: 0;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
 }
 
 /* ---------- 2026-11-06 首屏纵向压缩与三栏视觉协调重构 ---------- */
-.page {
-  padding: 6px 32px 48px;
+@media (min-width: 701px) {
+  .page {
+    padding: 6px 32px 48px;
+  }
 }
 
 .page-head {
@@ -1586,9 +1594,16 @@ html[data-base-ui-scroll-locked] .app-bar {
 
 .detail-jump-nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.detail-jump-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .detail-jump-pill {

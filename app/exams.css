@@ -1694,16 +1694,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .exw-filters {
-    position: static;
     display: none;
-    max-height: none;
-    padding: 4px 14px 8px;
-    border: 1px solid var(--line);
-    border-radius: var(--exw-radius);
-    background: var(--surface);
-  }
-  .exw-filters.is-open {
-    display: block;
   }
   .exw-filter-toggle {
     display: inline-flex;
@@ -1727,21 +1718,86 @@
   }
 }
 
+.exw-dh-more-btn,
+.exw-mobile-bar,
+.exw-pos-cards {
+  display: none;
+}
+
+.exw-filter-sheet {
+  max-height: 85dvh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  background: var(--surface, #fffefa) !important;
+  border-top-left-radius: 16px !important;
+  border-top-right-radius: 16px !important;
+  z-index: 100 !important;
+}
+
+.exw-filter-sheet-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px 16px;
+}
+
+@media (max-width: 900px) {
+  .exw-dh-actions {
+    display: none;
+  }
+  .exw-dh-more-btn {
+    display: inline-grid;
+  }
+  .exw-mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .exw-mobile-bar .exw-select {
+    flex: 1;
+    min-width: 0;
+  }
+  .exw-mobile-bar .exw-mobile-apply {
+    flex: 1;
+  }
+}
+
 @media (max-width: 720px) {
+  .exw {
+    gap: 8px;
+  }
   .exw-head {
     flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 12px;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+  }
+  .exw-eyebrow {
+    display: none;
+  }
+  .exw-title {
+    font-size: 20px;
   }
   .exw-head-text {
-    flex-basis: 100%;
+    flex-basis: auto;
+    margin-right: auto;
   }
   .exw-stats {
-    flex: 1;
-    justify-content: space-between;
+    gap: 12px;
   }
   .exw-stat {
-    align-items: flex-start;
+    align-items: flex-end;
+  }
+  .exw-stat strong {
+    font-size: 16px;
+  }
+  .exw-stat span {
+    font-size: 11px;
   }
   .exw-head-actions {
     border-left: 0;
@@ -1749,9 +1805,15 @@
   }
   .exw-profile-row {
     flex-wrap: wrap;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .exw-profile-icon {
+    width: 28px;
+    height: 28px;
   }
   .exw-profile-text {
-    flex-basis: calc(100% - 50px);
+    flex-basis: calc(100% - 42px);
   }
   .exw-profile-form,
   .exw-form-grid,
@@ -1768,26 +1830,41 @@
   .exw-tab {
     flex: 1;
     justify-content: center;
-    padding: 0 6px;
-  }
-  .exw-tab span:not(.exw-tab-count) {
-    display: none;
+    padding: 0 8px;
+    font-size: 12px;
   }
   .exw-toolbar {
     position: static;
+    padding: 6px;
+    gap: 6px;
     box-shadow: var(--shadow-sm);
   }
   .exw-search {
     order: 1;
+    height: 34px;
   }
   .exw-toolbar .exw-select,
   .exw-filter-toggle {
     order: 2;
     flex: 1;
+    height: 32px;
+  }
+  .exw-upcoming {
+    padding: 8px 10px;
+  }
+  .exw-upcoming-head {
+    margin-bottom: 6px;
+  }
+  .exw-up {
+    padding: 6px 8px;
+    flex: 0 0 210px;
+  }
+  .exw-results-head {
+    padding: 2px 0;
   }
   .exw-card {
     flex-direction: column;
-    padding: 16px;
+    padding: 14px;
   }
   .exw-card-actions {
     flex-direction: row;
@@ -1797,6 +1874,58 @@
   .exw-db {
     padding-left: 16px;
     padding-right: 16px;
+  }
+  .exw-pos-desktop {
+    display: none;
+  }
+  .exw-pos-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .exw-pos-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .exw-pos-card.is-ok {
+    border-color: var(--brand-line);
+    background: color-mix(in srgb, var(--brand-soft) 35%, var(--surface));
+  }
+  .exw-pos-card.is-target {
+    border-color: var(--brand);
+    box-shadow: inset 3px 0 0 var(--brand);
+  }
+  .exw-pos-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .exw-pos-card-req {
+    margin: 0;
+    color: var(--ink-3);
+    font-size: 12.5px;
+  }
+  .exw-pos-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--line);
+  }
+  .exw-kanban {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .exw-kcol {
+    min-width: 0;
   }
   .workspace-mode-btn {
     padding: 0 10px;

@@ -43,6 +43,7 @@ import {
 import { ExamPositionTable } from '@/components/exams/exam-position-table';
 import { ExamTrackerBoard } from '@/components/exams/exam-tracker-board';
 import { ExamSourcesSheet } from '@/components/exams/exam-sources-sheet';
+import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { formatMonthDay } from '@/components/exam-ui';
 import { useToast } from '@/components/toast-provider';
 import { useExamSnapshot } from '@/hooks/use-exam-snapshot';
@@ -411,6 +412,8 @@ export function ExamWorkspace() {
           filters={filters}
           filtersOpen={filtersOpen}
           activeFilterCount={activeFilters.length}
+          resultCount={listLength}
+          onCloseMobile={() => setFiltersOpen(false)}
           onToggleCity={toggleCity}
           onUpdateFilters={updateFilters}
           onResetFilters={resetFilters}
@@ -596,6 +599,14 @@ export function ExamWorkspace() {
         open={sourceOpen}
         onClose={closeSources}
         sources={snapshot?.sources || []}
+      />
+
+      <BottomTabBar
+        workspace="exams"
+        activeView={filters.view}
+        onSwitchView={switchView}
+        savedCount={savedCount}
+        trackedCount={trackedCount}
       />
     </div>
   );

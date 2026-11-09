@@ -2,6 +2,13 @@
 
 import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { SHANDONG_16 } from '@/lib/exams';
 import type { BianzhiCategory, ExamCategory, ExamFilters } from '@/lib/exams';
 import { bianzhiLabel, categoryLabel } from '@/components/exam-ui';
@@ -178,6 +185,8 @@ export interface ExamFilterSidebarProps {
   filters: ExamFilters;
   filtersOpen: boolean;
   activeFilterCount: number;
+  resultCount?: number;
+  onCloseMobile?: () => void;
   onToggleCity: (city: string) => void;
   onUpdateFilters: (patch: Partial<ExamFilters>) => void;
   onResetFilters: () => void;
@@ -187,14 +196,16 @@ export function ExamFilterSidebar({
   filters,
   filtersOpen,
   activeFilterCount,
+  resultCount = 0,
+  onCloseMobile,
   onToggleCity,
   onUpdateFilters,
   onResetFilters,
 }: ExamFilterSidebarProps) {
   const selectedCities = filters.cities.filter((c) => c !== '全部');
 
-  return (
-    <aside className={`exw-filters${filtersOpen ? ' is-open' : ''}`} aria-label="筛选条件">
+  const filterBody = (
+    <>
       <div className="exw-filters-head">
         <span>筛选</span>
         {activeFilterCount > 0 && (
@@ -329,6 +340,37 @@ export function ExamFilterSidebar({
           <span>只看含「不限专业」岗位</span>
         </label>
       </FilterSection>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      <aside className="exw-filters" aria-label="筛选条件">
+        {filterBody}
+      </aside>
+      <Sheet
+        open={filtersOpen}
+        onOpenChange={(open) => {
+          if (!open) onCloseMobile?.();
+        }}
+      >
+        <SheetContent side="bottom" className="exw-filter-sheet">
+          <SheetHeader className="detail-header">
+            <SheetTitle>筛选条件</SheetTitle>
+            <SheetDescription>调整筛选条件后立即生效</SheetDescription>
+          </SheetHeader>
+          <div className="exw-filter-sheet-scroll">{filterBody}</div>
+          <div className="mobile-filter-footer">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => onCloseMobile?.()}
+            >
+              查看 {resultCount} 条结果
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }

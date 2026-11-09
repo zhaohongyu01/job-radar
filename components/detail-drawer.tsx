@@ -1,7 +1,22 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Bookmark, Check, Share2, Briefcase, Search, FileSpreadsheet, Clock, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import {
+  Bookmark,
+  Check,
+  Share2,
+  Briefcase,
+  Search,
+  FileSpreadsheet,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  MoreHorizontal,
+  EyeOff,
+  Eye,
+  ExternalLink,
+} from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -9,6 +24,11 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { publicationText, generateJobTimeline, getLifecycleStage, isUnread, personalFor, displayJobTitle, sdeiPositionListUrl, locationSummary, formatCompanyDisplay, effectiveJobTypes, formatEducationDisplay, selectedWorkCities } from '@/lib/jobs';
 import type { Filters, Job, Personal } from '@/lib/jobs';
@@ -69,6 +89,7 @@ export function DetailDrawer({
   onSelectJob?: (job: Job) => void;
 }) {
   const [positionSearch, setPositionSearch] = useState({ jobId: '', value: '' });
+  const [moreOpen, setMoreOpen] = useState(false);
   const positionFilter = positionSearch.jobId === selected?.id ? positionSearch.value : '';
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -345,6 +366,71 @@ export function DetailDrawer({
                     </button>
                   ))}
                 </nav>
+                <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+                  <PopoverTrigger
+                    type="button"
+                    className="icon-btn detail-more-btn"
+                    aria-label="更多操作"
+                    title="更多操作"
+                  >
+                    <MoreHorizontal size={16} />
+                  </PopoverTrigger>
+                  <PopoverContent align="end" sideOffset={6} className="opp-more-menu">
+                    {!isUnread(selected, personal) && (
+                      <button
+                        type="button"
+                        className="opp-more-item"
+                        disabled={!ready || detailLoading}
+                        onClick={() => {
+                          onReadChange(selected, false);
+                          setMoreOpen(false);
+                        }}
+                      >
+                        <Eye size={14} />
+                        <span>标为未读</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="opp-more-item"
+                      onClick={() => {
+                        onCopy(selected);
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <Share2 size={14} />
+                      <span>复制分享</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="opp-more-item"
+                      onClick={() => {
+                        onToggle(selected, 'hidden');
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <EyeOff size={14} />
+                      <span>{personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}</span>
+                    </button>
+                    {selected.application_url &&
+                      selected.source_url &&
+                      selected.application_url !== selected.source_url && (
+                        <a
+                          href={selected.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="opp-more-item"
+                          onClick={() => {
+                            onRead(selected);
+                            setMoreOpen(false);
+                          }}
+                        >
+                          <ExternalLink size={14} />
+                          <span>查看原公告</span>
+                        </a>
+                      )}
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <div className="detail-body" ref={bodyRef}>
@@ -742,6 +828,32 @@ export function DetailDrawer({
                 最近内容变化 {formatDate(selected.updated_at, true)}
               </p>
             </div>
+            <footer className="detail-mobile-bar" aria-label="详情底部操作栏">
+              <Button
+                variant={personalFor(selected, personal).saved ? 'default' : 'outline'}
+                disabled={!ready}
+                onClick={() => onToggle(selected, 'saved')}
+              >
+                <Bookmark size={16} />
+                {personalFor(selected, personal).saved ? '已收藏' : '收藏'}
+              </Button>
+              <Button
+                variant={personalFor(selected, personal).applied ? 'default' : 'outline'}
+                disabled={!ready}
+                onClick={() => onToggle(selected, 'applied')}
+              >
+                <Check size={16} />
+                {personalFor(selected, personal).applied ? '已投递' : '已投递'}
+              </Button>
+              <OutLink
+                primary
+                className="primary-link detail-mobile-apply"
+                url={selected.application_url || selected.source_url}
+                onOpen={() => onRead(selected)}
+              >
+                {selected.application_url ? '前往投递' : '查看原公告'}
+              </OutLink>
+            </footer>
           </>
         )}
       </SheetContent>

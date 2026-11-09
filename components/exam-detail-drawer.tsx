@@ -7,10 +7,16 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  MoreHorizontal,
   Search,
   Share2,
   X,
 } from 'lucide-react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   evaluateExamPositionEligibility,
   EXAM_TRACK_STAGES,
@@ -119,6 +125,7 @@ function DrawerContent({
 }) {
   const prevExam = currentIndex > 0 ? exams[currentIndex - 1] : null;
   const nextExam = currentIndex >= 0 && currentIndex < exams.length - 1 ? exams[currentIndex + 1] : null;
+  const [moreOpen, setMoreOpen] = useState(false);
   const isSaved = Boolean(personal?.saved);
   const trackStatus = personal?.status || 'none';
   const savedPosIds = personal?.savedPositionIds || [];
@@ -216,6 +223,10 @@ function DrawerContent({
   ];
 
   const body = (exam.body || exam.excerpt || '').split(/\n+/).filter((line) => line.trim());
+  const catText = categoryLabel(exam.exam_category);
+  const uniqueBianzhi = Array.from(new Set(exam.bianzhi_types.map(bianzhiLabel))).filter(
+    (label) => label && label !== catText,
+  );
 
   return (
     <>
@@ -223,10 +234,10 @@ function DrawerContent({
         <div className="exw-dh-top">
           <div className="exw-card-meta">
             <StagePill stage={exam.stage} />
-            <span className="exw-tag">{categoryLabel(exam.exam_category)}</span>
-            {exam.bianzhi_types.slice(0, 3).map((bz) => (
-              <span key={bz} className="exw-tag is-outline">
-                {bianzhiLabel(bz)}
+            <span className="exw-tag">{catText}</span>
+            {uniqueBianzhi.slice(0, 3).map((label) => (
+              <span key={label} className="exw-tag is-outline">
+                {label}
               </span>
             ))}
           </div>
@@ -256,6 +267,41 @@ function DrawerContent({
                 </button>
               </>
             )}
+            <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+              <PopoverTrigger
+                type="button"
+                className="exw-icon-btn exw-dh-more-btn"
+                aria-label="更多操作"
+                title="更多操作"
+              >
+                <MoreHorizontal size={16} />
+              </PopoverTrigger>
+              <PopoverContent align="end" sideOffset={6} className="opp-more-menu">
+                {exam.registration_url && exam.registration_url !== exam.source_url && (
+                  <a
+                    href={exam.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="opp-more-item"
+                    onClick={() => setMoreOpen(false)}
+                  >
+                    <ExternalLink size={14} />
+                    <span>原公告</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="opp-more-item"
+                  onClick={() => {
+                    void copyShare();
+                    setMoreOpen(false);
+                  }}
+                >
+                  <Share2 size={14} />
+                  <span>分享</span>
+                </button>
+              </PopoverContent>
+            </Popover>
             <button type="button" className="exw-icon-btn" aria-label="关闭详情" onClick={onClose}>
               <X size={18} />
             </button>
@@ -500,6 +546,38 @@ function DrawerContent({
           </div>
         </section>
       </div>
+      <footer className="exw-mobile-bar" aria-label="详情底部操作栏">
+        <button
+          type="button"
+          className={`btn btn-sm ${isSaved ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => onToggleSave(exam.id)}
+        >
+          <Bookmark size={14} fill={isSaved ? 'currentColor' : 'none'} />
+          {isSaved ? '已收藏' : '收藏'}
+        </button>
+        <select
+          className={`exw-select is-sm${trackStatus !== 'none' ? ' is-on' : ''}`}
+          aria-label="报考进度（底部）"
+          value={trackStatus}
+          onChange={(e) => onChangeStatus(exam.id, e.target.value as ExamTrackStatus)}
+        >
+          <option value="none">报考进度 ▾</option>
+          {EXAM_TRACK_STAGES.map((st) => (
+            <option key={st.key} value={st.key}>
+              {st.label}
+            </option>
+          ))}
+        </select>
+        <a
+          className="btn btn-primary btn-sm exw-mobile-apply"
+          href={applyHref}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {exam.registration_url ? '前往报名' : '查看原公告'}
+          <ExternalLink size={13} />
+        </a>
+      </footer>
     </>
   );
 }

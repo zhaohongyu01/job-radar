@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Database,
   Download,
-  ExternalLink,
   FileSpreadsheet,
   Kanban,
   Landmark,
@@ -49,11 +48,10 @@ import {
 } from '@/components/exams/exam-filter-sidebar';
 import { ExamPositionTable } from '@/components/exams/exam-position-table';
 import { ExamTrackerBoard } from '@/components/exams/exam-tracker-board';
+import { ExamSourcesSheet } from '@/components/exams/exam-sources-sheet';
 import {
   chinaToday,
-  ExamSheet,
   formatMonthDay,
-  formatShortDate,
 } from '@/components/exam-ui';
 
 const PAGE_SIZE = 20;
@@ -701,45 +699,11 @@ export function ExamWorkspace() {
         onNotify={setNotice}
       />
 
-      <ExamSheet open={sourceOpen} onClose={closeSources} label="信息来源" width={560}>
-        <header className="exw-dh">
-          <div className="exw-dh-top">
-            <div>
-              <h2 className="exw-dh-title">信息来源</h2>
-              <p className="exw-dh-sub">国家统考、山东省直、16 地市人社局及高校招考专栏</p>
-            </div>
-            <button type="button" className="exw-icon-btn" aria-label="关闭" onClick={closeSources}>
-              <X size={18} />
-            </button>
-          </div>
-        </header>
-        <div className="exw-db">
-          <ul className="exw-source-list">
-            {(snapshot?.sources || []).map((src) => {
-              const count = src.count ?? 0;
-              const isZero = count === 0;
-              return (
-                <li key={src.id}>
-                  <div>
-                    <strong>
-                      <span className={`exw-src-dot ${isZero ? 'is-zero' : 'is-ok'}`} aria-hidden="true" />
-                      {src.name}
-                    </strong>
-                    <span className="exw-muted">
-                      {src.city || src.level || '官方'} · {isZero ? '本次 0 条' : `${count} 条`}
-                      {src.last_success_at ? ` · 更新于 ${formatShortDate(src.last_success_at)}` : ''}
-                    </span>
-                  </div>
-                  <a href={src.url} target="_blank" rel="noopener noreferrer" className="exw-card-link">
-                    官网
-                    <ExternalLink size={12} />
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      </ExamSheet>
+      <ExamSourcesSheet
+        open={sourceOpen}
+        onClose={closeSources}
+        sources={snapshot?.sources || []}
+      />
     </div>
   );
 }

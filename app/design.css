@@ -158,12 +158,12 @@ fieldset.chip-row {
   background: var(--brand-hover);
   color: #fff;
 }
-.btn-secondary {
+.btn-secondary, .btn-outline {
   background: var(--surface);
   border-color: var(--line-strong);
   color: var(--ink);
 }
-.btn-secondary:hover {
+.btn-secondary:hover, .btn-outline:hover {
   border-color: var(--ink-4);
   background: var(--surface-hover);
 }

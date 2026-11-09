@@ -46,11 +46,10 @@ import {
   selectedWorkCities,
   workCitiesLabel,
   formatCompanyDisplay,
-  resolveJobId,
   parseSalaryRange,
 } from '@/lib/jobs';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
-import type { Job, Filters } from '@/lib/jobs';
+import type { Job, Filters, Snapshot } from '@/lib/jobs';
 import { restoreBrowsing, restoreCardDensity, parseUrlState, formatUrlQuery } from '@/lib/browsing';
 import type { ViewMode, CardDensity } from '@/lib/browsing';
 import { groupJobs } from '@/lib/grouping';
@@ -80,6 +79,7 @@ import { JobsEmptyStates } from '@/components/jobs/empty-states';
 import { AppHeader } from '@/components/jobs/app-header';
 import { useJobSnapshot } from '@/hooks/use-job-snapshot';
 import { usePersonalRecords } from '@/hooks/use-personal-records';
+import { useJobDetail } from '@/hooks/use-job-detail';
 import type { WorkspaceMode } from '@/lib/exams';
 import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
 
@@ -176,12 +176,10 @@ function HomeContent() {
   const employerRecords = useEmployerRecords();
   const reputation = useEmployerReputation();
   const { register: registerEmployerCatalog, selectId: selectEmployerId, requestedId: requestedEmployerId, missing: missingEmployer } = useEmployerNavigation();
-  const [linkedJobId, setLinkedJobId] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(defaultFilters),
     [ready, setReady] = useState(false),
     [since, setSince] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Job | null>(null),
-    [sourceOpen, setSourceOpen] = useState(false),
+  const [sourceOpen, setSourceOpen] = useState(false),
     [mobileFilterOpen, setMobileFilterOpen] = useState(false),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(50),
@@ -190,9 +188,6 @@ function HomeContent() {
     [groupCompanies, setGroupCompanies] = useState(false),
     [notice, setNotice] = useState(''),
     [now, setNow] = useState(0);
-  const [detailLoading, setDetailLoading] = useState(false),
-    [detailError, setDetailError] = useState('');
-  const [detailNavIds, setDetailNavIds] = useState<string[] | null>(null);
   const [importPreview, setImportPreview] = useState<PersonalBackup | null>(null);
   const [importing, setImporting] = useState(false);
   const [presetRevision, setPresetRevision] = useState(0);
@@ -224,47 +219,10 @@ function HomeContent() {
   const discoveryFilters = useRef<Filters>(defaultFilters);
   const resultsTopRef = useRef<HTMLDivElement>(null);
   const preferencesWarning = useRef(false);
-  const detailCache = useRef<Record<string, Job>>({});
-  const detailRequest = useRef(0);
-  const detailsPromise = useRef<Record<string, Promise<Record<string, Job>>>>({});
   const [searchIndex, setSearchIndex] = useState<Record<string, string> | null>(null);
   const [searchError, setSearchError] = useState('');
   const [searchAttempt, setSearchAttempt] = useState(0);
   const previousSearchQuery = useRef('');
-  const missingLink = useRef<string | null>(null);
-
-  const handleActivateSnapshot = useCallback(() => {
-    detailCache.current = {};
-    detailsPromise.current = {};
-    ++detailRequest.current;
-    setSelected(null);
-    setDetailLoading(false);
-    setDetailError('');
-    setSearchIndex(null);
-    setSearchError('');
-  }, []);
-
-  const {
-    data,
-    previewData,
-    loading,
-    error,
-    progress: progressiveProgress,
-    refresh,
-    refreshIfIdle,
-    dataOrigin,
-    coverage,
-    getActiveSnapshot,
-    isCurrentData,
-  } = useJobSnapshot({ onActivateSnapshot: handleActivateSnapshot });
-
-  const reputationEnabled = !!data && workspaceMode === 'jobs';
-  const enableReputation = reputation.enable;
-  useEffect(() => {
-    if (!reputationEnabled) return;
-    const timer = setTimeout(enableReputation, 0);
-    return () => clearTimeout(timer);
-  }, [reputationEnabled, enableReputation]);
 
   const {
     personal,
@@ -277,69 +235,50 @@ function HomeContent() {
     changeStage,
   } = usePersonalRecords({ ready, onNotice: setNotice });
 
-  const openDetail = useCallback(
-    async (job: Job, linkId = job.id) => {
-      setLinkedJobId(linkId);
-      missingLink.current = null;
-      const request = ++detailRequest.current;
-      setDetailError('');
-      setDetailLoading(false);
-      const cached = detailCache.current[job.id];
-      setSelected(
-        cached ? { ...cached, talk_events: job.talk_events ?? cached.talk_events } : {
-          ...job,
-          body: job.body || '正在读取完整公告…',
-          emails: job.emails ?? [],
-          attachments: job.attachments ?? [],
-          links: job.links ?? [],
-        },
-      );
-      if (cached) { markRead(cached); return; }
-      if (job.body) { markRead(job); return; }
-      const snapshot = getActiveSnapshot();
-      const url = snapshot?.detail_shards?.[job.id.slice(0, 2)] ?? snapshot?.details_url;
-      if (!url) { setDetailError('这条公告的详情暂未生成，请打开原公告核对。'); return; }
-      const pending = detailsPromise.current;
-      setDetailLoading(true);
-      try {
-        if (!pending[url]) {
-          pending[url] = fetch(url, { cache: snapshot?.detail_shards ? 'force-cache' : 'no-store' }).then(
-            async (response) => {
-              if (!response.ok) throw Error('完整公告暂时无法读取。');
-              const payload = (await response.json()) as {
-                schema_version?: number;
-                jobs?: Record<string, Job>;
-              };
-              if (
-                payload.schema_version !== 1 ||
-                !payload.jobs ||
-                typeof payload.jobs !== 'object'
-              )
-                throw Error('完整公告数据格式异常。');
-              return payload.jobs;
-            },
-          );
-        }
-        const records = await pending[url];
-        const full = records[job.id];
-        if (!full) throw Error('这条公告的详情暂未生成，请打开原公告核对。');
-        if (request === detailRequest.current) {
-          detailCache.current = { ...detailCache.current, ...records };
-          setSelected({ ...full, talk_events: job.talk_events ?? full.talk_events });
-          markRead(full);
-        }
-      } catch (e) {
-        delete pending[url];
-        if (request === detailRequest.current) {
-          setSelected(job);
-          setDetailError(e instanceof Error ? e.message : '完整公告读取失败。');
-        }
-      } finally {
-        if (request === detailRequest.current) setDetailLoading(false);
-      }
+  const {
+    selected,
+    linkedJobId,
+    setLinkedJobId,
+    detailLoading,
+    detailError,
+    detailNavIds,
+    setDetailNavIds,
+    openDetail,
+    closeDetail,
+    resetDetailOnPopState,
+    activateDetailSnapshot,
+    resolveDeepLink,
+  } = useJobDetail({ markRead, onNotice: setNotice });
+
+  const handleActivateSnapshot = useCallback(
+    (snapshot: Snapshot | null) => {
+      activateDetailSnapshot(snapshot);
+      setSearchIndex(null);
+      setSearchError('');
     },
-    [markRead, getActiveSnapshot],
+    [activateDetailSnapshot],
   );
+
+  const {
+    data,
+    previewData,
+    loading,
+    error,
+    progress: progressiveProgress,
+    refresh,
+    refreshIfIdle,
+    dataOrigin,
+    coverage,
+    isCurrentData,
+  } = useJobSnapshot({ onActivateSnapshot: handleActivateSnapshot });
+
+  const reputationEnabled = !!data && workspaceMode === 'jobs';
+  const enableReputation = reputation.enable;
+  useEffect(() => {
+    if (!reputationEnabled) return;
+    const timer = setTimeout(enableReputation, 0);
+    return () => clearTimeout(timer);
+  }, [reputationEnabled, enableReputation]);
 
   // Browser storage is read after hydration; SSR has no access to this device state.
   useEffect(() => {
@@ -379,7 +318,7 @@ function HomeContent() {
       clearTimeout(initialRead);
       clearInterval(timer);
     };
-  }, [refresh, selectEmployerId, setPersonal]);
+  }, [refresh, selectEmployerId, setPersonal, setLinkedJobId]);
 
   useEffect(() => {
     if (!ready || workspaceMode !== 'jobs') return;
@@ -387,21 +326,9 @@ function HomeContent() {
   }, [ready, workspaceMode, refreshIfIdle]);
 
   useEffect(() => {
-    if (!ready || !linkedJobId) return;
-    const snapshot = data || previewData;
-    const found = snapshot && resolveJobId(snapshot.jobs, linkedJobId);
-    if (found && selected?.id !== found.id) {
-      const timer = setTimeout(() => void openDetail(found, linkedJobId), 0);
-      return () => clearTimeout(timer);
-    }
-    else if (!found && data && !loading && missingLink.current !== linkedJobId) {
-      const timer = setTimeout(() => {
-        missingLink.current = linkedJobId;
-        setNotice('这条链接对应的机会暂不在当前索引中，请查看原公告或稍后刷新；链接已保留。');
-      }, 0);
-      return () => clearTimeout(timer);
-    }
-  }, [ready, linkedJobId, data, previewData, selected?.id, loading, openDetail]);
+    if (!ready) return;
+    return resolveDeepLink(data, previewData, loading);
+  }, [ready, data, previewData, loading, resolveDeepLink]);
 
   useEffect(() => {
     if (!ready || typeof window === 'undefined') return;
@@ -421,16 +348,13 @@ function HomeContent() {
     const onPopState = () => {
       const urlState = parseUrlState(window.location.search);
       selectEmployerId(urlState.employerId || null);
-      ++detailRequest.current;
-      setSelected(null);
-      setDetailLoading(false);
-      setLinkedJobId(urlState.jobId || null);
+      resetDetailOnPopState(urlState.jobId || null);
       setFilters(urlState.filters ? restoreBrowsing({ filters: urlState.filters }).filters : { ...defaultFilters });
       setPage(urlState.page || 1);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [selectEmployerId]);
+  }, [selectEmployerId, resetDetailOnPopState]);
 
   useEffect(() => {
     if (!ready) return;
@@ -597,7 +521,7 @@ function HomeContent() {
       setDetailNavIds(filtered.map((j) => j.id));
       void openDetail(job);
     },
-    [filtered, openDetail],
+    [filtered, openDetail, setDetailNavIds],
   );
 
   const selectedIndex = useMemo(() => {
@@ -1334,13 +1258,7 @@ function HomeContent() {
         onNavigate={navigateDetail}
         siblingJobs={selectedGroupJobs}
         onSelectJob={(job) => void openDetail(job)}
-        onClose={() => {
-          ++detailRequest.current;
-          setLinkedJobId(null);
-          setSelected(null);
-          setDetailNavIds(null);
-          setDetailLoading(false);
-        }}
+        onClose={closeDetail}
         onRead={markRead}
         onReadChange={setRead}
         onToggle={toggle}

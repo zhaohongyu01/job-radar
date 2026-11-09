@@ -41,6 +41,7 @@ export function restoreBrowsing(input: unknown, legacyRelatedTalks = true): { fi
   if (!value.filters || typeof value.filters !== 'object' || Array.isArray(value.filters)) return result;
   const fields = { ...(value.filters as Record<string, unknown>) };
   fields.sector = legacySector(fields.sector);
+  if (fields.view === 'applied') fields.view = 'pipeline';
   for (const key of Object.keys(ENUMS) as (keyof typeof ENUMS)[]) {
     const field = fields[key];
     if (typeof field === 'string' && (ENUMS[key] as readonly string[]).includes(field))

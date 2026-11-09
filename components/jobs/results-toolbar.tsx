@@ -1,6 +1,7 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bell, Check, ChevronDown, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import {
   Pagination,
   PaginationContent,
@@ -13,9 +14,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { selectedWorkCities } from '@/lib/jobs';
 import type { Filters, Job, Snapshot } from '@/lib/jobs';
 import type { CardDensity, ViewMode } from '@/lib/browsing';
+import {
+  loadRadarPresets,
+  RADAR_ACTIVE_PRESET_STORAGE,
+  saveRadarPresets,
+  type RadarPreset,
+} from '@/lib/radar';
 import { PAGE_SIZES } from '@/hooks/use-url-sync';
 
 export function ResultsPagination({
@@ -121,6 +133,160 @@ export function ResultsPagination({
   );
 }
 
+function PresetDropdown({
+  currentFilters,
+  onApplyPreset,
+}: {
+  currentFilters: Filters;
+  onApplyPreset: (presetFilters: Partial<Filters>, presetName: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [presets, setPresets] = useState<RadarPreset[]>([]);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const loaded = loadRadarPresets();
+      setPresets(loaded);
+      try {
+        const savedActive = window.localStorage.getItem(RADAR_ACTIVE_PRESET_STORAGE);
+        if (savedActive && loaded.some((p) => p.id === savedActive)) {
+          setActivePresetId(savedActive);
+        }
+      } catch {
+        // ignore
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleSelect = (preset: RadarPreset) => {
+    setActivePresetId(preset.id);
+    try {
+      window.localStorage.setItem(RADAR_ACTIVE_PRESET_STORAGE, preset.id);
+    } catch {
+      // ignore
+    }
+    onApplyPreset(preset.filters, preset.name);
+    setOpen(false);
+  };
+
+  const handleSaveCurrent = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const created: RadarPreset = {
+      id: `preset-${Date.now()}`,
+      name,
+      filters: {
+        ...currentFilters,
+        view: 'all',
+        radarFocus: 'none',
+        onlyNew: false,
+        onlyUnread: false,
+      },
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...presets, created];
+    if (!saveRadarPresets(updated)) {
+      setError('浏览器未允许保存，请检查存储设置后重试。');
+      return;
+    }
+    setError('');
+    setPresets(updated);
+    setActivePresetId(created.id);
+    try {
+      window.localStorage.setItem(RADAR_ACTIVE_PRESET_STORAGE, created.id);
+    } catch {
+      // ignore
+    }
+    setNewName('');
+  };
+
+  const handleDelete = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = presets.filter((p) => p.id !== id);
+    if (!saveRadarPresets(updated)) {
+      setError('浏览器未允许保存，请检查存储设置后重试。');
+      return;
+    }
+    setError('');
+    setPresets(updated);
+    if (activePresetId === id) {
+      setActivePresetId(updated[0]?.id ?? null);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger className="btn btn-secondary btn-sm preset-dropdown-trigger">
+        <span>方案</span>
+        <ChevronDown size={13} />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="preset-dropdown-popover">
+        <div className="preset-dropdown-head">
+          <strong>我的筛选方案</strong>
+        </div>
+        {error && <output className="focus-error">{error}</output>}
+        {presets.length === 0 ? (
+          <p className="small muted">暂无保存的方案，可将当前筛选保存为快捷方案。</p>
+        ) : (
+          <ul className="preset-dropdown-list">
+            {presets.map((preset) => {
+              const isActive = activePresetId === preset.id;
+              return (
+                <li key={preset.id} className="preset-dropdown-item">
+                  <button
+                    type="button"
+                    className={`preset-dropdown-btn ${isActive ? 'is-active' : ''}`}
+                    onClick={() => handleSelect(preset)}
+                  >
+                    <span>{preset.name}</span>
+                    {isActive && <Check size={13} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn preset-dropdown-del"
+                    aria-label={`删除方案 ${preset.name}`}
+                    title={`删除方案 ${preset.name}`}
+                    onClick={(e) => handleDelete(preset.id, e)}
+                  >
+                    <X size={13} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="preset-dropdown-create">
+          <input
+            type="text"
+            className="field-input"
+            aria-label="筛选方案名称"
+            maxLength={32}
+            placeholder="保存当前条件为方案…"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveCurrent();
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!newName.trim()}
+            onClick={handleSaveCurrent}
+          >
+            <Plus size={14} />
+            保存
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export type LocationScopeOption = {
   scope: 'exact' | 'possible' | 'unknown';
   label: string;
@@ -139,6 +305,9 @@ export interface ResultsToolbarProps {
   filters: Filters;
   since: string | null;
   newCount: number;
+  dueSoonCount: number;
+  presetRevision: number;
+  onApplyPreset: (presetFilters: Partial<Filters>, presetName: string) => void;
   groupCompanies: boolean;
   onToggleGroupCompanies: () => void;
   onOpenView: (view: Filters['view']) => void;
@@ -168,6 +337,9 @@ export function ResultsToolbar({
   filters,
   since,
   newCount,
+  dueSoonCount,
+  presetRevision,
+  onApplyPreset,
   groupCompanies,
   onToggleGroupCompanies,
   onOpenView,
@@ -244,6 +416,17 @@ export function ResultsToolbar({
                     )}
                   </span>
                 )}
+                {filters.view === 'all' && dueSoonCount > 0 && (
+                  <button
+                    type="button"
+                    className="chip chip-amber due-soon-chip"
+                    onClick={() => onOpenView('planned')}
+                    title="点击查看 7 天内截止的待投递机会"
+                  >
+                    <Bell size={12} />
+                    <span>7 天内截止 {dueSoonCount}</span>
+                  </button>
+                )}
                 {filters.salary !== '全部' && (
                   <span className="chip chip-brand">薪资 {filters.salary}</span>
                 )}
@@ -299,18 +482,18 @@ export function ResultsToolbar({
             >
               合并同企业
             </button>
-            <button
-              type="button"
-              className="toggle-chip toggle-chip-sm"
-              aria-pressed={filters.view === 'hidden'}
-              onClick={() => onOpenView(filters.view === 'hidden' ? 'all' : 'hidden')}
-            >
-              {filters.view === 'hidden' ? '返回全部机会' : '不感兴趣'}
-            </button>
           </div>
         </div>
 
         <div className="result-tools">
+          {filters.view === 'all' && (
+            <PresetDropdown
+              key={presetRevision}
+              currentFilters={filters}
+              onApplyPreset={onApplyPreset}
+            />
+          )}
+
           <Select value={filters.sort} onValueChange={(v) => onChange('sort', v as Filters['sort'])}>
             <SelectTrigger className="sort-trigger" aria-label="排序方式">
               <SelectValue>
@@ -396,143 +579,145 @@ export function ResultsToolbar({
         </div>
       </div>
 
-      <div className="result-subbar">
-        {selectedWorkCities(filters).length > 0 ? (
-          <div className="scope-bar">
-            <fieldset className="seg" aria-label="工作地点匹配范围">
-              {locationOptions.map((option) => (
+      {filters.view === 'all' && (
+        <div className="result-subbar">
+          {selectedWorkCities(filters).length > 0 ? (
+            <div className="scope-bar">
+              <fieldset className="seg" aria-label="工作地点匹配范围">
+                {locationOptions.map((option) => (
+                  <button
+                    key={option.scope}
+                    type="button"
+                    aria-pressed={filters.locationScope === option.scope}
+                    onClick={() => onChange('locationScope', option.scope)}
+                  >
+                    {option.label}
+                    <span className="seg-count">{data ? option.count : '…'}</span>
+                  </button>
+                ))}
+              </fieldset>
+            </div>
+          ) : (
+            <div />
+          )}
+
+          <div className="filter-chips" aria-label="已选筛选条件">
+            <span>当前筛选</span>
+            {filters.workCities && filters.workCities.length > 0 ? (
+              filters.workCities.map((c) => (
                 <button
-                  key={option.scope}
-                  type="button"
-                  aria-pressed={filters.locationScope === option.scope}
-                  onClick={() => onChange('locationScope', option.scope)}
+                  key={`workCity-${c}`}
+                  className="filter-chip"
+                  onClick={() => onRemoveWorkCity(c)}
+                  aria-label={`移除城市：${c}`}
                 >
-                  {option.label}
-                  <span className="seg-count">{data ? option.count : '…'}</span>
+                  {c}
+                  <X size={12} />
+                </button>
+              ))
+            ) : filters.city !== '全部城市' ? (
+              <button
+                key="city"
+                className="filter-chip"
+                onClick={() => onChange('city', '全部城市')}
+                aria-label={`移除城市：${filters.city}`}
+              >
+                {filters.city}
+                <X size={12} />
+              </button>
+            ) : null}
+            {([
+              ['type', filters.type, '全部', filters.type],
+              ...(filters.type === '校招' ? [['year', filters.year, '全部', `${filters.year}届`]] : []),
+              ['sector', filters.sector, '全部', filters.sector],
+              ['direction', filters.direction, '全部', filters.direction],
+              ['salary', filters.salary, '全部', `薪资${filters.salary}`],
+              ['education', filters.education, '', `学历：${filters.education}`],
+              ['major', filters.major || '', '', `专业：${filters.major}`],
+              [
+                'employmentType',
+                filters.employmentType || 'all',
+                'all',
+                ({ full_time: '全职', internship: '实习', part_time: '兼职' } as Record<string, string>)[
+                  filters.employmentType || ''
+                ] || '',
+              ],
+              ['provenance', filters.provenance, '全部', filters.provenance],
+              ['kind', filters.kind, '全部', filters.kind],
+              ['changeType', filters.changeType, '全部', filters.changeType],
+              [
+                'validity',
+                filters.validity || 'all',
+                'all',
+                ({
+                  confirmed_open: '近期核验在招',
+                  long_term: '原文长期招聘',
+                  unconfirmed: '有效性待核实',
+                } as Record<string, string>)[filters.validity || ''] || '',
+              ],
+              ['reputationMin', filters.reputationMin || 'all', 'all', `体验参考≥${filters.reputationMin}分`],
+            ] as [keyof Filters, string, string, string][])
+              .filter(([, value, empty]) => value !== empty)
+              .map(([key, , empty, label]) => (
+                <button
+                  key={key}
+                  className="filter-chip"
+                  onClick={() => onChange(key, empty as never)}
+                  aria-label={`移除筛选：${label}`}
+                >
+                  {label}
+                  <X size={12} />
                 </button>
               ))}
-            </fieldset>
+            {filters.showExpired && (
+              <button
+                type="button"
+                className="filter-chip"
+                onClick={() => onChange('showExpired', false)}
+                aria-label="移除筛选：含已截止"
+              >
+                含已截止
+                <X size={12} />
+              </button>
+            )}
+            {!filters.includeUncertain && (
+              <button
+                type="button"
+                className="filter-chip"
+                onClick={() => onChange('includeUncertain', true)}
+                aria-label="移除筛选：不含信息未明确的公告"
+              >
+                不含信息未明确的公告
+                <X size={12} />
+              </button>
+            )}
+            {filters.includeRelatedTalks && (
+              <button
+                type="button"
+                className="filter-chip"
+                onClick={() => onChange('includeRelatedTalks', false)}
+                aria-label="移除筛选：含本城宣讲关联"
+              >
+                含本城宣讲关联
+                <X size={12} />
+              </button>
+            )}
+            {filters.reputationMin !== 'all' && filters.includeUnrated === false && (
+              <button
+                type="button"
+                className="filter-chip"
+                onClick={() => onChange('includeUnrated', true)}
+              >
+                仅看样本充分的企业
+                <X size={12} />
+              </button>
+            )}
+            <button className="text-btn" onClick={onResetFilters}>
+              恢复默认
+            </button>
           </div>
-        ) : (
-          <div />
-        )}
-
-        <div className="filter-chips" aria-label="已选筛选条件">
-          <span>当前筛选</span>
-          {filters.workCities && filters.workCities.length > 0 ? (
-            filters.workCities.map((c) => (
-              <button
-                key={`workCity-${c}`}
-                className="filter-chip"
-                onClick={() => onRemoveWorkCity(c)}
-                aria-label={`移除城市：${c}`}
-              >
-                {c}
-                <X size={12} />
-              </button>
-            ))
-          ) : filters.city !== '全部城市' ? (
-            <button
-              key="city"
-              className="filter-chip"
-              onClick={() => onChange('city', '全部城市')}
-              aria-label={`移除城市：${filters.city}`}
-            >
-              {filters.city}
-              <X size={12} />
-            </button>
-          ) : null}
-          {([
-            ['type', filters.type, '全部', filters.type],
-            ...(filters.type === '校招' ? [['year', filters.year, '全部', `${filters.year}届`]] : []),
-            ['sector', filters.sector, '全部', filters.sector],
-            ['direction', filters.direction, '全部', filters.direction],
-            ['salary', filters.salary, '全部', `薪资${filters.salary}`],
-            ['education', filters.education, '', `学历：${filters.education}`],
-            ['major', filters.major || '', '', `专业：${filters.major}`],
-            [
-              'employmentType',
-              filters.employmentType || 'all',
-              'all',
-              ({ full_time: '全职', internship: '实习', part_time: '兼职' } as Record<string, string>)[
-                filters.employmentType || ''
-              ] || '',
-            ],
-            ['provenance', filters.provenance, '全部', filters.provenance],
-            ['kind', filters.kind, '全部', filters.kind],
-            ['changeType', filters.changeType, '全部', filters.changeType],
-            [
-              'validity',
-              filters.validity || 'all',
-              'all',
-              ({
-                confirmed_open: '近期核验在招',
-                long_term: '原文长期招聘',
-                unconfirmed: '有效性待核实',
-              } as Record<string, string>)[filters.validity || ''] || '',
-            ],
-            ['reputationMin', filters.reputationMin || 'all', 'all', `体验参考≥${filters.reputationMin}分`],
-          ] as [keyof Filters, string, string, string][])
-            .filter(([, value, empty]) => value !== empty)
-            .map(([key, , empty, label]) => (
-              <button
-                key={key}
-                className="filter-chip"
-                onClick={() => onChange(key, empty as never)}
-                aria-label={`移除筛选：${label}`}
-              >
-                {label}
-                <X size={12} />
-              </button>
-            ))}
-          {filters.showExpired && (
-            <button
-              type="button"
-              className="filter-chip"
-              onClick={() => onChange('showExpired', false)}
-              aria-label="移除筛选：含已截止"
-            >
-              含已截止
-              <X size={12} />
-            </button>
-          )}
-          {!filters.includeUncertain && (
-            <button
-              type="button"
-              className="filter-chip"
-              onClick={() => onChange('includeUncertain', true)}
-              aria-label="移除筛选：不含信息未明确的公告"
-            >
-              不含信息未明确的公告
-              <X size={12} />
-            </button>
-          )}
-          {filters.includeRelatedTalks && (
-            <button
-              type="button"
-              className="filter-chip"
-              onClick={() => onChange('includeRelatedTalks', false)}
-              aria-label="移除筛选：含本城宣讲关联"
-            >
-              含本城宣讲关联
-              <X size={12} />
-            </button>
-          )}
-          {filters.reputationMin !== 'all' && filters.includeUnrated === false && (
-            <button
-              type="button"
-              className="filter-chip"
-              onClick={() => onChange('includeUnrated', true)}
-            >
-              仅看样本充分的企业
-              <X size={12} />
-            </button>
-          )}
-          <button className="text-btn" onClick={onResetFilters}>
-            恢复默认
-          </button>
         </div>
-      </div>
+      )}
     </>
   );
 }

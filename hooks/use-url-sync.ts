@@ -58,6 +58,16 @@ export function useUrlSync({
   const preferencesWarning = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const [showBackTop, setShowBackTop] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const dismissOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+    try {
+      localStorage.setItem('job-radar-onboarded-v1', '1');
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
@@ -105,8 +115,11 @@ export function useUrlSync({
         // A blocked preference store must not prevent browsing or personal-record loading.
       }
       let restored = restoreBrowsing(null);
+      let hasStoredBrowsing = false;
       try {
-        restored = restoreBrowsing(JSON.parse(localStorage.getItem(BROWSING_STORAGE) || 'null'));
+        const rawBrowsing = localStorage.getItem(BROWSING_STORAGE);
+        hasStoredBrowsing = Boolean(rawBrowsing);
+        restored = restoreBrowsing(JSON.parse(rawBrowsing || 'null'));
       } catch {
         /* A shared link still works when preferences cannot be read. */
       }
@@ -127,6 +140,16 @@ export function useUrlSync({
         const old = localStorage.getItem(VISIT);
         setSince(old && !Number.isNaN(Date.parse(old)) ? old : null);
         localStorage.setItem(VISIT, new Date().toISOString());
+        const hasOnboarded = Boolean(localStorage.getItem('job-radar-onboarded-v1'));
+        const hasUrlFilters = Boolean(urlState.filters || urlState.jobId || urlState.employerId);
+        if (
+          !hasStoredBrowsing &&
+          Object.keys(records).length === 0 &&
+          !hasUrlFilters &&
+          !hasOnboarded
+        ) {
+          setShowOnboarding(true);
+        }
       } catch {
         onNotice('本机记录暂时无法读取；你仍可浏览招聘机会。');
       }
@@ -319,6 +342,8 @@ export function useUrlSync({
     activeFilterCount,
     searchRef,
     showBackTop,
+    showOnboarding,
+    dismissOnboarding,
   };
 }
 

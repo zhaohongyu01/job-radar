@@ -43,7 +43,7 @@ export function TopActionCard({
   const topUrgent = queue[0];
 
   return (
-    <div className={`top-action-card ${ready && !topUrgent ? 'is-calm' : ''}`} aria-label="我的求职安排与投递进度">
+    <div className={`top-action-card ${ready && !topUrgent ? 'is-calm' : ''}`} aria-label="我的求职安排与投递跟进">
       <div className="top-action-stats">
         <button
           type="button"
@@ -65,7 +65,7 @@ export function TopActionCard({
           className={`top-stat-btn ${activeView === 'applied' ? 'is-active' : ''}`}
           disabled={!ready}
           onClick={() => onView('applied')}
-          title="查看已投递记录"
+          title="查看投递跟进"
         >
           <span className="top-stat-val">{ready ? appliedCount : '—'}</span>
           <span className="top-stat-lbl">

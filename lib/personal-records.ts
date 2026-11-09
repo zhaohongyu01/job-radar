@@ -1,6 +1,6 @@
 import type { Personal, PersonalRecord } from './jobs.ts';
 
-export const APPLICATION_STAGES = { planned: '准备投递', applied: '已投递', test: '笔试 / 测评', interview: '面试中', offer: '已获 Offer', rejected: '未通过', withdrawn: '主动结束' };
+export const APPLICATION_STAGES = { planned: '待投递', applied: '已投递', test: '笔试 / 测评', interview: '面试中', offer: '已获 Offer', rejected: '未通过', withdrawn: '主动结束' };
 export const PERSONAL_DETAIL_FIELDS = ['application_stage', 'applied_at', 'next_action_at', 'next_action_note', 'notes', 'personal_updated_at'] as const;
 const PERSONAL_STATE_FIELDS = ['saved', 'applied', 'hidden', 'readAt', ...PERSONAL_DETAIL_FIELDS] as const;
 export function validIso(value: unknown): value is string {

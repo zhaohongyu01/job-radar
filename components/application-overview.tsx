@@ -74,7 +74,7 @@ export function ApplicationOverview({
               aria-pressed={activeView === 'applied'}
               onClick={() => onViewChange('applied')}
             >
-              已投递记录 ({activeTotal})
+              投递跟进 ({activeTotal})
             </button>
           </fieldset>
         )}

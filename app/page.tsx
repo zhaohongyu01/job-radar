@@ -5,10 +5,7 @@ import {
   Search,
   SlidersHorizontal,
   Clock3,
-  ExternalLink,
   X,
-  RefreshCw,
-  Bell,
   ChevronDown,
   ArrowUp,
   Info,
@@ -24,7 +21,6 @@ import {
   defaultFilters,
   filterJobs,
   countByLocationScope,
-  personalFor,
   mergeDuplicateOpportunities,
   selectedWorkCities,
   workCitiesLabel,
@@ -36,13 +32,11 @@ import { restoreBrowsing } from '@/lib/browsing';
 import { groupJobs } from '@/lib/grouping';
 import type { JobGroup } from '@/lib/grouping';
 import { FilterSidebar } from '@/components/filter-sidebar';
-import { JobCard, formatDate as date } from '@/components/job-card';
+import { JobCard } from '@/components/job-card';
 import { DetailDrawer } from '@/components/detail-drawer';
-import { PersonalRadar } from '@/components/personal-radar';
-import { DataHealth } from '@/components/data-health';
 import { ActionRail } from '@/components/action-rail';
-import { TopActionCard } from '@/components/top-action-card';
-import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
+import { personalViewFilters } from '@/lib/workspace';
+import { computePersonalCounts } from '@/lib/personal-counts';
 import { patchPersonalRecord } from '@/lib/personal-store';
 import { EmployerWorkspace, useEmployerRecords, useEmployerReputation, useEmployerNavigation } from '@/components/employer-workspace';
 import { filterByReputation } from '@/lib/reputation';
@@ -53,6 +47,8 @@ import { ResultsPagination, ResultsToolbar } from '@/components/jobs/results-too
 import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
 import { AppHeader } from '@/components/jobs/app-header';
+import { OnboardingCard } from '@/components/jobs/onboarding-card';
+import { loadRadarPresets, RADAR_ACTIVE_PRESET_STORAGE, saveRadarPresets } from '@/lib/radar';
 import { useJobSnapshot } from '@/hooks/use-job-snapshot';
 import { usePersonalRecords } from '@/hooks/use-personal-records';
 import { useJobDetail } from '@/hooks/use-job-detail';
@@ -120,7 +116,6 @@ function HomeContent() {
     progress: progressiveProgress,
     refresh,
     refreshIfIdle,
-    dataOrigin,
     coverage,
     isCurrentData,
   } = useJobSnapshot({ onActivateSnapshot: handleActivateSnapshot });
@@ -149,6 +144,8 @@ function HomeContent() {
     activeFilterCount,
     searchRef,
     showBackTop,
+    showOnboarding,
+    dismissOnboarding,
   } = useUrlSync({
     ready,
     setReady,
@@ -209,15 +206,10 @@ function HomeContent() {
   const previewJobs = useMemo(() => !data && filters.view === 'all' && !(filters.query.trim() && previewData?.search_url)
     ? filterJobs(mergeDuplicateOpportunities(previewData?.jobs || []), filters, personal, since, now).slice(0, 10) : [],
     [data, previewData, filters, personal, since, now]);
-  const [savedCount, appliedCount] = useMemo(() => {
-    let saved = 0, applied = 0;
-    for (const job of allJobs) {
-      const record = personalFor(job, personal);
-      if (record.saved) saved++;
-      if (record.applied) applied++;
-    }
-    return [saved, applied];
-  }, [allJobs, personal]);
+  const personalCounts = useMemo(
+    () => computePersonalCounts(allJobs, personal, now),
+    [allJobs, personal, now],
+  );
 
   const needsSearch = !!filters.query.trim() && !!data?.search_url;
   useEffect(() => {
@@ -311,14 +303,6 @@ function HomeContent() {
     return { verified, salaryKnown, total: allJobs.length, hasReputationScores: scored };
   }, [allJobs, now, reputation.index]);
 
-  const radarScopeJobs = useMemo(
-    () =>
-      filters.radarFocus === 'none'
-        ? filtered
-        : filterByReputation(filterJobs(searchableJobs, { ...filters, radarFocus: 'none' }, personal, since, now), filters, reputation.index, employerRecords, now),
-    [searchableJobs, filters, personal, since, now, filtered, reputation.index, employerRecords],
-  );
-
   const locationOptions = useMemo(() => {
     if (!selectedWorkCities(filters).length) return [];
     const counts = countByLocationScope(searchableJobs, filters, personal, since, now);
@@ -383,10 +367,6 @@ function HomeContent() {
         Date.parse(j.updated_at) > Date.parse(since)),
   ).length, [data?.jobs, since]);
 
-  const dueCount = useMemo(() => buildActionQueue(allJobs, personal, now).filter(
-    (job) => job.deadline && Date.parse(job.deadline) - now < 7 * 86400000,
-  ).length, [allJobs, personal, now]);
-
   const years = useMemo(() => [
     '全部',
     ...Array.from(
@@ -414,61 +394,59 @@ function HomeContent() {
         activeView={filters.view}
         onOpenView={openView}
         hasData={Boolean(data)}
-        savedCount={savedCount}
-        appliedCount={appliedCount}
+        pendingCount={personalCounts.pending}
+        trackingCount={personalCounts.tracking}
+        loading={loading}
+        stale={stale}
+        lastSuccessAt={data?.last_success_at}
+        progressiveProgress={progressiveProgress}
         onOpenSources={() => setSourceOpen(true)}
+        onRefresh={() => {
+          reputation.retry();
+          void refresh();
+        }}
+        jobs={allJobs}
+        personal={personal}
+        now={now}
+        ready={ready && !!data}
+        onDetail={(job) => void openDetail(job)}
       />
 
       <main className="page">
-        <div className="page-head">
-          <div className="page-head-intro">
-            <p className="page-eyebrow">
-              {workCitiesLabel(filters)} · {filters.type}
-              {filters.type === '校招' && filters.year !== '全部' ? ` · ${filters.year}届` : ''}
-            </p>
+        {filters.view === 'all' ? (
+          <h1 className="sr-only">发现机会</h1>
+        ) : (
+          <div className="saved-view-header">
             <h1 className="page-title">
-              {({ all: '发现机会', saved: '我的收藏', planned: '待投递', pipeline: '投递进度', applied: '投递记录', hidden: '不感兴趣' } as Record<string, string>)[filters.view] || '发现机会'}
+              {filters.view === 'pipeline' || filters.view === 'applied' ? '投递跟进' : '我的收藏'}
             </h1>
-            <p className="page-lede">
-              {filters.view === 'all'
-                ? '聚合高校就业网、政务直聘与官方公告，追踪网申截止时间与宣讲日程。'
-                : ({
-                    saved: '已收藏的机会集中在这里，可随时回看或标记投递。',
-                    planned: '已收藏、未投递且未截止的机会，按截止时间排列。',
-                    pipeline: '按投递阶段查看进度与下一步安排，记录仅保存在本机。',
-                    applied: '已标记投递的岗位，本地保存，随时跟踪。',
-                    hidden: '标记为不感兴趣的机会，可在这里恢复。',
-                  } as Record<string, string>)[filters.view] || '记录仅保存在本机。'}
-            </p>
+            {(filters.view === 'planned' || filters.view === 'saved' || filters.view === 'hidden') && (
+              <fieldset className="seg saved-subtabs" aria-label="我的收藏分类">
+                <button
+                  type="button"
+                  aria-pressed={filters.view === 'planned'}
+                  onClick={() => openView('planned')}
+                >
+                  待投递 <span className="seg-count">{personalCounts.pending}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={filters.view === 'saved'}
+                  onClick={() => openView('saved')}
+                >
+                  全部收藏 <span className="seg-count">{personalCounts.savedAll}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={filters.view === 'hidden'}
+                  onClick={() => openView('hidden')}
+                >
+                  不感兴趣 <span className="seg-count">{personalCounts.hidden}</span>
+                </button>
+              </fieldset>
+            )}
           </div>
-
-          <div className="page-head-aside">
-            <TopActionCard
-              jobs={allJobs}
-              personal={personal}
-              now={now}
-              ready={ready && !!data}
-              activeView={filters.view}
-              onDetail={(job) => void openDetail(job)}
-              onView={openView}
-            />
-
-            <div className={`freshness ${!data?.last_success_at || stale ? 'is-stale' : ''}`}>
-              <span className="freshness-dot" />
-              <span>{loading && !data ? '正在读取…' : `最近采集 ${date(data?.last_success_at, true)}`}</span>
-              {data && !data.schedule_enabled && <span className="text-muted">（未启用定时）</span>}
-              <button
-                className="icon-btn"
-                onClick={() => { reputation.retry(); void refresh(); }}
-                disabled={loading}
-                aria-label="重新读取招聘数据"
-                title="重新读取招聘数据"
-              >
-                <RefreshCw size={13} className={loading ? 'spinning' : ''} />
-              </button>
-            </div>
-          </div>
-        </div>
+        )}
 
         {notice && (
           <output className="toast">
@@ -498,8 +476,6 @@ function HomeContent() {
           </div>
         )}
 
-        {data && now > 0 && <DataHealth coverage={coverage} data={data} now={now} city={selectedWorkCities(filters)} visibleJobs={filtered} origin={dataOrigin} onSources={() => setSourceOpen(true)} />}
-
         <div className="page-grid">
           <FilterSidebar
             className="filters-desktop"
@@ -521,6 +497,33 @@ function HomeContent() {
               </summary>
               <ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} />
             </details>
+
+            {filters.view === 'all' && showOnboarding && (
+              <OnboardingCard
+                onDismiss={dismissOnboarding}
+                onComplete={(patch) => {
+                  const next = restoreBrowsing({
+                    filters: { ...defaultFilters, ...filters, ...patch, view: 'all' },
+                  }).filters;
+                  setFilters(next);
+                  setPage(1);
+                  const currentPresets = loadRadarPresets();
+                  const defaultPreset = {
+                    id: `preset-default-${Date.now()}`,
+                    name: '我的默认方案',
+                    filters: next,
+                    createdAt: new Date().toISOString(),
+                  };
+                  saveRadarPresets([defaultPreset, ...currentPresets]);
+                  try {
+                    localStorage.setItem(RADAR_ACTIVE_PRESET_STORAGE, defaultPreset.id);
+                  } catch {
+                    // ignore
+                  }
+                  dismissOnboarding();
+                }}
+              />
+            )}
 
             <div className="search-box-wrap">
               <div className="search-row">
@@ -559,42 +562,23 @@ function HomeContent() {
                 </button>
               </div>
 
-              <div className="search-hints">
-                <span>试着搜</span>
-                {['财务', '软件工程师', '管培生', '不限专业'].map((term) => (
-                  <button key={term} type="button" onClick={() => updateQuery(term, true)}>{term}</button>
-                ))}
-                <span className="hint-tail">支持企业、岗位、专业全文搜索</span>
-              </div>
+              {loading && progressiveProgress && (
+                <div className="search-load-progress" aria-live="polite">
+                  <div className="search-load-bar">
+                    <div
+                      className="search-load-fill"
+                      style={{
+                        width: `${Math.min(100, Math.round((progressiveProgress.loaded / Math.max(1, progressiveProgress.total)) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="search-load-text">
+                    正在加载全部 {progressiveProgress.total.toLocaleString()} 条 ·{' '}
+                    {Math.min(100, Math.round((progressiveProgress.loaded / Math.max(1, progressiveProgress.total)) * 100))}%
+                  </span>
+                </div>
+              )}
             </div>
-
-            {data && <PersonalRadar
-              key={presetRevision}
-              now={now}
-              currentFilters={filters}
-              filteredJobs={radarScopeJobs}
-              activeFocus={filters.radarFocus}
-              onApplyPreset={(presetFilters) => {
-                setFilters(restoreBrowsing({ filters: { ...defaultFilters, ...presetFilters, view: 'all', radarFocus: 'none' } }).filters);
-                setPage(1);
-              }}
-              onQuickFocus={(focus) => {
-                if (filters.radarFocus === focus) {
-                  setFilters((prev) => ({ ...prev, radarFocus: 'none' }));
-                  setNotice('已取消聚焦，恢复全部机会列表');
-                } else {
-                  setFilters((prev) => ({ ...prev, radarFocus: focus }));
-                  const focusLabels: Record<string, string> = {
-                    today: '今日发布 / 收录',
-                    supplement: '补录机会',
-                    urgent: '3 天内截止',
-                    change: '近期变更',
-                  };
-                  setNotice(`已聚焦「${focusLabels[focus]}」机会，再次点击标签可恢复全部`);
-                }
-                setPage(1);
-              }}
-            />}
 
             {filters.view !== 'all' && (
               <p className="note-line">
@@ -631,6 +615,17 @@ function HomeContent() {
               filters={filters}
               since={since}
               newCount={newCount}
+              dueSoonCount={personalCounts.dueSoon}
+              presetRevision={presetRevision}
+              onApplyPreset={(presetFilters) => {
+                setFilters(
+                  restoreBrowsing(
+                    { filters: { ...defaultFilters, ...filters, ...presetFilters, view: 'all', radarFocus: 'none' } },
+                    false,
+                  ).filters,
+                );
+                setPage(1);
+              }}
               groupCompanies={groupCompanies}
               onToggleGroupCompanies={() => {
                 setGroupCompanies(!groupCompanies);
@@ -674,16 +669,8 @@ function HomeContent() {
               </p>
             )}
 
-            {dueCount > 0 && (
-              <div className="due-banner">
-                <Bell size={16} />
-                <span>你收藏的 {dueCount} 条公告将在 7 天内截止。请在原公告核对报名要求。</span>
-              </div>
-            )}
-
             {loading && !data ? (
               <div className="opp-list" aria-label="首批预览" aria-busy="true">
-                <output className="plan-caption">首批卡片预览；计数、收藏列表和日程会在完整索引就绪后显示。</output>
                 {previewJobs.map((job) => <JobCard key={job.id} job={job} filters={filters} personal={personal} ready={ready} now={now} since={since}
                   density={cardDensity} onDetail={(candidate) => void openDetail(candidate)} onRead={markRead} onReadChange={setRead} onToggle={toggle} onStageChange={changeStage} onCopy={copyJob} />)}
                 {!previewJobs.length && <><div className="opp-skeleton" /><div className="opp-skeleton" /></>}
@@ -752,18 +739,6 @@ function HomeContent() {
                 <p>合并仅折叠同名企业、同届别、同招聘类型的信息，提前批、春招、秋招等明确批次分开展示；届别未写明的只与同样未写明的合并并标注。所有岗位和来源均保留，每组显示最新一条，其余可展开逐条投递或收藏。</p>
               </div>
             </details>
-
-            <p className="foot-note">
-              {data ? `${data.sources.length} 个来源 ·` : '完整索引尚未就绪 ·'}
-              当前按公告聚合，部分公告包含多个岗位。标签由文字提取，未知资格不会当作“不符合”。
-              <button
-                className="text-btn"
-                onClick={() => setSourceOpen(true)}
-              >
-                查看覆盖与更新状态
-                <ExternalLink size={13} />
-              </button>
-            </p>
           </section>
           <div className="plan-desktop"><ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
         </div>

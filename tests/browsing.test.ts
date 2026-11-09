@@ -123,3 +123,10 @@ void test('city aliases and legacy sectors migrate without accepting invalid URL
   assert.equal(url.filters?.major, '金融');
   assert.equal(parseUrlState('?job=<script>').jobId, undefined);
 });
+
+void test('legacy applied view maps to pipeline in restoreBrowsing and parseUrlState', () => {
+  assert.equal(restoreBrowsing({ filters: { view: 'applied' } }).filters.view, 'pipeline');
+  assert.equal(parseUrlState('?view=applied').filters?.view, 'pipeline');
+  assert.equal(parseUrlState('?view=planned').filters?.view, 'planned');
+  assert.equal(parseUrlState('?view=saved').filters?.view, 'saved');
+});

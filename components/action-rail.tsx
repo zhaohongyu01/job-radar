@@ -135,7 +135,7 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
         <button className="plan-link" disabled={!talks.length} onClick={exportSelected}><Download size={14} />导出当前日程到日历</button>
         <p className="plan-caption">文件导入后不会自动同步改期。宣讲城市不等于工作城市，出发前核对原公告。</p>
       </section>
-      <p className="plan-privacy">收藏和投递记录保存在当前浏览器；换设备前请导出备份。</p>
+      <p className="plan-privacy">收藏和投递跟进保存在当前浏览器；换设备前请导出备份。</p>
     </aside>
   );
 }

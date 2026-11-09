@@ -236,33 +236,6 @@ export function DetailDrawer({
             </SheetHeader>
             <div className="detail-sticky-bar">
               <div className="detail-actions">
-                {onNavigate && currentIndex >= 0 && totalCount > 1 && (
-                  <fieldset className="detail-nav-group" aria-label="上下条岗位切换">
-                    <button
-                      type="button"
-                      className="detail-nav-btn"
-                      disabled={currentIndex <= 0}
-                      onClick={() => onNavigate(-1)}
-                      title="上一条岗位（快捷键 K 或 Alt+↑）"
-                      aria-label="上一条岗位"
-                    >
-                      <ChevronLeft size={14} />
-                      <span>上一条</span>
-                    </button>
-                    <span className="detail-nav-index">{currentIndex + 1} / {totalCount}</span>
-                    <button
-                      type="button"
-                      className="detail-nav-btn"
-                      disabled={currentIndex >= totalCount - 1}
-                      onClick={() => onNavigate(1)}
-                      title="下一条岗位（快捷键 J 或 Alt+↓）"
-                      aria-label="下一条岗位"
-                    >
-                      <span>下一条</span>
-                      <ChevronRight size={14} />
-                    </button>
-                  </fieldset>
-                )}
                 {/* Opening the drawer already marks it read; offer only the reverse. */}
                 {!isUnread(selected, personal) && (
                   <Button
@@ -296,53 +269,98 @@ export function DetailDrawer({
                 <Button variant="ghost" onClick={() => onToggle(selected, 'hidden')}>
                   {personalFor(selected, personal).hidden ? '恢复显示' : '不感兴趣'}
                 </Button>
-                <OutLink
-                  primary
-                  className="primary-link detail-sticky-apply"
-                  url={selected.application_url || selected.source_url}
-                  onOpen={() => onRead(selected)}
-                >
-                  {selected.application_url ? '前往投递' : '查看原公告'}
-                </OutLink>
-              </div>
-              <nav className="detail-jump-nav" aria-label="详情章节快速跳转">
-                <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-apply')}>
-                  报名入口
-                </button>
-                {siblingRoleItems.length > 1 && (
-                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-siblings')}>
-                    同企岗位 ({siblingRoleItems.length})
-                  </button>
-                )}
-                {(selected.positions ?? []).length > 0 && (
-                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-positions')}>
-                    岗位明细 ({selected.positions?.length})
-                  </button>
-                )}
-                <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-body')}>
-                  公告正文
-                </button>
-                <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-tracker')}>
-                  投递跟进
-                </button>
-                {headingAnchors.map((sec) => (
-                  <button
-                    key={sec.id}
-                    type="button"
-                    className="detail-jump-pill is-sub"
-                    onClick={() => scrollToSection(sec.id)}
+                <div className="detail-sticky-cta">
+                  {selected.application_url && selected.source_url && selected.application_url !== selected.source_url && (
+                    <OutLink
+                      url={selected.source_url}
+                      onOpen={() => onRead(selected)}
+                      className="quiet-link detail-sticky-source"
+                    >
+                      原公告
+                    </OutLink>
+                  )}
+                  <OutLink
+                    primary
+                    className="primary-link detail-sticky-apply"
+                    url={selected.application_url || selected.source_url}
+                    onOpen={() => onRead(selected)}
                   >
-                    {sec.shortLabel || sec.heading}
+                    {selected.application_url ? '前往投递' : '查看原公告'}
+                  </OutLink>
+                </div>
+              </div>
+              <div className="detail-subbar">
+                {onNavigate && currentIndex >= 0 && totalCount > 1 && (
+                  <fieldset className="detail-nav-group" aria-label="上下条岗位切换">
+                    <button
+                      type="button"
+                      className="detail-nav-btn"
+                      disabled={currentIndex <= 0}
+                      onClick={() => onNavigate(-1)}
+                      title="上一条岗位（快捷键 K 或 Alt+↑）"
+                      aria-label="上一条岗位"
+                    >
+                      <ChevronLeft size={14} />
+                      <span>上一条</span>
+                    </button>
+                    <span className="detail-nav-index">{currentIndex + 1} / {totalCount}</span>
+                    <button
+                      type="button"
+                      className="detail-nav-btn"
+                      disabled={currentIndex >= totalCount - 1}
+                      onClick={() => onNavigate(1)}
+                      title="下一条岗位（快捷键 J 或 Alt+↓）"
+                      aria-label="下一条岗位"
+                    >
+                      <span>下一条</span>
+                      <ChevronRight size={14} />
+                    </button>
+                  </fieldset>
+                )}
+                <nav className="detail-jump-nav" aria-label="详情章节快速跳转">
+                  {siblingRoleItems.length > 1 && (
+                    <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-siblings')}>
+                      同企岗位 ({siblingRoleItems.length})
+                    </button>
+                  )}
+                  {(selected.positions ?? []).length > 0 && (
+                    <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-positions')}>
+                      岗位明细 ({selected.positions?.length})
+                    </button>
+                  )}
+                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-body')}>
+                    公告正文
                   </button>
-                ))}
-              </nav>
+                  <button type="button" className="detail-jump-pill" onClick={() => scrollToSection('drawer-sec-tracker')}>
+                    投递跟进
+                  </button>
+                  {headingAnchors.map((sec) => (
+                    <button
+                      key={sec.id}
+                      type="button"
+                      className="detail-jump-pill is-sub"
+                      onClick={() => scrollToSection(sec.id)}
+                    >
+                      {sec.shortLabel || sec.heading}
+                    </button>
+                  ))}
+                </nav>
+              </div>
             </div>
             <div className="detail-body" ref={bodyRef}>
               <dl className="detail-facts">
                 <div><dt>工作地点</dt><dd>{locationSummary(selected)}</dd></div>
                 <div><dt>学历要求</dt><dd>{formatEducationDisplay(selected.education, '原公告未明确')}</dd></div>
                 <div><dt>招聘对象</dt><dd>{effectiveJobTypes(selected).join(' / ') || '类型待核实'}{selected.graduation_years.length ? ` · ${selected.graduation_years.join(' / ')}届` : ''}</dd></div>
-                <div><dt>报名截止</dt><dd>{selected.deadline ? formatDate(selected.deadline, true) : '日期未明确，请核实'}</dd></div>
+                <div>
+                  <dt>报名截止</dt>
+                  <dd>
+                    {selected.deadline ? formatDate(selected.deadline, true) : '日期未明确，请核实'}
+                    {selected.deadline_evidence && (
+                      <small className="detail-fact-sub">{selected.deadline_evidence}</small>
+                    )}
+                  </dd>
+                </div>
               </dl>
               {detailLoading && (
                 <output className="inline-note">
@@ -366,53 +384,40 @@ export function DetailDrawer({
                 </p>
               )}
               <TalkEvents job={selected} city={city} now={now} onOpen={() => onRead(selected)} />
-              <div className="apply-panel" id="drawer-sec-apply">
-                <h3>报名入口</h3>
-                {sdeiPositionListUrl(selected.source_url) && (
-                  <div>
-                    <p className="small muted">若原公告报错或打不开，可进入高校岗位列表，按单位名称或岗位查找。单位名称待核实的记录，请先核对招聘主体和投递方式。</p>
-                    <OutLink url={sdeiPositionListUrl(selected.source_url)!} onOpen={() => onRead(selected)}>
-                      打开来源岗位列表
-                    </OutLink>
-                  </div>
-                )}
-                <OutLink
-                  primary
-                  url={selected.application_url || selected.source_url}
-                  onOpen={() => onRead(selected)}
-                >
-                  {selected.application_url
-                    ? '打开投递页面'
-                    : '打开原公告查看报名方式'}
-                </OutLink>
-                {(selected.emails ?? []).map((email) => (
-                  <div className="email-row" key={email}>
-                    <code>{email}</code>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        void navigator.clipboard
-                          .writeText(email)
-                          .then(() =>
-                            setNotice('报名邮箱已复制，请自行核对材料并发送。'),
-                          )
-                          .catch(() =>
-                            setNotice('复制失败，请手动选择邮箱地址复制。'),
-                          )
-                      }
-                    >
-                      复制邮箱
-                    </Button>
-                  </div>
-                ))}
-                <p>跳转不会提交简历，也不会自动标记已投递。</p>
-                {selected.deadline_evidence && (
-                  <p className="deadline-evidence">
-                    {selected.deadline_evidence}
-                  </p>
-                )}
-              </div>
+              {(Boolean(sdeiPositionListUrl(selected.source_url)) || (selected.emails ?? []).length > 0) && (
+                <div className="apply-extra-bar" id="drawer-sec-apply">
+                  {sdeiPositionListUrl(selected.source_url) && (
+                    <div className="apply-extra-row">
+                      <span className="small muted">若原公告打不开，可进入高校岗位列表按单位或岗位查找：</span>
+                      <OutLink url={sdeiPositionListUrl(selected.source_url)!} onOpen={() => onRead(selected)}>
+                        打开来源岗位列表
+                      </OutLink>
+                    </div>
+                  )}
+                  {(selected.emails ?? []).map((email) => (
+                    <div className="email-row" key={email}>
+                      <span className="small muted">投递邮箱：</span>
+                      <code>{email}</code>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          void navigator.clipboard
+                            .writeText(email)
+                            .then(() =>
+                              setNotice('报名邮箱已复制，请自行核对材料并发送。'),
+                            )
+                            .catch(() =>
+                              setNotice('复制失败，请手动选择邮箱地址复制。'),
+                            )
+                        }
+                      >
+                        复制邮箱
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
               {siblingRoleItems.length > 1 && onSelectJob && (
                 <div className="detail-siblings-panel" id="drawer-sec-siblings" aria-label="同企业其余在招岗位">
                   <div className="detail-siblings-head">

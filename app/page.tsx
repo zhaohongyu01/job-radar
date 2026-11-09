@@ -39,13 +39,10 @@ import {
   filterJobs,
   countByLocationScope,
   validatePersonal,
-  externalUrl,
   personalFor,
-  locationSummary,
   mergeDuplicateOpportunities,
   selectedWorkCities,
   workCitiesLabel,
-  formatCompanyDisplay,
   parseSalaryRange,
 } from '@/lib/jobs';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
@@ -55,18 +52,14 @@ import type { ViewMode, CardDensity } from '@/lib/browsing';
 import { groupJobs } from '@/lib/grouping';
 import type { JobGroup } from '@/lib/grouping';
 import { FilterSidebar } from '@/components/filter-sidebar';
-import { JobCard, formatDate as date, extractSalary } from '@/components/job-card';
+import { JobCard, formatDate as date } from '@/components/job-card';
 import { DetailDrawer } from '@/components/detail-drawer';
 import { PersonalRadar } from '@/components/personal-radar';
 import { DataHealth } from '@/components/data-health';
 import { ActionRail } from '@/components/action-rail';
 import { TopActionCard } from '@/components/top-action-card';
 import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
-import { createBackup, validateBackup, writeBackup } from '@/lib/personal-backup';
-import type { PersonalBackup } from '@/lib/personal-backup';
-import { mergePersonalRecords } from '@/lib/personal-records';
-import { patchPersonalRecord, readPersonalRecords, withPersonalLock } from '@/lib/personal-store';
-import { EVENT_PERSONAL_STORAGE, validateEventPersonal } from '@/lib/agenda';
+import { patchPersonalRecord } from '@/lib/personal-store';
 import { EmployerWorkspace, useEmployerRecords, useEmployerReputation, useEmployerNavigation } from '@/components/employer-workspace';
 import { filterByReputation } from '@/lib/reputation';
 import { ApplicationOverview } from '@/components/application-overview';
@@ -80,8 +73,8 @@ import { AppHeader } from '@/components/jobs/app-header';
 import { useJobSnapshot } from '@/hooks/use-job-snapshot';
 import { usePersonalRecords } from '@/hooks/use-personal-records';
 import { useJobDetail } from '@/hooks/use-job-detail';
+import { useBackup } from '@/hooks/use-backup';
 import type { WorkspaceMode } from '@/lib/exams';
-import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
 
 const subscribeNoop = () => () => {};
 function readWorkspaceFromUrl(): boolean {
@@ -188,9 +181,6 @@ function HomeContent() {
     [groupCompanies, setGroupCompanies] = useState(false),
     [notice, setNotice] = useState(''),
     [now, setNow] = useState(0);
-  const [importPreview, setImportPreview] = useState<PersonalBackup | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [presetRevision, setPresetRevision] = useState(0);
   const [showBackTop, setShowBackTop] = useState(false);
   // Read the initial workspace from the URL after hydration (server snapshot is
   // always 'jobs'), so a shared ?workspace=exams link never causes a mismatch.
@@ -214,7 +204,6 @@ function HomeContent() {
       window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
     }
   }, []);
-  const fileRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const discoveryFilters = useRef<Filters>(defaultFilters);
   const resultsTopRef = useRef<HTMLDivElement>(null);
@@ -234,6 +223,32 @@ function HomeContent() {
     toggle,
     changeStage,
   } = usePersonalRecords({ ready, onNotice: setNotice });
+
+  const handleApplyBrowsing = useCallback(
+    (browsing: { filters: Filters; viewMode: ViewMode; groupCompanies: boolean }) => {
+      setFilters(browsing.filters);
+      setViewMode(browsing.viewMode);
+      setGroupCompanies(browsing.groupCompanies);
+    },
+    [],
+  );
+
+  const {
+    fileRef,
+    triggerFilePicker,
+    importPreview,
+    setImportPreview,
+    importing,
+    presetRevision,
+    exportPersonal,
+    importPersonal,
+    confirmImport,
+    copyJob,
+  } = useBackup({
+    syncPersonal,
+    onApplyBrowsing: handleApplyBrowsing,
+    onNotice: setNotice,
+  });
 
   const {
     selected,
@@ -681,85 +696,6 @@ function HomeContent() {
     !!data?.last_success_at &&
     now - Date.parse(data.last_success_at) > 36 * 3600000;
 
-  const exportPersonal = () => {
-    try {
-    const content = JSON.stringify(createBackup(readPersonalRecords(localStorage), localStorage), null, 2);
-    if (new TextEncoder().encode(content).length > 5000000) throw Error('备份超过当前 5 MB 导入上限，请先减少不需要的备注或记录后导出；未截断任何数据。');
-    const blob = new Blob(
-      [content],
-      { type: 'application/json' },
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '职讯雷达-个人记录.json';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice('个人记录已导出。');
-    } catch (error) { setNotice(error instanceof Error ? error.message : '导出失败'); }
-  };
-
-  const importPersonal = async (file?: File) => {
-    if (!file) return;
-    try {
-      if (file.size > 5000000) throw Error('备份文件不能超过 5 MB');
-      const backup = JSON.parse(await file.text());
-      setImportPreview(validateBackup(backup));
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : '无法读取备份文件');
-    }
-    if (fileRef.current) fileRef.current.value = '';
-  };
-
-  const confirmImport = async (preferImported: boolean) => {
-    if (!importPreview || importing) return;
-    setImporting(true);
-    try {
-      const validated = await withPersonalLock(() => {
-        const records = mergePersonalRecords(readPersonalRecords(localStorage), importPreview.records, preferImported);
-        const currentEvents = validateEventPersonal(JSON.parse(localStorage.getItem(EVENT_PERSONAL_STORAGE) || '{}'));
-        const events = { ...currentEvents };
-        for (const [id, record] of Object.entries(importPreview.event_records || {})) {
-          const old = events[id];
-          if (!old || (old.updated_at && record.updated_at ? old.updated_at <= record.updated_at : preferImported)) events[id] = record;
-        }
-        const employers = importPreview.employer_records === undefined ? undefined
-          : mergeEmployerRecords(readEmployerRecords(localStorage), importPreview.employer_records, preferImported);
-        const validated = validateBackup({ ...importPreview, records, event_records: events, employer_records: employers });
-        writeBackup(validated, localStorage);
-        return validated;
-      });
-      syncPersonal();
-      if (validated.browsing) { setFilters(validated.browsing.filters); setViewMode(validated.browsing.viewMode); setGroupCompanies(validated.browsing.groupCompanies); }
-      window.dispatchEvent(new Event('job-radar-local-workspace-change'));
-      setPresetRevision((value) => value + 1);
-      setImportPreview(null); setNotice('备份已合并；个人记录、活动及设置已保存。');
-    } catch (error) { setNotice(error instanceof Error ? error.message : '导入未完成'); }
-    finally { setImporting(false); }
-  };
-
-  const copyJob = (job: Job) => {
-    const { cleanTitle, salary } = extractSalary(job);
-    const salaryText = salary ? ` (${salary})` : '';
-    const comp = formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany;
-    const companyText = comp && comp !== '企业名称待核实' ? `\n【企业】${comp}` : '';
-    const loc = locationSummary(job);
-    const locText = loc ? `\n【地点】${loc}` : '';
-    const deadlineText = job.deadline ? `\n【截止】${date(job.deadline, true)}` : '';
-    const url = externalUrl(job.application_url || job.source_url) || '';
-    const urlText = url ? `\n【来源】${url}` : '';
-    const shareUrl = typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?job=${job.id}`
-      : '';
-    const shareText = shareUrl ? `\n【直达链接】${shareUrl}` : '';
-    const content = `【岗位】${cleanTitle}${salaryText}${companyText}${locText}${deadlineText}${urlText}${shareText}\n—— 来自职讯雷达`;
-    navigator.clipboard.writeText(content).then(() => {
-      setNotice(`已复制「${cleanTitle}」的招聘信息与直达链接，可直接粘贴分享！`);
-    }).catch(() => {
-      setNotice('复制失败，请手动选择复制。');
-    });
-  };
-
   useEffect(() => {
     const context = (
       document as unknown as {
@@ -919,7 +855,7 @@ function HomeContent() {
             onChange={change}
             onReset={resetFilters}
             onExport={exportPersonal}
-            onImport={() => fileRef.current?.click()}
+            onImport={triggerFilePicker}
           />
 
           <section className="results-col" id="opportunities" aria-label="招聘机会">
@@ -1233,7 +1169,7 @@ function HomeContent() {
               onChange={change}
               onReset={resetFilters}
               onExport={exportPersonal}
-              onImport={() => fileRef.current?.click()}
+              onImport={triggerFilePicker}
             />
           </div>
           <div className="mobile-filter-footer">

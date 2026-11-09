@@ -41,7 +41,6 @@ import {
   validatePersonal,
   externalUrl,
   personalFor,
-  isUnread,
   locationSummary,
   mergeDuplicateOpportunities,
   selectedWorkCities,
@@ -51,7 +50,7 @@ import {
   parseSalaryRange,
 } from '@/lib/jobs';
 import { assessOpportunityValidity } from '@/lib/opportunity-validity';
-import type { Job, Personal, Filters, PersonalRecord } from '@/lib/jobs';
+import type { Job, Filters } from '@/lib/jobs';
 import { restoreBrowsing, restoreCardDensity, parseUrlState, formatUrlQuery } from '@/lib/browsing';
 import type { ViewMode, CardDensity } from '@/lib/browsing';
 import { groupJobs } from '@/lib/grouping';
@@ -66,8 +65,8 @@ import { TopActionCard } from '@/components/top-action-card';
 import { personalViewFilters, buildActionQueue } from '@/lib/workspace';
 import { createBackup, validateBackup, writeBackup } from '@/lib/personal-backup';
 import type { PersonalBackup } from '@/lib/personal-backup';
-import { APPLICATION_STAGES, mergePersonalRecords } from '@/lib/personal-records';
-import { commitPersonalRecords, patchPersonalRecord, readPersonalRecords, withPersonalLock } from '@/lib/personal-store';
+import { mergePersonalRecords } from '@/lib/personal-records';
+import { patchPersonalRecord, readPersonalRecords, withPersonalLock } from '@/lib/personal-store';
 import { EVENT_PERSONAL_STORAGE, validateEventPersonal } from '@/lib/agenda';
 import { EmployerWorkspace, useEmployerRecords, useEmployerReputation, useEmployerNavigation } from '@/components/employer-workspace';
 import { filterByReputation } from '@/lib/reputation';
@@ -80,6 +79,7 @@ import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
 import { AppHeader } from '@/components/jobs/app-header';
 import { useJobSnapshot } from '@/hooks/use-job-snapshot';
+import { usePersonalRecords } from '@/hooks/use-personal-records';
 import type { WorkspaceMode } from '@/lib/exams';
 import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
 
@@ -178,7 +178,6 @@ function HomeContent() {
   const { register: registerEmployerCatalog, selectId: selectEmployerId, requestedId: requestedEmployerId, missing: missingEmployer } = useEmployerNavigation();
   const [linkedJobId, setLinkedJobId] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(defaultFilters),
-    [personal, setPersonal] = useState<Personal>({}),
     [ready, setReady] = useState(false),
     [since, setSince] = useState<string | null>(null);
   const [selected, setSelected] = useState<Job | null>(null),
@@ -267,46 +266,16 @@ function HomeContent() {
     return () => clearTimeout(timer);
   }, [reputationEnabled, enableReputation]);
 
-  const syncPersonal = useCallback(() => {
-    try {
-      const next = readPersonalRecords(localStorage);
-      setPersonal(next);
-    } catch {
-      setNotice('个人记录暂时无法读取，已保留当前显示；请先保留备份。');
-    }
-  }, []);
-
-  const save = useCallback(async (update: (latest: Personal) => Personal): Promise<boolean> => {
-    try {
-      await withPersonalLock(() => commitPersonalRecords(localStorage, update));
-      syncPersonal();
-      return true;
-    } catch (error) {
-      syncPersonal();
-      setNotice(error instanceof Error ? error.message : '保存失败，浏览器存储不可用或已满。请先导出记录。');
-      return false;
-    }
-  }, [syncPersonal]);
-
-  useEffect(() => {
-    if (!ready) return;
-    const changed = (event: StorageEvent) => { if (event.key === STORAGE || event.key === null) syncPersonal(); };
-    window.addEventListener('storage', changed);
-    window.addEventListener('focus', syncPersonal);
-    return () => { window.removeEventListener('storage', changed); window.removeEventListener('focus', syncPersonal); };
-  }, [ready, syncPersonal]);
-
-  const setRead = useCallback((job: Job, read: boolean) => {
-    void save((latest) => {
-      const stamp = new Date().toISOString();
-      return patchPersonalRecord(latest, job, { readAt: read ? stamp : null }, stamp);
-    });
-  }, [save]);
-
-  const markRead = useCallback((job: Job) => {
-    void save((latest) => isUnread(job, latest)
-      ? patchPersonalRecord(latest, job, { readAt: new Date().toISOString() }, new Date().toISOString()) : latest);
-  }, [save]);
+  const {
+    personal,
+    setPersonal,
+    syncPersonal,
+    save,
+    setRead,
+    markRead,
+    toggle,
+    changeStage,
+  } = usePersonalRecords({ ready, onNotice: setNotice });
 
   const openDetail = useCallback(
     async (job: Job, linkId = job.id) => {
@@ -410,7 +379,7 @@ function HomeContent() {
       clearTimeout(initialRead);
       clearInterval(timer);
     };
-  }, [refresh, selectEmployerId]);
+  }, [refresh, selectEmployerId, setPersonal]);
 
   useEffect(() => {
     if (!ready || workspaceMode !== 'jobs') return;
@@ -514,42 +483,6 @@ function HomeContent() {
     setFilters((f) => ({ ...defaultFilters, city: f.city, workCities: f.workCities, view: f.view }));
     setPage(1);
   }, []);
-
-  const toggle = (job: Job, key: 'saved' | 'applied' | 'hidden') => {
-    if (key === 'applied') {
-      const current = personalFor(job, personal), stage = current.application_stage;
-      if (current.applied && stage && stage !== 'planned' && stage !== 'applied' &&
-          !window.confirm(`当前投递进度为「${APPLICATION_STAGES[stage]}」。取消“已投递”会把进度改回“待投递”，确定继续？`)) return;
-    }
-    void save((latest) => {
-      const old = personalFor(job, latest), stamp = new Date().toISOString();
-      const patch: PersonalRecord = { [key]: !old[key] };
-      if (key === 'applied') {
-        const stage = old.application_stage;
-        // Marking as applied never rolls a later stage (test/interview/offer…) back.
-        if (patch.applied) patch.application_stage = stage && stage !== 'planned' ? stage : 'applied';
-        else patch.application_stage = 'planned';
-        patch.applied_at = patch.applied ? old.applied_at || stamp : null;
-      }
-      return patchPersonalRecord(latest, job, patch, stamp);
-    });
-  };
-
-  const changeStage = (job: Job, nextStage: NonNullable<Filters['applicationStage']>) => {
-    if (nextStage === 'all') return;
-    void save((latest) => {
-      const old = personalFor(job, latest), stamp = new Date().toISOString();
-      const isApplied = nextStage !== 'planned';
-      const patch: PersonalRecord = {
-        application_stage: nextStage,
-        applied: isApplied,
-        saved: old.saved ?? true,
-        applied_at: isApplied ? old.applied_at || stamp : null,
-      };
-      return patchPersonalRecord(latest, job, patch, stamp);
-    });
-    setNotice(`已更新跟进进度为「${APPLICATION_STAGES[nextStage]}」`);
-  };
 
   const changeCardDensity = (next: CardDensity) => {
     setCardDensity(next);

@@ -14,7 +14,7 @@ import { buildEmployerCatalog } from '@/lib/employer-catalog';
 
 const EmployerDrawer = lazy(() => import('./employer-drawer'));
 type SaveResult = { ok: boolean; message?: string };
-type CatalogRegistration = { jobs: Job[]; onDetail: (job: Job) => void; complete: boolean };
+type CatalogRegistration = { jobs: Job[]; onDetail: (job: Job) => void; onOpenEmployer?: () => void; complete: boolean };
 type Workspace = { records: EmployerRecords; open: (job: Job) => void; reputation: ReturnType<typeof useReputation>;
   register: (registration: CatalogRegistration) => void; selectId: (id: string | null) => void; requestedId: string | null; missing: boolean };
 const EmployerContext = createContext<Workspace | null>(null);
@@ -66,21 +66,23 @@ export function EmployerWorkspace({ children }: { children: ReactNode }) {
   const show = useCallback((job: Job) => {
     const profile = resolveEmployer(job);
     if (profile) {
+      registration.onOpenEmployer?.();
       enableReputation();
       setSelection({ profile, job });
       setRequestedId(profile.id);
       if (typeof window !== 'undefined') {
         const url = new URL(window.location.href);
+        url.searchParams.delete('job');
         url.searchParams.set('employer', profile.id);
         const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-        if (window.history.state?.overlay === 'employer') {
-          window.history.replaceState({ ...window.history.state, overlay: 'employer', employerId: profile.id }, '', nextUrl);
+        if (window.history.state?.overlay === 'employer' || window.history.state?.overlay === 'job') {
+          window.history.replaceState({ ...window.history.state, overlay: 'employer', employerId: profile.id, jobId: null }, '', nextUrl);
         } else {
-          window.history.pushState({ ...window.history.state, overlay: 'employer', employerId: profile.id }, '', nextUrl);
+          window.history.pushState({ ...window.history.state, overlay: 'employer', employerId: profile.id, jobId: null }, '', nextUrl);
         }
       }
     }
-  }, [enableReputation]);
+  }, [enableReputation, registration]);
   const save = async (id: string, patch: EmployerPatch, expected?: EmployerRecord, overwrite = false): Promise<SaveResult> => {
     try {
       await withPersonalLock(() => commitEmployerPatch(localStorage, id, patch, new Date().toISOString(), expected, overwrite));

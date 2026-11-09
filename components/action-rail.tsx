@@ -5,6 +5,15 @@ import { CalendarDays, MapPin, Bookmark, Download } from 'lucide-react';
 import type { Job, Personal, Filters, TalkEvent } from '@/lib/jobs';
 import { externalUrl, eventDisplayTitle } from '@/lib/jobs';
 import { loadAllCities } from '@/lib/cities';
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxCollection,
+  ComboboxItem,
+  ComboboxEmpty,
+} from '@/components/ui/combobox';
 import { AGENDA_STORAGE, EVENT_PERSONAL_STORAGE, EVENT_TYPES, agendaEntries, defaultAgenda, restoreAgenda, validateEventPersonal, eventChanged } from '@/lib/agenda';
 import type { AgendaFilters, EventPersonal } from '@/lib/agenda';
 import { downloadCalendar } from '@/lib/calendar-export';
@@ -86,10 +95,48 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
         <p className="plan-caption">按举办地点 · 北京时间；与工作城市独立设置</p>
         <div className="agenda-controls">
           <div className="agenda-primary">
-          <label>参加活动城市
-            <input list={`${cityId}-options`} aria-label="参加活动城市" value={filters.city} onFocus={ensureCitiesLoaded} onChange={(event) => update('city', event.target.value)} />
-            <datalist id={`${cityId}-options`}>{cityOptions.map((value) => <option key={value} value={value}>{value}</option>)}</datalist>
-          </label>
+          <div className="agenda-field">
+            <label htmlFor={cityId}>参加活动城市</label>
+            <Combobox<string>
+              items={cityOptions}
+              limit={30}
+              value={filters.city}
+              inputValue={filters.city}
+              onOpenChange={(open) => {
+                if (open) ensureCitiesLoaded();
+              }}
+              onInputValueChange={(val, details) => {
+                if (
+                  details.reason === 'input-change' ||
+                  details.reason === 'input-clear' ||
+                  details.reason === 'item-press'
+                ) {
+                  update('city', val);
+                }
+              }}
+              onValueChange={(val) => {
+                if (typeof val === 'string') update('city', val);
+              }}
+            >
+              <ComboboxInput
+                id={cityId}
+                aria-label="参加活动城市"
+                onFocus={ensureCitiesLoaded}
+              />
+              <ComboboxContent side="top">
+                <ComboboxEmpty>暂无匹配城市</ComboboxEmpty>
+                <ComboboxList>
+                  <ComboboxCollection>
+                    {(value: string) => (
+                      <ComboboxItem key={value} value={value}>
+                        {value}
+                      </ComboboxItem>
+                    )}
+                  </ComboboxCollection>
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
+          </div>
           <label>学校<select aria-label="筛选宣讲学校" value={filters.school} onChange={(event) => update('school', event.target.value)}>
             <option value="">全部高校（含地点待确认）</option>{schools.map((school) => <option key={school} value={school}>{school}</option>)}
           </select></label>

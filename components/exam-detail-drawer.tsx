@@ -257,7 +257,11 @@ function DrawerContent({
     onNotify('已导出当前公告考务日历（.ics）');
   };
 
-  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const jump = (id: string) =>
+    document.getElementById(id)?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
 
   const timeline = [
     {

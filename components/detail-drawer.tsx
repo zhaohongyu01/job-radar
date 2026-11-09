@@ -143,7 +143,10 @@ export function DetailDrawer({
   const scrollToSection = (elementId: string) => {
     const el = document.getElementById(elementId);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      });
     }
   };
 
@@ -213,8 +216,18 @@ export function DetailDrawer({
         onClick={() => onSelectJob?.(item)}
         title={`${roleItem.rawRole}${roleItem.tooltipMeta ? ` · ${roleItem.tooltipMeta}` : ''}${itemApplied ? '（已投递）' : itemSaved ? '（已收藏）' : ''}（点击切换查看此岗位）`}
       >
-        {itemApplied && <span className="opp-group-role-status" aria-hidden="true">✓</span>}
-        {!itemApplied && itemSaved && <span className="opp-group-role-status" aria-hidden="true">★</span>}
+        {itemApplied && (
+          <>
+            <span className="opp-group-role-status" aria-hidden="true">✓</span>
+            <span className="sr-only">已投递</span>
+          </>
+        )}
+        {!itemApplied && itemSaved && (
+          <>
+            <span className="opp-group-role-status" aria-hidden="true">★</span>
+            <span className="sr-only">已收藏</span>
+          </>
+        )}
         <span className="opp-group-role-name">{roleItem.cleanRole}</span>
         {roleItem.suffix && <span className="opp-group-role-meta">· {roleItem.suffix}</span>}
       </button>
@@ -825,7 +838,8 @@ export function DetailDrawer({
                 首次收录 {formatDate(selected.first_seen_at, true)} · 内容版本{' '}
                 {selected.revision}
                 <br />
-                最近内容变化 {formatDate(selected.updated_at, true)}
+                最近内容变化 {formatDate(selected.updated_at, true)} · 按{' '}
+                <kbd className="kbd">?</kbd> 查看快捷键
               </p>
             </div>
             <footer className="detail-mobile-bar" aria-label="详情底部操作栏">

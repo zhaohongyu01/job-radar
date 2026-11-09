@@ -16,6 +16,15 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxCollection,
+  ComboboxItem,
+  ComboboxEmpty,
+} from '@/components/ui/combobox';
 import type { Filters, Snapshot } from '@/lib/jobs';
 import { countActiveFilters, selectedWorkCities } from '@/lib/jobs';
 import { loadAllCities, normalizeCity } from '@/lib/cities';
@@ -221,27 +230,50 @@ export function FilterSidebar({
           意向工作城市（可多选）
         </label>
         <div className="city-input-row">
-          <Input
-            id={cityListId}
-            list={`${cityListId}-options`}
-            value={cityQuery}
-            placeholder="输入城市名称后添加"
-            onFocus={ensureCitiesLoaded}
-            onChange={(event) => setCityQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                addCity();
-              }
+          <Combobox<string>
+            items={cityOptions}
+            limit={30}
+            value={null}
+            inputValue={cityQuery}
+            onInputValueChange={(val) => setCityQuery(val)}
+            onOpenChange={(open) => {
+              if (open) ensureCitiesLoaded();
             }}
-          />
-          <datalist id={`${cityListId}-options`}>
-            {cityOptions.map((city) => (
-              <option key={city} value={city}>
-                {city}
-              </option>
-            ))}
-          </datalist>
+            onValueChange={(val) => {
+              if (!val) return;
+              const resolved =
+                normalizeCity(val.trim()) ||
+                (cityOptions.includes(val.trim()) ? val.trim() : null);
+              if (resolved && !selectedCities.includes(resolved)) {
+                onChange('workCities', [...selectedCities, resolved]);
+              }
+              setCityQuery('');
+            }}
+          >
+            <ComboboxInput
+              id={cityListId}
+              placeholder="输入城市名称后添加"
+              onFocus={ensureCitiesLoaded}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.defaultPrevented && canAddCity) {
+                  event.preventDefault();
+                  addCity();
+                }
+              }}
+            />
+            <ComboboxContent>
+              <ComboboxEmpty>暂无匹配城市</ComboboxEmpty>
+              <ComboboxList>
+                <ComboboxCollection>
+                  {(city: string) => (
+                    <ComboboxItem key={city} value={city}>
+                      {city}
+                    </ComboboxItem>
+                  )}
+                </ComboboxCollection>
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
           <button
             type="button"
             className="btn btn-secondary btn-sm"

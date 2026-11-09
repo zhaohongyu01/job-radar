@@ -55,6 +55,7 @@ import { AppHeader } from '@/components/jobs/app-header';
 import { SavedViewHeader } from '@/components/jobs/saved-view-header';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { OnboardingCard } from '@/components/jobs/onboarding-card';
+import { ShortcutsDialog } from '@/components/shortcuts-dialog';
 import { ToastProvider, useToast } from '@/components/toast-provider';
 import { loadRadarPresets, RADAR_ACTIVE_PRESET_STORAGE, saveRadarPresets } from '@/lib/radar';
 import { useJobSnapshot } from '@/hooks/use-job-snapshot';
@@ -111,6 +112,7 @@ function HomeContent() {
     setDetailNavIds,
     openDetail,
     closeDetail,
+    dismissDetailSilently,
     resetDetailOnPopState,
     activateDetailSnapshot,
     resolveDeepLink,
@@ -243,7 +245,16 @@ function HomeContent() {
     [data?.jobs],
   );
   const employerCatalogReady = !!data;
-  useEffect(() => { registerEmployerCatalog({ jobs: allJobs, complete: employerCatalogReady, onDetail: job => { void openDetail(job); } }); }, [allJobs, openDetail, registerEmployerCatalog, employerCatalogReady]);
+  useEffect(() => {
+    registerEmployerCatalog({
+      jobs: allJobs,
+      complete: employerCatalogReady,
+      onDetail: (job) => {
+        void openDetail(job);
+      },
+      onOpenEmployer: dismissDetailSilently,
+    });
+  }, [allJobs, openDetail, dismissDetailSilently, registerEmployerCatalog, employerCatalogReady]);
   const previewJobs = useMemo(() => !data && filters.view === 'all' && !(filters.query.trim() && previewData?.search_url)
     ? filterJobs(mergeDuplicateOpportunities(previewData?.jobs || []), filters, personal, since, today).slice(0, 10) : [],
     [data, previewData, filters, personal, since, today]);
@@ -901,6 +912,8 @@ function HomeContent() {
         onOpenChange={setSourceOpen}
         data={data}
       />
+
+      <ShortcutsDialog />
 
       <BottomTabBar
         workspace="jobs"

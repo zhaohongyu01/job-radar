@@ -83,14 +83,15 @@
   outline-offset: 2px;
 }
 
-.agenda-controls label {
+.agenda-controls label,
+.agenda-field {
   display: grid;
   gap: 4px;
   font-size: 12px;
   color: var(--muted-foreground, #59655e);
 }
 
-.agenda-controls input:not([type="checkbox"]),
+.agenda-controls input:not([type="checkbox"]):not([data-slot="input-group-control"]),
 .agenda-controls select {
   width: 100%;
   min-width: 0;
@@ -99,6 +100,21 @@
   border-radius: 7px;
   background: var(--card, #fff);
   color: inherit;
+}
+
+.agenda-controls [data-slot="input-group"] {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border-color: var(--border, #ddd);
+  border-radius: 7px;
+  background: var(--card, #fff);
+  color: var(--ink, inherit);
+}
+
+.agenda-controls [data-slot="input-group"] input {
+  font-size: 12.5px;
+  padding-inline: 8px 4px;
 }
 
 .agenda-controls label.check-row {
@@ -1169,6 +1185,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.city-input-row [data-slot="input-group"] {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  background: var(--card, #fff);
 }
 
 .city-input-row input {

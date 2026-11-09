@@ -73,6 +73,7 @@ function ComboboxInput({
             variant="ghost"
             render={<ComboboxTrigger />}
             data-slot="input-group-button"
+            aria-label="展开选项"
             className="group-has-data-[slot=combobox-clear]/input-group:hidden data-pressed:bg-transparent"
             disabled={disabled}
           />
@@ -105,7 +106,7 @@ function ComboboxContent({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="isolate z-50"
+        className="isolate z-110"
       >
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"

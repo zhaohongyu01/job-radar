@@ -118,14 +118,20 @@ export function GroupedResults({
               title={`${roleItem.rawRole}${roleItem.tooltipMeta ? ` · ${roleItem.tooltipMeta}` : ''}${itemApplied ? '（已投递）' : itemSaved ? '（已收藏）' : ''}（点击查看岗位详情与投递链接）`}
             >
               {itemApplied && (
-                <span className="opp-group-role-status" aria-hidden="true">
-                  ✓
-                </span>
+                <>
+                  <span className="opp-group-role-status" aria-hidden="true">
+                    ✓
+                  </span>
+                  <span className="sr-only">已投递</span>
+                </>
               )}
               {!itemApplied && itemSaved && (
-                <span className="opp-group-role-status" aria-hidden="true">
-                  ★
-                </span>
+                <>
+                  <span className="opp-group-role-status" aria-hidden="true">
+                    ★
+                  </span>
+                  <span className="sr-only">已收藏</span>
+                </>
               )}
               <span className="opp-group-role-name">{roleItem.cleanRole}</span>
               {roleItem.suffix && <span className="opp-group-role-meta">· {roleItem.suffix}</span>}

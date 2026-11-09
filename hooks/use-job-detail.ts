@@ -20,6 +20,7 @@ export interface UseJobDetailState {
   setDetailNavIds: Dispatch<SetStateAction<string[] | null>>;
   openDetail: (job: Job, linkId?: string, pushHistory?: boolean) => Promise<void>;
   closeDetail: () => void;
+  dismissDetailSilently: () => void;
   resetDetailOnPopState: (nextLinkedJobId: string | null) => void;
   activateDetailSnapshot: (snapshot: Snapshot | null) => void;
   resolveDeepLink: (
@@ -63,11 +64,7 @@ export function useJobDetail({
     setLinkedJobId(nextLinkedJobId);
   }, []);
 
-  const closeDetail = useCallback(() => {
-    if (typeof window !== 'undefined' && window.history.state?.overlay === 'job') {
-      window.history.back();
-      return;
-    }
+  const dismissDetailSilently = useCallback(() => {
     ++detailRequest.current;
     setLinkedJobId(null);
     setSelected(null);
@@ -75,22 +72,34 @@ export function useJobDetail({
     setDetailLoading(false);
   }, []);
 
+  const closeDetail = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.state?.overlay === 'job') {
+      window.history.back();
+      return;
+    }
+    dismissDetailSilently();
+  }, [dismissDetailSilently]);
+
   const openDetail = useCallback(
     async (job: Job, linkId = job.id, pushHistory = true) => {
       setLinkedJobId(linkId);
       if (pushHistory && typeof window !== 'undefined') {
         const url = new URL(window.location.href);
+        url.searchParams.delete('employer');
         url.searchParams.set('job', linkId);
         const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-        if (window.history.state?.overlay === 'job') {
+        if (
+          window.history.state?.overlay === 'job' ||
+          window.history.state?.overlay === 'employer'
+        ) {
           window.history.replaceState(
-            { ...window.history.state, overlay: 'job', jobId: linkId },
+            { ...window.history.state, overlay: 'job', jobId: linkId, employerId: null },
             '',
             nextUrl,
           );
         } else {
           window.history.pushState(
-            { ...window.history.state, overlay: 'job', jobId: linkId },
+            { ...window.history.state, overlay: 'job', jobId: linkId, employerId: null },
             '',
             nextUrl,
           );
@@ -200,6 +209,7 @@ export function useJobDetail({
     setDetailNavIds,
     openDetail,
     closeDetail,
+    dismissDetailSilently,
     resetDetailOnPopState,
     activateDetailSnapshot,
     resolveDeepLink,

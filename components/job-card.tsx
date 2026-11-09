@@ -321,7 +321,11 @@ function JobCardInner({
         </div>
         <div className="opp-identity">
           <p className="opp-company">
-            {unread && <span className="opp-unread-dot" title="未读" />}
+            {unread && (
+              <span className="opp-unread-dot" title="未读">
+                <span className="sr-only">未读</span>
+              </span>
+            )}
             <span className="opp-company-name">
               <EmployerEntry job={job} name={displayCompany} />
             </span>

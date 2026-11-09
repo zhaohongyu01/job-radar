@@ -39,6 +39,8 @@
     "prefer-rest-params": "error",
     "prefer-spread": "error",
     "import/no-anonymous-default-export": "warn",
+    "jsx-a11y/control-has-associated-label": "warn",
+    "jsx-a11y/no-noninteractive-element-interactions": "warn",
     "react/display-name": "error",
     "react/jsx-no-comment-textnodes": "error",
     "react/no-unescaped-entities": "error",

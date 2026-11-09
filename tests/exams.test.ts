@@ -16,6 +16,7 @@ import {
   loadExamDetailShard,
   parseExamUrl,
   validateExamPersonal,
+  validateExamProfile,
   type ExamAnnouncement,
   type ExamPositionRow,
   type ExamUserProfile,
@@ -434,4 +435,72 @@ await test('loadExamDetailShard caches Promise by URL, validates path, and allow
     clearExamDetailShardCache();
     globalThis.fetch = previous;
   }
+});
+
+void test('evaluateExamPositionEligibility supports MOE major categories, aliases, and sibling-major review', () => {
+  const baseRow = (majorRaw: string) =>
+    makePosition({
+      education: '本科及以上',
+      degree: '学士',
+      majors: [majorRaw],
+      major_raw: majorRaw,
+      political_status: '不限',
+      fresh_grad_rule: '不限',
+    });
+
+  const seProfile: ExamUserProfile = {
+    ...DEFAULT_EXAM_PROFILE,
+    majorCategory: '计算机类',
+    majorQuery: '软件工程',
+  };
+
+  // 1. 软件工程对计算机类：命中
+  const resCsCategory = evaluateExamPositionEligibility(baseRow('计算机类'), seProfile);
+  assert.equal(resCsCategory.status, 'eligible');
+  assert.equal(resCsCategory.matched, true);
+  assert.ok(resCsCategory.reasons.some((r) => r.includes('计算机类')));
+
+  // 未显式选大类时，输入标准专业名“软件工程”也能推断所属计算机类
+  const resInferredCategory = evaluateExamPositionEligibility(baseRow('计算机类'), {
+    ...DEFAULT_EXAM_PROFILE,
+    majorQuery: '软件工程',
+  });
+  assert.equal(resInferredCategory.status, 'eligible');
+  assert.equal(resInferredCategory.matched, true);
+
+  // 2. 会计学对“会计、审计”：命中
+  const accProfile: ExamUserProfile = {
+    ...DEFAULT_EXAM_PROFILE,
+    majorCategory: '工商管理类',
+    majorQuery: '会计学',
+  };
+  const resAccounting = evaluateExamPositionEligibility(baseRow('会计、审计'), accProfile);
+  assert.equal(resAccounting.status, 'eligible');
+  assert.equal(resAccounting.matched, true);
+  assert.ok(resAccounting.reasons.some((r) => r.includes('专业匹配')));
+
+  // 3. 软件工程对“汉语言文学”：不符
+  const resMismatch = evaluateExamPositionEligibility(baseRow('汉语言文学'), seProfile);
+  assert.equal(resMismatch.status, 'ineligible');
+  assert.equal(resMismatch.matched, false);
+  assert.ok(resMismatch.conflicts.some((c) => c.includes('专业要求')));
+
+  // 4. 同类其他专业只作为参考，记入 reasons 标注“同类专业（需核实）”，不直接判为 eligible
+  const resSibling = evaluateExamPositionEligibility(baseRow('物联网工程、网络工程'), seProfile);
+  assert.equal(resSibling.status, 'unknown');
+  assert.equal(resSibling.matched, false);
+  assert.ok(resSibling.reasons.includes('同类专业（需核实）'));
+  assert.ok(resSibling.unknowns.includes('同类专业（需核实）'));
+
+  // 5. 短词边界保护：法学类 + 知识产权不应把“书法学”误判为同类专业
+  const resCalligraphy = evaluateExamPositionEligibility(baseRow('书法学'), {
+    ...DEFAULT_EXAM_PROFILE,
+    majorCategory: '法学类',
+    majorQuery: '知识产权',
+  });
+  assert.equal(resCalligraphy.status, 'ineligible');
+
+  // 6. validateExamProfile 保留合法专业大类并过滤非法值
+  assert.equal(validateExamProfile({ majorCategory: '计算机类' }).majorCategory, '计算机类');
+  assert.equal(validateExamProfile({ majorCategory: '不存在的大类' }).majorCategory, '');
 });

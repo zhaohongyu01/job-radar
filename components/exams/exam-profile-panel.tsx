@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { ChevronDown, UserCheck } from 'lucide-react';
 import { isExamProfileActive, SHANDONG_16 } from '@/lib/exams';
 import type { ExamUserProfile } from '@/lib/exams';
+import { MAJOR_CATEGORY_NAMES, MAJOR_GROUPS } from '@/lib/major-groups';
 
 export interface ExamProfilePanelProps {
   profile: ExamUserProfile;
@@ -17,9 +18,13 @@ export function ExamProfilePanel({
   onClearProfile,
 }: ExamProfilePanelProps) {
   const [profileOpen, setProfileOpen] = useState(false);
+  const majorListId = useId();
   const profileActive = isExamProfileActive(profile);
+  const selectedCategory = profile.majorCategory?.trim() || '';
+  const suggestedMajors = selectedCategory ? (MAJOR_GROUPS[selectedCategory] ?? []) : [];
   const profileSummary = [
     profile.education !== '全部' ? profile.education : '',
+    selectedCategory,
     profile.majorQuery.trim() ? profile.majorQuery.trim() : '',
     profile.politicalStatus !== '不限' ? profile.politicalStatus : '',
     profile.gradIdentity !== '不限' ? profile.gradIdentity : '',
@@ -98,14 +103,42 @@ export function ExamProfilePanel({
               <option value="no">无学位</option>
             </select>
           </label>
-          <label className="exw-field is-wide">
-            <span>专业关键词</span>
+          <label className="exw-field">
+            <span>专业大类</span>
+            <select
+              value={selectedCategory}
+              onChange={(e) => onUpdateProfile({ majorCategory: e.target.value })}
+            >
+              <option value="">不限 / 自动识别</option>
+              {MAJOR_CATEGORY_NAMES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="exw-field">
+            <span>具体专业</span>
             <input
               type="text"
-              placeholder="如：计算机 法学 会计（空格分隔多个）"
+              list={suggestedMajors.length > 0 ? majorListId : undefined}
+              placeholder={
+                suggestedMajors.length > 0
+                  ? `如：${suggestedMajors.slice(0, 2).join(' ')}`
+                  : '如：软件工程 会计学'
+              }
               value={profile.majorQuery}
               onChange={(e) => onUpdateProfile({ majorQuery: e.target.value })}
             />
+            {suggestedMajors.length > 0 && (
+              <datalist id={majorListId}>
+                {suggestedMajors.map((major) => (
+                  <option key={major} value={major}>
+                    {major}
+                  </option>
+                ))}
+              </datalist>
+            )}
           </label>
           <label className="exw-field">
             <span>政治面貌</span>

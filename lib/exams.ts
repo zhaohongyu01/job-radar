@@ -1,3 +1,10 @@
+import {
+  findConcreteMajorMatch,
+  hasSiblingMajorInCategories,
+  MAJOR_GROUPS,
+  resolveMajorCategories,
+} from './major-groups.ts';
+
 export type WorkspaceMode = 'jobs' | 'exams';
 
 export type BianzhiCategory =
@@ -219,6 +226,7 @@ export const SHANDONG_16 = [
 export interface ExamUserProfile {
   education: '全部' | '专科' | '本科' | '硕士研究生' | '博士研究生';
   hasDegree: boolean;
+  majorCategory?: string;
   majorQuery: string;
   politicalStatus: '不限' | '群众' | '共青团员' | '中共党员';
   gradIdentity: '不限' | '当年应届' | '择业期应届' | '在职/社会人员';
@@ -266,6 +274,7 @@ export type ExamPersonalStore = Record<string, ExamPersonalRecord>;
 export const DEFAULT_EXAM_PROFILE: ExamUserProfile = {
   education: '全部',
   hasDegree: true,
+  majorCategory: '',
   majorQuery: '',
   politicalStatus: '不限',
   gradIdentity: '不限',
@@ -330,6 +339,12 @@ export function validateExamProfile(input: unknown): ExamUserProfile {
     out.education = r.education as ExamUserProfile['education'];
   }
   if (typeof r.hasDegree === 'boolean') out.hasDegree = r.hasDegree;
+  if (
+    typeof r.majorCategory === 'string' &&
+    (r.majorCategory === '' || Object.hasOwn(MAJOR_GROUPS, r.majorCategory))
+  ) {
+    out.majorCategory = r.majorCategory;
+  }
   if (typeof r.majorQuery === 'string') out.majorQuery = r.majorQuery.slice(0, 200);
   if (typeof r.politicalStatus === 'string' && PROFILE_POL.has(r.politicalStatus as ExamUserProfile['politicalStatus'])) {
     out.politicalStatus = r.politicalStatus as ExamUserProfile['politicalStatus'];
@@ -588,10 +603,11 @@ export function evaluateExamPositionEligibility(
     }
   }
 
-  // 7. 专业匹配校验
+  // 7. 专业匹配校验（具体专业 -> 专业大类 -> 同类其他专业需核实 -> 不符）
   const queryTerms = tokenizeQuery(profile.majorQuery);
+  const categories = resolveMajorCategories(profile.majorCategory, queryTerms);
 
-  if (queryTerms.length > 0) {
+  if (queryTerms.length > 0 || categories.length > 0) {
     const rawStr = row.major_raw || row.majors.join(' ') || '';
     if (isUnknownText(rawStr)) {
       unknowns.push('专业要求未提取');
@@ -601,11 +617,22 @@ export function evaluateExamPositionEligibility(
       if (isUnlimited) {
         reasons.push('不限专业');
       } else {
-        const hit = queryTerms.find((term) => rawMajor.includes(term) || row.position_name.toLowerCase().includes(term));
-        if (hit) {
-          reasons.push(`专业匹配「${hit}」`);
+        const concreteHit =
+          queryTerms.length > 0
+            ? findConcreteMajorMatch(queryTerms, rawMajor, row.position_name.toLowerCase())
+            : null;
+        if (concreteHit) {
+          reasons.push(`专业匹配「${concreteHit}」`);
         } else {
-          conflicts.push(`专业要求：${row.major_raw || row.majors.join('、')}`);
+          const catHit = categories.find((cat) => rawMajor.includes(cat.toLowerCase()));
+          if (catHit) {
+            reasons.push(`专业类匹配「${catHit}」`);
+          } else if (hasSiblingMajorInCategories(categories, rawMajor)) {
+            reasons.push('同类专业（需核实）');
+            unknowns.push('同类专业（需核实）');
+          } else {
+            conflicts.push(`专业要求：${row.major_raw || row.majors.join('、')}`);
+          }
         }
       }
     }
@@ -645,6 +672,7 @@ export function isExamProfileActive(profile: ExamUserProfile): boolean {
   return (
     profile.onlyMatchProfile ||
     profile.education !== '全部' ||
+    Boolean(profile.majorCategory?.trim()) ||
     Boolean(profile.majorQuery.trim()) ||
     profile.politicalStatus !== '不限' ||
     profile.gradIdentity !== '不限' ||

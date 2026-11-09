@@ -1,0 +1,55 @@
+name: Browser Regressions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-radar-browser-regressions-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --prefix /tmp/pw --no-save playwright
+          PATH="/tmp/pw/node_modules/.bin:$PATH" npx playwright install --with-deps chromium
+
+      - name: Start local preview server and run browser regressions
+        env:
+          BROWSER_CHANNEL: chromium
+          JOB_RADAR_BROWSER_URL: http://127.0.0.1:3002
+          JOB_RADAR_PLAYWRIGHT: /tmp/pw/node_modules/playwright
+        run: |
+          JOB_RADAR_PREVIEW_DATA=local npm run dev -- --hostname 127.0.0.1 --port 3002 >/tmp/dev-server.log 2>&1 &
+          DEV_PID=$!
+          trap 'kill "$DEV_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3002/ >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              cat /tmp/dev-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+          node --experimental-strip-types tests/usability-browser-regressions.mjs
+          node --experimental-strip-types tests/ui-state-regressions.mjs

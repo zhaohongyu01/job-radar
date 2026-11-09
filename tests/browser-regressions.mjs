@@ -26,7 +26,9 @@ const jobA = fixtureJob({ id: A, title: '回归样本甲职位', sectors: ['企�
 const jobB = fixtureJob({ id: B, title: '回归样本乙职位', company: '乙公司', cities: ['上海'], location_evidence: ['工作地点：上海'], sectors: ['企业 / 其他'], published_at: '2026-10-28' });
 const stored = { filters: { ...defaultFilters, city: '全部城市', workCities: [] }, viewMode: 'cards', groupCompanies: false };
 const deferred = () => { let release; const promise = new Promise((r) => { release = r; }); return { promise, release }; };
-const browser = await chromium.launch({ channel: process.env.JOB_RADAR_BROWSER_CHANNEL || 'msedge', headless: true });
+const rawChannel = process.env.BROWSER_CHANNEL ?? process.env.JOB_RADAR_BROWSER_CHANNEL ?? 'msedge';
+const launchChannel = rawChannel === 'chromium' || rawChannel === '' ? undefined : rawChannel;
+const browser = await chromium.launch({ ...(launchChannel ? { channel: launchChannel } : {}), headless: true });
 const results = [];
 
 async function setup(options = {}) {

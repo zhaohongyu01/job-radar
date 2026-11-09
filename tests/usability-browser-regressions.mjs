@@ -18,7 +18,9 @@ const detailPath = '/job-assets/detail-aa-00000000000000000013.json';
 const hex = (n) => n.toString(16).padStart(18, '0');
 const id = (n) => `aa${hex(n)}`;
 const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
-const browser = await chromium.launch({ channel: process.env.JOB_RADAR_BROWSER_CHANNEL || 'msedge', headless: true });
+const rawChannel = process.env.BROWSER_CHANNEL ?? process.env.JOB_RADAR_BROWSER_CHANNEL ?? 'msedge';
+const launchChannel = rawChannel === 'chromium' || rawChannel === '' ? undefined : rawChannel;
+const browser = await chromium.launch({ ...(launchChannel ? { channel: launchChannel } : {}), headless: true });
 const results = [];
 
 async function setup({ rows, viewport = { width: 1440, height: 1000 }, prefs = {}, pageSize, query = '' }) {

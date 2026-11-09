@@ -212,27 +212,45 @@ function DrawerContent({
     { label: '笔试', value: formatShortDate(exam.schedule.written_exam_date) },
   ];
 
-  const facts: [string, string][] = [
+  const rawFacts: [string, string][] = [
     [
       '招录规模',
       exam.total_positions != null || exam.total_headcount != null
         ? `${exam.total_positions ?? '—'} 个岗位 · ${exam.total_headcount ?? '—'} 人`
-        : '见公告',
+        : '',
     ],
-    ['编制性质', exam.bianzhi_types.map(bianzhiLabel).join('、') || '见公告'],
-    ['考试科目', exam.exam_subjects.join(' + ') || '见公告'],
-    ['开考比例', exam.exam_ratio || '见公告'],
-    ['学历学位', [exam.education_min, exam.degree_summary].filter(Boolean).join(' · ') || '见公告'],
-    ['毕业身份', exam.fresh_grad_summary || '见公告'],
-    ['政治面貌', exam.political_summary || '见公告'],
-    ['年龄', exam.age_limit || '见公告'],
-    ['户籍', exam.hukou_summary || '见公告'],
-    ['报名方式', exam.registration_method || '见公告'],
+    ['编制性质', exam.bianzhi_types.map(bianzhiLabel).join('、') || ''],
+    ['考试科目', exam.exam_subjects.join(' + ') || ''],
+    ['开考比例', exam.exam_ratio || ''],
+    ['学历学位', [exam.education_min, exam.degree_summary].filter(Boolean).join(' · ') || ''],
+    ['毕业身份', exam.fresh_grad_summary || ''],
+    ['政治面貌', exam.political_summary || ''],
+    ['年龄', exam.age_limit || ''],
+    ['户籍', exam.hukou_summary || ''],
+    ['报名方式', exam.registration_method || ''],
     ...(exam.service_years ? ([['服务年限', exam.service_years]] as [string, string][]) : []),
     ...((exam.contact_phones?.length || 0) > 0
       ? ([['咨询电话', exam.contact_phones!.join(' / ')]] as [string, string][])
       : []),
   ];
+  const facts = rawFacts.filter(
+    ([, val]) => Boolean(val && val.trim() && !/^(见公告|详见公告|见原公告|待定|未明确)$/.test(val.trim())),
+  );
+
+  const positionAttachment =
+    attachments.find((att) => /岗位|职位|计划|汇总表|一览表/.test(att.title || '')) ||
+    attachments[0] ||
+    null;
+  const showPositionSection =
+    positions.length > 0 || (exam.positions_status === 'attachment_only' && Boolean(positionAttachment));
+  const relatedNotices = [...(exam.related_notices || [])].sort((a, b) =>
+    (a.published_at || '').localeCompare(b.published_at || ''),
+  );
+  const visibleTrackStages = EXAM_TRACK_STAGES.filter(
+    (st) => !(exam.exam_category === '军队文职招考' && st.key === 'audited'),
+  );
+  const writtenSkippable = exam.notice_role !== '招考简章' || !exam.schedule.written_exam_date;
+  const links = exam.links || [];
 
   const body = (exam.body || exam.excerpt || '').split(/\n+/).filter((line) => line.trim());
   const catText = categoryLabel(exam.exam_category);
@@ -398,23 +416,28 @@ function DrawerContent({
         </div>
 
         <nav className="exw-dh-tabs" aria-label="章节导航">
+          {showPositionSection && (
+            <button type="button" onClick={() => jump('exw-sec-pos')}>
+              岗位表 {positions.length > 0 ? <span>{positions.length}</span> : null}
+            </button>
+          )}
           <button type="button" onClick={() => jump('exw-sec-time')}>
             时间安排
           </button>
           <button type="button" onClick={() => jump('exw-sec-req')}>
             报考要求
           </button>
-          {positions.length > 0 && (
-            <button type="button" onClick={() => jump('exw-sec-pos')}>
-              岗位表 <span>{positions.length}</span>
+          {relatedNotices.length > 0 && (
+            <button type="button" onClick={() => jump('exw-sec-related')}>
+              后续通知 <span>{relatedNotices.length}</span>
             </button>
           )}
           <button type="button" onClick={() => jump('exw-sec-note')}>
             我的记录
           </button>
-          {attachments.length > 0 && (
+          {(attachments.length > 0 || links.length > 0) && (
             <button type="button" onClick={() => jump('exw-sec-att')}>
-              附件 <span>{attachments.length}</span>
+              附件与链接 <span>{attachments.length + links.length}</span>
             </button>
           )}
           <button type="button" onClick={() => jump('exw-sec-body')}>
@@ -424,6 +447,70 @@ function DrawerContent({
       </header>
 
       <div className="exw-db">
+        {showPositionSection && (
+          <section className="exw-ds" id="exw-sec-pos">
+            {positions.length > 0 ? (
+              <>
+                <div className="exw-ds-head">
+                  <h3 className="exw-ds-title">
+                    岗位表 <span className="exw-muted">{rows.length} / {positions.length}</span>
+                  </h3>
+                  <div className="exw-ds-tools">
+                    <div className="exw-search is-sm">
+                      <Search size={14} />
+                      <input
+                        type="search"
+                        aria-label="搜索岗位"
+                        placeholder="单位、岗位、代码、专业"
+                        value={posQuery}
+                        onChange={(e) => setPosQuery(e.target.value)}
+                      />
+                    </div>
+                    {profileActive && (
+                      <label className="exw-switch">
+                        <input
+                          type="checkbox"
+                          checked={onlyMatched}
+                          onChange={(e) => setOnlyMatchedPos(e.target.checked)}
+                        />
+                        <span className="exw-switch-ui" aria-hidden="true" />
+                        <span>隐藏不符合的</span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                <ExamPositionTable
+                  variant="drawer"
+                  rows={rows}
+                  profileActive={profileActive}
+                  personal={personal}
+                  onToggleCandidate={toggleCandidate}
+                  onLockTarget={lockTarget}
+                />
+              </>
+            ) : positionAttachment ? (
+              <div className="exw-ds-head" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 className="exw-ds-title">岗位表</h3>
+                  <p className="exw-muted" style={{ marginTop: 4 }}>
+                    本公告岗位明细位于官方附件：{positionAttachment.title || '岗位汇总表'}
+                  </p>
+                </div>
+                <a
+                  className="btn btn-primary btn-sm"
+                  href={positionAttachment.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Download size={14} />
+                  下载岗位表
+                </a>
+              </div>
+            ) : null}
+          </section>
+        )}
+
         <section className="exw-ds" id="exw-sec-time">
           <h3 className="exw-ds-title">时间安排</h3>
           <ol className="exw-timeline">
@@ -452,55 +539,39 @@ function DrawerContent({
 
         <section className="exw-ds" id="exw-sec-req">
           <h3 className="exw-ds-title">报考要求</h3>
-          <dl className="exw-kv">
-            {facts.map(([k, v]) => (
-              <div key={k}>
-                <dt>{k}</dt>
-                <dd>{v}</dd>
-              </div>
-            ))}
-          </dl>
+          {facts.length > 0 ? (
+            <dl className="exw-kv">
+              {facts.map(([k, v]) => (
+                <div key={k}>
+                  <dt>{k}</dt>
+                  <dd>{v}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="exw-muted">具体条件见原公告</p>
+          )}
         </section>
 
-        {positions.length > 0 && (
-          <section className="exw-ds" id="exw-sec-pos">
-            <div className="exw-ds-head">
-              <h3 className="exw-ds-title">
-                岗位表 <span className="exw-muted">{rows.length} / {positions.length}</span>
-              </h3>
-              <div className="exw-ds-tools">
-                <div className="exw-search is-sm">
-                  <Search size={14} />
-                  <input
-                    type="search"
-                    aria-label="搜索岗位"
-                    placeholder="单位、岗位、代码、专业"
-                    value={posQuery}
-                    onChange={(e) => setPosQuery(e.target.value)}
-                  />
-                </div>
-                {profileActive && (
-                  <label className="exw-switch">
-                    <input
-                      type="checkbox"
-                      checked={onlyMatched}
-                      onChange={(e) => setOnlyMatchedPos(e.target.checked)}
-                    />
-                    <span className="exw-switch-ui" aria-hidden="true" />
-                    <span>隐藏不符合的</span>
-                  </label>
-                )}
-              </div>
-            </div>
-
-            <ExamPositionTable
-              variant="drawer"
-              rows={rows}
-              profileActive={profileActive}
-              personal={personal}
-              onToggleCandidate={toggleCandidate}
-              onLockTarget={lockTarget}
-            />
+        {relatedNotices.length > 0 && (
+          <section className="exw-ds" id="exw-sec-related">
+            <h3 className="exw-ds-title">本次考试后续通知</h3>
+            <ol className="exw-timeline">
+              {relatedNotices.map((notice) => (
+                <li key={notice.id} className="is-set">
+                  <span className="exw-tl-dot" aria-hidden="true" />
+                  <span className="exw-tl-label">
+                    {notice.published_at ? formatShortDate(notice.published_at) : '后续进展'} ·{' '}
+                    <span className="exw-tag is-notice">{notice.notice_type}</span>
+                  </span>
+                  <span className="exw-tl-value">
+                    <a href={notice.url} target="_blank" rel="noopener noreferrer" className="text-btn">
+                      {notice.title}
+                    </a>
+                  </span>
+                </li>
+              ))}
+            </ol>
           </section>
         )}
 
@@ -528,16 +599,18 @@ function DrawerContent({
             </div>
           </div>
           <fieldset className="exw-stepper" aria-label="报考进度">
-            {EXAM_TRACK_STAGES.map((st, idx) => {
-              const currentIdx = EXAM_TRACK_STAGES.findIndex((s) => s.key === trackStatus);
+            {visibleTrackStages.map((st, idx) => {
+              const currentIdx = visibleTrackStages.findIndex((s) => s.key === trackStatus);
               const state = idx < currentIdx ? ' is-done' : idx === currentIdx ? ' is-current' : '';
+              const isSkippable = writtenSkippable && (st.key === 'paid' || st.key === 'written_done');
               return (
                 <button
                   key={st.key}
                   type="button"
-                  className={`exw-step${state}`}
+                  className={`exw-step${state}${isSkippable ? ' is-skippable' : ''}`}
+                  style={isSkippable && state === '' ? { opacity: 0.55 } : undefined}
                   aria-pressed={idx === currentIdx}
-                  title={st.hint}
+                  title={isSkippable ? `${st.hint}（无笔试或非简章可跳过）` : st.hint}
                   onClick={() => onChangeStatus(exam.id, st.key)}
                 >
                   <span className="exw-step-num">{idx + 1}</span>
@@ -585,9 +658,9 @@ function DrawerContent({
           </div>
         </section>
 
-        {attachments.length > 0 && (
+        {(attachments.length > 0 || links.length > 0) && (
           <section className="exw-ds" id="exw-sec-att">
-            <h3 className="exw-ds-title">附件</h3>
+            <h3 className="exw-ds-title">附件与链接</h3>
             <ul className="exw-attach">
               {attachments.map((att, idx) => (
                 <li key={`${att.url}-${idx}`}>
@@ -595,6 +668,14 @@ function DrawerContent({
                     <Download size={14} />
                     <span>{att.title || `附件 ${idx + 1}`}</span>
                     {att.parse_status === 'parsed' && <span className="exw-tag is-brand">已解析</span>}
+                  </a>
+                </li>
+              ))}
+              {links.map((lk, idx) => (
+                <li key={`link-${lk.url}-${idx}`}>
+                  <a href={lk.url} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink size={14} />
+                    <span>{lk.title || `相关链接 ${idx + 1}`}</span>
                   </a>
                 </li>
               ))}

@@ -237,6 +237,7 @@ export interface ExamFilters {
   stage: string;
   noticeRole: string;
   unlimitedMajorOnly: boolean;
+  freshGradOnly?: boolean;
   view: 'announcements' | 'positions' | 'saved' | 'tracker';
   sort: 'smart' | 'published' | 'reg_end' | 'headcount';
 }
@@ -358,9 +359,69 @@ export const DEFAULT_EXAM_FILTERS: ExamFilters = {
   stage: '可报名/进行中',
   noticeRole: '全部',
   unlimitedMajorOnly: false,
+  freshGradOnly: false,
   view: 'announcements',
   sort: 'smart',
 };
+
+export const EXAM_TYPE_OPTIONS = [
+  '国考',
+  '省考',
+  '选调生',
+  '事业单位',
+  '教师',
+  '医疗卫生',
+  '高校科研',
+  '人才引进',
+  '军队文职',
+  '三支一扶',
+] as const;
+
+export function matchesExamTypeFilter(exam: ExamAnnouncement, categoryFilter: string): boolean {
+  if (!categoryFilter || categoryFilter === '全部') return true;
+  switch (categoryFilter) {
+    case '国考':
+    case '公务员国考':
+      return exam.exam_category === '公务员国考';
+    case '省考':
+    case '公务员省考':
+      return exam.exam_category === '公务员省考';
+    case '选调生':
+    case '选调生招录':
+      return exam.exam_category === '选调生招录' || exam.bianzhi_types.includes('选调生');
+    case '事业单位':
+      return (
+        exam.exam_category === '事业单位统考' ||
+        exam.exam_category === '事业单位单招' ||
+        exam.bianzhi_types.includes('事业编') ||
+        exam.bianzhi_types.includes('控制总量 / 备案制')
+      );
+    case '事业单位统考':
+      return exam.exam_category === '事业单位统考';
+    case '事业单位单招':
+      return exam.exam_category === '事业单位单招';
+    case '教师':
+    case '教师公开招聘':
+      return exam.exam_category === '教师公开招聘' || exam.bianzhi_types.includes('教师编');
+    case '医疗卫生':
+    case '医疗卫生招聘':
+      return exam.exam_category === '医疗卫生招聘' || exam.bianzhi_types.includes('医疗卫生编');
+    case '高校科研':
+    case '高校 / 科研院所':
+      return exam.exam_category === '高校 / 科研院所';
+    case '人才引进':
+    case '人才引进 / 优才':
+      return exam.exam_category === '人才引进 / 优才' || exam.bianzhi_types.includes('高层次 / 紧缺人才');
+    case '军队文职':
+    case '军队文职招考':
+      return exam.exam_category === '军队文职招考' || exam.bianzhi_types.includes('军队文职');
+    case '三支一扶':
+    case '三支一扶 / 基层':
+      return exam.exam_category === '三支一扶 / 基层' || exam.bianzhi_types.includes('三支一扶 / 基层项目');
+    default:
+      return exam.exam_category === categoryFilter;
+  }
+}
 
 const EDU_RANK: Record<string, number> = {
   '不限': 0,
@@ -733,8 +794,8 @@ export function filterExams(
       if (!cityHit) return false;
     }
 
-    // Category filter
-    if (filters.category !== '全部' && exam.exam_category !== filters.category) {
+    // Category / Exam type filter
+    if (filters.category !== '全部' && !matchesExamTypeFilter(exam, filters.category)) {
       return false;
     }
 
@@ -774,9 +835,22 @@ export function filterExams(
       if (filters.noticeRole === '考务进展通知' && exam.notice_role === '招考简章') return false;
     }
 
-    // Unlimited major filter
-    if (filters.unlimitedMajorOnly && !exam.has_unlimited_major) {
-      return false;
+    // Unlimited major filter: based on position row major_raw containing "不限" (with fallback if no positions parsed)
+    if (filters.unlimitedMajorOnly) {
+      const hasRowUnlimited = (exam.positions || []).some((p) => (p.major_raw || '').includes('不限'));
+      if (!hasRowUnlimited && !(!exam.positions?.length && exam.has_unlimited_major)) {
+        return false;
+      }
+    }
+
+    // Fresh graduate special filter
+    if (filters.freshGradOnly) {
+      const isFresh =
+        exam.exam_category === '选调生招录' ||
+        /应届|毕业生|选调/.test(exam.fresh_grad_summary || '') ||
+        /应届|毕业生|选调/.test(exam.title) ||
+        (exam.positions || []).some((p) => /应届|毕业生/.test(p.fresh_grad_rule || ''));
+      if (!isFresh) return false;
     }
 
     // Query search
@@ -870,7 +944,15 @@ export function flattenAndFilterExamPositions(
         if (!cityMatched) continue;
       }
       if (filters.bianzhi !== '全部' && pos.bianzhi !== filters.bianzhi) continue;
-      if (filters.unlimitedMajorOnly && !/不限|无限制/.test(pos.major_raw || '')) continue;
+      if (filters.unlimitedMajorOnly && !(pos.major_raw || '').includes('不限')) continue;
+      if (
+        filters.freshGradOnly &&
+        !/应届|毕业生/.test(pos.fresh_grad_rule || '') &&
+        exam.exam_category !== '选调生招录' &&
+        !/应届|毕业生|选调/.test(exam.fresh_grad_summary || '')
+      ) {
+        continue;
+      }
 
       if (queryTerms.length > 0) {
         const hay = `${pos.department} ${pos.employer} ${pos.position_name} ${pos.position_code || ''} ${pos.major_raw} ${pos.city} ${pos.other_conditions || ''} ${exam.title}`.toLowerCase();

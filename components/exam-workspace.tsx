@@ -280,8 +280,23 @@ export function ExamWorkspace() {
 
   const milestones = useMemo<Milestone[]>(() => {
     if (!today) return [];
-    const items: Milestone[] = [];
+    const prioritizedIds = new Set<string>();
+    const candidateExams: { exam: ExamAnnouncement; priority: number }[] = [];
     for (const ex of allExams) {
+      const rec = personal[ex.id];
+      if (rec?.saved || (rec?.status && rec.status !== 'none')) {
+        prioritizedIds.add(ex.id);
+        candidateExams.push({ exam: ex, priority: 0 });
+      }
+    }
+    for (const ex of filteredExams) {
+      if (!prioritizedIds.has(ex.id)) {
+        candidateExams.push({ exam: ex, priority: 1 });
+      }
+    }
+
+    const items: (Milestone & { priority: number })[] = [];
+    for (const { exam: ex, priority } of candidateExams) {
       const s = ex.schedule;
       if (s.reg_end && ['registering', 'closing_soon', 'upcoming'].includes(ex.stage)) {
         items.push({
@@ -289,16 +304,27 @@ export function ExamWorkspace() {
           date: s.reg_end,
           type: '报名截止',
           tone: ex.stage === 'closing_soon' ? 'urgent' : 'active',
+          priority,
         });
       }
-      if (s.payment_end) items.push({ exam: ex, date: s.payment_end, type: '缴费截止', tone: 'urgent' });
-      if (s.written_exam_date) items.push({ exam: ex, date: s.written_exam_date, type: '笔试', tone: 'info' });
+      if (s.payment_end) {
+        items.push({ exam: ex, date: s.payment_end, type: '缴费截止', tone: 'urgent', priority });
+      }
+      if (s.admit_card_start) {
+        items.push({ exam: ex, date: s.admit_card_start, type: '准考证打印', tone: 'info', priority });
+      }
+      if (s.written_exam_date) {
+        items.push({ exam: ex, date: s.written_exam_date, type: '笔试', tone: 'info', priority });
+      }
+      if (s.interview_date) {
+        items.push({ exam: ex, date: s.interview_date, type: '面试', tone: 'info', priority });
+      }
     }
     return items
       .filter((m) => m.date.slice(0, 10) >= today)
-      .sort((a, b) => a.date.localeCompare(b.date))
+      .sort((a, b) => (a.priority !== b.priority ? a.priority - b.priority : a.date.localeCompare(b.date)))
       .slice(0, 10);
-  }, [allExams, today]);
+  }, [allExams, filteredExams, personal, today]);
 
   const profileActive = isExamProfileActive(profile);
 
@@ -586,6 +612,7 @@ export function ExamWorkspace() {
                     exam={exam}
                     profile={profile}
                     personal={personal[exam.id]}
+                    today={today}
                     onSelect={openExam}
                     onToggleSave={toggleSaveExam}
                     onToggleHide={toggleHideExam}

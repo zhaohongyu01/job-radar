@@ -8,6 +8,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {
+  computeDaysLeft,
   evaluateExamPositionEligibility,
   getTrackStageInfo,
   isExamProfileActive,
@@ -25,17 +26,21 @@ interface ExamCardProps {
   exam: ExamAnnouncement;
   profile: ExamUserProfile;
   personal?: ExamPersonalRecord;
+  today?: string;
   onSelect: (exam: ExamAnnouncement) => void;
   onToggleSave: (examId: string) => void;
   onToggleHide?: (examId: string) => void;
 }
 
-export function ExamCard({ exam, profile, personal, onSelect, onToggleSave, onToggleHide }: ExamCardProps) {
+export function ExamCard({ exam, profile, personal, today = '', onSelect, onToggleSave, onToggleHide }: ExamCardProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const isSaved = Boolean(personal?.saved);
   const isHidden = Boolean(personal?.hidden);
+  const isEnded = exam.stage === 'ended';
   const trackStage = getTrackStageInfo(personal?.status);
   const isNotice = exam.notice_role !== '招考简章';
+  const isRegistering = exam.stage === 'registering' || exam.stage === 'closing_soon';
+  const regDaysLeft = isRegistering ? computeDaysLeft(exam.schedule.reg_end, today) : null;
   const positions = exam.positions || [];
   const profileActive = isExamProfileActive(profile);
   const eligList = profileActive ? positions.map((row) => evaluateExamPositionEligibility(row, profile)) : [];
@@ -55,10 +60,16 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave, onTo
   const applyHref = exam.registration_url || exam.source_url;
 
   return (
-    <article className={`exw-card${isSaved ? ' is-saved' : ''}${personal?.readAt ? ' is-read' : ''}`}>
+    <article
+      className={`exw-card${isSaved ? ' is-saved' : ''}${personal?.readAt ? ' is-read' : ''}${isEnded ? ' is-ended' : ''}`}
+      style={isEnded ? { opacity: 0.62 } : undefined}
+    >
       <div className="exw-card-body">
         <div className="exw-card-meta">
           <StagePill stage={exam.stage} />
+          {regDaysLeft !== null && regDaysLeft >= 0 && (
+            <span className="exw-tag is-brand">还剩 {regDaysLeft} 天</span>
+          )}
           {isNotice ? (
             <span className="exw-tag is-notice">{exam.notice_role}</span>
           ) : (
@@ -80,8 +91,13 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave, onTo
           {exam.organizer}
           {exam.published_at ? <span> · {formatShortDate(exam.published_at)}发布</span> : null}
         </p>
+        {exam.parent_exam_title && (
+          <p className="exw-muted" style={{ margin: '2px 0 0' }}>
+            属于：{exam.parent_exam_title}
+          </p>
+        )}
 
-        {!isNotice && (
+        {!isNotice && !isEnded && (
           <dl className="exw-facts">
             <div>
               <dt>招录</dt>
@@ -115,7 +131,7 @@ export function ExamCard({ exam, profile, personal, onSelect, onToggleSave, onTo
           </dl>
         )}
 
-        {profileActive && !isNotice && (
+        {profileActive && !isNotice && !isEnded && (
           positions.length === 0 ? (
             <p className="exw-card-match is-unknown">? 岗位需核实</p>
           ) : eligibleCount > 0 || unknownCount > 0 ? (

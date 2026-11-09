@@ -3945,6 +3945,8 @@ button.chip:hover {
   align-items: center;
   gap: 6px;
   margin-right: 4px;
+  max-width: 100%;
+  min-width: 0;
 }
 .opp-foot-badges .opp-alert {
   display: inline-flex;
@@ -3955,6 +3957,10 @@ button.chip:hover {
   border-radius: var(--r-pill);
   font-size: 12px;
   line-height: 1.3;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .opp-foot-badges .opp-alert svg {
   margin-top: 0;

@@ -9,7 +9,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { SHANDONG_16 } from '@/lib/exams';
+import { EXAM_TYPE_OPTIONS, SHANDONG_16 } from '@/lib/exams';
 import type { BianzhiCategory, ExamCategory, ExamFilters } from '@/lib/exams';
 import { bianzhiLabel, categoryLabel } from '@/components/exam-ui';
 
@@ -173,8 +173,17 @@ export function buildActiveExamFilters(
       ? [
           {
             key: 'major',
-            label: '含不限专业',
+            label: '不限专业',
             clear: () => onUpdateFilters({ unlimitedMajorOnly: false }),
+          },
+        ]
+      : []),
+    ...(filters.freshGradOnly
+      ? [
+          {
+            key: 'fresh',
+            label: '应届专项',
+            clear: () => onUpdateFilters({ freshGradOnly: false }),
           },
         ]
       : []),
@@ -245,7 +254,7 @@ export function ExamFilterSidebar({
         </div>
       </FilterSection>
 
-      <FilterSection title="招考类别" badge={filters.category !== '全部' ? 1 : 0}>
+      <FilterSection title="考试类型" badge={filters.category !== '全部' ? 1 : 0}>
         <div className="exw-chip-wrap">
           <Chip
             active={filters.category === '全部'}
@@ -253,19 +262,51 @@ export function ExamFilterSidebar({
           >
             全部
           </Chip>
-          {EXAM_CATEGORIES.map((cat) => (
+          {EXAM_TYPE_OPTIONS.map((typeLabel) => (
             <Chip
-              key={cat}
-              active={filters.category === cat}
-              onClick={() => onUpdateFilters({ category: cat })}
+              key={typeLabel}
+              active={
+                filters.category === typeLabel ||
+                categoryLabel(filters.category) === typeLabel
+              }
+              onClick={() => onUpdateFilters({ category: typeLabel })}
             >
-              {categoryLabel(cat)}
+              {typeLabel}
             </Chip>
           ))}
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+          <label className="exw-switch">
+            <input
+              type="checkbox"
+              checked={Boolean(filters.freshGradOnly)}
+              onChange={(e) => onUpdateFilters({ freshGradOnly: e.target.checked })}
+            />
+            <span className="exw-switch-ui" aria-hidden="true" />
+            <span>应届专项</span>
+          </label>
+          <label className="exw-switch">
+            <input
+              type="checkbox"
+              checked={filters.unlimitedMajorOnly}
+              onChange={(e) => onUpdateFilters({ unlimitedMajorOnly: e.target.checked })}
+            />
+            <span className="exw-switch-ui" aria-hidden="true" />
+            <span>不限专业</span>
+          </label>
+        </div>
       </FilterSection>
 
-      <FilterSection title="编制性质" badge={filters.bianzhi !== '全部' ? 1 : 0}>
+      <FilterSection
+        title="更多"
+        defaultOpen={false}
+        badge={
+          (filters.bianzhi !== '全部' ? 1 : 0) +
+          (filters.subject !== '全部' ? 1 : 0) +
+          (filters.noticeRole !== '全部' ? 1 : 0)
+        }
+      >
+        <p className="exw-fsub">编制性质</p>
         <div className="exw-chip-wrap">
           <Chip
             active={filters.bianzhi === '全部'}
@@ -283,17 +324,6 @@ export function ExamFilterSidebar({
             </Chip>
           ))}
         </div>
-      </FilterSection>
-
-      <FilterSection
-        title="更多"
-        defaultOpen={false}
-        badge={
-          (filters.subject !== '全部' ? 1 : 0) +
-          (filters.noticeRole !== '全部' ? 1 : 0) +
-          (filters.unlimitedMajorOnly ? 1 : 0)
-        }
-      >
         <p className="exw-fsub">考试科目</p>
         <div className="exw-chip-wrap">
           <Chip
@@ -330,15 +360,6 @@ export function ExamFilterSidebar({
             </Chip>
           ))}
         </div>
-        <label className="exw-switch is-block">
-          <input
-            type="checkbox"
-            checked={filters.unlimitedMajorOnly}
-            onChange={(e) => onUpdateFilters({ unlimitedMajorOnly: e.target.checked })}
-          />
-          <span className="exw-switch-ui" aria-hidden="true" />
-          <span>只看含「不限专业」岗位</span>
-        </label>
       </FilterSection>
     </>
   );

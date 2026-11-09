@@ -83,6 +83,7 @@
   --muted-foreground: var(--ink-3);
   --accent: var(--brand-soft);
   --accent-foreground: var(--ink);
+  --destructive: var(--urgent);
   --border: var(--line);
   --input: var(--line-strong);
   --ring: var(--brand);

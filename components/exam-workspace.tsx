@@ -17,25 +17,17 @@ import {
   X,
 } from 'lucide-react';
 import {
-  DEFAULT_EXAM_FILTERS,
-  DEFAULT_EXAM_PROFILE,
-  EXAM_FILTERS_STORAGE,
   EXAM_PERSONAL_STORAGE,
-  EXAM_PROFILE_STORAGE,
   EXAM_TRACK_STAGES,
   filterExams,
   flattenAndFilterExamPositions,
   isExamProfileActive,
   validateExamPersonal,
-  validateExamProfile,
 } from '@/lib/exams';
 import type {
   ExamAnnouncement,
   ExamFilters,
-  ExamPersonalRecord,
-  ExamPersonalStore,
   ExamTrackStatus,
-  ExamUserProfile,
 } from '@/lib/exams';
 import { ExamCard } from '@/components/exam-card';
 import { ExamDetailDrawer } from '@/components/exam-detail-drawer';
@@ -49,9 +41,9 @@ import { ExamTrackerBoard } from '@/components/exams/exam-tracker-board';
 import { ExamSourcesSheet } from '@/components/exams/exam-sources-sheet';
 import { formatMonthDay } from '@/components/exam-ui';
 import { useExamSnapshot } from '@/hooks/use-exam-snapshot';
+import { useExamPersonal } from '@/hooks/use-exam-personal';
 
 const PAGE_SIZE = 20;
-const EXAM_FILTERS_MIGRATED_KEY = 'job-radar-exam-filters-migrated-v2';
 
 const SORT_OPTIONS: [ExamFilters['sort'], string][] = [
   ['smart', '报名中优先'],
@@ -59,26 +51,6 @@ const SORT_OPTIONS: [ExamFilters['sort'], string][] = [
   ['reg_end', '报名截止最近'],
   ['headcount', '招录人数最多'],
 ];
-
-function safeReadJson<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return { ...fallback, ...JSON.parse(raw) };
-  } catch {
-    return fallback;
-  }
-}
-
-function safeWriteJson(key: string, value: unknown): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore quota errors
-  }
-}
 
 interface Milestone {
   exam: ExamAnnouncement;
@@ -98,6 +70,13 @@ export function ExamWorkspace() {
       return '本地考编记录格式异常，已重置为默认状态';
     }
   });
+  const [selectedExam, setSelectedExam] = useState<ExamAnnouncement | null>(null);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const resetPage = useCallback(() => setPage(1), []);
+
   const {
     snapshot,
     loading,
@@ -109,111 +88,28 @@ export function ExamWorkspace() {
     endedExamCount,
     freshnessMeta,
   } = useExamSnapshot({ onNotice: setNotice });
-  const [profile, setProfile] = useState<ExamUserProfile>(() => {
-    if (typeof window === 'undefined') return DEFAULT_EXAM_PROFILE;
-    try {
-      const raw = window.localStorage.getItem(EXAM_PROFILE_STORAGE);
-      return raw ? validateExamProfile(JSON.parse(raw)) : DEFAULT_EXAM_PROFILE;
-    } catch {
-      return DEFAULT_EXAM_PROFILE;
-    }
-  });
-  const [filters, setFilters] = useState<ExamFilters>(() => {
-    const loaded = safeReadJson(EXAM_FILTERS_STORAGE, DEFAULT_EXAM_FILTERS);
-    if (typeof window !== 'undefined') {
-      try {
-        if (!window.localStorage.getItem(EXAM_FILTERS_MIGRATED_KEY)) {
-          window.localStorage.setItem(EXAM_FILTERS_MIGRATED_KEY, '1');
-          if (loaded.stage === '全部') {
-            const migrated = { ...loaded, stage: DEFAULT_EXAM_FILTERS.stage };
-            safeWriteJson(EXAM_FILTERS_STORAGE, migrated);
-            return migrated;
-          }
-        }
-      } catch {
-        // ignore storage errors
-      }
-    }
-    return loaded;
-  });
-  const [personal, setPersonal] = useState<ExamPersonalStore>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
-      return raw ? validateExamPersonal(JSON.parse(raw)) : {};
-    } catch {
-      return {};
-    }
-  });
-  const [selectedExam, setSelectedExam] = useState<ExamAnnouncement | null>(null);
-  const [sourceOpen, setSourceOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === EXAM_PERSONAL_STORAGE) {
-        try {
-          const raw = window.localStorage.getItem(EXAM_PERSONAL_STORAGE);
-          setPersonal(raw ? validateExamPersonal(JSON.parse(raw)) : {});
-        } catch {
-          setPersonal({});
-          setNotice('本地考编记录格式异常，已重置为默认状态');
-        }
-      } else if (event.key === EXAM_PROFILE_STORAGE) {
-        try {
-          const raw = window.localStorage.getItem(EXAM_PROFILE_STORAGE);
-          setProfile(raw ? validateExamProfile(JSON.parse(raw)) : DEFAULT_EXAM_PROFILE);
-        } catch {
-          setProfile(DEFAULT_EXAM_PROFILE);
-        }
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  const {
+    profile,
+    filters,
+    personal,
+    updateProfile,
+    clearProfile,
+    updateFilters,
+    resetFilters,
+    updatePersonalRecord,
+    toggleSaveExam,
+    toggleCity,
+    toggleCandidate,
+    savedCount,
+    trackedCount,
+  } = useExamPersonal({ onNotice: setNotice, onPageReset: resetPage });
 
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(''), 3200);
     return () => window.clearTimeout(timer);
   }, [notice]);
-
-  const updateProfile = (patch: Partial<ExamUserProfile>) => {
-    setProfile((prev) => {
-      const next = { ...prev, ...patch };
-      safeWriteJson(EXAM_PROFILE_STORAGE, next);
-      return next;
-    });
-    setPage(1);
-  };
-
-  const updateFilters = (patch: Partial<ExamFilters>) => {
-    setFilters((prev) => {
-      const next = { ...prev, ...patch };
-      safeWriteJson(EXAM_FILTERS_STORAGE, next);
-      return next;
-    });
-    setPage(1);
-  };
-
-  const resetFilters = () => {
-    const clean: ExamFilters = { ...DEFAULT_EXAM_FILTERS, view: filters.view, sort: filters.sort };
-    setFilters(clean);
-    safeWriteJson(EXAM_FILTERS_STORAGE, clean);
-    setPage(1);
-  };
-
-  const updatePersonalRecord = (examId: string, patch: Partial<ExamPersonalRecord>) => {
-    setPersonal((prev) => {
-      const next: ExamPersonalStore = {
-        ...prev,
-        [examId]: { ...prev[examId], ...patch, updatedAt: new Date().toISOString() },
-      };
-      safeWriteJson(EXAM_PERSONAL_STORAGE, next);
-      return next;
-    });
-  };
 
   const openExam = (exam: ExamAnnouncement) => {
     setSelectedExam(exam);
@@ -225,34 +121,6 @@ export function ExamWorkspace() {
   const closeExam = useCallback(() => setSelectedExam(null), []);
   const closeSources = useCallback(() => setSourceOpen(false), []);
 
-  const toggleSaveExam = (examId: string) => {
-    const current = personal[examId]?.saved;
-    updatePersonalRecord(examId, { saved: !current });
-    setNotice(!current ? '已收藏' : '已取消收藏');
-  };
-
-  const toggleCity = (city: string) => {
-    if (city === '全部') {
-      updateFilters({ cities: ['全部'] });
-      return;
-    }
-    const cur = filters.cities.filter((c) => c !== '全部');
-    const next = cur.includes(city) ? cur.filter((c) => c !== city) : [...cur, city];
-    updateFilters({ cities: next.length > 0 ? next : ['全部'] });
-  };
-
-  const toggleCandidate = (examId: string, rowId: string, positionName: string) => {
-    const rec = personal[examId];
-    const prevIds = rec?.savedPositionIds || [];
-    const exists = prevIds.includes(rowId);
-    updatePersonalRecord(examId, {
-      saved: true,
-      savedPositionIds: exists ? prevIds.filter((id) => id !== rowId) : [...prevIds, rowId],
-      status: !rec?.status || rec.status === 'none' ? 'comparing' : rec.status,
-    });
-    setNotice(exists ? '已移出候选岗位' : `已加入候选：${positionName}`);
-  };
-
   const filteredExams = useMemo(
     () => filterExams(allExams, filters, profile, personal),
     [allExams, filters, profile, personal],
@@ -260,15 +128,6 @@ export function ExamWorkspace() {
   const flattenedPositions = useMemo(
     () => flattenAndFilterExamPositions(allExams, filters, profile),
     [allExams, filters, profile],
-  );
-  const savedCount = useMemo(
-    () =>
-      Object.values(personal).filter((r) => r.saved || (r.savedPositionIds?.length ?? 0) > 0).length,
-    [personal],
-  );
-  const trackedCount = useMemo(
-    () => Object.values(personal).filter((r) => r.status && r.status !== 'none').length,
-    [personal],
   );
 
   const milestones = useMemo<Milestone[]>(() => {
@@ -387,10 +246,7 @@ export function ExamWorkspace() {
       <ExamProfilePanel
         profile={profile}
         onUpdateProfile={updateProfile}
-        onClearProfile={() => {
-          setProfile(DEFAULT_EXAM_PROFILE);
-          safeWriteJson(EXAM_PROFILE_STORAGE, DEFAULT_EXAM_PROFILE);
-        }}
+        onClearProfile={clearProfile}
       />
 
       {/* ---------- Toolbar ---------- */}

@@ -1,9 +1,14 @@
 import unittest
 
-from scripts.collect_exams import is_civil_exam_record, is_in_shandong_or_national_scope
+from scripts.collect_exams import (
+    is_civil_exam_record,
+    is_in_shandong_or_national_scope,
+    link_related_exam_notices,
+)
 from scripts.parse_exam_positions import (
     clean_exam_title,
     compute_exam_stage,
+    compute_position_row_id,
     enrich_exam_record,
     extract_exam_organizer,
     extract_exam_schedule,
@@ -231,6 +236,72 @@ class ExamParserTests(unittest.TestCase):
         }
         enriched_dl = enrich_exam_record(raw_dl, today_str="2026-11-09")
         self.assertIsNone(enriched_dl["schedule"]["reg_end"])
+
+    def test_stable_position_row_id_and_deduplication(self):
+        grid = [
+            ["岗位代码", "招聘单位", "岗位名称", "招聘人数"],
+            ["01", "济南市中心医院", "内科医师", "2"],
+            ["01", "济南市中心医院", "内科医师", "1"],
+        ]
+        rows = parse_exam_table_grid(grid, exam_id="exam-stable-1")
+        self.assertEqual(len(rows), 2)
+        expected_base = compute_position_row_id("exam-stable-1", "01", "济南市中心医院", "内科医师")
+        self.assertEqual(rows[0]["row_id"], expected_base)
+        self.assertEqual(rows[1]["row_id"], f"{expected_base}-2")
+
+        # Reordering rows with a different row first does not change the row_id of a distinct position
+        grid_reordered = [
+            ["岗位代码", "招聘单位", "岗位名称", "招聘人数"],
+            ["99", "济南市中心医院", "外科医师", "1"],
+            ["01", "济南市中心医院", "内科医师", "2"],
+        ]
+        rows_reordered = parse_exam_table_grid(grid_reordered, exam_id="exam-stable-1")
+        self.assertEqual(rows_reordered[1]["row_id"], expected_base)
+
+    def test_link_related_exam_notices(self):
+        parent = {
+            "id": "exam-parent-1",
+            "title": "2026年淄博市市属事业单位综合类岗位公开招聘工作人员简章",
+            "organizer": "淄博市人力资源和社会保障局",
+            "notice_role": "招考简章",
+            "published_at": "2026-03-01",
+            "source_url": "https://hrss.zibo.gov.cn/1.html",
+            "related_notices": [],
+        }
+        follow_up_match = {
+            "id": "exam-notice-1",
+            "title": "关于2026年淄博市市属事业单位综合类岗位公开招聘工作人员面试资格审查有关事项的通知",
+            "organizer": "淄博市人力资源和社会保障局",
+            "notice_role": "资格复审/面试",
+            "published_at": "2026-04-20",
+            "source_url": "https://hrss.zibo.gov.cn/2.html",
+            "source_name": "淄博市人社局",
+        }
+        follow_up_unrelated_org = {
+            "id": "exam-notice-2",
+            "title": "关于2026年烟台市市属事业单位综合类岗位公开招聘工作人员面试资格审查有关事项的通知",
+            "organizer": "烟台市人力资源和社会保障局",
+            "notice_role": "资格复审/面试",
+            "published_at": "2026-04-20",
+            "source_url": "https://rshj.yantai.gov.cn/2.html",
+        }
+        follow_up_too_old = {
+            "id": "exam-notice-3",
+            "title": "关于2026年淄博市市属事业单位综合类岗位公开招聘工作人员拟聘用人员公示",
+            "organizer": "淄博市人力资源和社会保障局",
+            "notice_role": "体检/递补/公示",
+            "published_at": "2026-10-15",  # > 180 days after 2026-03-01
+            "source_url": "https://hrss.zibo.gov.cn/3.html",
+        }
+
+        exams = [parent, follow_up_match, follow_up_unrelated_org, follow_up_too_old]
+        link_related_exam_notices(exams)
+
+        self.assertEqual(len(parent["related_notices"]), 1)
+        self.assertEqual(parent["related_notices"][0]["id"], "exam-notice-1")
+        self.assertEqual(follow_up_match.get("parent_exam_id"), "exam-parent-1")
+        self.assertIsNone(follow_up_unrelated_org.get("parent_exam_id"))
+        self.assertIsNone(follow_up_too_old.get("parent_exam_id"))
 
 
 if __name__ == "__main__":

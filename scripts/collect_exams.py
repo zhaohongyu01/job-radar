@@ -661,10 +661,21 @@ def crawl_generic_gov_portal(source: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def load_hydrated_existing_jobs(public_dir: Path, live_site: str = 'https://sites-project.job-radar.workers.dev') -> List[Dict[str, Any]]:
-    """Load existing jobs from public/jobs.json (and live production snapshot + detail_shards) to extract civil exam records."""
+    """Load existing jobs from public/exams.json, public/jobs.json (and live production snapshot + detail_shards) to extract civil exam records."""
     jobs_by_id: Dict[str, Dict[str, Any]] = {}
     local_detail_shards: Dict[str, str] = {}
     live_detail_shards: Dict[str, str] = {}
+
+    # 0. Existing public/exams.json seed
+    exams_path = public_dir / 'exams.json'
+    if exams_path.exists():
+        try:
+            existing_snap = json.loads(exams_path.read_text(encoding='utf-8'))
+            for ex in existing_snap.get('exams') or []:
+                if isinstance(ex, dict) and ex.get('id') and ex.get('source_url'):
+                    jobs_by_id[ex['id']] = dict(ex)
+        except Exception:
+            pass
 
     # 1. Local public/jobs.json
     jobs_path = public_dir / 'jobs.json'
@@ -680,7 +691,7 @@ def load_hydrated_existing_jobs(public_dir: Path, live_site: str = 'https://site
                         shard_data = json.loads(shard_file.read_text(encoding='utf-8'))
                         jobs_list.extend(shard_data.get('jobs') or [])
             for j in jobs_list:
-                if is_civil_exam_record(j) and j.get('id'):
+                if is_civil_exam_record(j) and j.get('id') and j['id'] not in jobs_by_id:
                     jobs_by_id[j['id']] = dict(j)
         except Exception:
             pass
@@ -806,6 +817,79 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
             list(pool.map(parse_item_atts, candidates[:max_items]))
 
 
+NOTICE_STRIP_RE = re.compile(
+    r'面试|笔试|成绩|总成绩|准考证|资格审查|资格复审|现场资格|体检|考察|政审|递补|'
+    r'拟聘用|拟录用|拟聘|聘用|录用|公示|通知|公告|简章|有关事项|相关事项|关于|人员|名单|'
+    r'时间|安排|进入|范围|及|与|和|的|[\s\W_]+',
+    re.I,
+)
+
+
+def _core_title_chars(title: str) -> set[str]:
+    stripped = NOTICE_STRIP_RE.sub('', clean_exam_title(title or ''))
+    return set(stripped)
+
+
+def link_related_exam_notices(exams: List[Dict[str, Any]]) -> None:
+    """Link follow-up exam notices to their parent recruitment announcement (招考简章)."""
+    parents = [e for e in exams if e.get('notice_role') == '招考简章']
+    if not parents:
+        return
+
+    parent_cores = [(p, _core_title_chars(p.get('title') or '')) for p in parents]
+    for notice in exams:
+        role = notice.get('notice_role')
+        if not role or role == '招考简章':
+            continue
+        org = notice.get('organizer')
+        if not org:
+            continue
+        notice_core = _core_title_chars(notice.get('title') or '')
+        if len(notice_core) < 3:
+            continue
+        notice_pub = (notice.get('published_at') or '')[:10]
+
+        best_parent: Optional[Dict[str, Any]] = None
+        best_ratio = 0.0
+        for parent, p_core in parent_cores:
+            if parent.get('id') == notice.get('id') or parent.get('organizer') != org:
+                continue
+            if not p_core:
+                continue
+            parent_pub = (parent.get('published_at') or '')[:10]
+            if notice_pub and parent_pub:
+                try:
+                    d_notice = dt.date.fromisoformat(notice_pub)
+                    d_parent = dt.date.fromisoformat(parent_pub)
+                    diff_days = (d_notice - d_parent).days
+                    if diff_days < 0 or diff_days > 180:
+                        continue
+                except Exception:
+                    pass
+            denom = max(1, min(len(notice_core), len(p_core)))
+            ratio = len(notice_core & p_core) / denom
+            if ratio >= 0.6 and ratio > best_ratio:
+                best_ratio = ratio
+                best_parent = parent
+
+        if best_parent is not None:
+            notice['parent_exam_id'] = best_parent['id']
+            notice['parent_exam_title'] = best_parent['title']
+            rel_list = list(best_parent.get('related_notices') or [])
+            if not any(r.get('id') == notice['id'] for r in rel_list):
+                notice_type = '补充更正' if role == '补充公告' else role
+                rel_list.append({
+                    'id': notice['id'],
+                    'title': notice['title'],
+                    'published_at': notice.get('published_at'),
+                    'notice_type': notice_type,
+                    'url': notice.get('source_url') or '',
+                    'source_name': notice.get('source_name') or '',
+                })
+                rel_list.sort(key=lambda r: (r.get('published_at') or '', r.get('id') or ''))
+                best_parent['related_notices'] = rel_list
+
+
 def collect_and_export_exams(
     public_dir: Path = ROOT / 'public',
     live_crawl: bool = True,
@@ -858,7 +942,7 @@ def collect_and_export_exams(
         if not url:
             continue
         orig_src = job.get('source_id', '')
-        mapped_src = 'campus-exam-hub'
+        mapped_src = orig_src if orig_src in DEDICATED_SHANDONG_SOURCES else 'campus-exam-hub'
         if orig_src == 'sdei-civil-exams':
             mapped_src = 'sdei-civil-exams'
         elif orig_src in ('hrss', 'jinan-gov'):
@@ -989,6 +1073,8 @@ def collect_and_export_exams(
         sid = exam_obj.get('source_id', 'campus-exam-hub')
         if sid in source_stats:
             source_stats[sid]['count'] = source_stats[sid].get('count', 0) + 1
+
+    link_related_exam_notices(exams)
 
     # Sort newest first
     exams.sort(key=lambda x: (x.get('published_at') or '', x.get('id') or ''), reverse=True)

@@ -154,6 +154,8 @@ export interface ExamAnnouncement {
   attachments?: { title: string; url: string; parse_status?: string }[];
   links?: { title: string; url: string }[];
   related_notices?: ExamRelatedNotice[];
+  parent_exam_id?: string | null;
+  parent_exam_title?: string | null;
 }
 
 export interface ExamSnapshot {

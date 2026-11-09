@@ -613,17 +613,18 @@ def parse_exam_table_grid(
             elif '行政' in raw_bz or '公务员' in raw_bz:
                 bz = '公务员（行政编）'
 
-        row_id = hashlib.sha256(
-            f"{exam_id}:{r_idx}:{department}:{employer}:{pos_name}:{get_col(row, 'position_code')}".encode('utf-8')
-        ).hexdigest()[:16]
+        employer_val = employer or department or '用人单位见简章'
+        pos_name_val = pos_name or get_col(row, 'position_category') or '公开招聘岗位'
+        pos_code_val = get_col(row, 'position_code')
+        row_id = compute_position_row_id(exam_id, pos_code_val, employer_val, pos_name_val)
 
         rows_out.append({
             'row_id': row_id,
             'exam_id': exam_id,
             'department': department or employer or '招考主管部门',
-            'employer': employer or department or '用人单位见简章',
-            'position_name': pos_name or get_col(row, 'position_category') or '公开招聘岗位',
-            'position_code': get_col(row, 'position_code'),
+            'employer': employer_val,
+            'position_name': pos_name_val,
+            'position_code': pos_code_val,
             'position_category': get_col(row, 'position_category'),
             'bianzhi': bz,
             'recruit_count': recruit_count,
@@ -643,7 +644,32 @@ def parse_exam_table_grid(
             'source': 'table',
         })
 
+    assign_stable_row_ids(exam_id, rows_out)
     return rows_out
+
+
+def compute_position_row_id(
+    exam_id: str,
+    position_code: str,
+    employer: str,
+    position_name: str,
+) -> str:
+    raw = f"{exam_id}|{position_code or ''}|{employer or ''}|{position_name or ''}"
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]
+
+
+def assign_stable_row_ids(exam_id: str, rows: List[Dict[str, Any]]) -> None:
+    seen: Dict[str, int] = {}
+    for row in rows:
+        base_id = compute_position_row_id(
+            exam_id=exam_id,
+            position_code=str(row.get('position_code') or ''),
+            employer=str(row.get('employer') or ''),
+            position_name=str(row.get('position_name') or ''),
+        )
+        count = seen.get(base_id, 0) + 1
+        seen[base_id] = count
+        row['row_id'] = base_id if count == 1 else f'{base_id}-{count}'
 
 
 def parse_exam_excel_bytes(
@@ -832,7 +858,7 @@ def enrich_exam_record(
     # Organizer extraction before title enrichment
     organizer = extract_exam_organizer(
         title=title,
-        raw_company=raw_item.get('company') or '',
+        raw_company=raw_item.get('company') or raw_item.get('organizer') or '',
         body=body,
         source_name=raw_item.get('source_name') or '',
     )
@@ -945,13 +971,14 @@ def enrich_exam_record(
         notes_text = str(p.get('notes') or '')
         pol = '中共党员' if '党员' in notes_text else ''
         fresh = p.get('cohort') or ('应届毕业生' if '应届' in notes_text else '')
+        pos_code = str(p.get('position_code') or '')
         exam_positions.append({
-            'row_id': f'{exam_id}-pos-{idx}',
+            'row_id': compute_position_row_id(exam_id, pos_code, organizer, pos_name),
             'exam_id': exam_id,
             'department': organizer,
             'employer': organizer,
             'position_name': pos_name,
-            'position_code': f'{idx + 1:03d}',
+            'position_code': pos_code,
             'position_category': p.get('category') or exam_category,
             'bianzhi': default_bz,
             'recruit_count': cnt,
@@ -1039,12 +1066,12 @@ def enrich_exam_record(
                 continue
             seen_prose.add(p_name)
             exam_positions.append({
-                'row_id': f'{exam_id}-prose-{idx}',
+                'row_id': compute_position_row_id(exam_id, '', organizer, p_name),
                 'exam_id': exam_id,
                 'department': organizer,
                 'employer': organizer,
                 'position_name': p_name,
-                'position_code': f'{idx + 1:03d}',
+                'position_code': '',
                 'position_category': exam_category,
                 'bianzhi': default_bz,
                 'recruit_count': int(p_cnt),
@@ -1062,6 +1089,8 @@ def enrich_exam_record(
                 'other_conditions': '',
                 'source': 'prose',
             })
+
+    assign_stable_row_ids(exam_id, exam_positions)
 
     # Headcount & position count extraction from title + body without fabricating defaults
     pos_count_val = len(exam_positions)

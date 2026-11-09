@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { exportExamCalendar } from '../lib/exam-calendar.ts';
+import { exportExamCalendar, exportPendingDeadlinesCalendar } from '../lib/exam-calendar.ts';
 import type { ExamAnnouncement } from '../lib/exams.ts';
+import { fixtureJob } from './fixtures/job.ts';
 
 function sampleExam(overrides: Partial<ExamAnnouncement> = {}): ExamAnnouncement {
   return {
@@ -70,4 +71,30 @@ void test('exportExamCalendar generates RFC 5545 all-day events with DTSTAMP, VA
     const byteLen = new TextEncoder().encode(line).length;
     assert.ok(byteLen <= 75, `Line exceeded 75 bytes (${byteLen}): ${line}`);
   }
+});
+
+void test('exportPendingDeadlinesCalendar exports pending job deadlines with VALARMs and skips null deadlines', () => {
+  const now = Date.parse('2026-11-09T08:00:00Z');
+  const jobs = [
+    fixtureJob({
+      id: 'aa000000000000000001',
+      company: '浪潮集团',
+      title: '2027届校园招聘',
+      deadline: '2026-11-20T23:59:59+08:00',
+      application_url: 'https://join.inspur.com',
+    }),
+    fixtureJob({
+      id: 'aa000000000000000002',
+      company: '无截止企业',
+      title: '长期招聘',
+      deadline: null,
+    }),
+  ];
+
+  const ics = exportPendingDeadlinesCalendar(jobs, now);
+  assert.match(ics, /UID:job-deadline-aa000000000000000001@job-radar\.local\r\n/);
+  assert.match(ics, /DTSTART;VALUE=DATE:20261120\r\n/);
+  assert.match(ics, /TRIGGER:-P3D\r\n/);
+  assert.match(ics, /TRIGGER:-P1D\r\n/);
+  assert.doesNotMatch(ics, /aa000000000000000002/);
 });

@@ -48,6 +48,7 @@ import { ResultsPagination, ResultsToolbar } from '@/components/jobs/results-too
 import { GroupedResults } from '@/components/jobs/grouped-results';
 import { JobsEmptyStates } from '@/components/jobs/empty-states';
 import { AppHeader } from '@/components/jobs/app-header';
+import { SavedViewHeader } from '@/components/jobs/saved-view-header';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { OnboardingCard } from '@/components/jobs/onboarding-card';
 import { ToastProvider, useToast } from '@/components/toast-provider';
@@ -425,40 +426,14 @@ function HomeContent() {
       />
 
       <main className="page">
-        {filters.view === 'all' ? (
-          <h1 className="sr-only">发现机会</h1>
-        ) : (
-          <div className="saved-view-header">
-            <h1 className="page-title">
-              {filters.view === 'pipeline' || filters.view === 'applied' ? '投递跟进' : '我的收藏'}
-            </h1>
-            {(filters.view === 'planned' || filters.view === 'saved' || filters.view === 'hidden') && (
-              <fieldset className="seg saved-subtabs" aria-label="我的收藏分类">
-                <button
-                  type="button"
-                  aria-pressed={filters.view === 'planned'}
-                  onClick={() => openView('planned')}
-                >
-                  待投递 <span className="seg-count">{personalCounts.pending}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={filters.view === 'saved'}
-                  onClick={() => openView('saved')}
-                >
-                  全部收藏 <span className="seg-count">{personalCounts.savedAll}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={filters.view === 'hidden'}
-                  onClick={() => openView('hidden')}
-                >
-                  不感兴趣 <span className="seg-count">{personalCounts.hidden}</span>
-                </button>
-              </fieldset>
-            )}
-          </div>
-        )}
+        <SavedViewHeader
+          view={filters.view}
+          personalCounts={personalCounts}
+          allJobs={allJobs}
+          personal={personal}
+          now={now}
+          onOpenView={openView}
+        />
 
         {error && (
           <div className="inline-alert is-danger" role="alert">

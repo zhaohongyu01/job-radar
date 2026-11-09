@@ -27,11 +27,11 @@ async function searchStarted(page, readCount) {
   while (!readCount() && Date.now() < until) await page.waitForTimeout(25);
   assert.ok(readCount(), 'Full-text request must start within 10 seconds');
 }
-async function saved(page, text = '跟进记录已保存') {
+async function saved(page, text = '已保存 ·') {
   await tracker(page).locator('output').filter({ hasText: text }).waitFor();
 }
 async function openDetail(page) {
-  await page.locator('.opp-card').filter({ hasText: jobA.title }).getByRole('button', { name: '详情', exact: true }).click();
+  await page.locator('.opp-card').filter({ hasText: jobA.title }).locator('.opp-card-title-btn').click();
   await drawer(page).getByText('完整回归招聘说明', { exact: true }).waitFor();
 }
 async function secondPage(context) {
@@ -131,7 +131,7 @@ try {
     assert.equal(await tracker(page).locator('textarea').inputValue(), '原有草稿要保留');
     const appliedTime = (await records(page))[A].applied_at;
     assert.ok(appliedTime);
-    await tracker(page).getByRole('button', { name: '保存跟进记录', exact: true }).click(); await saved(page);
+    await tracker(page).locator('textarea').blur(); await saved(page);
     const actual = (await records(page))[A];
     assert.equal(actual.applied, true); assert.equal(actual.application_stage, 'applied');
     assert.equal(actual.applied_at, appliedTime); assert.equal(actual.notes, '原有草稿要保留');
@@ -142,10 +142,10 @@ try {
     await tracker(page).locator('textarea').fill('本页备注草稿');
     await tracker(second).locator('select').selectOption('interview');
     await tracker(second).getByLabel('下一步安排', { exact: true }).fill('另一页安排');
-    await tracker(second).getByRole('button', { name: '保存跟进记录', exact: true }).click(); await saved(second);
+    await tracker(second).getByLabel('下一步安排', { exact: true }).blur(); await saved(second);
     await page.waitForFunction(() => document.querySelector('.application-tracker select')?.value === 'interview');
     assert.equal(await tracker(page).locator('textarea').inputValue(), '本页备注草稿');
-    await tracker(page).getByRole('button', { name: '保存跟进记录', exact: true }).click(); await saved(page);
+    await tracker(page).locator('textarea').blur(); await saved(page);
     const actual = (await records(page))[A];
     assert.equal(actual.application_stage, 'interview'); assert.equal(actual.next_action_note, '另一页安排');
     assert.equal(actual.notes, '本页备注草稿');
@@ -154,10 +154,9 @@ try {
     await openDetail(page); const second = await secondPage(context); await openDetail(second);
     await tracker(page).locator('textarea').fill('本页未保存草稿');
     await tracker(second).locator('textarea').fill('另一页已保存备注');
-    await tracker(second).getByRole('button', { name: '保存跟进记录', exact: true }).click(); await saved(second);
+    await tracker(second).locator('textarea').blur(); await saved(second);
     await tracker(page).getByRole('alert').filter({ hasText: '其他页面更新了备注' }).waitFor();
     assert.equal(await tracker(page).locator('textarea').inputValue(), '本页未保存草稿');
-    assert.equal(await tracker(page).getByRole('button', { name: '保存跟进记录', exact: true }).isDisabled(), true);
     assert.equal((await records(page))[A].notes, '另一页已保存备注');
     await tracker(page).getByRole('button', { name: '以当前输入覆盖冲突', exact: true }).click(); await saved(page);
     await second.waitForFunction(() => document.querySelector('.application-tracker textarea')?.value === '本页未保存草稿');
@@ -165,17 +164,17 @@ try {
   });
   await run('a rejected storage write retains the draft and can be retried', {}, async ({ page }) => {
     await openDetail(page);
-    await tracker(page).locator('textarea').fill('空间不足也不能丢草稿');
     await page.evaluate((key) => {
       const native = Object.getOwnPropertyDescriptor(Storage.prototype, 'setItem').value;
       window.restoreRegressionStorage = () => { Storage.prototype.setItem = native; };
       Storage.prototype.setItem = function (k, v) { if (k === key) throw new DOMException('quota', 'QuotaExceededError'); return native.call(this, k, v); };
     }, personalKey);
-    await tracker(page).getByRole('button', { name: '保存跟进记录', exact: true }).click(); await saved(page, '尚未保存');
+    await tracker(page).locator('textarea').fill('空间不足也不能丢草稿');
+    await tracker(page).locator('textarea').blur(); await saved(page, '尚未保存');
     assert.equal(await tracker(page).locator('textarea').inputValue(), '空间不足也不能丢草稿');
-    assert.equal((await records(page))[A].notes, undefined);
+    assert.equal((await records(page))[A]?.notes, undefined);
     await page.evaluate(() => window.restoreRegressionStorage());
-    await tracker(page).getByRole('button', { name: '保存跟进记录', exact: true }).click(); await saved(page);
+    await tracker(page).getByRole('button', { name: '重试保存', exact: true }).click(); await saved(page);
     assert.equal((await records(page))[A].notes, '空间不足也不能丢草稿');
   });
   const current = { saved: true, hidden: false, readAt: '2026-10-29T02:00:00.000Z', notes: '新备注', personal_updated_at: '2026-10-29T02:00:00Z' };

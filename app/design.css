@@ -4129,6 +4129,24 @@ button.chip:hover {
   .brand-text small {
     display: none;
   }
+}
+
+@media (max-width: 380px) {
+  .app-bar-inner {
+    padding: 0 10px;
+    gap: 6px;
+  }
+
+  .status-btn .status-btn-label {
+    display: none;
+  }
+
+  .status-btn {
+    padding: 0 8px;
+  }
+}
+
+@media (max-width: 900px) {
 
   .bottom-tab-bar {
     position: fixed;

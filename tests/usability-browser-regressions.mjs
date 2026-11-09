@@ -113,7 +113,8 @@ try {
   });
 
   await run('phone filter sheet holds sorting/layout and reports the result count', { rows: groupRows, viewport: { width: 390, height: 844 } }, async ({ page }) => {
-    assert.equal(await page.getByRole('combobox', { name: '排序方式' }).isVisible(), false);
+    assert.equal(await page.getByRole('combobox', { name: '排序方式' }).isVisible(), true);
+    assert.equal(await page.getByRole('group', { name: '招聘信息显示方式' }).isVisible(), false);
     await page.getByRole('button', { name: '打开筛选面板' }).click();
     const sheet = page.locator('[data-slot="sheet-content"]');
     await sheet.getByRole('region', { name: '显示与排序' }).waitFor();

@@ -3,6 +3,25 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
+## 2026-11-10 全站优化重构 · 阶段二（信息架构、双路由代码分割、操作流、移动端与考编核心体验）已完成（本地已提交）
+
+按照四阶段全站优化方案完成阶段二全部任务（`T2.0`–`T2.9` 及 `B10` 求职截止日日历导出）：
+- **巨型组件拆分 (`T2.0`)**：`app/page.tsx` 与 `components/exam-workspace.tsx` 均拆分为职责单一的子组件与自定义 hooks，各自控制在 `< 900` 行以内。
+- **双路由物理分离与历史栈 (`T2.1`、`T2.2`)**：考公考编拆分为独立路由 `/exams`（`app/exams/page.tsx`），`app/exams.css` 仅在 `/exams` 加载；旧参数 `?workspace=exams` / `?mode=exams` 自动重定向至 `/exams`；弹层（岗位详情、企业面板、考编详情）与视图切换均接入 `history.pushState` / `popstate`，支持浏览器后退关闭与考编 URL 深链（`?tab=`、`?exam=`、`?city=`、`?cat=`、`?q=`、`?pos=`）。
+- **求职端信息架构与操作流 (`T2.3`–`T2.6`、`B10`)**：
+  1. 顶栏精简为 3 项（`发现机会`、`我的收藏` [含 `待投递 / 全部收藏 / 不感兴趣` 子标签与「导出截止日到日历」]、`投递跟进`），统一 `computePersonalCounts` 计数口径，移除低价值横幅并新增首访 3 步引导卡片 `OnboardingCard`。
+  2. 岗位卡片减重（移除底部阶段下拉、标记已投、详情按钮及重复倒计时，改为标题整卡点击与右上「⋯」菜单，`React.memo` 化）。
+  3. 新增全局 `ToastProvider`（支持自动消失与「撤销」恢复，替代破坏性 `window.confirm`），跟进记录与企业意向评价改为防抖/`onBlur` 自动保存。
+  4. 统一 `countActiveFilters`（17 项口径，`sort` 不计入）与 `resetFilters`，学历改为单选胶囊，专业输入增加 300ms 防抖。
+- **双端移动体验与考编核心体验 (`T2.7`–`T2.9`)**：
+  1. `<= 900px` 新增固定底部 `BottomTabBar` 与详情抽屉底部固定操作栏，补齐粗指针 44px 触控热区，修复 `.page` 手机端左右内边距（14px）及 `<= 380px` 窄屏页头状态按钮溢出问题。
+  2. 考编岗位 ID 升级为确定性 SHA-256 `row_id`，自动关联同考次考务通知 `related_notice_ids`；报考进度补齐终态（资格未过/未入围/已放弃）、目标岗位绑定与下一步倒计时；收藏视图拆分为「收藏公告 / 候选岗位（含并排对比表与失效清理）/ 已隐藏」，新增考编 `.ics` 日历导出（含提前 3 天/1 天 `VALARM`）；合并招考类别筛选、重排抽屉章节、弱化已截止卡片。
+  3. 考编抽屉统一迁移至共享 `Sheet`（焦点陷阱与返回焦点），抽取共享 `lib/local-store.ts`，对齐 `exams.css` 与 `design.css` 视觉 token。
+- **浏览器回归断言随新信息架构更新说明**：
+  1. `tests/usability-browser-regressions.mjs`：390px 手机端断言由“`排序方式` 隐藏”更新为“`排序方式` 在结果栏保留可见（对应 `T2.7` 第 5 步），`招聘信息显示方式` 隐藏并收入筛选面板”（`5/5` 通过）。
+  2. `tests/ui-state-regressions.mjs`：`openDetail` 由点击已移除的卡片「详情」按钮改为点击 `.opp-card-title-btn`（对应 `T2.4`）；跟进表单保存由点击已移除的「保存跟进记录」按钮改为 `blur()` 触发自动保存并校验 `已保存 ·` 状态文本，存储配额异常恢复改为点击新增的「重试保存」按钮（对应 `T2.5`）（`18/18` 通过）。
+- **验证**：181 项 TS 单测、10 项考编 Python 单测、`npm run lint`（0 warning / 0 error）、`npx tsc --noEmit`、`npm run build`、`smoke_pages.py`（4 视口 `errors=0 hscroll=False`）、`usability-browser-regressions.mjs`（5/5）与 `ui-state-regressions.mjs`（18/18）全部通过。
+
 ## 2026-11-09 全站优化重构 · 阶段一（数据真实性、备份完整性、安全头与 SEO）已完成（本地已提交，待推进阶段二或推送部署）
 
 按照四阶段全站优化方案完成阶段一全部 13 项任务（`T1.1`–`T1.13`）：

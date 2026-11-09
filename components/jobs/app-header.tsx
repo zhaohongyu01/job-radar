@@ -68,10 +68,11 @@ export function StatusButton({
       type="button"
       className={`btn btn-ghost btn-sm status-btn ${!lastSuccessAt || stale ? 'is-stale' : ''}`}
       onClick={onClick}
+      aria-label={`查看信息来源与更新状态（${label}）`}
       title="查看信息来源与更新状态"
     >
       <span className="freshness-dot" aria-hidden="true" />
-      <span>{label}</span>
+      <span className="status-btn-label">{label}</span>
     </button>
   );
 }

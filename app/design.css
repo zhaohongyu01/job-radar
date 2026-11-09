@@ -16,7 +16,7 @@
   --ink: #1c1b18;
   --ink-2: #3f3c35;
   --ink-3: #686357;
-  --ink-4: #8d8779;
+  --ink-4: #6f6a5e;
   --ink-5: #b8b2a4;
   --brand: #1f5140;
   --brand-hover: #173f32;
@@ -475,7 +475,7 @@ button.chip:hover {
 }
 .brand-text small {
   color: var(--ink-4);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.18em;
 }
 .app-nav {
@@ -527,7 +527,7 @@ button.chip:hover {
   border-radius: var(--r-pill);
   background: var(--paper-sunken);
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   transition:
@@ -644,7 +644,7 @@ button.chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.7);
   margin-top: 1px;
 }
@@ -667,7 +667,7 @@ button.chip:hover {
 }
 .top-cue-tag {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
@@ -702,7 +702,7 @@ button.chip:hover {
   transition: color var(--dur) var(--ease);
 }
 .top-cue-title {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.75);
   white-space: nowrap;
   max-width: 120px;
@@ -713,7 +713,7 @@ button.chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: 12px;
   color: #fca5a5;
   white-space: nowrap;
   flex-shrink: 0;
@@ -723,7 +723,7 @@ button.chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--brand-ink, #68d391);
   background: transparent;
@@ -746,7 +746,7 @@ button.chip:hover {
   align-items: center;
   gap: 8px;
   color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
+  font-size: 12px;
 }
 .top-cue-icon {
   flex-shrink: 0;
@@ -1039,7 +1039,7 @@ button.chip:hover {
   border-radius: var(--r-pill);
   background: var(--brand);
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 .search-hints {
@@ -1164,7 +1164,7 @@ button.chip:hover {
   width: 26px;
   height: 28px;
   border-radius: 0 999px 999px 0;
-  color: var(--ink-5);
+  color: var(--ink-4);
 }
 .preset-del:hover {
   color: var(--urgent);
@@ -1208,7 +1208,7 @@ button.chip:hover {
   align-items: center;
   gap: 6px;
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1303,7 +1303,7 @@ button.chip:hover {
 .progressive-pill {
   display: inline-flex;
   align-items: center;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   padding: 2px 8px;
   border-radius: var(--r-pill, 9999px);
@@ -1623,7 +1623,7 @@ button.chip:hover {
   background: var(--paper-sunken);
   border: 1px solid var(--line);
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.2;
 }
 .opp-tag-sm {
@@ -1632,7 +1632,7 @@ button.chip:hover {
   border-radius: 4px;
   background: var(--brand-soft);
   color: var(--brand);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
 }
 .opp-title {
@@ -1754,7 +1754,7 @@ button.chip:hover {
 }
 .opp-majors-label {
   color: var(--ink-4);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   margin-right: 2px;
 }
@@ -1765,7 +1765,7 @@ button.chip:hover {
   border-radius: 4px;
   background: var(--paper-sunken);
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: 12px;
   border: 1px solid var(--line);
 }
 .opp-extras {
@@ -1785,7 +1785,7 @@ button.chip:hover {
   border-radius: 4px;
   background: var(--brand-soft);
   color: var(--brand);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 550;
   border: 1px solid var(--brand-line);
 }
@@ -1798,7 +1798,7 @@ button.chip:hover {
   background: var(--paper-sunken);
   border: 1px solid var(--line);
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--font-mono);
   cursor: pointer;
   transition: all var(--dur) var(--ease);
@@ -2026,7 +2026,7 @@ button.chip:hover {
   color: var(--ink-3);
 }
 .results-col .empty-state > svg {
-  color: var(--ink-5);
+  color: var(--ink-4);
 }
 
 /* Pagination */
@@ -2409,7 +2409,7 @@ button.chip:hover {
   border-radius: 999px;
   background: var(--surface);
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -2421,7 +2421,7 @@ button.chip:hover {
 
 .plan-school-chip span {
   display: inline-block;
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-4);
   background: var(--surface-muted);
@@ -2496,7 +2496,7 @@ button.chip:hover {
   padding: 1px 0;
   background: var(--brand);
   color: var(--brand-ink);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.04em;
 }
 .agenda-date strong {
@@ -2901,7 +2901,7 @@ button.chip:hover {
 }
 
 .detail-header .channel-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 4px;
@@ -3066,7 +3066,7 @@ button.chip:hover {
 }
 
 .channels-panel-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 9999px;
@@ -3112,7 +3112,7 @@ button.chip:hover {
 }
 
 .channel-tag {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
@@ -3276,7 +3276,7 @@ button.chip:hover {
 
 .timeline-source {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-ink-subtle);
   margin-top: 4px;
 }
@@ -3314,7 +3314,7 @@ button.chip:hover {
 }
 
 .positions-count-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
@@ -3361,7 +3361,7 @@ button.chip:hover {
 .positions-table th {
   background: var(--color-paper-sunken);
   padding: 8px 12px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-ink-subtle);
   border-bottom: 1px solid var(--color-paper-border);
@@ -3396,7 +3396,7 @@ button.chip:hover {
 .edu-tag,
 .city-tag {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   padding: 1px 5px;
   border-radius: 3px;
   background: var(--color-paper-sunken);
@@ -3412,7 +3412,7 @@ button.chip:hover {
 }
 
 .major-tag {
-  font-size: 11px;
+  font-size: 12px;
   padding: 1px 6px;
   border-radius: 3px;
   background: var(--color-paper-sunken);
@@ -3451,7 +3451,7 @@ button.chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
@@ -3546,7 +3546,7 @@ button.chip:hover {
 .channel-pill-table {
   display: inline-block;
   margin-left: 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
@@ -3597,7 +3597,7 @@ button.chip:hover {
 }
 
 .source-card .tag {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 4px;

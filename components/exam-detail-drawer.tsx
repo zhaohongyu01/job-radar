@@ -3,15 +3,12 @@
 import { useMemo, useState } from 'react';
 import {
   Bookmark,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Download,
   ExternalLink,
   Search,
   Share2,
-  Star,
-  Target,
   X,
 } from 'lucide-react';
 import {
@@ -27,6 +24,7 @@ import type {
   ExamUserProfile,
 } from '@/lib/exams';
 import { bianzhiLabel, categoryLabel, ExamSheet, formatShortDate, StagePill } from '@/components/exam-ui';
+import { ExamPositionTable } from '@/components/exams/exam-position-table';
 
 interface ExamDetailDrawerProps {
   exam: ExamAnnouncement | null;
@@ -404,124 +402,14 @@ function DrawerContent({
               </div>
             </div>
 
-            <div className="exw-table-wrap">
-              <table className="exw-table is-compact">
-                <thead>
-                  <tr>
-                    <th>岗位</th>
-                    <th className="is-num">人数</th>
-                    <th>学历 / 专业</th>
-                    <th>其他条件</th>
-                    {profileActive && <th>资格</th>}
-                    <th aria-label="操作" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(({ pos, elig }) => {
-                    const isCand = savedPosIds.includes(pos.row_id);
-                    const isLocked =
-                      Boolean(personal?.targetPositionCode?.includes(pos.position_name)) &&
-                      Boolean(personal?.targetPositionCode?.includes(pos.employer));
-                    const extra = [
-                      pos.political_status && pos.political_status !== '不限' ? pos.political_status : '',
-                      pos.fresh_grad_rule && !/^(不限|应往届均可)$/.test(pos.fresh_grad_rule) ? pos.fresh_grad_rule : '',
-                      pos.other_conditions || '',
-                    ].filter(Boolean);
-                    return (
-                      <tr
-                        key={pos.row_id}
-                        className={`${profileActive && elig.matched ? 'is-ok' : ''}${isLocked ? ' is-target' : ''}`}
-                      >
-                        <td className="exw-td-main">
-                          <strong>{pos.position_name}</strong>
-                          <div className="exw-row-sub">
-                            {pos.employer}
-                            {pos.position_code ? <span className="exw-code">{pos.position_code}</span> : null}
-                          </div>
-                        </td>
-                        <td className="is-num">
-                          <strong>{pos.recruit_count ?? '—'}</strong>
-                        </td>
-                        <td>
-                          <div>{pos.education || '见公告'}</div>
-                          <div className="exw-row-sub exw-clamp" title={pos.major_raw || '见公告'}>
-                            {pos.major_raw || '见公告'}
-                          </div>
-                        </td>
-                        <td>
-                          {extra.length > 0 ? (
-                            <div className="exw-row-sub exw-clamp" title={extra.join('；')}>
-                              {extra.join('；')}
-                            </div>
-                          ) : (
-                            <span className="exw-muted">无</span>
-                          )}
-                        </td>
-                        {profileActive && (
-                          <td>
-                            {elig.status === 'eligible' ? (
-                              <span
-                                className="exw-elig is-ok"
-                                title={elig.reasons.join('；')}
-                                aria-label={`可报：${elig.reasons.join('；')}`}
-                              >
-                                <CheckCircle2 size={12} />
-                                可报
-                              </span>
-                            ) : elig.status === 'unknown' ? (
-                              <div
-                                title={elig.unknowns.join('；')}
-                                aria-label={`待核实：${elig.unknowns.join('；')}`}
-                              >
-                                <span className="exw-elig is-unknown">待核实</span>
-                                {elig.unknowns[0] && (
-                                  <div className="exw-elig-sub">{elig.unknowns[0].slice(0, 20)}</div>
-                                )}
-                              </div>
-                            ) : (
-                              <div
-                                title={elig.conflicts.join('；')}
-                                aria-label={`不符：${elig.conflicts.join('；')}`}
-                              >
-                                <span className="exw-elig is-no">不符</span>
-                                {elig.conflicts[0] && (
-                                  <div className="exw-elig-sub">{elig.conflicts[0].slice(0, 20)}</div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        )}
-                        <td className="is-action">
-                          <div className="exw-row-actions">
-                            <button
-                              type="button"
-                              className={`exw-icon-btn${isCand ? ' is-on' : ''}`}
-                              aria-pressed={isCand}
-                              aria-label={isCand ? '移出候选' : '加入候选'}
-                              title={isCand ? '移出候选' : '加入候选'}
-                              onClick={() => toggleCandidate(pos)}
-                            >
-                              <Star size={15} fill={isCand ? 'currentColor' : 'none'} />
-                            </button>
-                            <button
-                              type="button"
-                              className={`exw-icon-btn${isLocked ? ' is-on' : ''}`}
-                              aria-pressed={isLocked}
-                              aria-label="设为主报岗位"
-                              title="设为主报岗位"
-                              onClick={() => lockTarget(pos)}
-                            >
-                              <Target size={15} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {rows.length === 0 && <p className="exw-empty is-inline">没有符合条件的岗位</p>}
-            </div>
+            <ExamPositionTable
+              variant="drawer"
+              rows={rows}
+              profileActive={profileActive}
+              personal={personal}
+              onToggleCandidate={toggleCandidate}
+              onLockTarget={lockTarget}
+            />
           </section>
         )}
 

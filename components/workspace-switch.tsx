@@ -14,6 +14,7 @@ export function WorkspaceSwitch({ active }: WorkspaceSwitchProps) {
     <nav className="workspace-mode-switcher" aria-label="工作台">
       <Link
         href="/"
+        prefetch={false}
         aria-current={active === 'jobs' ? 'page' : undefined}
         className={`workspace-mode-btn ${active === 'jobs' ? 'is-active' : ''}`}
         onClick={() => {
@@ -25,6 +26,7 @@ export function WorkspaceSwitch({ active }: WorkspaceSwitchProps) {
       </Link>
       <Link
         href="/exams"
+        prefetch={false}
         aria-current={active === 'exams' ? 'page' : undefined}
         className={`workspace-mode-btn is-exam ${active === 'exams' ? 'is-active' : ''}`}
         onClick={() => {

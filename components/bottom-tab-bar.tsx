@@ -72,6 +72,7 @@ export function BottomTabBar(props: BottomTabBarProps) {
         </button>
         <Link
           href="/exams"
+          prefetch={false}
           className="bottom-tab"
           onClick={() => report('event', 'switch_workspace')}
         >
@@ -123,6 +124,7 @@ export function BottomTabBar(props: BottomTabBarProps) {
       </button>
       <Link
         href="/"
+        prefetch={false}
         className="bottom-tab"
         onClick={() => report('event', 'switch_workspace')}
       >

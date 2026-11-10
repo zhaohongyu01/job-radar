@@ -783,7 +783,8 @@ export function deriveExamStage(exam: ExamAnnouncement, today: string): ExamStag
   if (s.reg_start && today < s.reg_start) return 'upcoming';
   if (s.reg_end) {
     if (today <= s.reg_end) return dayDiff(s.reg_end, today) <= 3 ? 'closing_soon' : 'registering';
-    if (s.written_exam_date && today <= s.written_exam_date) return 'admit_exam';
+    if ((s.payment_end && today <= s.payment_end) || (s.audit_end && today <= s.audit_end)) return 'payment_confirm';
+    if ((s.written_exam_date && today <= s.written_exam_date) || (s.admit_card_start && today <= s.admit_card_start)) return 'admit_exam';
     if (s.interview_date && today <= s.interview_date) return 'interview_review';
     return 'ended';
   }

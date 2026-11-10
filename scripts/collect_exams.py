@@ -39,8 +39,8 @@ SHANDONG_CITIES = list(PROVINCE_CITIES.get('山东', []))
 EXAM_SUBJECT_RE = re.compile(
     r'公务员|选调|事业单位|事业编|控制总量|备案制|三支一扶|文职|社区工作者|'
     r'公开招聘|公开招考|公开选聘|公开遴选|竞争性选调|招录|招考|'
-    r'引进.*人才|青年人才|急需紧缺|优才|高层次人才|党政储备|公费师范|'
-    r'教师.*招聘|教育系统.*招聘|教体局.*招聘|卫健.*招聘|卫生.*招聘|医院.*招聘|疾控.*招聘',
+    r'引进.*人才|青年人才|急需紧缺|优才|高层次人才|党政储备|公费师范|乡村医生|'
+    r'教师.*招聘|教育系统.*招聘|教体局.*招聘|卫健.*招聘|卫生.*招聘|医院.*招聘|疾控.*招聘|医生.*招聘',
     re.I,
 )
 
@@ -82,7 +82,7 @@ STRICT_EXAM_TITLE_RE = re.compile(
 )
 
 ANNOUNCEMENT_ACTION_RE = re.compile(
-    r'公告|简章|通知|启事|计划|方案|名单|公示|成绩|复审|审查|笔试|面试|遴选|招考|招录|选调|招募|引进|公开招聘|选聘|聘用',
+    r'公告|通告|简章|通知|启事|计划|方案|名单|公示|成绩|复审|审查|笔试|面试|遴选|招考|招录|选调|招募|引进|公开招聘|选聘|聘用',
     re.I,
 )
 
@@ -111,6 +111,11 @@ OUT_OF_PROVINCE_RE = re.compile(
 DEDICATED_SHANDONG_SOURCES = {
     '81rc-wenzhi',
     'sd-hrss-rsks',
+    'dtdjzx-gwy',
+    'dtdjzx-xds',
+    'dtdjzx-lxxd',
+    'sd-edu-tzgg',
+    'sd-wsjkw-gsgg',
     'sdei-civil-exams',
     'sdei-exam-dispatch',
     'hrss',
@@ -144,11 +149,62 @@ EXAM_SOURCES: List[Dict[str, Any]] = [
         'level': '国家级',
         'adapter': 'generic_gov',
     },
-    # 2. 山东省级核心招考平台
+    {
+        'id': 'cpta-notice',
+        'name': '中国人事考试网 · 国考与公开招聘考务通知',
+        'url': 'http://www.cpta.com.cn/notice.html',
+        'city': '全国',
+        'level': '国家级',
+        'adapter': 'generic_gov',
+    },
+    # 2. 山东省级核心招考平台（省委组织部灯塔平台 + 省人事考试信息网 + 省教育厅 + 省卫健委）
+    {
+        'id': 'dtdjzx-gwy',
+        'name': '中共山东省委组织部 · 灯塔-录用公务员专栏',
+        'url': 'https://www.dtdjzx.gov.cn/web/dtdjzx/lygwyzkgg.html',
+        'extra_urls': ['https://www.dtdjzx.gov.cn/web/dtdjzx/lytzgg.html'],
+        'download_url': 'https://www.dtdjzx.gov.cn/web/dtdjzx/lyxgxz.html',
+        'city': '省属/全省',
+        'level': '省级',
+        'adapter': 'dtdjzx_exam',
+    },
+    {
+        'id': 'dtdjzx-xds',
+        'name': '中共山东省委组织部 · 灯塔-选调生录用专栏',
+        'url': 'https://www.dtdjzx.gov.cn/web/dtdjzx/lyxdszkgg.html',
+        'extra_urls': ['https://www.dtdjzx.gov.cn/web/dtdjzx/lyxdstzgg.html'],
+        'city': '省属/全省',
+        'level': '省级',
+        'adapter': 'dtdjzx_exam',
+    },
+    {
+        'id': 'dtdjzx-lxxd',
+        'name': '中共山东省委组织部 · 灯塔-公开遴选与选调公务员',
+        'url': 'https://www.dtdjzx.gov.cn/web/dtdjzx/lxxdtzgg.html',
+        'city': '省属/全省',
+        'level': '省级',
+        'adapter': 'dtdjzx_exam',
+    },
     {
         'id': 'sd-hrss-rsks',
         'name': '山东省人社厅 · 山东人事考试信息网',
-        'url': 'http://hrss.shandong.gov.cn/rsks/',
+        'url': 'http://hrss.shandong.gov.cn/rsks/channels/ch03577/',
+        'city': '省属/全省',
+        'level': '省级',
+        'adapter': 'generic_gov',
+    },
+    {
+        'id': 'sd-edu-tzgg',
+        'name': '山东省教育厅 · 直属单位公开招聘与通知公告',
+        'url': 'http://edu.shandong.gov.cn/col/col11982/index.html',
+        'city': '省属/全省',
+        'level': '省级',
+        'adapter': 'generic_gov',
+    },
+    {
+        'id': 'sd-wsjkw-gsgg',
+        'name': '山东省卫生健康委员会 · 医疗卫生公开招聘公告',
+        'url': 'http://wsjkw.shandong.gov.cn/zwgk/fdzdgknr/gsgg/',
         'city': '省属/全省',
         'level': '省级',
         'adapter': 'generic_gov',
@@ -444,6 +500,20 @@ def fetch_bytes_quick(url: str, timeout: float = 6.0, max_bytes: int = 4_000_000
         return None
 
 
+def extract_dtdjzx_embedded_html(html: str) -> str:
+    r"""Extract Vue template literal `content: \`...\`` from dtdjzx.gov.cn detail pages."""
+    if 'v-html="content"' not in html and 'dtdjzx.gov.cn' not in html:
+        return ''
+    m = re.search(
+        r'content:\s*`(.*?)`\s*,\s*(?:contentSize|videoUrl|readInfo|crumbList|url|articleTitle)',
+        html,
+        re.S,
+    )
+    if not m:
+        m = re.search(r'content:\s*`(.*?)`', html, re.S)
+    return m.group(1).strip() if m else ''
+
+
 def parse_detail_body_and_tables(url: str, fallback_title: str, source_city: str = '') -> Dict[str, Any]:
     """Fetch an official exam detail page and extract body text, attachments, and position tables."""
     try:
@@ -455,7 +525,10 @@ def parse_detail_body_and_tables(url: str, fallback_title: str, source_city: str
             'exam_positions': [],
         }
 
-    root = c.Tree(html).root
+    embedded_html = extract_dtdjzx_embedded_html(html)
+    parse_html = f'<div class="content">{embedded_html}</div>' if embedded_html else html
+
+    root = c.Tree(parse_html).root
     containers = (
         root.find(id='zoom')
         or root.find(cls='TRS_Editor')
@@ -486,9 +559,9 @@ def parse_detail_body_and_tables(url: str, fallback_title: str, source_city: str
 
     exam_id = hashlib.sha256(url.encode('utf-8')).hexdigest()[:20]
     exam_positions: List[Dict[str, Any]] = []
-    if BeautifulSoup is not None and '<table' in html.lower():
+    if BeautifulSoup is not None and '<table' in parse_html.lower():
         try:
-            soup = BeautifulSoup(html, 'html.parser')
+            soup = BeautifulSoup(parse_html, 'html.parser')
             for tbl in soup.find_all('table'):
                 grid = _table_to_grid(tbl)
                 if grid:
@@ -617,12 +690,18 @@ def crawl_generic_gov_portal(source: Dict[str, Any]) -> List[Dict[str, Any]]:
         title = clean_exam_title(title)
         if not is_valid_gov_article_title(title):
             continue
+        if not is_in_shandong_or_national_scope(title, source_id=source['id']):
+            continue
 
         full_url = c.safe_url(raw_href, url)
         if not full_url or full_url in seen_urls:
             continue
         # Ensure it's an article link, not a generic nav link
-        if not re.search(r'(?:202\d|art_|/info/|t202\d|\d{5,}\.(?:htm|html|shtml))', full_url, re.I):
+        if not re.search(
+            r'(?:202\d|art_|/info/|t202\d|/(?:notice|examNotice|performance|gwytg)/\d+\.html|\d{4,}\.(?:htm|html|shtml))',
+            full_url,
+            re.I,
+        ):
             continue
         seen_urls.add(full_url)
 
@@ -656,6 +735,90 @@ def crawl_generic_gov_portal(source: Dict[str, Any]) -> List[Dict[str, Any]]:
             'source_city': src_city,
             'published_at': pub_date,
         })
+
+    return discovered[:30]
+
+
+def parse_dtdjzx_basic_lines(html: str, base_url: str) -> List[Dict[str, str]]:
+    """Parse static `<basic-line ...>` list tags from dtdjzx.gov.cn exam columns."""
+    entries: List[Dict[str, str]] = []
+    for tag_m in re.finditer(r'<basic-line\b([^>]+)>', html, re.I | re.S):
+        attrs_raw = tag_m.group(1)
+        attrs = {
+            k.lower(): c.clean(v)
+            for k, v in re.findall(r'([a-zA-Z_-]+)\s*=\s*["\']([^"\']*)["\']', attrs_raw)
+        }
+        raw_url = attrs.get('url', '')
+        full_url = c.safe_url(raw_url, base_url)
+        title = clean_exam_title(attrs.get('title', ''))
+        if not full_url or not title:
+            continue
+        pub_date = attrs.get('time', '')[:10]
+        if not re.fullmatch(r'202\d-\d{2}-\d{2}', pub_date):
+            pub_date = ''
+        entries.append({
+            'title': title,
+            'url': full_url,
+            'published_at': pub_date,
+            'description': attrs.get('description', ''),
+        })
+    return entries
+
+
+def crawl_dtdjzx_exam(source: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Crawl Shandong Organization Dept (灯塔-党建在线) Civil Service & Selected Graduate columns."""
+    urls = [source['url'], *(source.get('extra_urls') or [])]
+    discovered: List[Dict[str, Any]] = []
+    seen_urls = set()
+    src_city = source.get('city', '')
+    if src_city in ('省属/全省', '全国', '山东及全国'):
+        src_city = ''
+
+    for page_url in urls:
+        try:
+            html = fetch_html_quick(page_url, timeout=6.0)
+        except Exception:
+            continue
+        for row in parse_dtdjzx_basic_lines(html, page_url):
+            if row['url'] in seen_urls:
+                continue
+            if not is_valid_gov_article_title(row['title']):
+                continue
+            seen_urls.add(row['url'])
+            discovered.append({
+                'id': hashlib.sha256(row['url'].encode('utf-8')).hexdigest()[:20],
+                'title': row['title'],
+                'source_id': source['id'],
+                'source_name': source['name'],
+                'source_url': row['url'],
+                'source_city': src_city,
+                'published_at': row['published_at'] or None,
+                'excerpt': row['description'],
+            })
+
+    # Attach standalone position-table download entries (e.g. lyxgxz.html) to their matching announcement
+    dl_url = source.get('download_url')
+    if dl_url and discovered:
+        try:
+            dl_html = fetch_html_quick(dl_url, timeout=6.0)
+            for dl_row in parse_dtdjzx_basic_lines(dl_html, dl_url):
+                if not re.search(r'职位表|岗位表|计划表|汇总表', dl_row['title']):
+                    continue
+                dl_detail = parse_detail_body_and_tables(dl_row['url'], dl_row['title'], source_city=src_city)
+                dl_atts = dl_detail.get('attachments') or []
+                if not dl_atts:
+                    continue
+                core_prefix = re.sub(r'(?:招录|考试录用)?(?:职位表|岗位表|计划表|汇总表).*$', '', dl_row['title'])
+                for item in discovered:
+                    if core_prefix and len(core_prefix) >= 6 and core_prefix in item['title']:
+                        existing_atts = list(item.get('attachments') or [])
+                        existing_urls = {a.get('url') for a in existing_atts}
+                        for att in dl_atts:
+                            if att.get('url') not in existing_urls:
+                                existing_atts.append(att)
+                        item['attachments'] = existing_atts
+        except Exception:
+            pass
 
     return discovered[:30]
 
@@ -819,7 +982,14 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
             raw_bytes = fetch_bytes_quick(att_url, timeout=5.0)
             if not raw_bytes:
                 continue
-            rows = parse_exam_excel_bytes(raw_bytes, exam_id=exam_id, default_city=src_city, filename=att_title)
+            default_bz = '公务员（行政编）' if '公务员' in str(item.get('title') or '') else '事业编'
+            rows = parse_exam_excel_bytes(
+                raw_bytes,
+                exam_id=exam_id,
+                default_bianzhi=default_bz,
+                default_city=src_city,
+                filename=att_title,
+            )
             if rows:
                 for r in rows:
                     r['source_url'] = att_url
@@ -988,6 +1158,8 @@ def collect_and_export_exams(
                     return sid, crawl_sdei_exam_channel(src, max_pages=3), None
                 if adapter == 'jinan_cms_exam':
                     return sid, crawl_jinan_cms_exam(src, max_pages=2), None
+                if adapter == 'dtdjzx_exam':
+                    return sid, crawl_dtdjzx_exam(src), None
                 if adapter == 'generic_gov':
                     return sid, crawl_generic_gov_portal(src), None
                 return sid, [], None
@@ -1004,8 +1176,10 @@ def collect_and_export_exams(
                     u = it['source_url']
                     if u not in raw_by_url:
                         raw_by_url[u] = it
+                    elif it.get('attachments') and not raw_by_url[u].get('attachments'):
+                        raw_by_url[u]['attachments'] = it['attachments']
 
-        # Fetch details for newly discovered items that lack full body text (bounded to top 40 newest)
+        # Fetch details for newly discovered items that lack full body text (bounded to top 50 newest)
         need_detail = [
             it for it in raw_by_url.values()
             if len(str(it.get('body') or '')) < 80
@@ -1020,13 +1194,18 @@ def collect_and_export_exams(
             )
             if len(detail_info.get('body') or '') >= len(str(item.get('body') or '')):
                 item['body'] = detail_info['body']
-            if detail_info.get('attachments') and not item.get('attachments'):
-                item['attachments'] = detail_info['attachments']
+            if detail_info.get('attachments'):
+                existing_atts = list(item.get('attachments') or [])
+                existing_urls = {a.get('url') for a in existing_atts}
+                for att in detail_info['attachments']:
+                    if att.get('url') not in existing_urls:
+                        existing_atts.append(att)
+                item['attachments'] = existing_atts
             if detail_info.get('exam_positions') and not item.get('exam_positions'):
                 item['exam_positions'] = detail_info['exam_positions']
 
         with ThreadPoolExecutor(max_workers=8) as pool:
-            list(pool.map(enrich_one, need_detail[:40]))
+            list(pool.map(enrich_one, need_detail[:50]))
 
         # Parse .xlsx / .pdf position table attachments for announcements that lack tabular positions
         parse_position_attachments_for_items(list(raw_by_url.values()), max_items=25)

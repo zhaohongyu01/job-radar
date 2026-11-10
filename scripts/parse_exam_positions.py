@@ -58,29 +58,29 @@ COL_EMPLOYER = re.compile(r'(?:招聘单位|用人单位|单位名称|招考单�
 COL_POS_NAME = re.compile(r'(?:岗位名称|职位名称|招聘岗位|招聘职位|需求岗位|招考职位|具体岗位|拟聘岗位|^岗位$|^职位$)', re.I)
 COL_POS_CODE = re.compile(r'(?:岗位代码|职位代码|岗位编号|职位编号|岗位代号|代码)', re.I)
 COL_POS_CAT = re.compile(r'(?:岗位类别|职位类别|岗位性质|岗位等级|专业技术岗位|考试类别|试卷类别|笔试类别)', re.I)
-COL_BIANZHI = re.compile(r'(?:编制性质|经费形式|编制类型|经费来源|管理方式|总量控制)', re.I)
-COL_COUNT = re.compile(r'(?:招聘人数|招录人数|计划人数|拟聘人数|需求人数|招聘计划|招考人数|计划数|人数|名额)', re.I)
+COL_BIANZHI = re.compile(r'(?:编制性质|职位性质|经费形式|编制类型|经费来源|管理方式|总量控制)', re.I)
+COL_COUNT = re.compile(r'(?:招聘人数|招录人数|计划人数|拟聘人数|需求人数|招聘计划|招录计划|录用计划|招考人数|计划数|人数|名额)', re.I)
 COL_EDUCATION = re.compile(r'(?:^学历$|学历要求|文化程度|最低学历|学历层次)', re.I)
 COL_DEGREE = re.compile(r'(?:^学位$|学位要求|最低学位)', re.I)
 COL_EDU_DEGREE = re.compile(r'(?:学历学位|学历/学位|学历及学位)', re.I)
 COL_MAJORS = re.compile(r'(?:专业要求|专业名称|所学专业|需求专业|招聘专业|专业范围|学科专业|专业目录|^专业$)', re.I)
 COL_POLITICAL = re.compile(r'(?:政治面貌|党派|党员)', re.I)
-COL_FRESH_GRAD = re.compile(r'(?:招聘对象|招聘范围|应届要求|生源范围|毕业生范围|基层工作经历|工作经历|人员范围)', re.I)
+COL_FRESH_GRAD = re.compile(r'(?:招聘对象|招录对象|招聘范围|应届要求|生源范围|毕业生范围|基层工作经历|基层工作最低年限|工作经历|人员范围)', re.I)
 COL_AGE = re.compile(r'(?:年龄|年龄要求|年龄限制|出生日期)', re.I)
 COL_HUKOU = re.compile(r'(?:户籍|生源地|户籍要求|生源要求)', re.I)
 COL_CITY = re.compile(r'(?:工作地点|工作地|所在地区|考区|城市|地点)', re.I)
-COL_SUBJECTS = re.compile(r'(?:笔试科目|考试科目|考试内容|专业科目)', re.I)
-COL_RATIO = re.compile(r'(?:开考比例|比例)', re.I)
+COL_SUBJECTS = re.compile(r'(?:笔试科目|公共科目笔试类别|考试科目|考试内容|专业科目)', re.I)
+COL_RATIO = re.compile(r'(?:开考比例|面试人员比例|比例)', re.I)
 COL_PHONE = re.compile(r'(?:咨询电话|联系电话|单位电话)', re.I)
-COL_NOTES = re.compile(r'(?:其他条件|其他要求|备注|其他资格条件|说明|附加条件)', re.I)
+COL_NOTES = re.compile(r'(?:其他条件|其他要求|备注|其他资格条件|职位简介|说明|附加条件)', re.I)
 
 EXAM_HEADER_KEYWORD = re.compile(
     r'^(?:序号|编号|代码|主管部门|主管机关|招聘单位|用人单位|单位名称|招录机关|单位|'
-    r'岗位名称|职位名称|招聘岗位|招聘职位|岗位代码|职位代码|岗位编号|岗位类别|职位类别|岗位等级|岗位性质|'
-    r'经费形式|编制性质|招聘人数|招录人数|计划人数|需求人数|人数|名额|'
-    r'学历|学历要求|学位|学位要求|学历学位|专业|专业要求|所学专业|需求专业|学科|'
-    r'政治面貌|年龄|年龄要求|招聘对象|招聘范围|应届|基层工作经历|工作经历|户籍|生源|'
-    r'开考比例|笔试科目|考试科目|工作地点|地点|其他条件|其他要求|资格条件|备注|咨询电话|联系电话)'
+    r'岗位名称|职位名称|招聘岗位|招聘职位|岗位代码|职位代码|岗位编号|岗位类别|职位类别|职位属性|岗位等级|岗位性质|职位性质|'
+    r'经费形式|编制性质|招聘人数|招录人数|计划人数|需求人数|招聘计划|招录计划|录用计划|人数|名额|'
+    r'学历|学历要求|学位|学位要求|学历学位|专业|专业要求|大学专科专业要求|大学本科专业要求|研究生专业要求|所学专业|需求专业|学科|'
+    r'政治面貌|年龄|年龄要求|招聘对象|招录对象|招聘范围|应届|基层工作经历|基层工作最低年限|服务基层项目工作经历|工作经历|户籍|生源|'
+    r'开考比例|面试人员比例|笔试科目|公共科目笔试类别|考试科目|工作地点|地点|职位简介|其他条件|其他要求|资格条件|备注|咨询电话\d*|联系电话)'
     r'(?:[（(【\[][^】\)】\]]{0,30}[）)】\]]|[/:：、及&+].*)?$',
     re.I,
 )
@@ -120,8 +120,18 @@ def extract_exam_organizer(title: str, raw_company: str = '', body: str = '', so
     # 1. National / Provincial / Military canonical authorities
     if re.search(r'中央机关及其直属机构.*考试录用公务员', cleaned_title):
         return '国家公务员局'
-    if re.search(r'山东省.*选拔录用选调生', cleaned_title):
+    if re.search(r'山东省.*选拔录用选调生|山东省.*第二批选调|山东省.*公开遴选.*公务员', cleaned_title):
         return '中共山东省委组织部'
+    if re.search(r'山东省法院系统.*考试录用公务员', cleaned_title):
+        return '山东省高级人民法院'
+    if re.search(r'山东省检察机关.*考试录用公务员', cleaned_title):
+        return '山东省人民检察院'
+    if re.search(r'山东省公安机关.*考试录用公务员', cleaned_title):
+        return '山东省公安厅'
+    if re.search(r'山东省司法行政机关.*考试录用公务员', cleaned_title):
+        return '山东省司法厅'
+    if re.search(r'山东省省级机关.*考试录用公务员', cleaned_title):
+        return '山东省公务员局'
     if re.search(r'山东省.*三支一扶', cleaned_title):
         return '山东省人力资源和社会保障厅'
     if '北部战区陆军' in cleaned_title:
@@ -296,7 +306,7 @@ def infer_exam_category(title: str, text: str = '') -> str:
 def infer_notice_role(title: str) -> str:
     if re.search(r'报名人数|报名情况|核减|取消.*计划|改报', title):
         return '报名统计'
-    if re.search(r'准考证|笔试通知|笔试安排|笔试时间|笔试考点|笔试温馨', title):
+    if re.search(r'准考证|笔试通知|笔试安排|笔试时间|笔试考点|笔试温馨', title) and '报名时间' not in title:
         return '准考证/笔试'
     if re.search(r'成绩查询|笔试成绩|综合成绩|面试成绩|合格分数线|进入面试范围|入围人员名单', title):
         return '成绩/进面'
@@ -348,14 +358,14 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
         if seg and seg.strip()
     ]
     for line in segments:
-        if any(k in line for k in ('报名时间', '网上报名', '报名起止', '查询时间', '初审时间', '资格初审', '缴费时间', '网上缴费', '准考证', '笔试时间')):
+        if any(k in line for k in ('报名时间', '网上报名', '提交报名', '报名起止', '查询时间', '初审时间', '资格初审', '资格审核', '缴费时间', '网上缴费', '报名确认', '准考证', '笔试时间')):
             if 8 <= len(line) <= 160 and len(schedule['raw_evidence']) < 6 and line not in schedule['raw_evidence']:
                 schedule['raw_evidence'].append(line)
 
-        # 1. Registration window: e.g. 报名时间：2026年3月18日9:00—3月22日16:00 or 2026年11月10日至2026年11月14日
-        if not schedule['reg_end'] and re.search(r'报名时间|网上报名|报名起止|报名期限|报名方式及时间', line):
+        # 1. Registration window: e.g. 报名时间：2026年3月18日9:00—3月22日16:00 or 提交报名申请...2026年11月6日9︰00至11月9日16︰00
+        if not schedule['reg_end'] and re.search(r'报名时间|网上报名|提交报名(?:申请|信息)|报名起止|报名期限|报名方式及时间', line):
             range_m = re.search(
-                rf'(?:(202\d)\s*年\s*)?(\d{{1,2}})\s*月\s*(\d{{1,2}})\s*日(?:\s*\d{{1,2}}[：:时]\d{{0,2}}分?)?\s*{RANGE_SEP}\s*(?:(202\d)\s*年\s*)?(?:(\d{{1,2}})\s*月\s*)?(\d{{1,2}})\s*日',
+                rf'(?:(202\d)\s*年\s*)?(\d{{1,2}})\s*月\s*(\d{{1,2}})\s*日(?:\s*\d{{1,2}}[：:︰时]\d{{0,2}}分?)?\s*{RANGE_SEP}\s*(?:(202\d)\s*年\s*)?(?:(\d{{1,2}})\s*月\s*)?(\d{{1,2}})\s*日',
                 line,
             )
             if range_m:
@@ -393,7 +403,7 @@ def extract_exam_schedule(text: str, published_at: Optional[str] = None) -> Dict
                 schedule['audit_end'] = _normalize_cn_date(last[0] or default_year, last[1], last[2])
 
         # 3. Payment window
-        if not schedule['payment_end'] and re.search(r'缴费时间|网上缴费|报名确认|缴费截止', line):
+        if not schedule['payment_end'] and re.search(r'缴费时间|网上缴费|报名确认|缴费确认|缴纳.*费|缴费截止', line):
             dates = re.findall(r'(?:(202\d)\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日', line)
             if dates:
                 last = dates[-1]
@@ -485,9 +495,9 @@ def parse_exam_table_grid(
             or COL_COUNT.search(c)
             or COL_EDUCATION.search(c)
         )
-        return hits >= 2 and hits >= len(non_empty) // 2 and all(len(c) <= 45 for c in non_empty)
+        return hits >= 2 and (hits >= len(non_empty) // 2 or hits >= 5) and all(len(c) <= 45 for c in non_empty)
 
-    best_header: Optional[Tuple[int, int, int, Dict[str, int]]] = None
+    best_header: Optional[Tuple[int, int, int, Dict[str, int], List[Tuple[str, int]]]] = None
     for start_r in range(min(10, len(grid))):
         for depth in (1, 2, 3):
             if start_r + depth > len(grid):
@@ -506,6 +516,7 @@ def parse_exam_table_grid(
                 composite.append(' '.join(parts))
 
             mapping: Dict[str, int] = {}
+            major_cols: List[Tuple[str, int]] = []
             for c_idx, cell in enumerate(composite):
                 if not cell:
                     continue
@@ -529,8 +540,11 @@ def parse_exam_table_grid(
                     mapping['education'] = c_idx
                 elif 'degree' not in mapping and COL_DEGREE.search(cell):
                     mapping['degree'] = c_idx
-                elif 'majors' not in mapping and COL_MAJORS.search(cell):
-                    mapping['majors'] = c_idx
+                elif COL_MAJORS.search(cell):
+                    if 'majors' not in mapping:
+                        mapping['majors'] = c_idx
+                    tier = '研究生' if '研究生' in cell else ('本科' if '本科' in cell else ('专科' if '专科' in cell else ''))
+                    major_cols.append((tier, c_idx))
                 elif 'political' not in mapping and COL_POLITICAL.search(cell):
                     mapping['political'] = c_idx
                 elif 'fresh_grad' not in mapping and COL_FRESH_GRAD.search(cell):
@@ -553,12 +567,12 @@ def parse_exam_table_grid(
             if ('position_name' in mapping or 'majors' in mapping or 'employer' in mapping) and len(mapping) >= 2:
                 score = len(mapping) * 10 + depth
                 if best_header is None or score > best_header[0]:
-                    best_header = (score, start_r, depth, mapping)
+                    best_header = (score, start_r, depth, mapping, major_cols)
 
     if not best_header:
         return []
 
-    _, start_r, depth, col = best_header
+    _, start_r, depth, col, major_cols_best = best_header
     data_start = start_r + depth
     rows_out: List[Dict[str, Any]] = []
 
@@ -575,7 +589,15 @@ def parse_exam_table_grid(
         pos_name = get_col(row, 'position_name')
         employer = get_col(row, 'employer') or default_employer
         department = get_col(row, 'department') or employer
-        major_raw = get_col(row, 'majors')
+        if len(major_cols_best) > 1:
+            major_parts: List[str] = []
+            for tier, m_idx in major_cols_best:
+                val = clean_cell(row[m_idx]) if m_idx < len(row) else ''
+                if val:
+                    major_parts.append(f'{tier}：{val}' if tier else val)
+            major_raw = major_parts[0].split('：', 1)[-1] if len(major_parts) == 1 else '；'.join(major_parts)
+        else:
+            major_raw = get_col(row, 'majors')
 
         # Skip summary/total/note rows
         first_non_empty = next((clean_cell(c) for c in row if clean_cell(c)), '')
@@ -790,7 +812,9 @@ def compute_exam_stage(
 
     reg_start = schedule.get('reg_start')
     reg_end = schedule.get('reg_end')
+    audit_end = schedule.get('audit_end')
     pay_end = schedule.get('payment_end')
+    admit_start = schedule.get('admit_card_start')
     exam_date = schedule.get('written_exam_date')
     interview_date = schedule.get('interview_date')
 
@@ -807,9 +831,9 @@ def compute_exam_stage(
                 pass
             return 'registering'
         # Registration has ended; check subsequent milestones
-        if pay_end and pay_end >= today_str:
+        if (pay_end and pay_end >= today_str) or (audit_end and audit_end >= today_str):
             return 'payment_confirm'
-        if exam_date and exam_date >= today_str:
+        if (exam_date and exam_date >= today_str) or (admit_start and admit_start >= today_str):
             return 'admit_exam'
         if interview_date and interview_date >= today_str:
             return 'interview_review'

@@ -3,11 +3,17 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.collect_exams import (
+    EXAM_SOURCES,
+    crawl_dtdjzx_exam,
+    crawl_generic_gov_portal,
+    extract_dtdjzx_embedded_html,
     is_civil_exam_record,
     is_in_shandong_or_national_scope,
     link_related_exam_notices,
+    parse_dtdjzx_basic_lines,
     write_exam_snapshot,
 )
 from scripts.snapshot_assets import EXAM_DETAIL_ASSET
@@ -416,6 +422,126 @@ class ExamParserTests(unittest.TestCase):
             self.assertTrue((client_dir / "exams.json").is_file())
             for rel_path in written_exams["detail_shards"].values():
                 self.assertTrue((client_dir / rel_path.lstrip("/")).is_file())
+
+    def test_dtdjzx_adapter_and_embedded_vue_detail_extraction(self):
+        src_ids = {s["id"] for s in EXAM_SOURCES}
+        for expected_id in ("cpta-notice", "dtdjzx-gwy", "dtdjzx-xds", "dtdjzx-lxxd", "sd-edu-tzgg", "sd-wsjkw-gsgg"):
+            self.assertIn(expected_id, src_ids)
+
+        list_html = """
+        <div class="container__list">
+          <basic-line title="2027年度山东省省级机关及其直属机构考试录用公务员公告" description="招录说明" url="/web/dtdjzx/lygwyzkgg/131234.html" time="2026-11-04"></basic-line>
+          <basic-line title="2027年度山东省省级机关及其直属机构考试录用公务员报考指南" description="报考指南噪声应过滤" url="/web/dtdjzx/lygwyzkgg/131231.html" time="2026-11-04"></basic-line>
+          <basic-line title="2027年度山东省法院系统考试录用公务员简章" description="法院简章" url="/web/dtdjzx/lygwyzkgg/131228.html" time="2026-11-04"></basic-line>
+        </div>
+        """
+        dl_list_html = """
+        <div class="container__list">
+          <basic-line title="2027年度山东省省级机关及其直属机构考试录用公务员职位表" description="职位表" url="/web/dtdjzx/lyxgxz/131238.html" time="2026-11-04"></basic-line>
+        </div>
+        """
+        dl_detail_html = """
+        <div v-html="content" class="content"></div>
+        <script>
+        new Vue({
+          data() {
+            return {
+              content: `<p><a href="https://dyjyzyk.dtdjzx.gov.cn/zyk-shengnei/uploads/ueditor/file/2026-11-04/3852065468852481734.xlsx" title="2027年度山东省省级机关及其直属机构考试录用公务员职位表">2027年度山东省省级机关及其直属机构考试录用公务员职位表</a></p>`,
+              contentSize: 'content-mid'
+            }
+          }
+        })
+        </script>
+        """
+        parsed_lines = parse_dtdjzx_basic_lines(list_html, "https://www.dtdjzx.gov.cn/web/dtdjzx/lygwyzkgg.html")
+        self.assertEqual(len(parsed_lines), 3)
+        self.assertIn("3852065468852481734.xlsx", extract_dtdjzx_embedded_html(dl_detail_html))
+
+        def fake_fetch(url: str, timeout: float = 6.0, referer: str = "") -> str:
+            if url.endswith("lygwyzkgg.html"):
+                return list_html
+            if url.endswith("lyxgxz.html"):
+                return dl_list_html
+            if url.endswith("131238.html"):
+                return dl_detail_html
+            return ""
+
+        src = next(s for s in EXAM_SOURCES if s["id"] == "dtdjzx-gwy")
+        with patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch):
+            items = crawl_dtdjzx_exam({**src, "extra_urls": []})
+
+        self.assertEqual(len(items), 2)  # 报考指南被过滤
+        self.assertEqual(items[0]["title"], "2027年度山东省省级机关及其直属机构考试录用公务员公告")
+        self.assertEqual(len(items[0].get("attachments") or []), 1)
+        self.assertTrue(items[0]["attachments"][0]["url"].endswith(".xlsx"))
+
+    def test_generic_gov_portal_supports_cpta_and_shandong_provincial_columns(self):
+        cpta_html = """
+        <ul>
+          <li><a href="/gwytg/2072.html">中央机关及其直属机构2027年度考试录用公务员笔试公告</a> 2026-11-05</li>
+          <li><a href="/notice/2222.html">上海市某区事业单位2026年公开招聘公告</a> 2026-11-05</li>
+        </ul>
+        """
+        cpta_src = next(s for s in EXAM_SOURCES if s["id"] == "cpta-notice")
+        with patch("scripts.collect_exams.fetch_html_quick", return_value=cpta_html):
+            cpta_items = crawl_generic_gov_portal(cpta_src)
+        self.assertEqual(len(cpta_items), 1)
+        self.assertIn("中央机关及其直属机构", cpta_items[0]["title"])
+
+        edu_html = """
+        <ul>
+          <li><a href="/art/2026/10/19/art_107093_10356467.html">山东省教育科学研究院2026年公开招聘博士研究生公告</a></li>
+        </ul>
+        """
+        edu_src = next(s for s in EXAM_SOURCES if s["id"] == "sd-edu-tzgg")
+        with patch("scripts.collect_exams.fetch_html_quick", return_value=edu_html):
+            edu_items = crawl_generic_gov_portal(edu_src)
+        self.assertEqual(len(edu_items), 1)
+        self.assertEqual(edu_items[0]["published_at"], "2026-10-19")
+
+    def test_civil_service_wide_xlsx_grid_with_multi_tier_major_columns(self):
+        grid = [
+            ["2027年度山东省省级机关及其直属机构考试录用公务员职位表"] + [""] * 21,
+            [
+                "招录机关", "用人单位", "职位代码", "职位名称", "职位性质", "职位类别",
+                "职位属性", "公共科目笔试类别", "职位简介", "招录计划", "招录对象",
+                "学历要求", "学位要求", "大学专科专业要求", "大学本科专业要求", "研究生专业要求",
+                "政治面貌", "基层工作最低年限", "服务基层项目工作经历", "是否在面试阶段组织专业能力测试",
+                "面试人员比例", "工作地点",
+            ],
+            [
+                "中共山东省委网信办", "机关", "13730003001000001", "网信技术管理职位", "公务员", "综合管理类",
+                "普通职位", "A类", "从事网络安全管理工作", "2", "2027届高校毕业生",
+                "大学本科以上", "学士以上", "", "计算机类、电子信息工程", "计算机科学与技术一级学科、软件工程一级学科",
+                "中共党员", "无限制", "无限制", "否",
+                "3:1", "济南市",
+            ],
+        ]
+        rows = parse_exam_table_grid(grid, exam_id="sd-gwy-2027", default_bianzhi="公务员（行政编）")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["department"], "中共山东省委网信办")
+        self.assertEqual(rows[0]["position_code"], "13730003001000001")
+        self.assertEqual(rows[0]["bianzhi"], "公务员（行政编）")
+        self.assertEqual(rows[0]["recruit_count"], 2)
+        self.assertIn("本科：计算机类", rows[0]["major_raw"])
+        self.assertIn("研究生：计算机科学与技术", rows[0]["major_raw"])
+        self.assertEqual(rows[0]["political_status"], "中共党员")
+
+        gwy_sched = extract_exam_schedule(
+            "1．提交报名申请。报考者可在2026年11月6日9︰00至11月9日16︰00期间登录报名平台，提交报名申请。"
+            "3．报名确认。报考者通过资格初审后，应于2026年11月6日11︰00至11月11日16︰00登录报名平台进行网上缴费确认。",
+            "2026-11-04",
+        )
+        self.assertEqual(gwy_sched["reg_start"], "2026-11-06")
+        self.assertEqual(gwy_sched["reg_end"], "2026-11-09")
+        self.assertEqual(gwy_sched["payment_end"], "2026-11-11")
+
+        xds_sched = extract_exam_schedule(
+            "1、提交报名信息时间：11月9日9:00—13日16:00。",
+            "2026-11-05",
+        )
+        self.assertEqual(xds_sched["reg_start"], "2026-11-09")
+        self.assertEqual(xds_sched["reg_end"], "2026-11-13")
 
 
 if __name__ == "__main__":

@@ -26,7 +26,9 @@
   - **企业求职端 (`/`)**：HTML TTFB `1,206 ms`、DCL `2,058 ms`；**首张卡片出现时间 `3,471 ms`（审计前约 `15,000 ms`，提速 `-76.9%`）**；全量 16 个浏览分片下载完成 `8,622 ms`（完整索引就绪 `9,885 ms`）；**浏览索引传输体积 `6.17 MB` br（`6,174,419` bytes，审计前 `9.35 MB` br，下降 `-34.0%`）**；**首屏 DOM 节点数 `2,919`（审计前 `6,260`，下降 `-53.4%`）**；`/job-assets/*` 缓存头 `public, max-age=31536000, immutable` 生效。
   - **考公考编端 (`/exams`)**：HTML TTFB `2,571 ms`、DCL `3,692 ms`、首张卡片出现 `4,605 ms`；**`/exams.json` 传输体积 `94.0 KB` br（`94,319` bytes 传输 / `788,996` bytes 解压，审计前 `492 KB` br / `3.1 MB` 解压，下降 `-80.9%`）**；点击卡片按需请求 `/exam-assets/detail-85-6994716de38ef0bd9fe1.json` 返回 `200`；首屏 DOM 节点数 `1,256`。
   - **安全响应头、RUM 与双端兼容性**：`Content-Security-Policy`、`X-Content-Type-Options: nosniff`、`Referrer-Policy`、`Permissions-Policy` 均已在线上响应头生效；`POST /api/rum` 返回 `204`；桌面 `1440px` 与手机 `390px` 四视口均无横向溢出（`hscroll=false`）、无 4xx/5xx 资源错误。
-  - 可选任务 `T4.3`（补充一手采集源）保留按需推进。
+  - **一手官方考编采集源扩容 (`T4.3`，本地已提交待推送)**：
+    - 新增 6 个免登录、无反爬的 `HTTP 200` 一手官方公开招考栏目：`dtdjzx-gwy`（中共山东省委组织部 · 灯塔录用公务员专栏，含下载页自动挂载职位表 `.xlsx`）、`dtdjzx-xds`（灯塔 · 选调生录用专栏）、`dtdjzx-lxxd`（灯塔 · 公开遴选与选调公务员）、`cpta-notice`（中国人事考试网 · 国考与公开招聘考务通知）、`sd-edu-tzgg`（山东省教育厅 · 直属单位公开招聘）、`sd-wsjkw-gsgg`（山东省卫健委 · 医疗卫生公开招聘），并将 `sd-hrss-rsks` 升级为公开可读的 `/rsks/channels/ch03577/` 公务员与事编考试子栏目；同时对返回挑战短壳的 `scs.gov.cn`、`hrss.shandong.gov.cn/channels/ch00238/` 与 `/rsks/channels/ch03518/` 按规范立即停止探测、不予接入。
+    - 适配灯塔 `<basic-line>` 静态列表与详情内嵌 `content` 提取、24 列公务员职位表多层专业列（专科/本科/研究生）与 `提交报名申请/信息` 时间解析，前后端 `deriveExamStage` / `compute_exam_stage` 补齐 `payment_confirm` 与 `admit_card_start` 阶段判定；结构化岗位明细由 `321` 增至 **`1,058`**（含 2027 山东省考省直 `210` 岗、2026 省属事编统考 `416` 岗等，163 个详情分片，`exams.json` gzip `176.7 KB < 200 KB`），19 项考编单测与 190 项 TS 单测全部通过。
 
 ## 2026-11-10 全站优化重构 · 阶段二（信息架构、双路由代码分割、操作流、移动端与考编核心体验）已完成（本地已提交）
 

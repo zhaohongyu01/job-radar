@@ -108,7 +108,7 @@ def repair_snapshot_zhiye_urls(public, snapshot, metadata):
     return index, metadata_raw, len(repaired_urls)
 
 
-def download(site, public, repair_zhiye_urls=False):
+def download(site, public, repair_zhiye_urls=False, prefer_newer_exams_dir=None):
     if not re.fullmatch(r'https://[a-zA-Z0-9.-]+', site):
         raise ValueError('Expected a plain HTTPS origin')
     public = Path(public)
@@ -153,28 +153,41 @@ def download(site, public, repair_zhiye_urls=False):
     try:
         exams_raw = fetch('/exams.json')
         exam_snapshot = json.loads(exams_raw)
-        exam_paths = exam_asset_paths(exam_snapshot)
+        skip_stale_live_exams = False
+        if prefer_newer_exams_dir is not None:
+            repo_exams_file = Path(prefer_newer_exams_dir) / 'exams.json'
+            if repo_exams_file.is_file():
+                repo_exam = json.loads(repo_exams_file.read_text(encoding='utf-8'))
+                repo_has_shards = bool(repo_exam.get('detail_shards'))
+                live_has_shards = bool(exam_snapshot.get('detail_shards'))
+                repo_gen = str(repo_exam.get('generated_at') or '')
+                live_gen = str(exam_snapshot.get('generated_at') or '')
+                if (repo_has_shards and not live_has_shards) or (repo_gen and live_gen and repo_gen > live_gen):
+                    skip_stale_live_exams = True
+                    print(f'Kept newer built exams snapshot (repo={repo_gen}, live={live_gen})')
+        if not skip_stale_live_exams:
+            exam_paths = exam_asset_paths(exam_snapshot)
 
-        def fetch_exam_asset(path):
-            match = EXAM_DETAIL_ASSET.fullmatch(path)
-            if not match:
-                raise ValueError('Invalid published exam asset path')
-            raw = fetch(path)
-            if hashlib.sha256(raw).hexdigest()[:20] != match[1]:
-                raise ValueError('Published exam asset hash mismatch')
-            target = public / path.lstrip('/')
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(raw)
+            def fetch_exam_asset(path):
+                match = EXAM_DETAIL_ASSET.fullmatch(path)
+                if not match:
+                    raise ValueError('Invalid published exam asset path')
+                raw = fetch(path)
+                if hashlib.sha256(raw).hexdigest()[:20] != match[1]:
+                    raise ValueError('Published exam asset hash mismatch')
+                target = public / path.lstrip('/')
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(raw)
 
-        exam_assets_dir = (public / 'exam-assets').resolve()
-        if exam_assets_dir.is_dir():
-            for old in exam_assets_dir.glob('detail-*.json'):
-                if old.resolve().is_relative_to(exam_assets_dir) and f'/exam-assets/{old.name}' not in exam_paths:
-                    old.unlink()
-        if exam_paths:
-            with ThreadPoolExecutor(max_workers=8) as pool:
-                list(pool.map(fetch_exam_asset, sorted(exam_paths)))
-        (public / 'exams.json').write_bytes(exams_raw)
+            exam_assets_dir = (public / 'exam-assets').resolve()
+            if exam_assets_dir.is_dir():
+                for old in exam_assets_dir.glob('detail-*.json'):
+                    if old.resolve().is_relative_to(exam_assets_dir) and f'/exam-assets/{old.name}' not in exam_paths:
+                        old.unlink()
+            if exam_paths:
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    list(pool.map(fetch_exam_asset, sorted(exam_paths)))
+            (public / 'exams.json').write_bytes(exams_raw)
     except Exception as exc:
         print(f'Skipped downloading /exams.json: {exc}')
     print(f'Reused published snapshot with {snapshot.get("index_count", len(snapshot["jobs"]))} records; no collection performed')
@@ -185,5 +198,11 @@ if __name__ == '__main__':
     parser.add_argument('--site', required=True)
     parser.add_argument('--public-dir', type=Path, required=True)
     parser.add_argument('--repair-zhiye-urls', action='store_true')
+    parser.add_argument('--prefer-newer-exams-dir', type=Path, default=None)
     args = parser.parse_args()
-    download(args.site, args.public_dir, repair_zhiye_urls=args.repair_zhiye_urls)
+    download(
+        args.site,
+        args.public_dir,
+        repair_zhiye_urls=args.repair_zhiye_urls,
+        prefer_newer_exams_dir=args.prefer_newer_exams_dir,
+    )

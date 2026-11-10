@@ -13,6 +13,8 @@ import { APPLICATION_STAGES, personalConflicts } from '@/lib/personal-records';
 import { employerFromId, employerLabel } from '@/lib/employers';
 import type { EmployerRecords } from '@/lib/employer-personal';
 import { employerRecordConflicts } from '@/lib/employer-personal';
+import { examPersonalConflicts, isExamProfileActive } from '@/lib/exams';
+import type { ExamPersonalStore } from '@/lib/exams';
 import { formatDate as date } from '@/components/job-card';
 
 function personalStatusText(record: PersonalRecord) {
@@ -27,6 +29,7 @@ export function BackupImportSheet({
   importing,
   personal,
   employerRecords,
+  examPersonal,
   allJobs,
   onClose,
   onExport,
@@ -36,11 +39,17 @@ export function BackupImportSheet({
   importing: boolean;
   personal: Personal;
   employerRecords: EmployerRecords;
+  examPersonal?: ExamPersonalStore;
   allJobs: Job[];
   onClose: () => void;
   onExport: () => void;
   onConfirm: (preferImported: boolean) => void;
 }) {
+  const examConflictCount =
+    importPreview?.exam_records && examPersonal
+      ? examPersonalConflicts(examPersonal, importPreview.exam_records).length
+      : 0;
+
   return (
     <Sheet open={!!importPreview} onOpenChange={(open) => { if (!open && !importing) onClose(); }}>
       <SheetContent className="backup-import-sheet">
@@ -52,7 +61,13 @@ export function BackupImportSheet({
           <div className="application-tracker">
             <p>岗位记录 {Object.keys(importPreview.records).length} 条，活动记录 {Object.keys(importPreview.event_records || {}).length} 条。</p>
             {!!importPreview.employer_records && <p>企业个人记录 {Object.keys(importPreview.employer_records).length} 条，包含意向评分与备注。</p>}
-            {!!importPreview.exam_records && <p>考编记录 {Object.keys(importPreview.exam_records).length} 条。</p>}
+            {!!importPreview.exam_records && (
+              <p>
+                考编记录 {Object.keys(importPreview.exam_records).length} 条
+                {examConflictCount > 0 ? `（含 ${examConflictCount} 条时间相同冲突）` : ''}
+                {importPreview.exam_profile && isExamProfileActive(importPreview.exam_profile) ? '，包含考编个人条件画像' : ''}。
+              </p>
+            )}
             <p>有 {personalConflicts(personal, importPreview.records).length} 条个人状态或备注缺少可区分新旧的更新时间；请选择冲突处理方式。可比较时间的记录采用较新状态。</p>
             {personalConflicts(personal, importPreview.records).slice(0, 20).map((id) => (
               <details key={id}>

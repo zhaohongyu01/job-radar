@@ -4,3 +4,4 @@ typing_extensions==4.15.0
 openpyxl==3.1.5
 et_xmlfile==2.0.0
 PyMuPDF==1.26.7
+xlrd==2.0.1

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Download, Upload } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -199,6 +199,8 @@ export interface ExamFilterSidebarProps {
   onToggleCity: (city: string) => void;
   onUpdateFilters: (patch: Partial<ExamFilters>) => void;
   onResetFilters: () => void;
+  onExport?: () => void;
+  onImport?: () => void;
 }
 
 export function ExamFilterSidebar({
@@ -210,6 +212,8 @@ export function ExamFilterSidebar({
   onToggleCity,
   onUpdateFilters,
   onResetFilters,
+  onExport,
+  onImport,
 }: ExamFilterSidebarProps) {
   const selectedCities = filters.cities.filter((c) => c !== '全部');
 
@@ -361,6 +365,27 @@ export function ExamFilterSidebar({
           ))}
         </div>
       </FilterSection>
+
+      {(onExport || onImport) && (
+        <div className="rail-foot">
+          <h3>我的记录</h3>
+          <p>考编画像、收藏候选与报考进度仅存当前浏览器，可导出后在其他设备导入。</p>
+          <div className="rail-foot-actions">
+            {onExport && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onExport}>
+                <Download size={14} />
+                导出
+              </button>
+            )}
+            {onImport && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onImport}>
+                <Upload size={14} />
+                导入
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 

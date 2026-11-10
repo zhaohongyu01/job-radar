@@ -8,12 +8,15 @@ import {
   DEFAULT_EXAM_PROFILE,
   deriveExamStage,
   evaluateExamPositionEligibility,
+  examPersonalConflicts,
   filterExams,
   flattenAndFilterExamPositions,
   formatExamUrl,
   isExamProfileActive,
   isTerminalTrackStatus,
   loadExamDetailShard,
+  mergeExamPersonal,
+  mergeExamProfile,
   parseExamUrl,
   validateExamPersonal,
   validateExamProfile,
@@ -503,4 +506,72 @@ void test('evaluateExamPositionEligibility supports MOE major categories, aliase
   // 6. validateExamProfile 保留合法专业大类并过滤非法值
   assert.equal(validateExamProfile({ majorCategory: '计算机类' }).majorCategory, '计算机类');
   assert.equal(validateExamProfile({ majorCategory: '不存在的大类' }).majorCategory, '');
+});
+
+void test('parseExamUrl and formatExamUrl round-trip extended filters (bianzhi, subject, noticeRole, unlim, fresh, sort)', () => {
+  const fullFilters = {
+    ...DEFAULT_EXAM_FILTERS,
+    view: 'positions' as const,
+    query: '信息技术',
+    cities: ['济南', '烟台'],
+    stage: '正在报名',
+    category: '事业单位',
+    bianzhi: '事业编',
+    subject: '职测',
+    noticeRole: '仅看招考简章',
+    unlimitedMajorOnly: true,
+    freshGradOnly: true,
+    sort: 'headcount' as const,
+  };
+  const qs = formatExamUrl({ filters: fullFilters, examId: 'ex-99', page: 2 });
+  const parsed = parseExamUrl(qs);
+  assert.equal(parsed.examId, 'ex-99');
+  assert.equal(parsed.page, 2);
+  assert.deepEqual(parsed.filters, {
+    view: 'positions',
+    query: '信息技术',
+    cities: ['济南', '烟台'],
+    stage: '正在报名',
+    category: '事业单位',
+    bianzhi: '事业编',
+    subject: '职测',
+    noticeRole: '仅看招考简章',
+    unlimitedMajorOnly: true,
+    freshGradOnly: true,
+    sort: 'headcount',
+  });
+});
+
+void test('mergeExamPersonal, examPersonalConflicts, and mergeExamProfile preserve local data and resolve timestamps', () => {
+  const local = {
+    'only-local': { saved: true, updatedAt: '2026-11-10T01:00:00Z' },
+    'newer-local': { saved: true, status: 'paid' as const, updatedAt: '2026-11-10T05:00:00Z', readAt: '2026-11-09T00:00:00Z' },
+    'newer-imported': { saved: true, status: 'registered' as const, updatedAt: '2026-11-10T02:00:00Z' },
+    'tie-conflict': { saved: true, notes: '本机备注', updatedAt: '2026-11-10T03:00:00Z' },
+  };
+  const imported = {
+    'only-imported': { saved: true, savedPositionIds: ['row-1'], updatedAt: '2026-11-10T01:00:00Z' },
+    'newer-local': { saved: true, status: 'registered' as const, updatedAt: '2026-11-10T01:00:00Z' },
+    'newer-imported': { saved: true, status: 'interview' as const, updatedAt: '2026-11-10T06:00:00Z' },
+    'tie-conflict': { saved: true, notes: '备份备注', updatedAt: '2026-11-10T03:00:00Z' },
+  };
+
+  assert.deepEqual(examPersonalConflicts(local, imported), ['tie-conflict']);
+
+  const keepLocal = mergeExamPersonal(local, imported, false);
+  assert.equal(keepLocal['only-local']?.saved, true);
+  assert.deepEqual(keepLocal['only-imported']?.savedPositionIds, ['row-1']);
+  assert.equal(keepLocal['newer-local']?.status, 'paid');
+  assert.equal(keepLocal['newer-local']?.readAt, '2026-11-09T00:00:00Z');
+  assert.equal(keepLocal['newer-imported']?.status, 'interview');
+  assert.equal(keepLocal['tie-conflict']?.notes, '本机备注');
+
+  const preferBackup = mergeExamPersonal(local, imported, true);
+  assert.equal(preferBackup['tie-conflict']?.notes, '备份备注');
+
+  const activeLocalProfile: ExamUserProfile = { ...DEFAULT_EXAM_PROFILE, education: '本科' };
+  const activeImportedProfile: ExamUserProfile = { ...DEFAULT_EXAM_PROFILE, education: '硕士研究生' };
+  assert.equal(mergeExamProfile(DEFAULT_EXAM_PROFILE, activeImportedProfile, false)?.education, '硕士研究生');
+  assert.equal(mergeExamProfile(activeLocalProfile, activeImportedProfile, false)?.education, '本科');
+  assert.equal(mergeExamProfile(activeLocalProfile, activeImportedProfile, true)?.education, '硕士研究生');
 });

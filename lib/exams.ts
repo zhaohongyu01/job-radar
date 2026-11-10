@@ -1004,6 +1004,21 @@ export function flattenAndFilterExamPositions(
 
 
 const EXAM_VIEW_SET = new Set<ExamFilters['view']>(['announcements', 'positions', 'saved', 'tracker']);
+const EXAM_SORT_SET = new Set<ExamFilters['sort']>(['smart', 'published', 'reg_end', 'headcount']);
+const EXAM_NOTICE_ROLE_SET = new Set<string>(['全部', '仅看招考简章', '考务进展通知']);
+const EXAM_BIANZHI_SET = new Set<string>([
+  '全部',
+  '公务员（行政编）',
+  '参公管理',
+  '事业编',
+  '控制总量 / 备案制',
+  '选调生',
+  '教师编',
+  '医疗卫生编',
+  '军队文职',
+  '三支一扶 / 基层项目',
+  '高层次 / 紧缺人才',
+]);
 const EXAM_STAGE_SET = new Set([
   '可报名/进行中',
   '全部',
@@ -1015,6 +1030,84 @@ const EXAM_STAGE_SET = new Set([
   '报名已结束',
 ]);
 const EXAM_CITY_SET = new Set<string>(['全部', '全国', '山东省直', ...SHANDONG_16]);
+
+function examComparableSignature(rec: ExamPersonalRecord): string {
+  return JSON.stringify({
+    saved: Boolean(rec.saved),
+    hidden: Boolean(rec.hidden),
+    status: rec.status || 'none',
+    savedPositionIds: [...(rec.savedPositionIds || [])].sort(),
+    targetPositionCode: rec.targetPositionCode || '',
+    targetRowId: rec.targetRowId || '',
+    regNumber: rec.regNumber || '',
+    writtenScore: rec.writtenScore || '',
+    interviewDate: rec.interviewDate || '',
+    notes: rec.notes || '',
+  });
+}
+
+export function examPersonalConflicts(
+  local: ExamPersonalStore,
+  imported: ExamPersonalStore,
+): string[] {
+  const conflicts: string[] = [];
+  for (const [id, inc] of Object.entries(imported)) {
+    const cur = local[id];
+    if (!cur) continue;
+    if (examComparableSignature(cur) === examComparableSignature(inc)) continue;
+    const tCur = cur.updatedAt ? Date.parse(cur.updatedAt) : NaN;
+    const tInc = inc.updatedAt ? Date.parse(inc.updatedAt) : NaN;
+    if (!Number.isFinite(tCur) || !Number.isFinite(tInc) || tCur === tInc) {
+      conflicts.push(id);
+    }
+  }
+  return conflicts;
+}
+
+export function mergeExamPersonal(
+  local: ExamPersonalStore,
+  imported: ExamPersonalStore,
+  preferImported: boolean,
+): ExamPersonalStore {
+  const merged: ExamPersonalStore = { ...local };
+  for (const [id, inc] of Object.entries(imported)) {
+    const cur = merged[id];
+    if (!cur) {
+      merged[id] = inc;
+      continue;
+    }
+    const tCur = cur.updatedAt ? Date.parse(cur.updatedAt) : NaN;
+    const tInc = inc.updatedAt ? Date.parse(inc.updatedAt) : NaN;
+    const pickImported =
+      Number.isFinite(tCur) && Number.isFinite(tInc) && tCur !== tInc
+        ? tInc > tCur
+        : preferImported;
+    const primary = pickImported ? inc : cur;
+    const secondary = pickImported ? cur : inc;
+    merged[id] = {
+      ...primary,
+      ...(primary.readAt || secondary.readAt ? { readAt: primary.readAt || secondary.readAt } : {}),
+    };
+  }
+  return merged;
+}
+
+export function mergeExamProfile(
+  local: ExamUserProfile,
+  imported: ExamUserProfile | undefined,
+  preferImported: boolean,
+): ExamUserProfile | undefined {
+  if (!imported) {
+    return isExamProfileActive(local) ? local : undefined;
+  }
+  if (!isExamProfileActive(local)) {
+    return imported;
+  }
+  if (!isExamProfileActive(imported)) {
+    return local;
+  }
+  return preferImported ? imported : local;
+}
 
 export interface ExamUrlState {
   filters?: Partial<ExamFilters>;
@@ -1063,6 +1156,40 @@ export function parseExamUrl(search: string): ExamUrlState {
     hasFilter = true;
   }
 
+  const bz = params.get('bz');
+  if (bz && EXAM_BIANZHI_SET.has(bz.trim())) {
+    filters.bianzhi = bz.trim();
+    hasFilter = true;
+  }
+
+  const subj = params.get('subj');
+  if (subj && subj.trim().length > 0 && subj.trim().length <= 30) {
+    filters.subject = subj.trim();
+    hasFilter = true;
+  }
+
+  const role = params.get('role');
+  if (role && EXAM_NOTICE_ROLE_SET.has(role.trim())) {
+    filters.noticeRole = role.trim();
+    hasFilter = true;
+  }
+
+  if (params.get('unlim') === '1') {
+    filters.unlimitedMajorOnly = true;
+    hasFilter = true;
+  }
+
+  if (params.get('fresh') === '1') {
+    filters.freshGradOnly = true;
+    hasFilter = true;
+  }
+
+  const sort = params.get('sort');
+  if (sort && EXAM_SORT_SET.has(sort as ExamFilters['sort'])) {
+    filters.sort = sort as ExamFilters['sort'];
+    hasFilter = true;
+  }
+
   const examRaw = params.get('exam');
   const examId = examRaw && /^[\w-]{1,80}$/.test(examRaw) ? examRaw : null;
 
@@ -1100,6 +1227,24 @@ export function formatExamUrl(state: {
   }
   if (filters.category && filters.category !== DEFAULT_EXAM_FILTERS.category) {
     params.set('cat', filters.category);
+  }
+  if (filters.bianzhi && filters.bianzhi !== DEFAULT_EXAM_FILTERS.bianzhi) {
+    params.set('bz', filters.bianzhi);
+  }
+  if (filters.subject && filters.subject !== DEFAULT_EXAM_FILTERS.subject) {
+    params.set('subj', filters.subject);
+  }
+  if (filters.noticeRole && filters.noticeRole !== DEFAULT_EXAM_FILTERS.noticeRole) {
+    params.set('role', filters.noticeRole);
+  }
+  if (filters.unlimitedMajorOnly) {
+    params.set('unlim', '1');
+  }
+  if (filters.freshGradOnly) {
+    params.set('fresh', '1');
+  }
+  if (filters.sort && filters.sort !== DEFAULT_EXAM_FILTERS.sort) {
+    params.set('sort', filters.sort);
   }
   if (page && page > 1) {
     params.set('page', String(page));

@@ -238,13 +238,13 @@ SOURCES.extend([
      'sectors': ['综合'], 'trust': '官方原始来源', 'source_family': '山东省大学生就业服务平台'},
     {'id': 'sdei-civil-exams', 'name': '山东省大学生就业服务平台 · 招考与基层项目',
      'url': 'https://gxjy.sdei.edu.cn/JobFairs/channel?classId=99', 'adapter': 'sdei_news',
-     'class_id': 99, 'allow_empty_pages': True,
+     'class_id': 99, 'allow_empty_pages': True, 'page_size': 30, 'list_timeout': 12, 'list_retries': 1,
      'include_title_re': r'招聘|招考|招募|招录|选调|选聘|三支一扶|文职|岗位|简章|引进|事业单位',
      'scope': '山东及全国', 'recruitment_types': ['事业单位', '校招'],
      'sectors': ['政府 / 事业单位'], 'trust': '官方原始来源', 'source_family': '山东省大学生就业服务平台'},
     {'id': 'sdei-jobfairs', 'name': '山东省大学生就业服务平台 · 省级专场招聘活动',
      'url': 'https://gxjy.sdei.edu.cn/JobFairs/channel?classId=87', 'adapter': 'sdei_news',
-     'class_id': 87, 'allow_empty_pages': True,
+     'class_id': 87, 'allow_empty_pages': True, 'page_size': 30, 'list_timeout': 12, 'list_retries': 1,
      'scope': '山东', 'recruitment_types': ['校招'],
      'sectors': ['综合'], 'trust': '官方原始来源', 'source_family': '山东省大学生就业服务平台'},
     {'id': 'boc-recruitment', 'name': '中国银行 · 官方招聘公告',
@@ -873,12 +873,15 @@ def sdei_news_list(page, page_size=50, source=None):
     that are not present in individual school views.
     """
     class_id = int((source or {}).get('class_id') or 96)
+    effective_size = int((source or {}).get('page_size') or page_size)
+    list_timeout = int((source or {}).get('list_timeout') or 8)
+    list_retries = int((source or {}).get('list_retries') or 0)
     referer = f'https://gxjy.sdei.edu.cn/JobFairs/channel?classId={class_id}'
     endpoint = 'https://gxjy.sdei.edu.cn/JobFairs/channel/ajaxList?' + urllib.parse.urlencode({
-        'classId': class_id, 'pageNum': page, 'pageSize': page_size})
+        'classId': class_id, 'pageNum': page, 'pageSize': effective_size})
     # This hub is independent from school feeds. A stalled request must not
     # spend two 18-second attempts before the other regional sources can run.
-    payload = json.loads(fetch(endpoint, referer=referer, timeout=8, retries=0))
+    payload = json.loads(fetch(endpoint, referer=referer, timeout=list_timeout, retries=list_retries))
     data = payload.get('data')
     if payload.get('code') != 0 or not isinstance(data, dict) or str(data.get('classId')) != str(class_id):
         raise ValueError('province recruitment feed returned invalid channel')

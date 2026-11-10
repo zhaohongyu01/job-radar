@@ -8,12 +8,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
+  Download,
   FileSpreadsheet,
   Kanban,
   Landmark,
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Upload,
   X,
 } from 'lucide-react';
 import {
@@ -44,11 +46,16 @@ import {
 import { ExamPositionTable } from '@/components/exams/exam-position-table';
 import { ExamTrackerBoard } from '@/components/exams/exam-tracker-board';
 import { ExamSourcesSheet } from '@/components/exams/exam-sources-sheet';
+import { BackupImportSheet } from '@/components/backup-import-sheet';
+import { ShortcutsDialog } from '@/components/shortcuts-dialog';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { formatMonthDay } from '@/components/exam-ui';
 import { useToast } from '@/components/toast-provider';
 import { useExamSnapshot } from '@/hooks/use-exam-snapshot';
 import { useExamPersonal } from '@/hooks/use-exam-personal';
+import { useBackup } from '@/hooks/use-backup';
+import { readPersonalRecords } from '@/lib/personal-store';
+import { readEmployerRecords } from '@/lib/employer-personal';
 import { report } from '@/lib/rum';
 
 const PAGE_SIZE = 20;
@@ -130,6 +137,8 @@ export function ExamWorkspace() {
     hiddenCount,
   } = useExamPersonal({ onNotice: setNotice, onPageReset: resetPage });
 
+  const [searchDraft, setSearchDraft] = useState(() => filters.query);
+
   useEffect(() => {
     if (!linkedExamId || allExams.length === 0) return;
     if (selectedExam?.id === linkedExamId) return;
@@ -166,9 +175,16 @@ export function ExamWorkspace() {
         cities: DEFAULT_EXAM_FILTERS.cities,
         stage: DEFAULT_EXAM_FILTERS.stage,
         category: DEFAULT_EXAM_FILTERS.category,
+        bianzhi: DEFAULT_EXAM_FILTERS.bianzhi,
+        subject: DEFAULT_EXAM_FILTERS.subject,
+        noticeRole: DEFAULT_EXAM_FILTERS.noticeRole,
+        unlimitedMajorOnly: DEFAULT_EXAM_FILTERS.unlimitedMajorOnly,
+        freshGradOnly: DEFAULT_EXAM_FILTERS.freshGradOnly,
         view: DEFAULT_EXAM_FILTERS.view,
+        sort: DEFAULT_EXAM_FILTERS.sort,
         ...urlState.filters,
       }));
+      setSearchDraft(urlState.filters?.query || '');
       setPage(urlState.page || 1);
       const nextExamId =
         event.state?.overlay === 'exam'
@@ -232,12 +248,86 @@ export function ExamWorkspace() {
     setSelectedExam(null);
     setLinkedExamId(null);
   }, []);
+  const {
+    fileRef,
+    triggerFilePicker,
+    importPreview,
+    setImportPreview,
+    importing,
+    exportPersonal,
+    importPersonal,
+    confirmImport,
+  } = useBackup({ onNotice: setNotice });
+
+  const jobPersonalForBackup = useMemo(() => {
+    if (!importPreview || typeof window === 'undefined') return {};
+    try {
+      return readPersonalRecords(window.localStorage);
+    } catch {
+      return {};
+    }
+  }, [importPreview]);
+
+  const employerPersonalForBackup = useMemo(() => {
+    if (!importPreview || typeof window === 'undefined') return {};
+    try {
+      return readEmployerRecords(window.localStorage);
+    } catch {
+      return {};
+    }
+  }, [importPreview]);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchDebounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const searchReportTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(searchReportTimer.current), []);
+
+  const handleResetFilters = useCallback(() => {
+    clearTimeout(searchDebounceTimer.current);
+    setSearchDraft('');
+    resetFilters();
+  }, [resetFilters]);
+
+  useEffect(
+    () => () => {
+      clearTimeout(searchDebounceTimer.current);
+      clearTimeout(searchReportTimer.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          Boolean(target.closest('input, textarea, select, [contenteditable="true"]')))
+      ) {
+        return;
+      }
+      event.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const flushSearchQuery = useCallback(
+    (value: string) => {
+      clearTimeout(searchDebounceTimer.current);
+      updateFilters({ query: value });
+    },
+    [updateFilters],
+  );
 
   const handleSearchInput = useCallback(
     (value: string) => {
-      updateFilters({ query: value });
+      setSearchDraft(value);
+      clearTimeout(searchDebounceTimer.current);
+      searchDebounceTimer.current = setTimeout(() => {
+        updateFilters({ query: value });
+      }, 200);
       clearTimeout(searchReportTimer.current);
       if (value.trim()) {
         searchReportTimer.current = setTimeout(() => report('event', 'search'), 300);
@@ -393,9 +483,34 @@ export function ExamWorkspace() {
           </div>
         </div>
         <div className="exw-head-actions">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => void importPersonal(e.target.files?.[0])}
+          />
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSourceOpen(true)}>
             <Database size={15} />
             信息来源 {snapshot ? snapshot.sources.length : ''}
+          </button>
+          <button
+            type="button"
+            className="exw-icon-btn"
+            aria-label="导出个人记录备份"
+            title="导出个人记录备份（含考编与求职记录）"
+            onClick={exportPersonal}
+          >
+            <Download size={15} />
+          </button>
+          <button
+            type="button"
+            className="exw-icon-btn"
+            aria-label="导入个人记录备份"
+            title="导入恢复个人记录备份"
+            onClick={triggerFilePicker}
+          >
+            <Upload size={15} />
           </button>
           <button
             type="button"
@@ -442,14 +557,27 @@ export function ExamWorkspace() {
         <div className="exw-search">
           <Search size={16} />
           <input
+            ref={searchInputRef}
             type="search"
             aria-label="搜索公告、单位、岗位或专业"
             placeholder="搜索公告、单位、岗位或专业"
-            value={filters.query}
+            value={searchDraft}
             onChange={(e) => handleSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                flushSearchQuery(searchDraft);
+              }
+            }}
           />
-          {filters.query && (
-            <button type="button" aria-label="清空搜索" onClick={() => updateFilters({ query: '' })}>
+          {searchDraft && (
+            <button
+              type="button"
+              aria-label="清空搜索"
+              onClick={() => {
+                setSearchDraft('');
+                flushSearchQuery('');
+              }}
+            >
               <X size={14} />
             </button>
           )}
@@ -487,7 +615,9 @@ export function ExamWorkspace() {
           onCloseMobile={() => setFiltersOpen(false)}
           onToggleCity={toggleCity}
           onUpdateFilters={updateFilters}
-          onResetFilters={resetFilters}
+          onResetFilters={handleResetFilters}
+          onExport={exportPersonal}
+          onImport={triggerFilePicker}
         />
 
         {/* ---------- Results ---------- */}
@@ -589,7 +719,7 @@ export function ExamWorkspace() {
                       <X size={12} />
                     </button>
                   ))}
-                  <button type="button" className="text-btn" onClick={resetFilters}>
+                  <button type="button" className="text-btn" onClick={handleResetFilters}>
                     清除
                   </button>
                 </div>
@@ -615,7 +745,7 @@ export function ExamWorkspace() {
                     : '没有符合条件的公告'}
                 </p>
                 {activeFilters.length > 0 && (
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={resetFilters}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={handleResetFilters}>
                     清除筛选条件
                   </button>
                 )}
@@ -738,6 +868,20 @@ export function ExamWorkspace() {
         onClose={closeSources}
         sources={snapshot?.sources || []}
       />
+
+      <BackupImportSheet
+        importPreview={importPreview}
+        importing={importing}
+        personal={jobPersonalForBackup}
+        employerRecords={employerPersonalForBackup}
+        examPersonal={personal}
+        allJobs={[]}
+        onClose={() => setImportPreview(null)}
+        onExport={exportPersonal}
+        onConfirm={(preferImported) => void confirmImport(preferImported)}
+      />
+
+      <ShortcutsDialog />
 
       <BottomTabBar
         workspace="exams"

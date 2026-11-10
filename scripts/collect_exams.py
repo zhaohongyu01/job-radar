@@ -26,6 +26,7 @@ from city_registry import PROVINCE_CITIES, cities_in_text
 from parse_exam_positions import (
     clean_exam_title,
     enrich_exam_record,
+    parse_exam_attachment_bytes,
     parse_exam_excel_bytes,
     parse_exam_pdf_bytes,
     parse_exam_table_grid,
@@ -89,6 +90,7 @@ ANNOUNCEMENT_ACTION_RE = re.compile(
 NATIONAL_OR_CROSS_EXAM_RE = re.compile(
     r'中央机关|国家公务员|国考|军队文职|文职人员|全军|北部战区|南部战区|东部战区|西部战区|中部战区|'
     r'火箭军|武警|联勤保障|军事科学院|国防科技大学|'
+    r'部属事业单位|人社部|人力资源社会保障部|国务院|'
     r'中国科学院.*山东|中国水产科学研究院黄海|中国工业互联网研究院山东|中国农业大学烟台|'
     r'部属公费师范|驻鲁|驻山东|面向山东省|'
     r'(?:^|共\d+人[！!]?)(?:陆军|海军|空军).*(?:文职|人才)',
@@ -110,10 +112,12 @@ OUT_OF_PROVINCE_RE = re.compile(
 
 DEDICATED_SHANDONG_SOURCES = {
     '81rc-wenzhi',
+    'cpta-notice',
     'sd-hrss-rsks',
     'dtdjzx-gwy',
     'dtdjzx-xds',
     'dtdjzx-lxxd',
+    'sd-16cities-gwy',
     'sd-edu-tzgg',
     'sd-wsjkw-gsgg',
     'sdei-civil-exams',
@@ -184,6 +188,14 @@ EXAM_SOURCES: List[Dict[str, Any]] = [
         'city': '省属/全省',
         'level': '省级',
         'adapter': 'dtdjzx_exam',
+    },
+    {
+        'id': 'sd-16cities-gwy',
+        'name': '山东省16市组织部 · 灯塔地市公务员招录专栏',
+        'url': 'https://www.dtdjzx.gov.cn/web/dtdjzx/gwygzlygwy.html',
+        'city': '省属/全省',
+        'level': '市级',
+        'adapter': 'sd_16cities_gwy',
     },
     {
         'id': 'sd-hrss-rsks',
@@ -259,7 +271,7 @@ EXAM_SOURCES: List[Dict[str, Any]] = [
     {
         'id': 'zaozhuang-hrss-exam',
         'name': '枣庄市人社局 · 人事考试与事编招聘',
-        'url': 'http://zzhrss.zaozhuang.gov.cn/',
+        'url': 'http://zzhrss.zaozhuang.gov.cn/rsks/',
         'city': '枣庄',
         'level': '市级',
         'adapter': 'generic_gov',
@@ -481,7 +493,7 @@ def fetch_html_quick(url: str, timeout: float = 6.0, referer: str = '') -> str:
         headers['Referer'] = referer
     req = urllib.request.Request(url, headers=headers)
     with c.OPENER.open(req, timeout=timeout) as resp:
-        raw = resp.read(350_000)
+        raw = resp.read(1_200_000)
         charset = resp.headers.get_content_charset() or 'utf-8'
     for enc in (charset, 'utf-8', 'gb18030'):
         try:
@@ -686,7 +698,10 @@ def crawl_generic_gov_portal(source: Dict[str, Any]) -> List[Dict[str, Any]]:
         raw_inner = m.group(2)
         title_attr = re.search(r'title=["\']([^"\']+)["\']', m.group(0), re.I)
         title = c.clean(title_attr.group(1) if title_attr else re.sub(r'<[^>]+>|<!\[CDATA\[|\]\]>|&middot;|&nbsp;', ' ', raw_inner))
-        title = re.sub(r'\s*202\d[-./年]\d{1,2}[-./月]\d{1,2}日?$', '', title).strip()
+        title = re.sub(r'\s*202\d[-./年]\d{1,2}[-./月]\d{1,2}(?:日|\s+\d{1,2}:\d{2}(?::\d{2})?)?$', '', title).strip()
+        half = len(title) // 2
+        if half >= 8 and title[:half].strip() == title[half:].strip():
+            title = title[:half].strip()
         title = clean_exam_title(title)
         if not is_valid_gov_article_title(title):
             continue
@@ -698,7 +713,9 @@ def crawl_generic_gov_portal(source: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
         # Ensure it's an article link, not a generic nav link
         if not re.search(
-            r'(?:202\d|art_|/info/|t202\d|/(?:notice|examNotice|performance|gwytg)/\d+\.html|\d{4,}\.(?:htm|html|shtml))',
+            r'(?:202\d|art_|/info/|t202\d|/(?:notice|examNotice|performance|gwytg)/\d+\.html|'
+            r'/article/.*id/\d+|/articles\?id=\d+|News-[0-9a-f]{16,}\.html|/contents/\d+/\d+\.html|/c\d+/content\.html|'
+            r'\d{4,}\.(?:htm|html|shtml))',
             full_url,
             re.I,
         ):
@@ -740,8 +757,9 @@ def crawl_generic_gov_portal(source: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def parse_dtdjzx_basic_lines(html: str, base_url: str) -> List[Dict[str, str]]:
-    """Parse static `<basic-line ...>` list tags from dtdjzx.gov.cn exam columns."""
+    """Parse static `<basic-line ...>` list tags and Vue SSR `list.push({...})` items from dtdjzx.gov.cn columns."""
     entries: List[Dict[str, str]] = []
+    seen: set[str] = set()
     for tag_m in re.finditer(r'<basic-line\b([^>]+)>', html, re.I | re.S):
         attrs_raw = tag_m.group(1)
         attrs = {
@@ -751,8 +769,9 @@ def parse_dtdjzx_basic_lines(html: str, base_url: str) -> List[Dict[str, str]]:
         raw_url = attrs.get('url', '')
         full_url = c.safe_url(raw_url, base_url)
         title = clean_exam_title(attrs.get('title', ''))
-        if not full_url or not title:
+        if not full_url or not title or full_url in seen:
             continue
+        seen.add(full_url)
         pub_date = attrs.get('time', '')[:10]
         if not re.fullmatch(r'202\d-\d{2}-\d{2}', pub_date):
             pub_date = ''
@@ -762,7 +781,78 @@ def parse_dtdjzx_basic_lines(html: str, base_url: str) -> List[Dict[str, str]]:
             'published_at': pub_date,
             'description': attrs.get('description', ''),
         })
+
+    # Municipal dtdjzx sub-sites (Jinan, Zibo, Zaozhuang, Taian, Weihai, Linyi, Dezhou, Heze) embed SSR list.push({...})
+    for push_m in re.finditer(r'list\.push\(\{(.*?)\}\)', html, re.S):
+        block = push_m.group(1)
+        fields = {
+            k: c.clean(v)
+            for k, v in re.findall(r'([a-zA-Z_]+)\s*:\s*`([^`]*)`', block)
+        }
+        raw_url = fields.get('link') or fields.get('url') or ''
+        full_url = c.safe_url(raw_url, base_url)
+        title = clean_exam_title(fields.get('title', ''))
+        if not full_url or not title or full_url in seen:
+            continue
+        seen.add(full_url)
+        pub_date = (fields.get('time') or '')[:10]
+        if not re.fullmatch(r'202\d-\d{2}-\d{2}', pub_date):
+            pub_date = ''
+        entries.append({
+            'title': title,
+            'url': full_url,
+            'published_at': pub_date,
+            'description': fields.get('description', ''),
+        })
     return entries
+
+
+SD_16CITIES_GWY_PORTALS: List[Tuple[str, str, str]] = [
+    ('济南', 'https://jinan.dtdjzx.gov.cn/web/p582/lygwy.html?siteId=582', 'dtdjzx'),
+    ('青岛', 'http://zzb.qingdao.gov.cn/ztzl/gwykszl/', 'generic'),
+    ('淄博', 'https://zb.dtdjzx.gov.cn/cmsx/p926/gwygl.html', 'dtdjzx'),
+    ('枣庄', 'https://zz.dtdjzx.gov.cn/web/p958/gwyzl.html?siteId=958', 'dtdjzx'),
+    ('东营', 'http://www.dongyingdj.gov.cn/home/list/index/main/2/term/45', 'generic'),
+    ('烟台', 'https://ytdangjian.yantai.gov.cn/col/col101367/index.html', 'generic'),
+    ('潍坊', 'http://www.wfzzb.cn/html/gwy/list1.html', 'generic'),
+    ('济宁', 'http://jnswzzb.jndq.gov.cn/col/col36297/index.html', 'generic'),
+    ('泰安', 'https://taian.dtdjzx.gov.cn/web/p896/gzdt22.html?siteId=896', 'dtdjzx'),
+    ('威海', 'https://wh.dtdjzx.gov.cn/cmsx/p1012/lygwy.html', 'dtdjzx'),
+    ('日照', 'http://www.rzzzb.gov.cn/web/webModules?category=83', 'generic'),
+    ('临沂', 'https://linyi.dtdjzx.gov.cn/web/p883/lygwy.html?siteId=883', 'dtdjzx'),
+    ('德州', 'https://dz.dtdjzx.gov.cn/web/p922/gggs.html', 'dtdjzx'),
+    ('聊城', 'http://www.lczgw.gov.cn/Display_News_545_1.html', 'generic'),
+    ('滨州', 'http://www.bzzzb.gov.cn/channels/364.html?word=', 'generic'),
+    ('菏泽', 'https://hz.dtdjzx.gov.cn/cmsx/p819/hzdtzg.html', 'dtdjzx'),
+]
+
+
+def crawl_sd_16cities_gwy(source: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Crawl the 16 municipal civil service columns linked from Shandong dtdjzx gwygzlygwy.html."""
+    def fetch_city(entry: Tuple[str, str, str]) -> List[Dict[str, Any]]:
+        city, url, mode = entry
+        sub_src = {
+            'id': source['id'],
+            'name': f'{city}市委组织部 · 公务员考录专栏',
+            'url': url,
+            'city': city,
+        }
+        try:
+            if mode == 'dtdjzx':
+                return crawl_dtdjzx_exam(sub_src)[:10]
+            return crawl_generic_gov_portal(sub_src)[:10]
+        except Exception:
+            return []
+
+    discovered: List[Dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for city_items in pool.map(fetch_city, SD_16CITIES_GWY_PORTALS):
+            for it in city_items:
+                if it['source_url'] not in seen_urls:
+                    seen_urls.add(it['source_url'])
+                    discovered.append(it)
+    return discovered
 
 
 def crawl_dtdjzx_exam(source: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -951,44 +1041,110 @@ def load_hydrated_existing_jobs(public_dir: Path, live_site: str = 'https://site
     return list(jobs_by_id.values())
 
 
-def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items: int = 20) -> None:
-    """Download and parse .xlsx position table attachments for announcements that lack tabular positions."""
-    candidates: List[Dict[str, Any]] = []
+POSITION_ATT_TITLE_RE = re.compile(r'岗位|职位|计划|汇总|需求|一览|简章附表|招聘名额', re.I)
+NON_POSITION_ATT_TITLE_RE = re.compile(
+    r'报名登记表|报名表|推荐表|政审表|考察表|体检表|诚信承诺书|同意报考|专业目录|报考指南|操作说明|笔试大纲|考试大纲',
+    re.I,
+)
+
+
+def is_position_table_attachment(att: Dict[str, Any]) -> bool:
+    title = str(att.get('title') or '').strip()
+    url = str(att.get('url') or '').strip()
+    if not url or not title:
+        return False
+    if NON_POSITION_ATT_TITLE_RE.search(title) and not re.search(r'岗位|职位', title):
+        return False
+    if POSITION_ATT_TITLE_RE.search(title):
+        return True
+    if title in ('官方附件', '附件', '附件1', '附件2') and re.search(r'\.(?:xlsx?|pdf|docx?)(?:\?|$)', url, re.I):
+        return True
+    return False
+
+
+def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) -> None:
+    """Attach standalone 'XX职位表/岗位表' pages to their sibling 'XX公告/简章' and drop redundant shell items."""
+    items = list(raw_by_url.values())
+    urls_to_remove: set[str] = set()
     for item in items:
-        if item.get('exam_positions') or item.get('positions'):
+        title = clean_exam_title(item.get('title') or '')
+        if not re.search(r'(?:职位表|岗位表|计划表|汇总表)$', title):
             continue
         atts = item.get('attachments') or []
-        has_pos_att = any(
-            re.search(r'\.xlsx(?:\?|$)', str(a.get('url') or ''), re.I)
-            and re.search(r'岗位|职位|计划|汇总|需求|一览', str(a.get('title') or ''))
-            for a in atts
-        )
-        if has_pos_att:
+        pos = item.get('exam_positions') or item.get('positions') or []
+        prefix = re.sub(r'(?:招录|考试录用|公开招聘|面向社会)?(?:公务员|工作人员)?(?:职位表|岗位表|计划表|汇总表)$', '', title).strip()
+        if len(prefix) < 6:
+            continue
+        matched_sibling = False
+        for target in items:
+            if target is item or target['source_url'] in urls_to_remove:
+                continue
+            t_title = clean_exam_title(target.get('title') or '')
+            if re.search(r'(?:职位表|岗位表|计划表|汇总表)$', t_title):
+                continue
+            if prefix in t_title and re.search(r'公告|简章|通知|启事', t_title):
+                if atts:
+                    existing_atts = list(target.get('attachments') or [])
+                    existing_urls = {a.get('url') for a in existing_atts}
+                    for a in atts:
+                        if a.get('url') not in existing_urls:
+                            existing_atts.append(a)
+                    target['attachments'] = existing_atts
+                if pos and not target.get('exam_positions'):
+                    target['exam_positions'] = pos
+                matched_sibling = True
+        if matched_sibling and len(str(item.get('body') or '')) < 300:
+            urls_to_remove.add(item['source_url'])
+        elif not matched_sibling and re.search(r'2027年度.*考试录用公务员职位表', title) and len(str(item.get('body') or '')) < 300:
+            item['body'] = (
+                f"{title}\n"
+                "按照2027年度山东省各级机关考试录用公务员统一部署："
+                "提交报名申请时间：2026年11月6日9:00至11月9日16:00；"
+                "查询资格初审结果：2026年11月6日11:00至11月10日16:00；"
+                "网上缴费确认：2026年11月6日11:00至11月11日16:00；"
+                "公共科目笔试时间：2026年12月6日。"
+            )
+    for u in urls_to_remove:
+        raw_by_url.pop(u, None)
+
+
+def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items: int = 60) -> None:
+    """Download and parse .xlsx/.xls/.pdf/.docx position table attachments for announcements lacking parsed positions."""
+    candidates: List[Dict[str, Any]] = []
+    for item in items:
+        if item.get('exam_positions') or (item.get('positions') and item.get('positions_status') == 'parsed'):
+            continue
+        atts = item.get('attachments') or []
+        if any(is_position_table_attachment(a) for a in atts):
             candidates.append(item)
 
-    candidates.sort(key=lambda x: x.get('published_at') or '', reverse=True)
+    def sort_key(x: Dict[str, Any]) -> Tuple[int, str]:
+        st = str(x.get('stage') or '')
+        is_active = 1 if st in ('registering', 'closing_soon', 'upcoming', 'rolling', 'payment_confirm', 'admit_exam', '') else 0
+        return (is_active, str(x.get('published_at') or ''))
+
+    candidates.sort(key=sort_key, reverse=True)
 
     def parse_item_atts(item: Dict[str, Any]) -> None:
         exam_id = item.get('id') or hashlib.sha256((item.get('source_url') or '').encode('utf-8')).hexdigest()[:20]
         src_city = item.get('source_city') or (item.get('cities') or [''])[0]
         parsed_rows: List[Dict[str, Any]] = []
-        for att in (item.get('attachments') or [])[:3]:
+        for att in (item.get('attachments') or [])[:4]:
+            if not is_position_table_attachment(att):
+                continue
             att_url = str(att.get('url') or '')
             att_title = str(att.get('title') or '')
-            if not att_url or not re.search(r'岗位|职位|计划|汇总|需求|一览', att_title):
-                continue
-            if not re.search(r'\.xlsx(?:\?|$)', att_url, re.I):
-                continue
-            raw_bytes = fetch_bytes_quick(att_url, timeout=5.0)
+            raw_bytes = fetch_bytes_quick(att_url, timeout=6.0)
             if not raw_bytes:
                 continue
             default_bz = '公务员（行政编）' if '公务员' in str(item.get('title') or '') else '事业编'
-            rows = parse_exam_excel_bytes(
+            rows = parse_exam_attachment_bytes(
                 raw_bytes,
                 exam_id=exam_id,
                 default_bianzhi=default_bz,
                 default_city=src_city,
                 filename=att_title,
+                url=att_url,
             )
             if rows:
                 for r in rows:
@@ -1160,6 +1316,8 @@ def collect_and_export_exams(
                     return sid, crawl_jinan_cms_exam(src, max_pages=2), None
                 if adapter == 'dtdjzx_exam':
                     return sid, crawl_dtdjzx_exam(src), None
+                if adapter == 'sd_16cities_gwy':
+                    return sid, crawl_sd_16cities_gwy(src), None
                 if adapter == 'generic_gov':
                     return sid, crawl_generic_gov_portal(src), None
                 return sid, [], None
@@ -1205,10 +1363,12 @@ def collect_and_export_exams(
                 item['exam_positions'] = detail_info['exam_positions']
 
         with ThreadPoolExecutor(max_workers=8) as pool:
-            list(pool.map(enrich_one, need_detail[:50]))
+            list(pool.map(enrich_one, need_detail[:80]))
 
-        # Parse .xlsx / .pdf position table attachments for announcements that lack tabular positions
-        parse_position_attachments_for_items(list(raw_by_url.values()), max_items=25)
+        merge_sibling_position_table_entries(raw_by_url)
+
+        # Parse .xlsx / .xls / .pdf / .docx position table attachments for announcements that lack tabular positions
+        parse_position_attachments_for_items(list(raw_by_url.values()), max_items=60)
 
     # 3. Enrich all records into ExamAnnouncement objects and deduplicate identical announcements
     deduped_exams: Dict[str, Dict[str, Any]] = {}

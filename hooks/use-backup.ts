@@ -11,11 +11,21 @@ import { mergePersonalRecords } from '@/lib/personal-records';
 import { readPersonalRecords, withPersonalLock } from '@/lib/personal-store';
 import { EVENT_PERSONAL_STORAGE, validateEventPersonal } from '@/lib/agenda';
 import { mergeEmployerRecords, readEmployerRecords } from '@/lib/employer-personal';
+import {
+  DEFAULT_EXAM_PROFILE,
+  EXAM_PERSONAL_STORAGE,
+  EXAM_PROFILE_STORAGE,
+  mergeExamPersonal,
+  mergeExamProfile,
+  validateExamPersonal,
+  validateExamProfile,
+} from '@/lib/exams';
+import { readStore } from '@/lib/local-store';
 import { report } from '@/lib/rum';
 
 export interface UseBackupOptions {
-  syncPersonal: () => void;
-  onApplyBrowsing: (browsing: {
+  syncPersonal?: () => void;
+  onApplyBrowsing?: (browsing: {
     filters: Filters;
     viewMode: ViewMode;
     groupCompanies: boolean;
@@ -112,17 +122,36 @@ export function useBackup({
                   importPreview.employer_records,
                   preferImported,
                 );
+          const localExamRecords = readStore(EXAM_PERSONAL_STORAGE, validateExamPersonal, {});
+          const examRecords =
+            importPreview.exam_records === undefined
+              ? Object.keys(localExamRecords).length > 0
+                ? localExamRecords
+                : undefined
+              : mergeExamPersonal(localExamRecords, importPreview.exam_records, preferImported);
+          const localExamProfile = readStore(
+            EXAM_PROFILE_STORAGE,
+            validateExamProfile,
+            DEFAULT_EXAM_PROFILE,
+          );
+          const examProfile = mergeExamProfile(
+            localExamProfile,
+            importPreview.exam_profile,
+            preferImported,
+          );
           const nextValidated = validateBackup({
             ...importPreview,
             records,
             event_records: events,
             employer_records: employers,
+            exam_records: examRecords,
+            exam_profile: examProfile,
           });
           writeBackup(nextValidated, localStorage);
           return nextValidated;
         });
-        syncPersonal();
-        if (validated.browsing) {
+        syncPersonal?.();
+        if (validated.browsing && onApplyBrowsing) {
           onApplyBrowsing(validated.browsing);
         }
         window.dispatchEvent(new Event('job-radar-local-workspace-change'));

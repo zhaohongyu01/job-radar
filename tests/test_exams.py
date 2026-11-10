@@ -1,9 +1,11 @@
 import hashlib
+import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import zipfile
 
 from scripts.collect_exams import (
     EXAM_SOURCES,
@@ -13,6 +15,7 @@ from scripts.collect_exams import (
     is_civil_exam_record,
     is_in_shandong_or_national_scope,
     link_related_exam_notices,
+    merge_sibling_position_table_entries,
     parse_dtdjzx_basic_lines,
     write_exam_snapshot,
 )
@@ -28,6 +31,7 @@ from scripts.parse_exam_positions import (
     infer_bianzhi_types,
     infer_exam_category,
     infer_notice_role,
+    parse_exam_attachment_bytes,
     parse_exam_table_grid,
     valid_prose_position_name,
 )
@@ -542,6 +546,116 @@ class ExamParserTests(unittest.TestCase):
         )
         self.assertEqual(xds_sched["reg_start"], "2026-11-09")
         self.assertEqual(xds_sched["reg_end"], "2026-11-13")
+
+    def test_multi_format_attachment_dispatcher_parses_extensionless_docx_and_html_xls(self):
+        # 1. Build a minimal valid OOXML .docx in memory served via extensionless downfile.jsp
+        w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        doc_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <w:document xmlns:w="{w_ns}">
+          <w:body>
+            <w:tbl>
+              <w:tr>
+                <w:tc><w:p><w:r><w:t>招聘单位</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>岗位名称</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>招聘人数</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>学历要求</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>专业要求</w:t></w:r></w:p></w:tc>
+              </w:tr>
+              <w:tr>
+                <w:tc><w:p><w:r><w:t>山东省教育科学研究院</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>课程科研岗</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>博士研究生</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>教育学、心理学</w:t></w:r></w:p></w:tc>
+              </w:tr>
+            </w:tbl>
+          </w:body>
+        </w:document>"""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("word/document.xml", doc_xml.encode("utf-8"))
+        docx_rows = parse_exam_attachment_bytes(
+            buf.getvalue(),
+            exam_id="sd-edu-docx",
+            default_city="济南",
+            filename="附件1：岗位汇总表.docx",
+            url="http://edu.shandong.gov.cn/module/download/downfile.jsp?classid=0&filename=abc",
+        )
+        self.assertEqual(len(docx_rows), 1)
+        self.assertEqual(docx_rows[0]["employer"], "山东省教育科学研究院")
+        self.assertEqual(docx_rows[0]["position_name"], "课程科研岗")
+        self.assertEqual(docx_rows[0]["recruit_count"], 2)
+        self.assertEqual(docx_rows[0]["education"], "博士研究生")
+
+        # 2. HTML table exported as .xls by government CMS
+        html_xls = """<table>
+          <tr><th>招聘单位</th><th>岗位名称</th><th>计划人数</th><th>学历</th><th>专业要求</th></tr>
+          <tr><td>庆云县人民医院</td><td>临床医师岗</td><td>5</td><td>本科及以上</td><td>临床医学</td></tr>
+        </table>""".encode("gb18030")
+        xls_rows = parse_exam_attachment_bytes(
+            html_xls,
+            exam_id="dezhou-xls",
+            default_city="德州",
+            filename="岗位汇总表.xls",
+            url="https://example.gov.cn/1.xls",
+        )
+        self.assertEqual(len(xls_rows), 1)
+        self.assertEqual(xls_rows[0]["employer"], "庆云县人民医院")
+        self.assertEqual(xls_rows[0]["recruit_count"], 5)
+
+    def test_municipal_dtdjzx_list_push_sibling_merge_and_cpta_scope(self):
+        ssr_html = """
+        <script>
+        const list = [];
+        ;list.push({
+          imgUrl: ``,
+          link: `/web/p582/tzgg/131290.html`,
+          description: `现将2027年度济南市各级机关考试录用公务员有关事项公告如下`,
+          time: `2026-11-04 15:48:43`,
+          source: `灯塔-党建在线`,
+          title: `2027年度济南市各级机关考试录用公务员公告`
+        })
+        ;list.push({
+          imgUrl: ``,
+          link: `/web/p582/tzgg/131292.html`,
+          description: `职位表`,
+          time: `2026-11-04 15:48:51`,
+          source: `灯塔-党建在线`,
+          title: `2027年度济南市各级机关考试录用公务员职位表`
+        })
+        </script>
+        """
+        rows = parse_dtdjzx_basic_lines(ssr_html, "https://jinan.dtdjzx.gov.cn/web/p582/lygwy.html")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["url"], "https://jinan.dtdjzx.gov.cn/web/p582/tzgg/131290.html")
+        self.assertEqual(rows[0]["published_at"], "2026-11-04")
+
+        raw_map = {
+            rows[0]["url"]: {
+                "source_url": rows[0]["url"],
+                "title": rows[0]["title"],
+                "body": "根据公务员法..." + "正" * 400,
+                "attachments": [],
+            },
+            rows[1]["url"]: {
+                "source_url": rows[1]["url"],
+                "title": rows[1]["title"],
+                "body": "2027年度济南市各级机关考试录用公务员职位表。",
+                "attachments": [{"title": "职位表.xlsx", "url": "https://dyjyzyk.dtdjzx.gov.cn/1.xlsx"}],
+            },
+        }
+        merge_sibling_position_table_entries(raw_map)
+        self.assertEqual(len(raw_map), 1)
+        merged = raw_map[rows[0]["url"]]
+        self.assertEqual(len(merged["attachments"]), 1)
+        self.assertEqual(merged["attachments"][0]["url"], "https://dyjyzyk.dtdjzx.gov.cn/1.xlsx")
+
+        self.assertTrue(
+            is_in_shandong_or_national_scope(
+                "关于做好部分部属事业单位2026年度公开招聘笔试考务工作的通知",
+                source_id="cpta-notice",
+            )
+        )
 
 
 if __name__ == "__main__":

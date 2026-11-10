@@ -5,12 +5,19 @@ import datetime as dt
 import hashlib
 import io
 import re
+import xml.etree.ElementTree as ET
+import zipfile
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import openpyxl
 except ImportError:
     openpyxl = None
+
+try:
+    import xlrd
+except ImportError:
+    xlrd = None
 
 try:
     import fitz
@@ -54,8 +61,8 @@ UNTIL_RE = re.compile(r'(?:有效期(?:至|截至|到)|自发布公告(?:之)?�
 
 # Exam-specific composite column header patterns
 COL_DEPARTMENT = re.compile(r'(?:主管部门|主管机关|主办单位|所属部门|上级主管部门|招录机关)', re.I)
-COL_EMPLOYER = re.compile(r'(?:招聘单位|用人单位|单位名称|招考单位|聘用单位|工作单位|学校名称|医院名称|^单位$)', re.I)
-COL_POS_NAME = re.compile(r'(?:岗位名称|职位名称|招聘岗位|招聘职位|需求岗位|招考职位|具体岗位|拟聘岗位|^岗位$|^职位$)', re.I)
+COL_EMPLOYER = re.compile(r'(?:招聘单位|用人单位|单位名称|招考单位|聘用单位|工作单位|学校名称|医院名称|卫生院名称|^单位$)', re.I)
+COL_POS_NAME = re.compile(r'(?:岗位名称|职位名称|招聘岗位|招聘职位|需求岗位|招考职位|具体岗位|拟聘岗位|村?卫生室名称|^岗位$|^职位$)', re.I)
 COL_POS_CODE = re.compile(r'(?:岗位代码|职位代码|岗位编号|职位编号|岗位代号|代码)', re.I)
 COL_POS_CAT = re.compile(r'(?:岗位类别|职位类别|岗位性质|岗位等级|专业技术岗位|考试类别|试卷类别|笔试类别)', re.I)
 COL_BIANZHI = re.compile(r'(?:编制性质|职位性质|经费形式|编制类型|经费来源|管理方式|总量控制)', re.I)
@@ -753,6 +760,7 @@ def parse_exam_pdf_bytes(
         return []
     rows: List[Dict[str, Any]] = []
     if fitz is not None:
+        doc = None
         try:
             doc = fitz.open(stream=file_bytes, filetype='pdf')
             for page_idx in range(min(len(doc), 15)):
@@ -777,10 +785,262 @@ def parse_exam_pdf_bytes(
                     pass
         except Exception:
             pass
+        finally:
+            try:
+                if doc is not None:
+                    doc.close()
+            except Exception:
+                pass
     if not rows:
         generic = parse_pdf_bytes(file_bytes, filename=filename, max_pages=15)
-        rows.extend(generic)
+        for p in generic:
+            p.setdefault('bianzhi', default_bianzhi)
+            p.setdefault('city', default_city)
+            p.setdefault('employer', default_employer)
+            p.setdefault('department', '')
+            p.setdefault('political_status', '')
+            p.setdefault('fresh_grad_rule', '')
+            p.setdefault('major_raw', '、'.join(p.get('majors') or []))
+            p['source_file'] = filename or p.get('source_file') or 'PDF附件'
+            p['source'] = 'attachment'
+            rows.append(p)
+        if rows:
+            assign_stable_row_ids(exam_id, rows)
     return rows
+
+
+def parse_exam_docx_bytes(
+    file_bytes: bytes,
+    exam_id: str,
+    default_bianzhi: str = '事业编',
+    default_city: str = '',
+    default_employer: str = '',
+    filename: str = '',
+) -> List[Dict[str, Any]]:
+    """Parse a DOCX attachment's WordprocessingML tables into ExamPositionRow items."""
+    if not file_bytes:
+        return []
+    rows: List[Dict[str, Any]] = []
+    w_ns = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+            if 'word/document.xml' not in zf.namelist():
+                return []
+            xml_bytes = zf.read('word/document.xml')
+            if len(xml_bytes) > 15_000_000:
+                return []
+            root = ET.fromstring(xml_bytes)
+    except Exception:
+        return []
+
+    for tbl in root.iter(f'{w_ns}tbl'):
+        grid: List[List[str]] = []
+        prev_row: List[str] = []
+        for tr in tbl.findall(f'{w_ns}tr'):
+            row_cells: List[str] = []
+            col_idx = 0
+            for tc in tr.findall(f'{w_ns}tc'):
+                para_texts = []
+                for p_el in tc.findall(f'{w_ns}p'):
+                    p_txt = ''.join(t.text or '' for t in p_el.iter(f'{w_ns}t')).strip()
+                    if p_txt:
+                        para_texts.append(p_txt)
+                cell_text = clean_cell(' '.join(para_texts))
+                span = 1
+                is_vmerge_cont = False
+                tc_pr = tc.find(f'{w_ns}tcPr')
+                if tc_pr is not None:
+                    gs = tc_pr.find(f'{w_ns}gridSpan')
+                    if gs is not None:
+                        val = gs.attrib.get(f'{w_ns}val') or gs.attrib.get('val') or '1'
+                        if str(val).isdigit():
+                            span = max(1, min(20, int(val)))
+                    vm = tc_pr.find(f'{w_ns}vMerge')
+                    if vm is not None:
+                        vm_val = vm.attrib.get(f'{w_ns}val') or vm.attrib.get('val') or ''
+                        if vm_val != 'restart':
+                            is_vmerge_cont = True
+                if is_vmerge_cont and not cell_text and col_idx < len(prev_row):
+                    cell_text = prev_row[col_idx]
+                row_cells.extend([cell_text] * span)
+                col_idx += span
+            if row_cells:
+                prev_row = row_cells
+                grid.append(row_cells)
+        parsed = parse_exam_table_grid(
+            grid,
+            exam_id=exam_id,
+            default_bianzhi=default_bianzhi,
+            default_city=default_city,
+            default_employer=default_employer,
+        )
+        for p in parsed:
+            p['source_file'] = filename or 'Word岗位表'
+            p['source'] = 'attachment'
+        rows.extend(parsed)
+    return rows
+
+
+def _format_xls_cell(cell_type: int, value: Any) -> str:
+    if value is None:
+        return ''
+    # XL_CELL_NUMBER == 2 in xlrd: avoid turning integer codes/counts like 202601 into "202601.0"
+    if cell_type == 2 and isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+    return clean_cell(value)
+
+
+def parse_exam_xls_bytes(
+    file_bytes: bytes,
+    exam_id: str,
+    default_bianzhi: str = '事业编',
+    default_city: str = '',
+    default_employer: str = '',
+    filename: str = '',
+) -> List[Dict[str, Any]]:
+    """Parse a legacy BIFF8 .xls (or HTML-table-disguised .xls) attachment into ExamPositionRow items."""
+    if not file_bytes:
+        return []
+    rows: List[Dict[str, Any]] = []
+
+    # 1. Try binary BIFF8 via xlrd when OLE2 signature or xlrd available
+    if xlrd is not None and file_bytes[:4] == b'\xd0\xcf\x11\xe0':
+        try:
+            book = xlrd.open_workbook(file_contents=file_bytes)
+            for sheet in book.sheets():
+                grid: List[List[str]] = []
+                for r_idx in range(min(sheet.nrows, 5000)):
+                    row_vals = [
+                        _format_xls_cell(sheet.cell_type(r_idx, c_idx), sheet.cell_value(r_idx, c_idx))
+                        for c_idx in range(min(sheet.ncols, 60))
+                    ]
+                    grid.append(row_vals)
+                parsed = parse_exam_table_grid(
+                    grid,
+                    exam_id=exam_id,
+                    default_bianzhi=default_bianzhi,
+                    default_city=default_city,
+                    default_employer=default_employer,
+                )
+                for p in parsed:
+                    p['source_file'] = filename or sheet.name
+                    p['source'] = 'attachment'
+                rows.extend(parsed)
+            if rows:
+                return rows
+        except Exception:
+            pass
+
+    # 2. Fallback: government CMS portals often export HTML <table> files with .xls extension
+    head = file_bytes[:512].lstrip(b'\xef\xbb\xbf \t\r\n').lower()
+    if BeautifulSoup is not None and (b'<table' in head or b'<html' in head or b'<tr' in head):
+        try:
+            text = ''
+            for enc in ('utf-8', 'gb18030'):
+                try:
+                    text = file_bytes.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if text:
+                soup = BeautifulSoup(text, 'html.parser')
+                for tbl in soup.find_all('table'):
+                    grid = _table_to_grid(tbl)
+                    parsed = parse_exam_table_grid(
+                        grid,
+                        exam_id=exam_id,
+                        default_bianzhi=default_bianzhi,
+                        default_city=default_city,
+                        default_employer=default_employer,
+                    )
+                    for p in parsed:
+                        p['source_file'] = filename or '表格附件'
+                        p['source'] = 'attachment'
+                    rows.extend(parsed)
+        except Exception:
+            pass
+    return rows
+
+
+def parse_exam_attachment_bytes(
+    file_bytes: bytes,
+    exam_id: str,
+    default_bianzhi: str = '事业编',
+    default_city: str = '',
+    default_employer: str = '',
+    filename: str = '',
+    url: str = '',
+) -> List[Dict[str, Any]]:
+    """Auto-detect attachment format by magic bytes (with filename/URL fallback) and parse positions."""
+    if not file_bytes or len(file_bytes) < 16:
+        return []
+
+    # 1. PDF (%PDF-)
+    if file_bytes.startswith(b'%PDF-') or b'%PDF-' in file_bytes[:64]:
+        return parse_exam_pdf_bytes(
+            file_bytes,
+            exam_id=exam_id,
+            default_bianzhi=default_bianzhi,
+            default_city=default_city,
+            default_employer=default_employer,
+            filename=filename,
+        )
+
+    # 2. OOXML ZIP container (PK\x03\x04): distinguish .xlsx vs .docx by internal zip members
+    if file_bytes.startswith(b'PK\x03\x04'):
+        names: set[str] = set()
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                names = set(zf.namelist())
+        except Exception:
+            return []
+        if 'xl/workbook.xml' in names or any(n.startswith('xl/worksheets/') for n in names):
+            return parse_exam_excel_bytes(
+                file_bytes,
+                exam_id=exam_id,
+                default_bianzhi=default_bianzhi,
+                default_city=default_city,
+                default_employer=default_employer,
+                filename=filename,
+            )
+        if 'word/document.xml' in names:
+            return parse_exam_docx_bytes(
+                file_bytes,
+                exam_id=exam_id,
+                default_bianzhi=default_bianzhi,
+                default_city=default_city,
+                default_employer=default_employer,
+                filename=filename,
+            )
+        return []
+
+    # 3. OLE2 Compound Document (.xls / .doc) or HTML-table-disguised .xls
+    if file_bytes.startswith(b'\xd0\xcf\x11\xe0'):
+        return parse_exam_xls_bytes(
+            file_bytes,
+            exam_id=exam_id,
+            default_bianzhi=default_bianzhi,
+            default_city=default_city,
+            default_employer=default_employer,
+            filename=filename,
+        )
+
+    head = file_bytes[:512].lstrip(b'\xef\xbb\xbf \t\r\n').lower()
+    if b'<table' in head or (
+        (filename.lower().endswith(('.xls', '.xlsx', '.htm', '.html')) or url.lower().endswith('.xls'))
+        and b'<html' in head
+    ):
+        return parse_exam_xls_bytes(
+            file_bytes,
+            exam_id=exam_id,
+            default_bianzhi=default_bianzhi,
+            default_city=default_city,
+            default_employer=default_employer,
+            filename=filename,
+        )
+
+    return []
 
 
 def compute_exam_stage(

@@ -9,6 +9,12 @@ import xml.etree.ElementTree as ET
 
 from scripts.build_feeds import build_feeds
 from scripts.build_radar_sqlite import build_radar_sqlite
+from scripts.sync_cloudflare_d1 import (
+    build_bounded_upsert_statements,
+    compute_row_hash,
+    compute_table_diff_sql,
+    patch_wrangler_d1_binding,
+)
 
 
 class SqliteAndFeedsTests(unittest.TestCase):
@@ -160,6 +166,54 @@ class SqliteAndFeedsTests(unittest.TestCase):
             self.assertIn('【报名截止】', ics_text)
             for raw_line in ics_text.split('\r\n'):
                 self.assertLessEqual(len(raw_line.encode('utf-8')), 75)
+
+    def test_cloudflare_d1_incremental_diff_and_wrangler_patch(self) -> None:
+        cols = ['seq', 'id', 'title']
+        local_rows = [
+            (1, 'job-1', '软件工程师'),
+            (2, 'job-2', '硬件工程师（更新）'),
+            (3, 'job-3', '算法工程师'),
+        ]
+        remote_hashes = {
+            'job-1': compute_row_hash((1, 'job-1', '软件工程师')),
+            'job-2': compute_row_hash((2, 'job-2', '硬件工程师（旧）')),
+            'job-stale': 'deadbeef00112233',
+        }
+        stmts, stats = compute_table_diff_sql('jobs', cols, local_rows, remote_hashes)
+        self.assertEqual(stats['unchanged'], 1)
+        self.assertEqual(stats['upserted'], 2)
+        self.assertEqual(stats['deleted'], 1)
+        joined = '\n'.join(stmts)
+        self.assertIn("DELETE FROM jobs WHERE id IN ('job-stale');", joined)
+        self.assertIn("'job-2'", joined)
+        self.assertIn("'job-3'", joined)
+        self.assertNotIn("'job-1'", joined)
+
+        # Identical second sync produces 0 statements (zero D1 row writes)
+        synced_remote = {str(r[1]): compute_row_hash(r) for r in local_rows}
+        stmts_noop, stats_noop = compute_table_diff_sql('jobs', cols, local_rows, synced_remote)
+        self.assertEqual(stmts_noop, [])
+        self.assertEqual(stats_noop['upserted'], 0)
+        self.assertEqual(stats_noop['deleted'], 0)
+
+        # Bounded statement size check
+        huge_rows = [(i, f'id-{i}', '长文本' * 1200, 'hashval') for i in range(25)]
+        bounded = build_bounded_upsert_statements('jobs', ['seq', 'id', 'title', 'row_hash'], huge_rows)
+        self.assertGreater(len(bounded), 2)
+        for s in bounded:
+            self.assertLessEqual(len(s.encode('utf-8')), 50_000)
+
+        # Wrangler JSON binding patch
+        with tempfile.TemporaryDirectory() as tmp:
+            wrangler_file = Path(tmp) / 'wrangler.json'
+            wrangler_file.write_text(json.dumps({'name': 'sites-project'}), encoding='utf-8')
+            patched = patch_wrangler_d1_binding(wrangler_file, 'job-radar-db', 'uuid-1234-5678')
+            self.assertTrue(patched)
+            cfg = json.loads(wrangler_file.read_text(encoding='utf-8'))
+            self.assertEqual(
+                cfg['d1_databases'],
+                [{'binding': 'DB', 'database_name': 'job-radar-db', 'database_id': 'uuid-1234-5678'}],
+            )
 
 
 if __name__ == '__main__':

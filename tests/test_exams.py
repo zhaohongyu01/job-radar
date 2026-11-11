@@ -22,6 +22,8 @@ from scripts.collect_exams import (
 from scripts.snapshot_assets import EXAM_DETAIL_ASSET, EXAM_POSITIONS_ASSET, hydrate_exam_snapshot
 from scripts.stage_public import stage
 from scripts.parse_exam_positions import (
+    _decode_zip_member_name,
+    clean_exam_attachments,
     clean_exam_title,
     compute_exam_stage,
     compute_position_row_id,
@@ -675,6 +677,55 @@ class ExamParserTests(unittest.TestCase):
                 source_id="cpta-notice",
             )
         )
+
+    def test_zip_attachment_parsing_and_junk_attachment_cleaning(self):
+        raw_atts = [
+            {"title": "网站图标", "url": "https://jnmhc.jinan.gov.cn/picture/0/logo.png"},
+            {"title": "官方附件", "url": "https://www.gov.cn/"},
+            {"title": "公考广告", "url": "https://www.huatu.com/course/1"},
+            {"title": "附件1：岗位汇总表.zip", "url": "https://jnmhc.jinan.gov.cn/attach/pos.zip"},
+            {"title": "附件1：岗位汇总表（重复）", "url": "https://jnmhc.jinan.gov.cn/attach/pos.zip"},
+        ]
+        cleaned = clean_exam_attachments(raw_atts)
+        self.assertEqual(len(cleaned), 1)
+        self.assertEqual(cleaned[0]["url"], "https://jnmhc.jinan.gov.cn/attach/pos.zip")
+
+        # Build an in-memory .zip containing a GBK-named HTML-disguised .xls position table + a nested .zip (must be ignored)
+        inner_html = (
+            "<table>"
+            "<tr><th>岗位代码</th><th>岗位名称</th><th>招聘人数</th><th>学历要求</th><th>专业要求</th></tr>"
+            "<tr><td>101</td><td>临床医师</td><td>3</td><td>硕士研究生及以上</td><td>内科学、外科学</td></tr>"
+            "</table>"
+        ).encode("utf-8")
+
+        nested_buf = io.BytesIO()
+        with zipfile.ZipFile(nested_buf, "w") as nzf:
+            nzf.writestr("evil.xls", inner_html)
+
+        outer_buf = io.BytesIO()
+        with zipfile.ZipFile(outer_buf, "w") as ozf:
+            ozf.writestr("01_济南市第一人民医院公开招聘岗位汇总表.xls", inner_html)
+            ozf.writestr("报名登记表.xls", inner_html)
+            ozf.writestr("nested.xlsx", nested_buf.getvalue())
+
+        # Verify legacy CP437-packed GBK ZipInfo filename decoding (flag_bits without 0x800)
+        legacy_info = zipfile.ZipInfo()
+        legacy_info.filename = "附件1岗位表.xlsx".encode("gbk").decode("cp437")
+        legacy_info.flag_bits = 0
+        self.assertEqual(_decode_zip_member_name(legacy_info), "附件1岗位表.xlsx")
+
+        parsed = parse_exam_attachment_bytes(
+            outer_buf.getvalue(),
+            exam_id="exam-zip-1",
+            default_bianzhi="医疗卫生编",
+            default_city="济南",
+            default_employer="济南市卫健委",
+            filename="岗位汇总表.zip",
+        )
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0]["employer"], "济南市第一人民医院")
+        self.assertEqual(parsed[0]["position_name"], "临床医师")
+        self.assertEqual(parsed[0]["recruit_count"], 3)
 
 
 if __name__ == "__main__":

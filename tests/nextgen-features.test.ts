@@ -18,7 +18,7 @@ import {
   validateUnifiedProfile,
 } from '../lib/unified-profile.ts';
 import { buildExamPersonalReminders } from '../lib/reminders.ts';
-import { queryRadarJobs } from '../lib/server/radar-db.ts';
+import { buildJobsSqlQuery, queryRadarJobs } from '../lib/server/radar-db.ts';
 import { DEFAULT_EXAM_PROFILE, type ExamAnnouncement, type ExamUserProfile } from '../lib/exams.ts';
 
 void test('display sanitizers strip ATS codes, hide placeholder excerpt, and deduplicate venues', () => {
@@ -40,6 +40,14 @@ void test('display sanitizers strip ATS codes, hide placeholder excerpt, and ded
     '中心校区知新楼A座',
   );
   assert.equal(sanitizeVenueDisplay('崂山校区 崂山校区第二报告厅'), '崂山校区第二报告厅');
+  assert.equal(
+    sanitizeVenueDisplay('燕山校区2号教学楼204教室【燕山校区】', '山东财经大学'),
+    '燕山校区2号教学楼204教室',
+  );
+  assert.equal(
+    sanitizeVenueDisplay('【山东财经大学】舜耕校区礼堂', '山东财经大学'),
+    '舜耕校区礼堂',
+  );
 });
 
 void test('unified career profile maps cleanly between jobs filters and exam profile', () => {
@@ -159,6 +167,11 @@ void test('queryRadarJobs supports portable node:sqlite and graceful static fall
     assert.ok(liveRes.jobs.length > 0 && liveRes.jobs.length <= 5);
     assert.ok(liveRes.facets && Object.keys(liveRes.facets.cities).length > 0);
   }
+
+  // Cloudflare D1 mode omits FTS5 shadow table and uses direct INSTR(j.search_text, ?)
+  const d1Sql = buildJobsSqlQuery({ q: '后端研发 济南', cities: ['济南'] }, { useFts: false });
+  assert.ok(!d1Sql.countSql.includes('jobs_fts'));
+  assert.ok(d1Sql.countSql.includes('INSTR(j.search_text, ?) > 0'));
 });
 
 void test('cross-workspace navigation uses native anchors instead of broken vinext next/link chunk', () => {

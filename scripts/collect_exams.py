@@ -24,6 +24,7 @@ import collect as c
 from bs4 import BeautifulSoup
 from city_registry import PROVINCE_CITIES, cities_in_text
 from parse_exam_positions import (
+    clean_exam_attachments,
     clean_exam_title,
     enrich_exam_record,
     parse_exam_attachment_bytes,
@@ -1057,7 +1058,7 @@ def is_position_table_attachment(att: Dict[str, Any]) -> bool:
         return False
     if POSITION_ATT_TITLE_RE.search(title):
         return True
-    if title in ('官方附件', '附件', '附件1', '附件2') and re.search(r'\.(?:xlsx?|pdf|docx?)(?:\?|$)', url, re.I):
+    if title in ('官方附件', '附件', '附件1', '附件2') and re.search(r'\.(?:xlsx?|pdf|docx?|zip)(?:\?|$)', url, re.I):
         return True
     return False
 
@@ -1129,12 +1130,14 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
         exam_id = item.get('id') or hashlib.sha256((item.get('source_url') or '').encode('utf-8')).hexdigest()[:20]
         src_city = item.get('source_city') or (item.get('cities') or [''])[0]
         parsed_rows: List[Dict[str, Any]] = []
-        for att in (item.get('attachments') or [])[:4]:
-            if not is_position_table_attachment(att):
-                continue
+        cleaned_atts = clean_exam_attachments(item.get('attachments') or [])
+        item['attachments'] = cleaned_atts
+        candidate_atts = [a for a in cleaned_atts if is_position_table_attachment(a)][:6]
+        for att in candidate_atts:
             att_url = str(att.get('url') or '')
             att_title = str(att.get('title') or '')
-            raw_bytes = fetch_bytes_quick(att_url, timeout=6.0)
+            is_zip = '.zip' in att_url.lower() or '.zip' in att_title.lower()
+            raw_bytes = fetch_bytes_quick(att_url, timeout=12.0 if is_zip else 6.0)
             if not raw_bytes:
                 continue
             default_bz = '公务员（行政编）' if '公务员' in str(item.get('title') or '') else '事业编'

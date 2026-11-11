@@ -405,6 +405,15 @@ export function sanitizeVenueDisplay(venue: string | null | undefined, school?: 
     out = out.slice(schoolTrimmed.length).replace(/^[\s·•—-]+/, '').trim() || out;
   }
   out = out.replace(/^([\u4e00-\u9fa5A-Za-z0-9]{2,14}?)\s*\1+/, '$1');
+  // Strip redundant leading/trailing bracketed campus or school tag when already present in the venue body
+  const leadMatch = out.match(/^[【[（(]([^】\]）)]{2,16})[】\]）)]\s*(.+)$/);
+  if (leadMatch && (leadMatch[2].includes(leadMatch[1].trim()) || leadMatch[1].trim() === schoolTrimmed)) {
+    out = leadMatch[2].trim();
+  }
+  const trailMatch = out.match(/^(.+?)\s*[【[（(]([^】\]）)]{2,16})[】\]）)]$/);
+  if (trailMatch && (trailMatch[1].includes(trailMatch[2].trim()) || trailMatch[2].trim() === schoolTrimmed)) {
+    out = trailMatch[1].trim();
+  }
   return out.trim();
 }
 
@@ -423,7 +432,9 @@ export function cardJobTitle(cleanTitle: string, company?: string | null, displa
   return stripped;
 }
 export function eventDisplayTitle(job: Job): string {
-  return job.company ? formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany : job.title || '校园活动';
+  return job.company
+    ? formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany
+    : stripTrailingAtsCode(job.title || '') || '校园活动';
 }
 export function resolveJobId(jobs: Job[], identifier: string): Job | undefined {
   return jobs.find((job) => job.id === identifier) || jobs.find((job) => job.duplicate_ids?.includes(identifier));

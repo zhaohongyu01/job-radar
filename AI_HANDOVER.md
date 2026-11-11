@@ -3,7 +3,20 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
-## 2026-11-11 Next-Gen 四阶段最佳架构与现代化体验升级（本地已完成全部实施与验收，待推送部署）
+## 2026-11-11 Cloudflare D1 免费层自动配库增量同步 & 数据深度与体验小步精进
+
+按用户指令完成 Cloudflare D1 免费库自动化配库/增量同步管线接入，以及考编 `.zip` 附件深度解析、山东龙头名企/金融机构面经源扩容与宣讲场地清洗精进：
+- **Cloudflare D1 免费层配额安全增量同步 (`scripts/sync_cloudflare_d1.py` + `lib/server/radar-db.ts`)**：
+  1. 新增 `scripts/sync_cloudflare_d1.py`：在 `.github/workflows/{daily-collect,exams-collect,nas-universities}.yml` 中通过 Cloudflare D1 REST API 自动查找或创建 `job-radar-db`，按主键与 `row_hash` 执行增量 Diff 同步（单条 SQL 限制 `<= 15` 行且 `<= 50 KB`，单次 HTTP 批次 `<= 200 KB`，无 `BEGIN TRANSACTION`；`exams-collect.yml` 使用 `--mode exams-only`），并将获得的 `database_id` 动态写入 `dist/server/wrangler.json` 的 `d1_databases`（`binding: "DB"`）。若 `CLOUDFLARE_API_TOKEN` 尚未勾选 `Account -> D1 -> Edit` 权限，则输出 `::warning::` 提示并无损回退静态分片部署，绝不阻断上线。
+  2. 为保护 Cloudflare Free Plan 每日 `100,000 rows written` 免费额度，D1 端不建 FTS5 影子表，仅同步非 `withdrawn` 在招记录，`lib/server/radar-db.ts` 在 `engine === 'd1'` 时使用 `INSTR(j.search_text, ?)` 直查，日常单日增量写入 `< 1,500` 行（`< 1.5%` 免费配额）。
+- **考编 `.zip` 压缩包职位表解压解析与垃圾附件净洗 (`scripts/parse_exam_positions.py` + `scripts/collect_exams.py`)**：
+  1. 新增 `parse_exam_zip_bytes`（支持 Windows CP437 封装 GBK 文件名解码、`<= 30` 成员与 `<= 25 MiB` 解压上限保护、拦截嵌套压缩包递归、自动从子表文件名提取所属医院/学校用人单位名称）与 `clean_exam_attachments`（剔除政务网站页脚图标、商业机构推广链接与重复附件 URL，全库净除 `195` 条无效附件）。
+  2. 修复 `collect_exams.py` 在过滤职位表前先切片 `[:4]` 导致正文中混有页脚图片的公告（如济南市第一人民医院、济南市机关医院等）漏解析 `.xlsx` 附件的缺陷。重跑解析后新增解锁 `8` 条公告、**`+488` 个结构化考编岗位（全库跃升至 `343` 条公告 / `5,063` 个结构化岗位，`attachment_only` 由 `30` 降至 `22`）**。
+- **山东龙头名企与核心金融机构牛客面经源核验扩容 (`config/reputation-sources.json`)**：遵守 `robots.txt` 与 `1.5s` 间隔通过 `PublicClient` 实测核验 `window.__INITIAL_STATE__` 企业身份，新增 `青岛啤酒` (`9148`)、`中国重汽` (`4327`)、`中泰证券` (`8417`)、`中国银河证券` (`5916`)、`齐鲁银行` (`24386`)、`招商银行` (`674`)、`中国人寿` (`996`)、`中国人寿财产保险股份有限公司` (`21472`) 共 8 家精确身份种子（严格保持母子公司独立归属，不模糊合并）。
+- **宣讲场地括号冗余标签净洗 (`lib/jobs.ts`)**：升级 `sanitizeVenueDisplay` 自动剥离首尾重复的括号校区/学校标签（如 `燕山校区2号教学楼204教室【燕山校区】` → `燕山校区2号教学楼204教室`），并在 `eventDisplayTitle` 兜底剥离尾部 ATS 编号。
+- **验证结果**：`oxlint`（`0 warnings / 0 errors`）、`tsc --noEmit`（`0 errors`）、`audit_css_usage.mjs`（`0` 死类）、`npm test`（**`197/197`** TS 单测通过）、`unittest`（**`319/319`** Python 单测通过）、`exams_guard.py`（`343` 公告 / `5,063` 岗通过）、`npm run build` 全部通过。
+
+## 2026-11-11 Next-Gen 四阶段最佳架构与现代化体验升级（已推送上线验收）
 
 按用户批准的《职讯雷达 Next-Gen 最佳架构与现代化体验升级方案》（兼顾 Cloudflare 零成本边缘运行与中国大陆云服务器/NAS 零改造直连部署的「可移植双模架构」），已完成全部四个阶段的开发、单测与双端浏览器实测验收：
 - **阶段一：数据交付架构、管线解耦与零绑定 SQLite / D1 检索引擎 (`P1.1`–`P1.3`)**

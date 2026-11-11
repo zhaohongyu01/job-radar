@@ -96,7 +96,10 @@ export function normalizeQueryParams(raw: URLSearchParams | RadarJobsQueryParams
   };
 }
 
-export function buildJobsSqlQuery(input: RadarJobsQueryParams): {
+export function buildJobsSqlQuery(
+  input: RadarJobsQueryParams,
+  options?: { useFts?: boolean },
+): {
   countSql: string;
   rowsSql: string;
   whereParams: (string | number)[];
@@ -104,6 +107,7 @@ export function buildJobsSqlQuery(input: RadarJobsQueryParams): {
   page: number;
   pageSize: number;
 } {
+  const useFts = options?.useFts ?? true;
   const p = normalizeQueryParams(input);
   const clauses: string[] = ["j.listing_status != 'withdrawn'"];
   const params: (string | number)[] = [];
@@ -151,21 +155,28 @@ export function buildJobsSqlQuery(input: RadarJobsQueryParams): {
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 5);
-    const ftsTerms = terms.filter((t) => Array.from(t).length >= 3);
-    const shortTerms = terms.filter((t) => Array.from(t).length < 3);
-
-    if (ftsTerms.length > 0) {
-      const ftsExpr = ftsTerms.map(escapeFtsPhrase).join(' AND ');
-      clauses.push('(j.id IN (SELECT id FROM jobs_fts WHERE jobs_fts MATCH ?) OR INSTR(j.search_text, ?) > 0)');
-      params.push(ftsExpr, ftsTerms[0]);
-      for (const extra of ftsTerms.slice(1)) {
+    if (!useFts) {
+      for (const term of terms) {
         clauses.push('INSTR(j.search_text, ?) > 0');
-        params.push(extra);
+        params.push(term);
       }
-    }
-    for (const st of shortTerms) {
-      clauses.push('INSTR(j.search_text, ?) > 0');
-      params.push(st);
+    } else {
+      const ftsTerms = terms.filter((t) => Array.from(t).length >= 3);
+      const shortTerms = terms.filter((t) => Array.from(t).length < 3);
+
+      if (ftsTerms.length > 0) {
+        const ftsExpr = ftsTerms.map(escapeFtsPhrase).join(' AND ');
+        clauses.push('(j.id IN (SELECT id FROM jobs_fts WHERE jobs_fts MATCH ?) OR INSTR(j.search_text, ?) > 0)');
+        params.push(ftsExpr, ftsTerms[0]);
+        for (const extra of ftsTerms.slice(1)) {
+          clauses.push('INSTR(j.search_text, ?) > 0');
+          params.push(extra);
+        }
+      }
+      for (const st of shortTerms) {
+        clauses.push('INSTR(j.search_text, ?) > 0');
+        params.push(st);
+      }
     }
   }
 
@@ -298,7 +309,7 @@ export async function queryRadarJobs(
     }
 
     const normalized = normalizeQueryParams(rawParams);
-    const built = buildJobsSqlQuery(normalized);
+    const built = buildJobsSqlQuery(normalized, { useFts: adapter.engine === 'sqlite' });
 
     const [countRows, dataRows] = await Promise.all([
       adapter.queryAll<{ total: number }>(built.countSql, built.whereParams),

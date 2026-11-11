@@ -963,6 +963,120 @@ def parse_exam_xls_bytes(
     return rows
 
 
+MAX_ZIP_MEMBERS = 30
+MAX_ZIP_TOTAL_UNCOMPRESSED = 25 * 1024 * 1024
+NON_POS_ZIP_MEMBER_RE = re.compile(
+    r'报名登记表|报名表|推荐表|诚信承诺书|同意.*报考|网站网址一览表|报考指南|操作说明|考试大纲',
+    re.I,
+)
+JUNK_ATTACHMENT_URL_RE = re.compile(
+    r'bszs\.conac\.cn|zfwzgl\.www\.gov\.cn/exposure/jiucuo|rsks\.class\.com\.cn|'
+    r'(?:huatu|offcn|fenbi)\.com|'
+    r'AdminLogin\.aspx|BlankPage\.aspx|PharmacyWindow\.aspx|/Index\.aspx$|'
+    r'cpta\.com\.cn/(?:promise|testPlan|certQuery|syllabus)\.html|'
+    r'gov\.cn/zhuanti/|(?:/statics/images/|/img/|/picture/)(?:[^?#]*?)(?:\.png|\.jpg|\.jpeg|\.gif)$|'
+    r'(?:wechat|qrcode|flogo|logo|foot-tel|foot-address|foot-car|inside-location|inside-icon|nav)\.(?:png|jpg|jpeg|gif)$',
+    re.I,
+)
+
+
+def clean_exam_attachments(attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove website chrome icons, commercial ad links, and duplicate URLs from exam attachments."""
+    cleaned: List[Dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for att in attachments or []:
+        if not isinstance(att, dict):
+            continue
+        url = str(att.get('url') or '').strip()
+        title = str(att.get('title') or '').strip()
+        if not url or url in seen_urls:
+            continue
+        if JUNK_ATTACHMENT_URL_RE.search(url):
+            continue
+        if title in ('官方附件', '') and re.match(r'^https?://(?:(?:www|mohrss|scs)\.)?gov\.cn/?$', url, re.I):
+            continue
+        seen_urls.add(url)
+        cleaned.append(att)
+    return cleaned
+
+
+def _decode_zip_member_name(info: zipfile.ZipInfo) -> str:
+    name = info.filename
+    if not (info.flag_bits & 0x800):
+        try:
+            name = info.filename.encode('cp437').decode('gbk')
+        except Exception:
+            pass
+    return name
+
+
+def parse_exam_zip_bytes(
+    file_bytes: bytes,
+    exam_id: str,
+    default_bianzhi: str = '事业编',
+    default_city: str = '',
+    default_employer: str = '',
+    filename: str = '',
+) -> List[Dict[str, Any]]:
+    """Safely extract and parse tabular position files (.xlsx/.xls/.docx/.pdf) inside a .zip archive."""
+    rows: List[Dict[str, Any]] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+            members = [m for m in zf.infolist() if not m.is_dir()]
+            total_uncompressed = 0
+            inspected = 0
+            for info in members:
+                if inspected >= MAX_ZIP_MEMBERS:
+                    break
+                member_name = _decode_zip_member_name(info)
+                base_name = member_name.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]
+                if (
+                    not base_name
+                    or '__MACOSX' in member_name
+                    or base_name.startswith(('~$', '.'))
+                    or NON_POS_ZIP_MEMBER_RE.search(base_name)
+                ):
+                    continue
+                if not base_name.lower().endswith(('.xlsx', '.xls', '.docx', '.pdf', '.htm', '.html')):
+                    continue
+                if info.file_size <= 0 or total_uncompressed + info.file_size > MAX_ZIP_TOTAL_UNCOMPRESSED:
+                    continue
+                inspected += 1
+                total_uncompressed += info.file_size
+                inner_bytes = zf.read(info)
+                if inner_bytes.startswith(b'PK\x03\x04'):
+                    # Prevent nested zip archive recursion; allow only OOXML (.xlsx / .docx)
+                    try:
+                        with zipfile.ZipFile(io.BytesIO(inner_bytes)) as inner_zf:
+                            inner_names = set(inner_zf.namelist())
+                    except Exception:
+                        continue
+                    if 'xl/workbook.xml' not in inner_names and 'word/document.xml' not in inner_names and not any(
+                        n.startswith('xl/worksheets/') for n in inner_names
+                    ):
+                        continue
+                # Infer unit employer from member filename if present (e.g. "济南市中心医院岗位汇总表.xls")
+                member_emp = default_employer
+                emp_m = re.search(
+                    r'([\u4e00-\u9fa5（）()]{3,24}?(?:医院|中心|学校|学院|研究院|研究所|保健院|疾控中心|卫生院|局|委))',
+                    base_name,
+                )
+                if emp_m and not any(w in emp_m.group(1) for w in ('公开招聘', '事业单位', '招聘单位')):
+                    member_emp = emp_m.group(1)
+                sub_rows = parse_exam_attachment_bytes(
+                    inner_bytes,
+                    exam_id=exam_id,
+                    default_bianzhi=default_bianzhi,
+                    default_city=default_city,
+                    default_employer=member_emp,
+                    filename=base_name,
+                )
+                rows.extend(sub_rows)
+    except Exception:
+        return rows
+    return rows
+
+
 def parse_exam_attachment_bytes(
     file_bytes: bytes,
     exam_id: str,
@@ -1013,7 +1127,14 @@ def parse_exam_attachment_bytes(
                 default_employer=default_employer,
                 filename=filename,
             )
-        return []
+        return parse_exam_zip_bytes(
+            file_bytes,
+            exam_id=exam_id,
+            default_bianzhi=default_bianzhi,
+            default_city=default_city,
+            default_employer=default_employer,
+            filename=filename,
+        )
 
     # 3. OLE2 Compound Document (.xls / .doc) or HTML-table-disguised .xls
     if file_bytes.startswith(b'\xd0\xcf\x11\xe0'):
@@ -1410,7 +1531,7 @@ def enrich_exam_record(
     total_positions: Optional[int] = pos_count_val if pos_count_val > 0 else None
     total_headcount: Optional[int] = hc_count_val if hc_count_val > 0 else None
 
-    attachments = raw_item.get('attachments') or []
+    attachments = clean_exam_attachments(raw_item.get('attachments') or [])
     if any(p.get('source') in ('table', 'attachment') for p in exam_positions):
         positions_status = 'parsed'
     elif exam_positions:
@@ -1473,7 +1594,7 @@ def enrich_exam_record(
         'excerpt': (raw_item.get('excerpt') or body[:260]).strip(),
         'body': body[:18000],
         'positions': exam_positions,
-        'attachments': raw_item.get('attachments') or [],
+        'attachments': attachments,
         'links': raw_item.get('links') or [],
         'related_notices': raw_item.get('related_notices') or [],
     }

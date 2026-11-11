@@ -159,4 +159,35 @@ void test('parseStructuredJobBody strips SDU boilerplate, splits inline numbered
   assert.deepEqual(plainShort.sections[0].blocks, [
     { type: 'paragraph', text: '核验岗位7 公告正文' },
   ]);
+
+  // Real-world Hisense header: 岗位类别 + >160-char 30-city wall + 薪资：面议 + numbered 学历：本科及以上学历；
+  const longCityWall =
+    '福建省·福州市、广东省·广州市/深圳市、江西省·南昌市、江苏省·南京市/无锡市、上海市、浙江省·宁波市/杭州市、北京市、天津市、山西省·太原市、河北省·石家庄市、山东省·青岛市/临沂市/济南市、陕西省·西安市、河南省·漯河市/郑州市、甘肃省·兰州市、辽宁省·沈阳市、吉林省·长春市、重庆市、贵州省·贵阳市、四川省·成都市、云南省·昆明市、安徽省·合肥市、湖南省·长沙市、湖北省·武汉市、广西壮族自治区·南宁市';
+  const hisenseReal = parseStructuredJobBody({
+    title: '销售经理（全国）(J45816)',
+    company: '海信集团',
+    cities: [
+      '福州', '广州', '深圳', '南昌', '南京', '无锡', '上海', '宁波', '杭州', '北京',
+      '天津', '太原', '石家庄', '青岛', '临沂', '济南', '西安', '漯河', '郑州', '兰州',
+      '沈阳', '长春', '重庆', '贵阳', '成都', '昆明', '合肥', '长沙', '武汉', '南宁',
+    ],
+    education: '未明确',
+    deadline: null,
+    types: ['校招'],
+    graduation_years: ['2027'],
+    body: [
+      '岗位类别：营销类',
+      `工作地点：${longCityWall}`,
+      '薪资：面议',
+      '岗位职责：',
+      '1. 承接公司销售目标，完成业绩指标。',
+      '任职要求：',
+      '1. 院校：国内普通高等院校（2027年毕业）；',
+      '2. 学历：本科及以上学历；',
+    ].join('\n'),
+  });
+  assert.equal(hisenseReal.extractedEducation, '本科及以上');
+  assert.deepEqual(hisenseReal.extraMeta, [{ label: '岗位类别', value: '营销类' }]);
+  assert.equal(hisenseReal.sections.length, 2);
+  assert.equal(hisenseReal.sections[0].heading, '岗位职责');
 });

@@ -52,6 +52,9 @@ const URL_EMAIL_META_KEYS = new Set([
 ]);
 
 const PROMOTED_META_LABEL_MAP: Record<string, string> = {
+  岗位类别: '岗位类别',
+  职位类别: '岗位类别',
+  职能类别: '岗位类别',
   专业要求: '专业要求',
   需求专业: '专业要求',
   所需专业: '专业要求',
@@ -444,12 +447,13 @@ export function parseStructuredJobBody(
     if (detectHeadingLine(line)) break;
     if (SINGLE_ROLE_LINE_RE.test(line)) break;
 
-    const kvMatch = /^([\u4e00-\u9fa5A-Za-z]{2,10})\s*[:：]\s*(.{1,160})$/.exec(line);
+    const kvMatch = /^([\u4e00-\u9fa5A-Za-z]{2,10})\s*[:：]\s*(.{1,520})$/.exec(line);
     if (!kvMatch) break;
 
     const key = kvMatch[1].trim();
     const val = kvMatch[2].trim();
     if (KNOWN_SECTION_SET.has(key)) break;
+    if (!LOCATION_META_KEYS.has(key) && val.length > 160) break;
 
     if (REDUNDANT_COMPANY_KEYS.has(key)) {
       if (job.company && (val.includes(job.company) || job.company.includes(val))) {
@@ -546,6 +550,10 @@ export function parseStructuredJobBody(
 
     const promotedLabel = PROMOTED_META_LABEL_MAP[key];
     if (promotedLabel) {
+      if (promotedLabel === '薪资参考' && /^(?:面议|薪资面议|待定|面谈)$/.test(val)) {
+        cursor += 1;
+        continue;
+      }
       const formattedVal =
         promotedLabel === '招聘人数' && /^\d+$/.test(val) ? `${val}人` : val;
       pushMeta(promotedLabel, formattedVal);
@@ -555,6 +563,19 @@ export function parseStructuredJobBody(
 
     // Unknown Key: Value — stop metadata stripping so we never swallow real content
     break;
+  }
+
+  // Fallback education rescue from numbered/prose requirement lines when top-level education is unspecified
+  if (eduUnspecified && !extractedEducation) {
+    for (let i = cursor; i < workingLines.length; i += 1) {
+      const eduMatch = /(?:^|[\d.、．)）\s])学历(?:要求)?\s*[:：]\s*((?:博士研究生|硕士研究生|大专|专科|本科|硕士|博士)(?:及以上)?)(?:学历)?(?=[；;。，,\s]|$)/.exec(
+        workingLines[i],
+      );
+      if (eduMatch) {
+        extractedEducation = eduMatch[1];
+        break;
+      }
+    }
   }
 
   // Step 3: Parse remaining lines into structured sections

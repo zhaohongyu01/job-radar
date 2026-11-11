@@ -48,6 +48,23 @@ def stage(public, dist):
         shutil.copy2(public/path.lstrip('/'), destination/path.lstrip('/'))
     for name in ('jobs.json', 'snapshot-manifest.json'):
         shutil.copy2(public/name, destination/name)
+    first_screen_src = public/'first-screen.json'
+    first_screen_dst = destination/'first-screen.json'
+    if first_screen_src.is_file():
+        resolved_fs = first_screen_src.resolve()
+        if not resolved_fs.is_relative_to(public) or resolved_fs.stat().st_size > MAX_ASSET_BYTES:
+            raise ValueError('Invalid first-screen.json asset')
+        fs_obj = json.loads(resolved_fs.read_text(encoding='utf-8'))
+        if (
+            isinstance(fs_obj, dict)
+            and fs_obj.get('ok') is True
+            and str(fs_obj.get('generated_at') or '') == str(snapshot.get('generated_at') or '')
+        ):
+            shutil.copy2(resolved_fs, first_screen_dst)
+        elif first_screen_dst.is_file() and first_screen_dst.resolve().is_relative_to(destination):
+            first_screen_dst.unlink()
+    elif first_screen_dst.is_file() and first_screen_dst.resolve().is_relative_to(destination):
+        first_screen_dst.unlink()
     if (public/'exams.json').is_file():
         exam_snapshot = json.loads((public/'exams.json').read_text(encoding='utf-8'))
         exam_paths = exam_asset_paths(exam_snapshot)

@@ -1,4 +1,4 @@
-"""Build portable SQLite database (and optional Cloudflare D1 batch SQL) from validated snapshots."""
+"""Build static first-screen edge snapshot and portable local SQLite database from validated snapshots."""
 from __future__ import annotations
 
 import argparse
@@ -13,13 +13,17 @@ from typing import Any, Dict, Iterable, List, Optional
 ROOT = Path(__file__).resolve().parents[1]
 
 NATIONWIDE_RE = re.compile(r'全国|各地|多地|不限地点|省内各地|全省|山东各地|山东省内')
+FIRST_SCREEN_PAGE_SIZE = 60
 
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def load_browsing_jobs_and_search(public_dir: Path) -> tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, str]]:
+def load_browsing_jobs_and_search(
+    public_dir: Path,
+    include_search: bool = True,
+) -> tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, str]]:
     jobs_file = public_dir / 'jobs.json'
     if not jobs_file.is_file():
         raise FileNotFoundError(f'Missing {jobs_file}')
@@ -39,6 +43,9 @@ def load_browsing_jobs_and_search(public_dir: Path) -> tuple[Dict[str, Any], Lis
         rows = list(snapshot.get('jobs') or [])
 
     search_map: Dict[str, str] = {}
+    if not include_search:
+        return snapshot, rows, search_map
+
     search_paths: List[str] = []
     if isinstance(browse.get('search_shards'), list) and browse['search_shards']:
         search_paths = [str(p) for p in browse['search_shards']]
@@ -158,15 +165,23 @@ def _slim_job_for_row(job: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_radar_sqlite(
     public_dir: Path,
-    output_sqlite: Path,
+    output_sqlite: Optional[Path] = None,
     output_d1_sql: Optional[Path] = None,
+    *,
+    first_screen_only: bool = False,
+    write_first_screen: bool = True,
 ) -> Dict[str, Any]:
     public_dir = Path(public_dir).resolve()
-    output_sqlite = Path(output_sqlite).resolve()
-    output_sqlite.parent.mkdir(parents=True, exist_ok=True)
+    need_sqlite = (not first_screen_only) and (output_sqlite is not None)
+    if need_sqlite and output_sqlite is not None:
+        output_sqlite = Path(output_sqlite).resolve()
+        output_sqlite.parent.mkdir(parents=True, exist_ok=True)
 
-    snapshot, job_rows, search_map = load_browsing_jobs_and_search(public_dir)
-    exam_snap, exam_rows = load_exams(public_dir)
+    snapshot, job_rows, search_map = load_browsing_jobs_and_search(
+        public_dir,
+        include_search=need_sqlite,
+    )
+    exam_snap, exam_rows = load_exams(public_dir) if need_sqlite else (None, [])
 
     city_counts: Counter[str] = Counter()
     type_counts: Counter[str] = Counter()
@@ -176,6 +191,9 @@ def build_radar_sqlite(
 
     prepared_jobs: List[tuple] = []
     prepared_fts: List[tuple] = []
+    first_screen_jobs: List[Dict[str, Any]] = []
+    active_jobs_count = 0
+    total_jobs_seen = 0
 
     seen_ids: set[str] = set()
     for job in job_rows:
@@ -183,10 +201,35 @@ def build_radar_sqlite(
         if not jid or jid in seen_ids:
             continue
         seen_ids.add(jid)
-        seq = len(prepared_jobs) + 1
+        total_jobs_seen += 1
+        seq = total_jobs_seen
         title = str(job.get('title') or '')
         company = str(job.get('company') or '')
         cities = [str(c) for c in (job.get('cities') or []) if c]
+        kind = str(job.get('kind') or '招聘公告')
+        types_list = [str(t) for t in (job.get('types') or []) if t]
+        sectors_list = [str(s) for s in (job.get('sectors') or []) if s]
+        education = str(job.get('education') or '未明确')
+        listing_status = str(job.get('listing_status') or 'active')
+
+        slim_job: Optional[Dict[str, Any]] = None
+        if listing_status != 'withdrawn':
+            active_jobs_count += 1
+            for c_name in cities:
+                city_counts[c_name] += 1
+            for t_name in (types_list or ['未明确']):
+                type_counts[t_name] += 1
+            for s_name in (sectors_list or ['未明确']):
+                sector_counts[s_name] += 1
+            edu_counts[education] += 1
+            kind_counts[kind] += 1
+            if len(first_screen_jobs) < FIRST_SCREEN_PAGE_SIZE:
+                slim_job = _slim_job_for_row(job)
+                first_screen_jobs.append(slim_job)
+
+        if not need_sqlite:
+            continue
+
         cities_pipe = f"|{'|'.join(cities)}|" if cities else ''
         has_cities = 1 if cities else 0
         raw_loc = f"{title} {job.get('excerpt') or ''}"
@@ -196,13 +239,8 @@ def build_radar_sqlite(
             or (not cities and NATIONWIDE_RE.search(raw_loc))
         ) else 0
 
-        kind = str(job.get('kind') or '招聘公告')
-        types_list = [str(t) for t in (job.get('types') or []) if t]
         types_pipe = f"|{'|'.join(types_list)}|" if types_list else ''
-        sectors_list = [str(s) for s in (job.get('sectors') or []) if s]
         sectors_pipe = f"|{'|'.join(sectors_list)}|" if sectors_list else ''
-        education = str(job.get('education') or '未明确')
-        listing_status = str(job.get('listing_status') or 'active')
         published_at = str(job.get('published_at') or '')
         deadline = str(job.get('deadline') or '')
 
@@ -210,16 +248,6 @@ def build_radar_sqlite(
         lf_sal = ((job.get('listing_facts') or {}).get('salary') or {}).get('min')
         if isinstance(lf_sal, (int, float)):
             salary_min = float(lf_sal)
-
-        if listing_status != 'withdrawn':
-            for c_name in cities:
-                city_counts[c_name] += 1
-            for t_name in (types_list or ['未明确']):
-                type_counts[t_name] += 1
-            for s_name in (sectors_list or ['未明确']):
-                sector_counts[s_name] += 1
-            edu_counts[education] += 1
-            kind_counts[kind] += 1
 
         majors_str = ' '.join(str(m) for m in (job.get('majors') or [])[:12] if m)
         directions_str = ' '.join(str(d) for d in (job.get('directions') or [])[:8] if d)
@@ -240,7 +268,8 @@ def build_radar_sqlite(
         full_search_tail = (search_map.get(jid) or '')[:320]
         search_text = f"{search_head} {str(job.get('excerpt') or '').lower()} {full_search_tail}".strip()[:480]
 
-        slim_job = _slim_job_for_row(job)
+        if slim_job is None:
+            slim_job = _slim_job_for_row(job)
         row_json = json.dumps(slim_job, ensure_ascii=False, separators=(',', ':'))
         prepared_jobs.append(
             (
@@ -264,6 +293,43 @@ def build_radar_sqlite(
             )
         )
         prepared_fts.append((jid, search_head))
+
+    facets_payload = {
+        'cities': dict(city_counts.most_common(60)),
+        'types': dict(type_counts),
+        'sectors': dict(sector_counts),
+        'educations': dict(edu_counts),
+        'kinds': dict(kind_counts),
+    }
+
+    first_screen_bytes = 0
+    if write_first_screen:
+        first_screen_payload = {
+            'ok': True,
+            'engine': 'static-edge',
+            'generated_at': str(snapshot.get('generated_at') or ''),
+            'total': active_jobs_count,
+            'page': 1,
+            'pageSize': FIRST_SCREEN_PAGE_SIZE,
+            'jobs': first_screen_jobs,
+            'facets': facets_payload,
+        }
+        raw_first = json.dumps(first_screen_payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        first_screen_path = public_dir / 'first-screen.json'
+        tmp_first = public_dir / f'first-screen.json.tmp-{os.getpid()}'
+        tmp_first.write_bytes(raw_first)
+        os.replace(tmp_first, first_screen_path)
+        first_screen_bytes = len(raw_first)
+
+    if not need_sqlite or output_sqlite is None:
+        return {
+            'jobs_count': total_jobs_seen,
+            'active_jobs_count': active_jobs_count,
+            'exams_count': 0,
+            'sqlite_bytes': 0,
+            'first_screen_bytes': first_screen_bytes,
+            'jobs_generated_at': str(snapshot.get('generated_at') or ''),
+        }
 
     prepared_exams: List[tuple] = []
     seen_exam_ids: set[str] = set()
@@ -313,13 +379,6 @@ def build_radar_sqlite(
             )
         )
 
-    facets_payload = {
-        'cities': dict(city_counts.most_common(60)),
-        'types': dict(type_counts),
-        'sectors': dict(sector_counts),
-        'educations': dict(edu_counts),
-        'kinds': dict(kind_counts),
-    }
     meta_rows = [
         ('schema_version', '1'),
         ('jobs_generated_at', str(snapshot.get('generated_at') or '')),
@@ -396,8 +455,10 @@ def build_radar_sqlite(
 
     return {
         'jobs_count': len(prepared_jobs),
+        'active_jobs_count': active_jobs_count,
         'exams_count': len(prepared_exams),
         'sqlite_bytes': output_sqlite.stat().st_size,
+        'first_screen_bytes': first_screen_bytes,
         'jobs_generated_at': str(snapshot.get('generated_at') or ''),
     }
 
@@ -407,17 +468,30 @@ def main() -> None:
     parser.add_argument('--public-dir', type=Path, default=ROOT / 'public')
     parser.add_argument('--output-sqlite', type=Path, default=ROOT / 'data' / 'radar.sqlite')
     parser.add_argument('--output-d1-sql', type=Path, default=None)
+    parser.add_argument(
+        '--first-screen-only',
+        action='store_true',
+        help='Write static public/first-screen.json without building local radar.sqlite',
+    )
     args = parser.parse_args()
 
     res = build_radar_sqlite(
         public_dir=args.public_dir,
-        output_sqlite=args.output_sqlite,
+        output_sqlite=None if args.first_screen_only else args.output_sqlite,
         output_d1_sql=args.output_d1_sql,
+        first_screen_only=args.first_screen_only,
     )
-    print(
-        f"Built radar.sqlite: jobs={res['jobs_count']}, exams={res['exams_count']}, "
-        f"size={res['sqlite_bytes'] / (1024 * 1024):.2f} MiB, generated_at={res['jobs_generated_at']}"
-    )
+    if args.first_screen_only:
+        print(
+            f"Built static first-screen.json: active_jobs={res['active_jobs_count']}, "
+            f"size={res['first_screen_bytes'] / 1024:.1f} KiB, generated_at={res['jobs_generated_at']}"
+        )
+    else:
+        print(
+            f"Built radar.sqlite & first-screen.json: jobs={res['jobs_count']}, exams={res['exams_count']}, "
+            f"sqlite={res['sqlite_bytes'] / (1024 * 1024):.2f} MiB, "
+            f"first_screen={res['first_screen_bytes'] / 1024:.1f} KiB, generated_at={res['jobs_generated_at']}"
+        )
 
 
 if __name__ == '__main__':

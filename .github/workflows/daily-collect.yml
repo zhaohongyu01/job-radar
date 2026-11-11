@@ -129,9 +129,6 @@ jobs:
           npx tsc --noEmit
 
       - name: Build Web Application
-        env:
-          CF_D1_DATABASE_ID: ${{ vars.CF_D1_DATABASE_ID }}
-          CF_D1_DATABASE_NAME: ${{ vars.CF_D1_DATABASE_NAME }}
         run: npm run build
 
       - name: Upload Built Application
@@ -141,6 +138,7 @@ jobs:
           path: |
             dist
             !dist/client/jobs.json
+            !dist/client/first-screen.json
             !dist/client/snapshot-manifest.json
             !dist/client/job-assets
             !dist/client/job-assets/**
@@ -322,26 +320,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Build lightweight browsing index without collection
+      - name: Build lightweight browsing index and first-screen edge snapshot
         env:
           SITE_ORIGIN: ${{ vars.PUBLIC_SITE_ORIGIN || 'https://sites-project.job-radar.workers.dev' }}
           TARGET_PUB: ${{ inputs.deploy_only && 'data/live-public' || 'public' }}
         run: |
           node --experimental-strip-types scripts/build_browse_index.mjs --public-dir "$TARGET_PUB"
           python scripts/build_feeds.py --public-dir "$TARGET_PUB" --site "$SITE_ORIGIN"
-
-      - name: Provision and incrementally sync Cloudflare D1 index
-        if: ${{ vars.DISABLE_CF_D1 != 'true' }}
-        continue-on-error: true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CF_D1_DATABASE_ID: ${{ vars.CF_D1_DATABASE_ID }}
-          CF_D1_DATABASE_NAME: ${{ vars.CF_D1_DATABASE_NAME || 'job-radar-db' }}
-          TARGET_PUB: ${{ inputs.deploy_only && 'data/live-public' || 'public' }}
-        run: |
-          python scripts/build_radar_sqlite.py --public-dir "$TARGET_PUB" --output-sqlite data/radar.sqlite
-          python scripts/sync_cloudflare_d1.py --sqlite-path data/radar.sqlite --wrangler-config dist/server/wrangler.json --mode all
+          python scripts/build_radar_sqlite.py --public-dir "$TARGET_PUB" --first-screen-only
 
       - name: Attach Validated Data to Application
         run: python scripts/stage_public.py --public-dir ${{ inputs.deploy_only && 'data/live-public' || 'public' }} --dist-dir dist
@@ -351,3 +337,28 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes --package wrangler@4.92.0 wrangler deploy --config dist/server/wrangler.json --keep-vars
+
+      - name: Decommission legacy Cloudflare D1 database if present
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          token = (os.environ.get('CLOUDFLARE_API_TOKEN') or '').strip()
+          account = (os.environ.get('CLOUDFLARE_ACCOUNT_ID') or '').strip()
+          if not token or not account:
+              raise SystemExit(0)
+          base = f'https://api.cloudflare.com/client/v4/accounts/{account}/d1/database'
+          headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+          req = urllib.request.Request(f'{base}?name=job-radar-db', headers=headers)
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              items = (json.loads(resp.read().decode('utf-8')).get('result') or [])
+          for item in items:
+              if isinstance(item, dict) and item.get('name') == 'job-radar-db' and item.get('uuid'):
+                  del_req = urllib.request.Request(f"{base}/{item['uuid']}", headers=headers, method='DELETE')
+                  with urllib.request.urlopen(del_req, timeout=20) as del_resp:
+                      del_res = json.loads(del_resp.read().decode('utf-8'))
+                  print(f"Deleted legacy Cloudflare D1 database job-radar-db ({item['uuid']}): success={del_res.get('success')}")
+          PY

@@ -1,7 +1,9 @@
 import { displayJobTitle } from './jobs.ts';
 import type { Job } from './jobs.ts';
 
-export function extractSalary(job: Job): {
+export function extractSalary(
+  job: Pick<Job, 'title' | 'company' | 'excerpt' | 'listing_facts'>,
+): {
   cleanTitle: string;
   salary: string | null;
 } {

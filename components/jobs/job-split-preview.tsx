@@ -17,18 +17,20 @@ import {
 } from 'lucide-react';
 import type { Filters, Job, Personal } from '@/lib/jobs';
 import {
-  cardJobTitle,
   effectiveJobTypes,
   externalUrl,
-  formatCompanyDisplay,
   formatEducationDisplay,
   getDeadlineCountdown,
   isExpired,
-  locationSummary,
   personalFor,
 } from '@/lib/jobs';
-import { extractSalary } from '@/lib/salary-display';
 import { cardSummaryFor } from '@/lib/card-summary';
+import {
+  buildLocationPresentation,
+  formatDetailTitle,
+  parseStructuredJobBody,
+} from '@/lib/job-detail-format';
+import { StructuredJobProse } from '@/components/jobs/structured-job-prose';
 import { EmployerEntry } from '@/components/employer-workspace';
 import { APPLICATION_STAGES } from '@/lib/personal-records';
 import { report } from '@/lib/rum';
@@ -123,18 +125,23 @@ export function JobSplitPreview({
   const applied = Boolean(record.applied);
   const expired = isExpired(job, now);
   const countdown = getDeadlineCountdown(job.deadline, now);
-  const { cleanTitle, salary } = extractSalary(job);
-  const { displayCompany } = formatCompanyDisplay(job.company, cleanTitle, job.source_id);
-  const displayTitle = cardJobTitle(cleanTitle, job.company, displayCompany);
-  const displayEducation = formatEducationDisplay(job.education, '学历待核实');
+  const titleInfo = formatDetailTitle(job);
+  const locInfo = buildLocationPresentation(job);
+  const structuredBody = parseStructuredJobBody(job, job.body || cardSummaryFor(job).text || '');
+  const displayEducation =
+    formatEducationDisplay(job.education, '') ||
+    structuredBody.extractedEducation ||
+    '学历未注明';
   const displayTypes = effectiveJobTypes(job);
   const applyHref = externalUrl(job.application_url || job.source_url);
   const currentStageKey = record.application_stage || (applied ? 'applied' : 'planned');
   const isHydrating = Boolean(selected && selected.id === job.id && detailLoading && !job.body);
-  const bodyParagraphs = (job.body || cardSummaryFor(job).text || '')
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const compactLocation =
+    locInfo.chips.length > 5
+      ? `${locInfo.chips.slice(0, 5).join(' / ')} 等 ${locInfo.chips.length} 城`
+      : locInfo.chips.length > 0
+        ? locInfo.chips.join(' / ')
+        : locInfo.fallbackText;
   const positions = job.positions || job.position_matches || [];
 
   return (
@@ -196,15 +203,18 @@ export function JobSplitPreview({
       <div className="split-preview-scroll">
         <div className="split-preview-head">
           <div className="split-preview-company">
-            <EmployerEntry job={job} name={displayCompany} />
-            {salary && <span className="opp-salary">{salary}</span>}
+            <EmployerEntry job={job} name={titleInfo.displayCompany} />
+            {titleInfo.salary && <span className="opp-salary">{titleInfo.salary}</span>}
           </div>
-          <h3 className="split-preview-title">{displayTitle}</h3>
+          <h3 className="split-preview-title">
+            {titleInfo.title}
+            {titleInfo.atsCode && <span className="detail-ats-code">{titleInfo.atsCode}</span>}
+          </h3>
 
           <ul className="split-preview-facts">
             <li>
               <MapPin size={13} />
-              <span>{locationSummary(job)}</span>
+              <span>{compactLocation}</span>
             </li>
             <li>
               <GraduationCap size={13} />
@@ -330,11 +340,12 @@ export function JobSplitPreview({
             </div>
           ) : detailError && selected?.id === job.id ? (
             <p className="small text-danger">{detailError}</p>
-          ) : bodyParagraphs.length > 0 ? (
+          ) : structuredBody.sections.length > 0 ? (
             <div className="split-preview-prose">
-              {bodyParagraphs.map((p, idx) => (
-                <p key={idx}>{p}</p>
-              ))}
+              <StructuredJobProse
+                sections={structuredBody.sections}
+                fallbackMetaCount={structuredBody.extraMeta.length}
+              />
             </div>
           ) : (
             <p className="small muted">暂无提取正文，请点击上方按钮查看原公告。</p>

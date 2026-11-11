@@ -1,12 +1,12 @@
 import type { Plugin, ProxyOptions } from 'vite';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve, relative, isAbsolute } from 'node:path';
 
 export const LIVE_DATA_SITE = 'https://sites-project.job-radar.workers.dev';
 
 export function previewFilePath(root: string, request: string): string {
   const path = decodeURIComponent(request.split('?')[0]);
-  if (!/^\/(?:jobs\.json|snapshot-manifest\.json|job-assets\/[a-z0-9-]+\.json)$/.test(path)) throw Error('Invalid preview asset');
+  if (!/^\/(?:jobs\.json|first-screen\.json|snapshot-manifest\.json|job-assets\/[a-z0-9-]+\.json)$/.test(path)) throw Error('Invalid preview asset');
   const target = realpathSync(resolve(root, path.slice(1)));
   const inside = relative(realpathSync(root), target);
   if (inside.startsWith('..') || isAbsolute(inside)) throw Error('Preview asset escaped directory');
@@ -23,7 +23,14 @@ export function previewDataDirectory(): Plugin {
       const root = realpathSync(resolve(configured));
       if (!statSync(root).isDirectory()) throw Error('Preview snapshot directory is invalid');
       server.middlewares.use((request, response, next) => {
-        if (!/^\/(?:jobs\.json|snapshot-manifest\.json|job-assets\/)/.test(request.url || '')) return next();
+        if (!/^\/(?:jobs\.json|first-screen\.json|snapshot-manifest\.json|job-assets\/)/.test(request.url || '')) return next();
+        const cleanUrl = decodeURIComponent((request.url || '').split('?')[0]);
+        if (cleanUrl === '/first-screen.json' && !existsSync(resolve(root, 'first-screen.json'))) {
+          response.statusCode = 404;
+          response.setHeader('content-type', 'application/json; charset=utf-8');
+          response.end('{"ok":false,"fallback":"static"}');
+          return;
+        }
         try {
           const path = previewFilePath(root, request.url || '');
           response.setHeader('content-type', 'application/json; charset=utf-8');
@@ -60,6 +67,7 @@ export function previewDataProxy(mode = process.env.JOB_RADAR_PREVIEW_DATA) {
   };
   return {
     '/jobs.json': options,
+    '/first-screen.json': options,
     '/job-assets/': options,
     '/snapshot-manifest.json': options,
   };

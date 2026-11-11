@@ -3,16 +3,27 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
-## 2026-11-11 Cloudflare D1 免费层自动配库增量同步、NAS 国内链路打通 & 数据深度精进
+## 2026-11-11 岗位详情抽屉 2.0 重构 & 纯静态边缘首屏快照替代 Cloudflare D1（零配额告警架构）
 
-按用户指令完成 Cloudflare D1 免费库自动化配库/增量同步管线接入、考编 `.zip` 附件深度解析、山东龙头名企/金融机构面经源扩容、宣讲场地清洗精进，以及考编/口碑双流水线国内 NAS 节点直连与 GitHub Actions Node 24 运行时升级：
+按用户确认的「详情抽屉方案 A」与「升级版方案 2（纯静态 `first-screen.json` 边缘 CDN + IndexedDB + 本地自建节点 `node:sqlite`）」完成重构并推送上线：
+- **纯静态首屏快照替代 Cloudflare D1 同步，彻底消除免费层读写配额限制 (`scripts/build_radar_sqlite.py` + `scripts/stage_public.py` + `hooks/use-job-snapshot.ts`)**：
+  1. **根因与架构收敛**：Cloudflare D1 Free Tier 对每条二级 B-Tree 索引均计入 `rows_written`（`3.2 万` 条岗位 × `6` 索引 = `19.2 万` 行写入，超每日 `100,000` 上限告警；且无 FTS5 时 `INSTR` 全表扫描存在每日 `5,000,000 rows_read` 耗尽风险与单区域 `~650 ms` 冷延迟）。由于前端冷启动仅需首屏最新岗位与全局 `facets` 计数，现由 `scripts/build_radar_sqlite.py`（支持 `--first-screen-only` 快速模式）预生成纯静态 `public/first-screen.json`（含 `engine: "static-edge"`、最新 `60` 条在招岗位与全量 `facets`，Brotli 压缩约 `10 KB`），经 `scripts/stage_public.py` 严格校验 `generated_at` 版本一致性后挂载至 **Cloudflare Workers Unlimited Static Assets CDN**（无限免费请求、无限带宽、`0` Worker CPU、`0` D1 配额、亚太边缘直出 `< 150 ms`）。
+  2. **双模可移植兼容**：`hooks/use-job-snapshot.ts` 冷启动优先请求 `/first-screen.json`，仅在本地未生成静态首屏文件时回退 `/api/query/jobs`（`lib/server/radar-db.ts` 完整保留 Node 22 原生 `node:sqlite` 读取 `data/radar.sqlite` 能力，供国内云服务器 / NAS 自建部署零配额毫秒级检索）。已移除 `scripts/sync_cloudflare_d1.py` 及 `.github/workflows/{daily-collect,exams-collect,nas-universities}.yml` 中的 D1 同步步骤，并在 Worker 解绑 `env.DB` 后自动幂等清理线上遗留 `job-radar-db`。
+- **冗余章节收敛与地点去重净洗 (`lib/job-detail-format.ts` + `components/detail-drawer.tsx`)**：
+  1. 移除与顶部要素卡重复且易混入职责文本的独立「地点与资格」段落及重复免责声明；工作地点统一收束至右侧「核心要素卡」，优先前置筛选城市与山东 16 市胶囊（默认展示前 6 城 + `+N 城` 一键展开），仅在 `location_evidence` 含区县/园区等非冗余补充信息（并自动剥离粘连的编号职责句）时附一行轻量说明。
+  2. 详情标题新增 `formatDetailTitle`，自动剥离尾部 ATS 职位编号（如 `(J45816)` 降级为独立弱化等宽标签）并消除与上方企业名重复的前缀；未注明的学历/截止字段弱化为浅灰次级态。
+- **公告正文表头去重与智能结构化排版 (`lib/job-detail-format.ts` + `components/jobs/structured-job-prose.tsx`)**：
+  1. 新增 `parseStructuredJobBody`：自动剥离正文开头与顶栏重复的 `招聘单位 / 岗位名称 / 工作地点` 等机械键值行及高校就业网空表单标签（`招聘信息 / 标题 / 应聘网址`），同时将正文中独有的 `学历要求 / 报名截止 / 专业要求 / 招聘人数 / 所属部门 / 薪资` 回填提炼至要素卡片。
+  2. 扩展识别 `岗位职责 / 工作内容 / 任职要求 / 任职资格 / 福利保障 / 投递方式 / 单位介绍` 等独立或行内前缀标题（自动去重 `岗位职责：一、岗位职责` 等拼接头），将行内/多行编号条目渲染为悬挂对齐列表，连续 `岗位：xxx` 行聚合为岗位胶囊，同步应用于 `DetailDrawer` 与 `JobSplitPreview`。
+- **桌面双栏 + 移动单栏无损重排 (`app/feature-updates.css`)**：桌面端（`> 820px`）抽屉拓宽至 `960px` 采用「左结构化正文（黄金行宽）+ 右悬浮要素/同企岗位/投递跟进侧栏」，首屏直接完整呈现岗位职责与任职要求；移动端（`<= 820px`）通过 `display: contents` + `order` 无重复 DOM 重排为「要素卡 → 同企岗位 → 正文 → 跟进」，并在 `<= 900px` 隐藏顶栏与底栏重复的主操作按钮。
+
+## 2026-11-11 NAS 国内链路打通、考编 `.zip` 附件深度解析 & 面经源扩容
+
+按用户指令完成考编 `.zip` 附件深度解析、山东龙头名企/金融机构面经源扩容、宣讲场地清洗精进，以及考编/口碑双流水线国内 NAS 节点直连与 GitHub Actions Node 24 运行时升级：
 - **考编与企业口碑接入国内 NAS Runner 零权限隔离抓取 + GitHub Actions Node 24 升级 (`.github/workflows/*.yml`)**：
   1. `employer-reputation.yml` 与 `exams-collect.yml` 重构为「云端准备极简种子 → 国内 `[self-hosted, linux, job-radar-nas]` 零写权限 `NO_PROXY='*'` 直连抓取（牛客网与山东 16 地市 `.gov.cn` 政务网）→ 云端校验、合并发布与 Cloudflare 部署」三段式安全管线，同时支持 `runner_mode=cloud` 备用开关与 NAS 结单断联产物恢复。
   2. 修复 `scripts/collect_exams.py` 中 `load_hydrated_existing_jobs` 在 `P1.1` 外部化 `positions[]` 后未通过 `hydrate_exam_snapshot` 回填既有岗位明细的隐蔽缺陷，并新增 `--live-site` 参数避免 NAS 节点直连模式下无效请求 `workers.dev`；`scripts/prepare_nas_python.py` 补齐 `xlrd` 环境自检。
   3. 全部 6 个 GitHub Actions 工作流统一升级至 Node 24 官方版本（`checkout@v7`、`setup-node@v7`、`setup-python@v7`、`cache@v6`、`upload-artifact@v7`、`download-artifact@v8`、`github-script@v9`），彻底消除 Node 20 运行时弃用告警。
-- **Cloudflare D1 免费层配额安全增量同步 (`scripts/sync_cloudflare_d1.py` + `lib/server/radar-db.ts`)**：
-  1. 新增 `scripts/sync_cloudflare_d1.py`：在 `.github/workflows/{daily-collect,exams-collect,nas-universities}.yml` 中通过 Cloudflare D1 REST API 自动查找或创建 `job-radar-db`，按主键与 `row_hash` 执行增量 Diff 同步（单条 SQL 限制 `<= 15` 行且 `<= 50 KB`，单次 HTTP 批次 `<= 200 KB`，无 `BEGIN TRANSACTION`；`exams-collect.yml` 使用 `--mode exams-only`），并将获得的 `database_id` 动态写入 `dist/server/wrangler.json` 的 `d1_databases`（`binding: "DB"`）。若 `CLOUDFLARE_API_TOKEN` 尚未勾选 `Account -> D1 -> Edit` 权限，则输出 `::warning::` 提示并无损回退静态分片部署，绝不阻断上线。
-  2. 为保护 Cloudflare Free Plan 每日 `100,000 rows written` 免费额度，D1 端不建 FTS5 影子表，仅同步非 `withdrawn` 在招记录，`lib/server/radar-db.ts` 在 `engine === 'd1'` 时使用 `INSTR(j.search_text, ?)` 直查，日常单日增量写入 `< 1,500` 行（`< 1.5%` 免费配额）。
 - **考编 `.zip` 压缩包职位表解压解析与垃圾附件净洗 (`scripts/parse_exam_positions.py` + `scripts/collect_exams.py`)**：
   1. 新增 `parse_exam_zip_bytes`（支持 Windows CP437 封装 GBK 文件名解码、`<= 30` 成员与 `<= 25 MiB` 解压上限保护、拦截嵌套压缩包递归、自动从子表文件名提取所属医院/学校用人单位名称）与 `clean_exam_attachments`（剔除政务网站页脚图标、商业机构推广链接与重复附件 URL，全库净除 `195` 条无效附件）。
   2. 修复 `collect_exams.py` 在过滤职位表前先切片 `[:4]` 导致正文中混有页脚图片的公告（如济南市第一人民医院、济南市机关医院等）漏解析 `.xlsx` 附件的缺陷。重跑解析后新增解锁 `8` 条公告、**`+488` 个结构化考编岗位（全库跃升至 `343` 条公告 / `5,063` 个结构化岗位，`attachment_only` 由 `30` 降至 `22`）**。

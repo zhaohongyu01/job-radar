@@ -24,7 +24,7 @@ export interface RadarJobsQueryParams {
 
 export interface RadarJobsQuerySuccess {
   ok: true;
-  engine: 'd1' | 'sqlite';
+  engine: 'sqlite' | 'static-edge' | 'd1';
   generated_at: string;
   total: number;
   page: number;

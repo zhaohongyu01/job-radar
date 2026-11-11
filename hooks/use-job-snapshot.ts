@@ -32,6 +32,27 @@ export interface UseJobSnapshotResult {
   isCurrentData: (candidate: Snapshot | null) => boolean;
 }
 
+async function fetchColdStartPreview(signal: AbortSignal): Promise<RadarJobsQueryResponse | null> {
+  try {
+    const staticRes = await fetch('/first-screen.json', { cache: 'no-cache', signal });
+    if (staticRes.ok) {
+      const payload = (await staticRes.json()) as RadarJobsQueryResponse;
+      if (payload && payload.ok) return payload;
+    }
+  } catch {
+    if (signal.aborted) return null;
+  }
+  try {
+    const apiRes = await fetch('/api/query/jobs?page=1&pageSize=20', { signal });
+    if (apiRes.ok) {
+      return (await apiRes.json()) as RadarJobsQueryResponse;
+    }
+  } catch {
+    /* Optional preview — full shard loader handles actual state */
+  }
+  return null;
+}
+
 export function useJobSnapshot({
   onActivateSnapshot,
   onPartial,
@@ -73,9 +94,7 @@ export function useJobSnapshot({
     if (!dataRef.current) activateSnapshot(null);
     try {
       const edgeQueryPromise: Promise<RadarJobsQueryResponse | null> = !dataRef.current
-        ? fetch('/api/query/jobs?page=1&pageSize=20', { signal: controller.signal })
-            .then((res) => (res.ok ? (res.json() as Promise<RadarJobsQueryResponse>) : null))
-            .catch(() => null)
+        ? fetchColdStartPreview(controller.signal)
         : Promise.resolve(null);
 
       const r = await fetch('/jobs.json', { cache: 'no-store', signal: controller.signal });

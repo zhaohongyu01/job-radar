@@ -4,6 +4,8 @@
   Cache-Control: public, max-age=31536000, immutable
 /jobs.json
   Cache-Control: no-cache
+/first-screen.json
+  Cache-Control: no-cache
 /snapshot-manifest.json
   Cache-Control: no-cache
 /exams.json

@@ -1,0 +1,1014 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Job Radar//Shandong Civil Exams Calendar//CN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:职讯雷达·山东考公考编考务日历
+X-WR-TIMEZONE:Asia/Shanghai
+BEGIN:VEVENT
+UID:exam-3a9ff5ff2ba35ecb9c6b@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261106
+DTEND;VALUE=DATE:20261107
+SUMMARY:【报名截止】2026年阳谷县事业单位综合类岗位青
+ 年人才引进公告
+DESCRIPTION:主办：阳谷县人力资源和社会保障局\n工作台
+ 详情：https://sites-project.job-radar.workers.dev/exams?exam=434530ae
+ f4ceb51a4d4e\n官方入口：https://school.gxjy.sdei.edu.cn/sdsmu/jiuye
+ /zhaopingg/detail/24534
+URL:https://sites-project.job-radar.workers.dev/exams?exam=434530aef4ceb5
+ 1a4d4e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-d3a8f01cb7a68a98f997@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261107
+DTEND;VALUE=DATE:20261108
+SUMMARY:【缴费确认截止】2026年阳谷县事业单位综合类岗
+ 位青年人才引进公告
+DESCRIPTION:主办：阳谷县人力资源和社会保障局\n工作台
+ 详情：https://sites-project.job-radar.workers.dev/exams?exam=434530ae
+ f4ceb51a4d4e\n官方入口：https://school.gxjy.sdei.edu.cn/sdsmu/jiuye
+ /zhaopingg/detail/24534
+URL:https://sites-project.job-radar.workers.dev/exams?exam=434530aef4ceb5
+ 1a4d4e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-ffa4de5b1ddb9d39f82d@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261112
+DTEND;VALUE=DATE:20261113
+SUMMARY:【准考证打印】2026年阳谷县事业单位综合类岗位
+ 青年人才引进公告
+DESCRIPTION:主办：阳谷县人力资源和社会保障局\n工作台
+ 详情：https://sites-project.job-radar.workers.dev/exams?exam=434530ae
+ f4ceb51a4d4e\n官方入口：https://school.gxjy.sdei.edu.cn/sdsmu/jiuye
+ /zhaopingg/detail/24534
+URL:https://sites-project.job-radar.workers.dev/exams?exam=434530aef4ceb5
+ 1a4d4e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-ea3f2dc20b88c5001f8b@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261115
+DTEND;VALUE=DATE:20261116
+SUMMARY:【笔试】2026年阳谷县事业单位综合类岗位青年人
+ 才引进公告
+DESCRIPTION:主办：阳谷县人力资源和社会保障局\n工作台
+ 详情：https://sites-project.job-radar.workers.dev/exams?exam=434530ae
+ f4ceb51a4d4e\n官方入口：https://school.gxjy.sdei.edu.cn/sdsmu/jiuye
+ /zhaopingg/detail/24534
+URL:https://sites-project.job-radar.workers.dev/exams?exam=434530aef4ceb5
+ 1a4d4e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-b9897df533f22c949711@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度烟台市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：烟台市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7890be9a0de8db5a14c6\n官方
+ 入口：https://ytdangjian.yantai.gov.cn/col/col101367/art/2026/art_030
+ e76f2b1db4071b309032aa54b65f8.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7890be9a0de8db
+ 5a14c6
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-73a38c4251ef81678cae@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度烟台市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：烟台市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7890be9a0de8db5a14c6\n官方
+ 入口：https://ytdangjian.yantai.gov.cn/col/col101367/art/2026/art_030
+ e76f2b1db4071b309032aa54b65f8.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7890be9a0de8db
+ 5a14c6
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-f63b245ef1732095a853@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度烟台市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：烟台市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7890be9a0de8db5a14c6\n官方
+ 入口：https://ytdangjian.yantai.gov.cn/col/col101367/art/2026/art_030
+ e76f2b1db4071b309032aa54b65f8.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7890be9a0de8db
+ 5a14c6
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-e39f824989830fe0bca3@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261110
+DTEND;VALUE=DATE:20261111
+SUMMARY:【报名截止】221个岗位公开招考！北部战区陆军
+ 文职方阵期待您的加入
+DESCRIPTION:主办：北部战区陆军\n工作台详情：https://sites-
+ project.job-radar.workers.dev/exams?exam=8578e97e28541dcc2c76\n官方入
+ 口：https://caiji.gxjy.sdei.edu.cn/publicfile/html/2026/11/05/1c42acbb
+ a0cf4115897dde2e4b47d60a.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=8578e97e28541d
+ cc2c76
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-04b2f0483fa009534cbb@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261213
+DTEND;VALUE=DATE:20261214
+SUMMARY:【笔试】221个岗位公开招考！北部战区陆军文职
+ 方阵期待您的加入
+DESCRIPTION:主办：北部战区陆军\n工作台详情：https://sites-
+ project.job-radar.workers.dev/exams?exam=8578e97e28541dcc2c76\n官方入
+ 口：https://caiji.gxjy.sdei.edu.cn/publicfile/html/2026/11/05/1c42acbb
+ a0cf4115897dde2e4b47d60a.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=8578e97e28541d
+ cc2c76
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-736424afa82f7ad0e9d2@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261113
+DTEND;VALUE=DATE:20261114
+SUMMARY:【报名截止】关于山东省2027年度第二批选调报名
+ 时间和笔试安排的通知
+DESCRIPTION:主办：中共山东省委组织部\n工作台详情：https
+ ://sites-project.job-radar.workers.dev/exams?exam=40daa78755ded169d64e\n
+ 官方入口：https://www.dtdjzx.gov.cn/web/dtdjzx/lyxdszkgg/131325.htm
+ l
+URL:https://sites-project.job-radar.workers.dev/exams?exam=40daa78755ded1
+ 69d64e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-82a42bc9fee0f124fe08@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【缴费确认截止】关于山东省2027年度第二批选调
+ 报名时间和笔试安排的通知
+DESCRIPTION:主办：中共山东省委组织部\n工作台详情：https
+ ://sites-project.job-radar.workers.dev/exams?exam=40daa78755ded169d64e\n
+ 官方入口：https://www.dtdjzx.gov.cn/web/dtdjzx/lyxdszkgg/131325.htm
+ l
+URL:https://sites-project.job-radar.workers.dev/exams?exam=40daa78755ded1
+ 69d64e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-5bc5a3e91be9a0f913ac@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度日照市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：日照市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e806217c87a7e53245c5\n官方
+ 入口：http://www.rzzzb.gov.cn/web/articles?id=3046
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e806217c87a7e5
+ 3245c5
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-a90c8a73511f4c591fa9@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度日照市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：日照市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e806217c87a7e53245c5\n官方
+ 入口：http://www.rzzzb.gov.cn/web/articles?id=3046
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e806217c87a7e5
+ 3245c5
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-f58dfaa653cf7c38da92@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度日照市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：日照市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e806217c87a7e53245c5\n官方
+ 入口：http://www.rzzzb.gov.cn/web/articles?id=3046
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e806217c87a7e5
+ 3245c5
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-619946d65b5bbc880fdf@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度青岛市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：青岛市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e46739ad997a76067f0f\n官方
+ 入口：http://zzb.qingdao.gov.cn/ztzl/gwykszl/tzgg/202611/t20261104_10
+ 768268.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e46739ad997a76
+ 067f0f
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-96dbe53a89791601c3a9@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度青岛市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：青岛市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e46739ad997a76067f0f\n官方
+ 入口：http://zzb.qingdao.gov.cn/ztzl/gwykszl/tzgg/202611/t20261104_10
+ 768268.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e46739ad997a76
+ 067f0f
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-6a1a6d9be6fcf61ef835@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度青岛市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：青岛市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e46739ad997a76067f0f\n官方
+ 入口：http://zzb.qingdao.gov.cn/ztzl/gwykszl/tzgg/202611/t20261104_10
+ 768268.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e46739ad997a76
+ 067f0f
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-285cc75e82fa2901fa4c@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度济南市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：济南市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e0c265cd1e216f02381a\n官方
+ 入口：https://jinan.dtdjzx.gov.cn/web/p582/tzgg/131290.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e0c265cd1e216f
+ 02381a
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-482774bbfb030c212d7b@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度济南市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：济南市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e0c265cd1e216f02381a\n官方
+ 入口：https://jinan.dtdjzx.gov.cn/web/p582/tzgg/131290.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e0c265cd1e216f
+ 02381a
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-24a54ed463bacb887cc1@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度济南市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：济南市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=e0c265cd1e216f02381a\n官方
+ 入口：https://jinan.dtdjzx.gov.cn/web/p582/tzgg/131290.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e0c265cd1e216f
+ 02381a
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-b01369ac1394e6165a8d@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度德州市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：德州市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=de96f7f969e3371a9946\n官方
+ 入口：https://dz.dtdjzx.gov.cn/web/p922/gggs/131236.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=de96f7f969e337
+ 1a9946
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-e5ba2e24e9662f2967da@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度德州市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：德州市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=de96f7f969e3371a9946\n官方
+ 入口：https://dz.dtdjzx.gov.cn/web/p922/gggs/131236.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=de96f7f969e337
+ 1a9946
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-e9ff037061b68c1d3acb@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度德州市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：德州市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=de96f7f969e3371a9946\n官方
+ 入口：https://dz.dtdjzx.gov.cn/web/p922/gggs/131236.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=de96f7f969e337
+ 1a9946
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-c90439428224cfdd3e6a@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度山东省省级机关及其直属机
+ 构考试录用公务员公告
+DESCRIPTION:主办：山东省公务员局\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cf012d85d33fcc8d3a55\n官方
+ 入口：https://www.dtdjzx.gov.cn/web/dtdjzx/lygwyzkgg/131234.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cf012d85d33fcc
+ 8d3a55
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-74fd0714f71bf99de7a4@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度山东省省级机关及其直
+ 属机构考试录用公务员公告
+DESCRIPTION:主办：山东省公务员局\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cf012d85d33fcc8d3a55\n官方
+ 入口：https://www.dtdjzx.gov.cn/web/dtdjzx/lygwyzkgg/131234.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cf012d85d33fcc
+ 8d3a55
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-e0beb2b85d47711f5eb3@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度山东省省级机关及其直属
+ 机构考试录用公务员公告
+DESCRIPTION:主办：山东省公务员局\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cf012d85d33fcc8d3a55\n官方
+ 入口：https://www.dtdjzx.gov.cn/web/dtdjzx/lygwyzkgg/131234.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cf012d85d33fcc
+ 8d3a55
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-7c803b321c20ca44bf26@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度东营市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：东营市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cc5ff8c80a5f881b9fbd\n官方
+ 入口：http://www.dongyingdj.gov.cn/home/article/index/id/29677/cid/45
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cc5ff8c80a5f88
+ 1b9fbd
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-b35d9496883a2f6484c5@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度东营市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：东营市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cc5ff8c80a5f881b9fbd\n官方
+ 入口：http://www.dongyingdj.gov.cn/home/article/index/id/29677/cid/45
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cc5ff8c80a5f88
+ 1b9fbd
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-ea3aa318a04fef5266b1@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度东营市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：东营市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cc5ff8c80a5f881b9fbd\n官方
+ 入口：http://www.dongyingdj.gov.cn/home/article/index/id/29677/cid/45
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cc5ff8c80a5f88
+ 1b9fbd
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-ba750e48d0d566bba227@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度菏泽市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：菏泽市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cc29b29fe7faeeb8e385\n官方
+ 入口：https://hz.dtdjzx.gov.cn/web/p819/hzdtzg/131284.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cc29b29fe7faee
+ b8e385
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-218b870e91db687dedba@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度菏泽市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：菏泽市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cc29b29fe7faeeb8e385\n官方
+ 入口：https://hz.dtdjzx.gov.cn/web/p819/hzdtzg/131284.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cc29b29fe7faee
+ b8e385
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-d876e641eb9c1f460fd1@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度菏泽市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：菏泽市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=cc29b29fe7faeeb8e385\n官方
+ 入口：https://hz.dtdjzx.gov.cn/web/p819/hzdtzg/131284.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=cc29b29fe7faee
+ b8e385
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-37646430e26c7419e2cc@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261203
+DTEND;VALUE=DATE:20261204
+SUMMARY:【准考证打印】2027年度青岛市面向优秀本土人才
+ 考试录用基层公务员简章
+DESCRIPTION:主办：青岛市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=a0ba63478b558f851064\n官方
+ 入口：http://zzb.qingdao.gov.cn/ztzl/gwykszl/tzgg/202611/t20261104_10
+ 768261.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=a0ba63478b558f
+ 851064
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-9f26aed7d45bdc984236@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度威海市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：威海市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=81995fee81896f9351e7\n官方
+ 入口：https://wh.dtdjzx.gov.cn/web/p1012/lygwy/131250.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=81995fee81896f
+ 9351e7
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-491699bbc0ef3284e589@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度威海市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：威海市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=81995fee81896f9351e7\n官方
+ 入口：https://wh.dtdjzx.gov.cn/web/p1012/lygwy/131250.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=81995fee81896f
+ 9351e7
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-8ec64fecb54be53ee987@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度威海市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：威海市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=81995fee81896f9351e7\n官方
+ 入口：https://wh.dtdjzx.gov.cn/web/p1012/lygwy/131250.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=81995fee81896f
+ 9351e7
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-4eb36e054c35b5ae935a@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度临沂市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：临沂市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7bfd920ba00fc47611b9\n官方
+ 入口：https://linyi.dtdjzx.gov.cn/web/p883/tzgg1/131260.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7bfd920ba00fc4
+ 7611b9
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-e1ae57b8461581b49bd2@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度临沂市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：临沂市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7bfd920ba00fc47611b9\n官方
+ 入口：https://linyi.dtdjzx.gov.cn/web/p883/tzgg1/131260.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7bfd920ba00fc4
+ 7611b9
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-50f39b3b1f321a1d9ac9@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度临沂市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：临沂市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7bfd920ba00fc47611b9\n官方
+ 入口：https://linyi.dtdjzx.gov.cn/web/p883/tzgg1/131260.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7bfd920ba00fc4
+ 7611b9
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-bebea8e808a43b7cfed7@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度泰安市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：泰安市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7091eacf12fee4dd7ce1\n官方
+ 入口：https://taian.dtdjzx.gov.cn/web/p896/lytzgg/131272.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7091eacf12fee4
+ dd7ce1
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-c71068b99645601b511e@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度泰安市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：泰安市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7091eacf12fee4dd7ce1\n官方
+ 入口：https://taian.dtdjzx.gov.cn/web/p896/lytzgg/131272.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7091eacf12fee4
+ dd7ce1
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-28b690147d64671a165c@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度泰安市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：泰安市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=7091eacf12fee4dd7ce1\n官方
+ 入口：https://taian.dtdjzx.gov.cn/web/p896/lytzgg/131272.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=7091eacf12fee4
+ dd7ce1
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-fd50b194f661e072dfc7@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度滨州市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：滨州市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=6982c76e58faccd086c9\n官方
+ 入口：http://www.bzzzb.gov.cn/contents/365/34819.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=6982c76e58facc
+ d086c9
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-2887c4881463bfe444c6@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度滨州市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：滨州市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=6982c76e58faccd086c9\n官方
+ 入口：http://www.bzzzb.gov.cn/contents/365/34819.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=6982c76e58facc
+ d086c9
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-be58cc372d95e5a62479@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度滨州市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：滨州市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=6982c76e58faccd086c9\n官方
+ 入口：http://www.bzzzb.gov.cn/contents/365/34819.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=6982c76e58facc
+ d086c9
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-28554df05f0769fb8d26@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度淄博市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：淄博市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=5590456d61aee9d73769\n官方
+ 入口：https://zb.dtdjzx.gov.cn/web/p926/gwygl/131273.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=5590456d61aee9
+ d73769
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-ce74d365af6825672b84@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度淄博市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：淄博市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=5590456d61aee9d73769\n官方
+ 入口：https://zb.dtdjzx.gov.cn/web/p926/gwygl/131273.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=5590456d61aee9
+ d73769
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-e8d15fe1630b86b65447@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度淄博市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：淄博市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=5590456d61aee9d73769\n官方
+ 入口：https://zb.dtdjzx.gov.cn/web/p926/gwygl/131273.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=5590456d61aee9
+ d73769
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-51df4c58afa59cdc1514@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261113
+DTEND;VALUE=DATE:20261114
+SUMMARY:【报名截止】2027年度济南市面向优秀本土人才考
+ 试录用基层公务员公告
+DESCRIPTION:主办：济南市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=424dbedfcc693f4ab1a0\n官方
+ 入口：https://jinan.dtdjzx.gov.cn/web/p582/tzgg/131293.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=424dbedfcc693f
+ 4ab1a0
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-dfb9830d59e3eb63fb92@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度潍坊市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：潍坊市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=2c186003cce8c5b652cd\n官方
+ 入口：http://www.wfzzb.cn/html/gwy/News-D8F7ED716B1B4B3498219AD7DCF65
+ 8CB.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=2c186003cce8c5
+ b652cd
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-6cf8e839772c9bc24eba@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度潍坊市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：潍坊市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=2c186003cce8c5b652cd\n官方
+ 入口：http://www.wfzzb.cn/html/gwy/News-D8F7ED716B1B4B3498219AD7DCF65
+ 8CB.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=2c186003cce8c5
+ b652cd
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-b6af72d570dba7fe78d4@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度潍坊市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：潍坊市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=2c186003cce8c5b652cd\n官方
+ 入口：http://www.wfzzb.cn/html/gwy/News-D8F7ED716B1B4B3498219AD7DCF65
+ 8CB.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=2c186003cce8c5
+ b652cd
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-c964a841ab504be0aa90@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:【报名截止】2027年度济宁市各级机关考试录用公
+ 务员公告
+DESCRIPTION:主办：济宁市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=2600fa860a0d5dfc3e04\n官方
+ 入口：http://jnswzzb.jndq.gov.cn/art/2026/11/4/art_36306_2708610.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=2600fa860a0d5d
+ fc3e04
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-a790576ea54f2e6622c9@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【缴费确认截止】2027年度济宁市各级机关考试录
+ 用公务员公告
+DESCRIPTION:主办：济宁市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=2600fa860a0d5dfc3e04\n官方
+ 入口：http://jnswzzb.jndq.gov.cn/art/2026/11/4/art_36306_2708610.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=2600fa860a0d5d
+ fc3e04
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-a20de3551a585b7fee6a@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+SUMMARY:【准考证打印】2027年度济宁市各级机关考试录用
+ 公务员公告
+DESCRIPTION:主办：济宁市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=2600fa860a0d5dfc3e04\n官方
+ 入口：http://jnswzzb.jndq.gov.cn/art/2026/11/4/art_36306_2708610.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=2600fa860a0d5d
+ fc3e04
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-fca15ee36d491831d732@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261115
+DTEND;VALUE=DATE:20261116
+SUMMARY:【报名截止】2027年度临沂市面向优秀本土人才招
+ 录基层公务员公告
+DESCRIPTION:主办：临沂市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=24fbd330ddcb9633f183\n官方
+ 入口：https://linyi.dtdjzx.gov.cn/web/p883/tzgg1/131257.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=24fbd330ddcb96
+ 33f183
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-dc857a9965667e67c66b@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261116
+DTEND;VALUE=DATE:20261117
+SUMMARY:【缴费确认截止】2027年度临沂市面向优秀本土人
+ 才招录基层公务员公告
+DESCRIPTION:主办：临沂市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=24fbd330ddcb9633f183\n官方
+ 入口：https://linyi.dtdjzx.gov.cn/web/p883/tzgg1/131257.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=24fbd330ddcb96
+ 33f183
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-9bd074cb8da5b9fc7963@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261206
+DTEND;VALUE=DATE:20261207
+SUMMARY:【笔试】2027年度临沂市面向优秀本土人才招录基
+ 层公务员公告
+DESCRIPTION:主办：临沂市委组织部\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=24fbd330ddcb9633f183\n官方
+ 入口：https://linyi.dtdjzx.gov.cn/web/p883/tzgg1/131257.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=24fbd330ddcb96
+ 33f183
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-e7d23a1030bca1db31cf@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261030
+DTEND;VALUE=DATE:20261031
+SUMMARY:【报名截止】国家烟草专卖局 中国烟草总公司机
+ 关及所属单位2027年度公开招聘公告
+DESCRIPTION:主办：中国人事考试网\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=b81348a43617659f6c75\n官方
+ 入口：http://www.cpta.com.cn/notice/2255.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=b81348a4361765
+ 9f6c75
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-c9e9b39bd85f7c7dc96b@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261220
+DTEND;VALUE=DATE:20261221
+SUMMARY:【准考证打印】国家烟草专卖局 中国烟草总公司
+ 机关及所属单位2027年度公开招聘公告
+DESCRIPTION:主办：中国人事考试网\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=b81348a43617659f6c75\n官方
+ 入口：http://www.cpta.com.cn/notice/2255.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=b81348a4361765
+ 9f6c75
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-ed06db61e7f6f9eff1bb@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261226
+DTEND;VALUE=DATE:20261227
+SUMMARY:【笔试】国家烟草专卖局 中国烟草总公司机关及
+ 所属单位2027年度公开招聘公告
+DESCRIPTION:主办：中国人事考试网\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=b81348a43617659f6c75\n官方
+ 入口：http://www.cpta.com.cn/notice/2255.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=b81348a4361765
+ 9f6c75
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-99a5a51c8bb6a9376017@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261111
+DTEND;VALUE=DATE:20261112
+SUMMARY:【报名截止】济南市教育局所属学校公开招聘2027
+ 届部属公费师范毕业生公告
+DESCRIPTION:主办：济南市教育局\n工作台详情：https://sites-
+ project.job-radar.workers.dev/exams?exam=8643a0c4624a43f4b896\n官方入
+ 口：https://jnedu.jinan.gov.cn/col/col18904/art/2026/art_b7aa081d186b4
+ 70a8ff251775e0103eb.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=8643a0c4624a43
+ f4b896
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-507128f024420f527e04@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261111
+DTEND;VALUE=DATE:20261112
+SUMMARY:【报名截止】关于山东省2026年大学生乡村医生专
+ 项计划招聘有关事项的通告
+DESCRIPTION:主办：山东省卫生健康委员会\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=e61738e7fc8cdf888ce
+ 0\n官方入口：http://wsjkw.shandong.gov.cn/zwgk/fdzdgknr/gsgg/202610
+ /t20261027_5019668.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e61738e7fc8cdf
+ 888ce0
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-53b946ebb5a69739b748@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261116
+DTEND;VALUE=DATE:20261117
+SUMMARY:【准考证打印】关于山东省2026年大学生乡村医生
+ 专项计划招聘有关事项的通告
+DESCRIPTION:主办：山东省卫生健康委员会\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=e61738e7fc8cdf888ce
+ 0\n官方入口：http://wsjkw.shandong.gov.cn/zwgk/fdzdgknr/gsgg/202610
+ /t20261027_5019668.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=e61738e7fc8cdf
+ 888ce0
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-2d3d04ae4911abfe75bd@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261030
+DTEND;VALUE=DATE:20261031
+SUMMARY:【报名截止】山东省日照市莒县卫生健康系统事
+ 业单位2026年招聘公告
+DESCRIPTION:主办：日照市莒县卫生健康局\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=1f25c4fc1cf05d96493
+ e\n官方入口：https://school.gxjy.sdei.edu.cn/bzmc/jiuye/zhaopingg/d
+ etail/24042
+URL:https://sites-project.job-radar.workers.dev/exams?exam=1f25c4fc1cf05d
+ 96493e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-331b57667812f13e99b5@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261030
+DTEND;VALUE=DATE:20261031
+SUMMARY:【缴费确认截止】山东省日照市莒县卫生健康系
+ 统事业单位2026年招聘公告
+DESCRIPTION:主办：日照市莒县卫生健康局\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=1f25c4fc1cf05d96493
+ e\n官方入口：https://school.gxjy.sdei.edu.cn/bzmc/jiuye/zhaopingg/d
+ etail/24042
+URL:https://sites-project.job-radar.workers.dev/exams?exam=1f25c4fc1cf05d
+ 96493e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-87ad8e898a03b0e2d1e2@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20261114
+DTEND;VALUE=DATE:20261115
+SUMMARY:【笔试】山东省日照市莒县卫生健康系统事业单
+ 位2026年招聘公告
+DESCRIPTION:主办：日照市莒县卫生健康局\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=1f25c4fc1cf05d96493
+ e\n官方入口：https://school.gxjy.sdei.edu.cn/bzmc/jiuye/zhaopingg/d
+ etail/24042
+URL:https://sites-project.job-radar.workers.dev/exams?exam=1f25c4fc1cf05d
+ 96493e
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-908aedc26ceab16e1bcc@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20260806
+DTEND;VALUE=DATE:20260807
+SUMMARY:【报名截止】山东省妇幼保健院 · 54人！这家驻
+ 济省属事业单位公开招聘了
+DESCRIPTION:主办：山东省妇幼保健院\n工作台详情：https://
+ sites-project.job-radar.workers.dev/exams?exam=90d5bf24ce38415691cd\n官
+ 方入口：https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/art/202
+ 6/art_574b41c4196aee7babd492121116c883.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=90d5bf24ce3841
+ 5691cd
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-ba1639803947f145b2af@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20260724
+DTEND;VALUE=DATE:20260725
+SUMMARY:【报名截止】山东劳动职业技术学院 · 40人！这
+ 家驻济省属事业单位公开招聘了
+DESCRIPTION:主办：山东劳动职业技术学院\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=5e8d8a6edec5915ef11
+ a\n官方入口：https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/a
+ rt/2026/art_a63292984cc9ac9828b8422faf51af89.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=5e8d8a6edec591
+ 5ef11a
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-ee3dde2db3b799e14a33@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20260726
+DTEND;VALUE=DATE:20260727
+SUMMARY:【缴费确认截止】山东劳动职业技术学院 · 40人
+ ！这家驻济省属事业单位公开招聘了
+DESCRIPTION:主办：山东劳动职业技术学院\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=5e8d8a6edec5915ef11
+ a\n官方入口：https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/a
+ rt/2026/art_a63292984cc9ac9828b8422faf51af89.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=5e8d8a6edec591
+ 5ef11a
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-077726d1ef7244a03c6a@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20260616
+DTEND;VALUE=DATE:20260617
+SUMMARY:【报名截止】山东青年政治学院 · 10人！这家驻
+ 济省属事业单位公开招聘了
+DESCRIPTION:主办：山东青年政治学院\n工作台详情：https://
+ sites-project.job-radar.workers.dev/exams?exam=d40f2300456ca0566555\n官
+ 方入口：https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/art/202
+ 6/art_cb161788aabde411bec15ebf3b039384.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=d40f2300456ca0
+ 566555
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-800ce6c1c523ba01713a@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20260612
+DTEND;VALUE=DATE:20260613
+SUMMARY:【报名截止】济南市技师学院 · 51人！这两家市
+ 属事业单位公开招聘了
+DESCRIPTION:主办：济南市技师学院\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=21b77fc550c6a869dfa9\n官方
+ 入口：https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/art/2026/a
+ rt_32492db4fe54564a13823541a79acc67.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=21b77fc550c6a8
+ 69dfa9
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-fbcab63c923948874fbb@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20260605
+DTEND;VALUE=DATE:20260606
+SUMMARY:【报名截止】山东省事业单位2026年招聘工作人员
+ 公告（325人）
+DESCRIPTION:主办：日照市岚山区高中学校\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=b9f99588f339fefee99
+ 5\n官方入口：https://school.gxjy.sdei.edu.cn/sdua/jiuye/zhaopingg/d
+ etail/13088
+URL:https://sites-project.job-radar.workers.dev/exams?exam=b9f99588f339fe
+ fee995
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-2c633e74f609d15ba341@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20260513
+DTEND;VALUE=DATE:20260514
+SUMMARY:【报名截止】山东医学高等专科学校 · 98人！这
+ 家驻济省属事业单位公开招聘了
+DESCRIPTION:主办：山东医学高等专科学校\n工作台详情：ht
+ tps://sites-project.job-radar.workers.dev/exams?exam=127783af795f8ed96cb
+ 0\n官方入口：https://www.sdmc.edu.cn/
+URL:https://sites-project.job-radar.workers.dev/exams?exam=127783af795f8e
+ d96cb0
+END:VEVENT
+BEGIN:VEVENT
+UID:exam-38aa292201416c566827@job-radar.local
+DTSTAMP:20261111T031713Z
+DTSTART;VALUE=DATE:20260410
+DTEND;VALUE=DATE:20260411
+SUMMARY:【报名截止】济南市中心医院 · 354人！这些市属
+ 事业单位公开招聘了
+DESCRIPTION:主办：济南市中心医院\n工作台详情：https://sit
+ es-project.job-radar.workers.dev/exams?exam=ae6c04e100fd0c52a28a\n官方
+ 入口：https://www.jinan.gov.cn/zt/2025nzt/yhyshj/rcbf/qzzp/art/2026/a
+ rt_30a5709dacbc44a953eea50fb8f84d94.html
+URL:https://sites-project.job-radar.workers.dev/exams?exam=ae6c04e100fd0c
+ 52a28a
+END:VEVENT
+END:VCALENDAR

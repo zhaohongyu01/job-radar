@@ -133,7 +133,9 @@ export function ExamCard({ exam, profile, personal, today = '', onSelect, onTogg
         )}
 
         {profileActive && !isNotice && !isEnded && (
-          positions.length === 0 ? (
+          exam.positions === undefined && (exam.parsed_position_count ?? 0) > 0 ? (
+            <p className="exw-card-match is-unknown">正在核对岗位条件…</p>
+          ) : positions.length === 0 ? (
             <p className="exw-card-match is-unknown">? 岗位需核实</p>
           ) : eligibleCount > 0 || unknownCount > 0 ? (
             <p className={`exw-card-match ${eligibleCount > 0 ? 'is-ok' : 'is-unknown'}`}>

@@ -25,6 +25,7 @@ import {
   buildJobSearchMap,
   buildJobSearchText,
   countByLocationScope,
+  isExpired,
   mergeDuplicateOpportunities,
   personalFor,
   selectedWorkCities,
@@ -55,9 +56,12 @@ import { AppHeader } from '@/components/jobs/app-header';
 import { SavedViewHeader } from '@/components/jobs/saved-view-header';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { OnboardingCard } from '@/components/jobs/onboarding-card';
+import { JobSplitPreview } from '@/components/jobs/job-split-preview';
+import { CommandPalette } from '@/components/command-palette';
 import { ShortcutsDialog } from '@/components/shortcuts-dialog';
 import { ToastProvider, useToast } from '@/components/toast-provider';
 import { loadRadarPresets, RADAR_ACTIVE_PRESET_STORAGE, saveRadarPresets } from '@/lib/radar';
+import { jobFiltersToUnified, readUnifiedProfile, writeUnifiedProfile } from '@/lib/unified-profile';
 import { useJobSnapshot } from '@/hooks/use-job-snapshot';
 import { usePersonalRecords } from '@/hooks/use-personal-records';
 import { useJobDetail } from '@/hooks/use-job-detail';
@@ -85,7 +89,56 @@ function HomeContent() {
   const [ready, setReady] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [splitView, setSplitView] = useState(false);
+  const [splitFullOpen, setSplitFullOpen] = useState(false);
+  const [agendaCollapsed, setAgendaCollapsed] = useState(false);
+  const [isDesktopSplit, setIsDesktopSplit] = useState(false);
   const resultsTopRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia?.('(min-width: 1200px)');
+    const updateMq = () => setIsDesktopSplit(Boolean(mq?.matches));
+    const initTimer = window.setTimeout(() => {
+      try {
+        setSplitView(window.localStorage.getItem('job-radar-split-view-v1') === 'true');
+        setAgendaCollapsed(window.localStorage.getItem('job-radar-agenda-collapsed-v1') === 'true');
+      } catch {
+        // ignore
+      }
+      updateMq();
+    }, 0);
+    mq?.addEventListener?.('change', updateMq);
+    return () => {
+      window.clearTimeout(initTimer);
+      mq?.removeEventListener?.('change', updateMq);
+    };
+  }, []);
+
+  const toggleSplitView = useCallback(() => {
+    setSplitView((prev) => {
+      const next = !prev;
+      setSplitFullOpen(false);
+      try {
+        window.localStorage.setItem('job-radar-split-view-v1', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAgendaCollapsed = useCallback(() => {
+    setAgendaCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('job-radar-agenda-collapsed-v1', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
   const [searchIndex, setSearchIndex] = useState<Record<string, string> | null>(null);
   const [searchError, setSearchError] = useState('');
   const [searchAttempt, setSearchAttempt] = useState(0);
@@ -355,16 +408,49 @@ function HomeContent() {
 
   // Snapshot-wide facts used to hide filters that currently cannot match and
   // to explain filters that only apply to explicitly stated values.
-  const filterFacts = useMemo(() => {
+  const { filterFacts, cityCounts } = useMemo(() => {
     let verified = 0, salaryKnown = 0;
+    const cCounts: Record<string, number> = {};
     for (const job of allJobs) {
       const status = assessOpportunityValidity(job, today).status;
       if (status === 'confirmed_open' || status === 'long_term') verified++;
       if (parseSalaryRange(job)) salaryKnown++;
+      if (!isExpired(job, today)) {
+        for (const c of job.cities || []) {
+          if (c) cCounts[c] = (cCounts[c] || 0) + 1;
+        }
+      }
     }
     const scored = !!reputation.index?.entities.some((item) => item.score !== null && Date.parse(item.valid_until) > today);
-    return { verified, salaryKnown, total: allJobs.length, hasReputationScores: scored };
+    return {
+      filterFacts: { verified, salaryKnown, total: allJobs.length, hasReputationScores: scored },
+      cityCounts: cCounts,
+    };
   }, [allJobs, today, reputation.index]);
+
+  const handleFilterChange = useCallback(
+    <K extends keyof Filters>(key: K, value: Filters[K]) => {
+      change(key, value);
+      if (key === 'workCities' || key === 'city' || key === 'education' || key === 'major' || key === 'type') {
+        try {
+          const nextFilters = { ...filters, [key]: value };
+          const hasProfileSignal =
+            (nextFilters.workCities && nextFilters.workCities.length > 0) ||
+            (nextFilters.city && nextFilters.city !== '全部城市') ||
+            Boolean(nextFilters.education) ||
+            Boolean((nextFilters.major || '').trim()) ||
+            nextFilters.type === '校招' ||
+            nextFilters.type === '社招';
+          if (hasProfileSignal) {
+            writeUnifiedProfile(jobFiltersToUnified(nextFilters, readUnifiedProfile()));
+          }
+        } catch {
+          // ignore storage quota errors
+        }
+      }
+    },
+    [change, filters],
+  );
 
   const workCities = useMemo(() => selectedWorkCities(filters), [filters]);
 
@@ -375,10 +461,10 @@ function HomeContent() {
       scope,
       label:
         scope === 'exact'
-          ? `来源标注${workCitiesLabel(filters)}`
+          ? `明确在${workCitiesLabel(filters)}`
           : scope === 'possible'
-            ? '全省 / 全国待核实'
-            : '地点未明确',
+            ? '全省 / 全国通用'
+            : '地点待核实',
       count: counts[scope],
     }));
   }, [workCities, allJobs, filters, personal, since, today, getSearchText]);
@@ -477,6 +563,7 @@ function HomeContent() {
           reputation.retry();
           void refresh();
         }}
+        onOpenCommandPalette={() => setCmdOpen(true)}
         jobs={allJobs}
         personal={personal}
         now={now}
@@ -513,14 +600,25 @@ function HomeContent() {
           </div>
         )}
 
-        <div className="page-grid">
+        <div
+          className={
+            'page-grid' +
+            (splitView && isDesktopSplit
+              ? ' is-split'
+              : agendaCollapsed
+                ? ' is-agenda-collapsed'
+                : '')
+          }
+        >
           <FilterSidebar
             className="filters-desktop"
             filters={filters}
             data={data}
-            years={years} facts={filterFacts}
+            years={years}
+            facts={filterFacts}
+            cityCounts={cityCounts}
             ready={ready}
-            onChange={change}
+            onChange={handleFilterChange}
             onReset={resetFilters}
             onExport={exportPersonal}
             onImport={triggerFilePicker}
@@ -590,23 +688,6 @@ function HomeContent() {
                   )}
                 </button>
               </div>
-
-              {loading && progressiveProgress && (
-                <div className="search-load-progress" aria-live="polite">
-                  <div className="search-load-bar">
-                    <div
-                      className="search-load-fill"
-                      style={{
-                        width: `${Math.min(100, Math.round((progressiveProgress.loaded / Math.max(1, progressiveProgress.total)) * 100))}%`,
-                      }}
-                    />
-                  </div>
-                  <span className="search-load-text">
-                    正在加载全部 {progressiveProgress.total.toLocaleString()} 条 ·{' '}
-                    {Math.min(100, Math.round((progressiveProgress.loaded / Math.max(1, progressiveProgress.total)) * 100))}%
-                  </span>
-                </div>
-              )}
             </div>
 
             {filters.view !== 'all' && (
@@ -675,7 +756,7 @@ function HomeContent() {
                 setPage(1);
               }}
               onOpenView={openView}
-              onChange={change}
+              onChange={handleFilterChange}
               onRemoveWorkCity={(c) => {
                 const nextCities = (filters.workCities || []).filter((item) => item !== c);
                 const nextCity = nextCities.length === 1 ? nextCities[0] : '全部城市';
@@ -692,6 +773,10 @@ function HomeContent() {
               currentPage={currentPage}
               onPageChange={changePage}
               locationOptions={locationOptions}
+              splitView={splitView}
+              onToggleSplitView={toggleSplitView}
+              agendaCollapsed={agendaCollapsed}
+              onToggleAgendaCollapsed={toggleAgendaCollapsed}
             />
             {(filters.reputationMin !== 'all' || filters.sort === 'reputation_desc') && <output className="note-line">
               {reputation.index ? '仅对准确名称匹配且近期样本充足的企业应用参考分；集团参考不套用到子公司或部门。'
@@ -791,7 +876,46 @@ function HomeContent() {
               </div>
             </details>
           </section>
-          <div className="plan-desktop"><ActionRail indexReady={!!data} coverage={coverage} jobs={allJobs} personal={personal} city={filters.city} now={now} ready={ready && !!data} onDetail={(job) => void openDetail(job)} onView={openView} /></div>
+          <div className="plan-desktop">
+            {splitView && isDesktopSplit ? (
+              <JobSplitPreview
+                selected={selected}
+                fallbackJob={visibleGroups[0]?.jobs[0] ?? filtered[0] ?? null}
+                detailLoading={detailLoading}
+                detailError={detailError}
+                personal={personal}
+                ready={ready}
+                now={now}
+                currentIndex={selectedIndex}
+                totalCount={detailNavIds ? detailNavIds.length : filtered.length}
+                onSelectJob={openDetailFromList}
+                onNavigate={navigateDetail}
+                onToggle={toggle}
+                onStageChange={changeStage}
+                onRead={markRead}
+                onExpandFull={(job) => {
+                  if (!selected || selected.id !== job.id) {
+                    void openDetail(job);
+                  }
+                  setSplitFullOpen(true);
+                }}
+                onCloseSplit={() => setSplitView(false)}
+              />
+            ) : !agendaCollapsed ? (
+              <ActionRail
+                indexReady={!!data}
+                coverage={coverage}
+                jobs={allJobs}
+                personal={personal}
+                city={filters.city}
+                now={now}
+                ready={ready && !!data}
+                onDetail={(job) => void openDetail(job)}
+                onView={openView}
+                onCollapse={toggleAgendaCollapsed}
+              />
+            ) : null}
+          </div>
         </div>
       </main>
 
@@ -844,9 +968,11 @@ function HomeContent() {
               className="mobile-filter-panel"
               filters={filters}
               data={data}
-              years={years} facts={filterFacts}
+              years={years}
+              facts={filterFacts}
+              cityCounts={cityCounts}
               ready={ready}
-              onChange={change}
+              onChange={handleFilterChange}
               onReset={resetFilters}
               onExport={exportPersonal}
               onImport={triggerFilePicker}
@@ -861,7 +987,7 @@ function HomeContent() {
       </Sheet>
 
       <DetailDrawer
-        selected={selected}
+        selected={splitView && isDesktopSplit && !splitFullOpen ? null : selected}
         filters={filters}
         city={workCities}
         now={now}
@@ -874,7 +1000,13 @@ function HomeContent() {
         onNavigate={navigateDetail}
         siblingJobs={selectedGroupJobs}
         onSelectJob={(job) => void openDetail(job)}
-        onClose={closeDetail}
+        onClose={() => {
+          if (splitFullOpen) {
+            setSplitFullOpen(false);
+          } else {
+            closeDetail();
+          }
+        }}
         onRead={markRead}
         onReadChange={setRead}
         onToggle={toggle}
@@ -911,6 +1043,21 @@ function HomeContent() {
         open={sourceOpen}
         onOpenChange={setSourceOpen}
         data={data}
+      />
+
+      <CommandPalette
+        workspace="jobs"
+        open={cmdOpen}
+        onOpenChange={setCmdOpen}
+        jobs={allJobs}
+        onSelectJob={(job) => openDetailFromList(job)}
+        onApplyCity={(city) => {
+          handleFilterChange('workCities', [city]);
+        }}
+        onApplySearch={(q) => updateQuery(q, true)}
+        onSwitchView={(v) => openView(v as Filters['view'])}
+        onExportBackup={exportPersonal}
+        onImportBackup={triggerFilePicker}
       />
 
       <ShortcutsDialog />

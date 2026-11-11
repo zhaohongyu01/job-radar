@@ -33,12 +33,17 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+const THEME_INIT_SCRIPT = `(function(){try{var p=localStorage.getItem('job-radar-theme-v1');var pref=(p==='light'||p==='dark'||p==='system')?p:'system';var eff=pref==='system'?(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):pref;document.documentElement.dataset.theme=eff;document.documentElement.dataset.themePref=pref;}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const cfBeaconToken = process.env.NEXT_PUBLIC_CF_BEACON_TOKEN?.trim();
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
         {children}
         <RumObserver />

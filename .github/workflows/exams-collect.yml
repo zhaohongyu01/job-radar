@@ -1,0 +1,87 @@
+name: Civil Service Exams Pipeline
+
+on:
+  schedule:
+    # 09:30, 15:30, 20:30 Asia/Shanghai (UTC+8) — aligned with official government portal publishing windows
+    - cron: '30 1,7,12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect-and-deploy-exams:
+    if: ${{ github.event_name != 'schedule' || vars.RUN_SCHEDULED_COLLECTION != 'false' }}
+    concurrency:
+      group: cloudflare-deployment
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Web Application
+        env:
+          CF_D1_DATABASE_ID: ${{ vars.CF_D1_DATABASE_ID }}
+          CF_D1_DATABASE_NAME: ${{ vars.CF_D1_DATABASE_NAME }}
+        run: npm run build
+
+      - name: Download exact live jobs snapshot
+        run: python scripts/download_public.py --site https://sites-project.job-radar.workers.dev --public-dir data/live-public --prefer-newer-exams-dir public
+
+      - name: Collect Civil Service & Public Institution Exams
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python scripts/collect_exams.py --public-dir data/live-public
+
+      - name: Guard exams snapshot quality
+        run: python scripts/exams_guard.py --public-dir data/live-public --site https://sites-project.job-radar.workers.dev
+
+      - name: Build lightweight browsing index and static feeds
+        env:
+          SITE_ORIGIN: ${{ vars.PUBLIC_SITE_ORIGIN || 'https://sites-project.job-radar.workers.dev' }}
+        run: |
+          node --experimental-strip-types scripts/build_browse_index.mjs --public-dir data/live-public
+          python scripts/build_feeds.py --public-dir data/live-public --site "$SITE_ORIGIN"
+
+      - name: Sync SQLite index to Cloudflare D1 (optional)
+        if: ${{ vars.CF_D1_DATABASE_ID != '' }}
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DB_NAME: ${{ vars.CF_D1_DATABASE_NAME || 'job-radar-db' }}
+        run: |
+          python scripts/build_radar_sqlite.py --public-dir data/live-public --output-sqlite data/radar.sqlite --output-d1-sql data/d1-sync.sql
+          npx --yes --package wrangler@4.92.0 wrangler d1 execute "$D1_DB_NAME" --remote --file data/d1-sync.sql
+
+      - name: Attach Validated Data to Application
+        run: python scripts/stage_public.py --public-dir data/live-public --dist-dir dist
+
+      - name: Deploy to Cloudflare Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes --package wrangler@4.92.0 wrangler deploy --config dist/server/wrangler.json --keep-vars

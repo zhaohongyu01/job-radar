@@ -11,9 +11,9 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.request import Request, urlopen
 
 try:
-    from snapshot_assets import EXAM_DETAIL_ASSET, exam_asset_paths
+    from snapshot_assets import EXAM_ASSET, exam_asset_paths
 except ImportError:
-    from scripts.snapshot_assets import EXAM_DETAIL_ASSET, exam_asset_paths
+    from scripts.snapshot_assets import EXAM_ASSET, exam_asset_paths
 
 USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -41,6 +41,7 @@ def validate_candidate(
     candidate: Any,
     baseline: Optional[Dict[str, Any]] = None,
     require_fresh: bool = False,
+    external_positions: Optional[list] = None,
 ) -> Tuple[bool, str]:
     if not isinstance(candidate, dict):
         return False, 'candidate is not a JSON object'
@@ -71,7 +72,7 @@ def validate_candidate(
     if not has_schedule:
         return False, 'no exam has reg_end or rolling reg_mode in schedule'
 
-    positions = [
+    positions = list(external_positions) if external_positions is not None else [
         p
         for e in exams
         if isinstance(e, dict)
@@ -92,7 +93,7 @@ def download_baseline_exam_assets(site: str, public_dir: Path, baseline: Dict[st
     assets_dir.mkdir(parents=True, exist_ok=True)
 
     def fetch_one(path: str) -> Tuple[str, bytes]:
-        match = EXAM_DETAIL_ASSET.fullmatch(path)
+        match = EXAM_ASSET.fullmatch(path)
         if not match:
             raise ValueError(f'invalid baseline exam asset path: {path}')
         url = site.rstrip('/') + path
@@ -108,9 +109,10 @@ def download_baseline_exam_assets(site: str, public_dir: Path, baseline: Dict[st
         with ThreadPoolExecutor(max_workers=8) as pool:
             fetched = list(pool.map(fetch_one, sorted(paths)))
 
-    for old in assets_dir.glob('detail-*.json'):
-        if old.resolve().is_relative_to(assets_dir) and f'/exam-assets/{old.name}' not in paths:
-            old.unlink()
+    for pattern in ('detail-*.json', 'positions-*.json'):
+        for old in assets_dir.glob(pattern):
+            if old.resolve().is_relative_to(assets_dir) and f'/exam-assets/{old.name}' not in paths:
+                old.unlink()
     for path, raw in fetched:
         target = Path(public_dir) / path.lstrip('/')
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -136,14 +138,16 @@ def guard_exams(
     else:
         parse_err = f'missing candidate file: {target}'
 
+    external_positions: Optional[list] = None
     if cand_data is None:
         ok, reason = False, parse_err
     else:
-        ok, reason = validate_candidate(cand_data, baseline=base_data, require_fresh=require_fresh)
-        if ok and cand_data.get('detail_shards'):
+        ok = True
+        reason = 'ok'
+        if cand_data.get('detail_shards') or cand_data.get('positions_url'):
             try:
                 for path in exam_asset_paths(cand_data):
-                    match = EXAM_DETAIL_ASSET.fullmatch(path)
+                    match = EXAM_ASSET.fullmatch(path)
                     source = public_dir / path.lstrip('/')
                     if (
                         not match
@@ -153,13 +157,39 @@ def guard_exams(
                         ok = False
                         reason = f'missing or corrupt candidate exam asset: {path}'
                         break
+                if ok and cand_data.get('positions_url'):
+                    pos_file = public_dir / str(cand_data['positions_url']).lstrip('/')
+                    pos_obj = json.loads(pos_file.read_text(encoding='utf-8'))
+                    pos_map = pos_obj.get('positions_by_exam')
+                    if pos_obj.get('schema_version') != 1 or not isinstance(pos_map, dict):
+                        ok = False
+                        reason = 'invalid positions asset payload'
+                    else:
+                        external_positions = [
+                            p
+                            for rows in pos_map.values()
+                            if isinstance(rows, list)
+                            for p in rows
+                            if isinstance(p, dict)
+                        ]
             except Exception as exc:
                 ok = False
-                reason = f'invalid candidate detail_shards: {exc}'
+                reason = f'invalid candidate exam assets: {exc}'
+        if ok:
+            ok, reason = validate_candidate(
+                cand_data,
+                baseline=base_data,
+                require_fresh=require_fresh,
+                external_positions=external_positions,
+            )
 
     if ok and cand_data is not None:
         exams = cand_data.get('exams') or []
-        positions = sum(len(e.get('positions') or []) for e in exams if isinstance(e, dict))
+        positions = (
+            len(external_positions)
+            if external_positions is not None
+            else sum(len(e.get('positions') or []) for e in exams if isinstance(e, dict))
+        )
         print(
             f"Exams guard passed: exams={len(exams)}, positions={positions}, "
             f"generated_at={cand_data.get('generated_at')}"

@@ -3,6 +3,27 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
+## 2026-11-11 Next-Gen 四阶段最佳架构与现代化体验升级（本地已完成全部实施与验收，待推送部署）
+
+按用户批准的《职讯雷达 Next-Gen 最佳架构与现代化体验升级方案》（兼顾 Cloudflare 零成本边缘运行与中国大陆云服务器/NAS 零改造直连部署的「可移植双模架构」），已完成全部四个阶段的开发、单测与双端浏览器实测验收：
+- **阶段一：数据交付架构、管线解耦与零绑定 SQLite / D1 检索引擎 (`P1.1`–`P1.3`)**
+  1. **考编岗位表二次分片剥离 (`P1.1`)**：`scripts/snapshot_assets.py`、`scripts/collect_exams.py`、`scripts/exams_guard.py`、`scripts/stage_public.py`、`scripts/download_public.py` 与 `hooks/use-exam-snapshot.ts` 将全量 `positions[]` 从 `public/exams.json` 剥离至不可变哈希资产 `/exam-assets/positions-<sha256_20>.json`（当前 `positions-b310c9d6502534de7578.json`），同时在每条公告的 `detail-<prefix>-<sha256_20>.json` 内冗余内嵌本公告岗位明细。**`public/exams.json` 原始体积由 `5.69 MB` 降至 `736.8 KB`（下降 `-86.8%`）**；首屏进 `/exams` 零岗位大表阻塞，仅在切换「职位库」/「智能选岗」或存在候选岗位对比时按需 `force-cache` 拉取岗位分片。
+  2. **考编独立高频采集管线 (`P1.2`)**：新增 `.github/workflows/exams-collect.yml`（北京时间每日 `09:30 / 15:30 / 20:30` 及 `workflow_dispatch`），与求职长流水线解耦（`daily-collect.yml` 改为通过 `exams_guard.py --require-fresh` 保留最新线上考编快照），共享 `cloudflare-deployment` 并发锁。
+  3. **可移植 SQLite / Cloudflare D1 双模检索 + IndexedDB 本地快照缓存 (`P1.3`)**：新增 `scripts/build_radar_sqlite.py`（从 `public/` 生成含 `jobs`、`jobs_fts` FTS5 索引、`exams` 的单文件 `data/radar.sqlite` [约 `21.97 MiB`] 及可选 D1 同步 SQL）、`lib/server/radar-db.ts` 与 `app/api/query/jobs/route.ts`（优先使用 Cloudflare `env.DB` D1，无 D1 时自动回退 Node 22 原生 `node:sqlite` 读取 `data/radar.sqlite` [实测查询 `~4 ms`]，均不可用时优雅返回 `fallback: 'static'` 交由前端静态分片兜底；`vite.config.ts` 支持配置 `CF_D1_DATABASE_ID` 时自动注入 D1 binding）。客户端新增 `lib/snapshot-idb.ts` 并在 `hooks/use-job-snapshot.ts` 接入 `IndexedDB` 版本化缓存（同 `generated_at` 二次访问零网络下载秒开）与冷启动 `/api/query/jobs` 并行首屏预取。
+- **阶段二：双线个人求职中枢、首屏减负与静态订阅源 (`P2.1`–`P2.3`)**
+  1. **跨工作台共享画像 (`P2.1`)**：新增 `lib/unified-profile.ts`（`job-radar:unified-profile:v1`），打通意向城市、最高学历、专业大类/具体专业、毕业身份在 `/` 与 `/exams` 间的双向同步，并兼容 `lib/personal-backup.ts` `version: 5` 导出导入。
+  2. **统一 60px 顶栏壳层与跨双端临期提醒 (`P2.2`)**：重构 `/`（`components/jobs/app-header.tsx`）与 `/exams`（`components/exams/exams-page-client.tsx`）共享一致的 60px `.app-bar` 壳层（工作台切换分段控件、`⌘K` 搜索唤起钮、静态订阅气泡 `components/feed-subscribe-popover.tsx`、跨双端统一提醒 `components/personal-reminders.tsx` [汇总求职收藏/跟进截止与考编报名/缴费/准考证/笔试倒计时]、主题切换 `components/theme-toggle.tsx` 与备份同步）。
+  3. **首屏减负与静态 RSS / `.ics` 日历源 (`P2.3`)**：将大块首访引导卡精简为单行紧凑 `.onboarding-bar`（`components/jobs/onboarding-card.tsx`），移除重复 `.search-load-progress` 收束至顶栏 `2px` `.app-bar-progress` 发丝进度条；新增 `scripts/build_feeds.py` 生成静态订阅源 `public/feeds/{exams-shandong.xml,jobs-latest.xml,exams-shandong.ics}` 并在 `public/_headers` 配置标准 `application/rss+xml` 与 `text/calendar` 响应头。
+- **阶段三：高信噪比交互闭环、宽屏主从分栏与全局 `⌘K` 命令面板 (`P3.1`–`P3.3`)**
+  1. **宽屏 Master-Detail 主从分栏速览与可折叠日程栏 (`P3.1`)**：新增 `components/jobs/job-split-preview.tsx`（桌面端一键开启「分栏速览」，配合 `J / K` 键无遮罩连续审阅岗位详情、子职位与直投入口），右侧 `ActionRail` 支持一键折叠为侧边窄条释放列表横向空间。
+  2. **实时城市计数、诚实口碑徽章与考编 `row_id` 精准定位 (`P3.2`)**：优化工作地范围文案（`明确在...` / `全省 / 全国通用` / `地点待核实`），左侧快捷城市胶囊展示实时命中数 `cityCounts`；企业入口移除「暂无综合分」噪声，仅在有面经时展示具象 `面经 N` 徽章；考编职位库点击岗位打开 `ExamDetailDrawer` 自动滚动并高亮目标 `row_id` 行（`.is-focused`），报考进度看板 `ExamTrackerBoard` 支持行内一键切换阶段。
+  3. **全局 `⌘K / Ctrl+K` 命令面板 (`P3.3`)**：新增无障碍 `<dialog>` 命令面板 `components/command-palette.tsx`，挂载于 `/` 与 `/exams`，支持跨工作台秒搜岗位/考编公告、快捷切山东热门城市、切换视图/主题及导出备份。
+- **阶段四：Editorial Craft 3.0 视觉秩序、脏文本净洗与夜间墨纸模式 (`P4.1`–`P4.3`)**
+  1. **展示层脏文本净洗器 (`P4.1`)**：在 `lib/jobs.ts` 新增 `stripTrailingAtsCode`、`sanitizeDisplayExcerpt`、`sanitizeVenueDisplay` 并应用于卡片、分栏预览与宣讲日程，自动剥离标题尾部 ATS 工单号（如 `(J45816)`）、隐藏零信息量兜底话术 `单位介绍与岗位说明请查看原公告。`、合并连续标点（`：：`）及去重宣讲场地前缀（`中心校区中心校区...`）。
+  2. **去线框化降噪与次级按钮克制化 (`P4.2`)**：胶囊控件改为 `--paper-sunken` 微底色填充替代硬边框；列表卡片 `.opp-apply-cta` 改为浅底克制按钮 `.btn-tonal`（`:hover` 填充品牌主色）；修正 `/exams` 页头元数据字号层级（`.exw-stat.is-meta strong`）。
+  3. **护眼「夜间墨纸模式（Warm Dark Paper）」(`P4.3`)**：新增 `lib/theme.ts`、首屏防闪烁内联脚本（`app/layout.tsx`）与 `[data-theme="dark"]` 全套暖黑墨纸语义变量及暗色适配（`app/design.css`、`app/feature-updates.css`、`app/exams.css`）。
+- **验证结果**：`npm run lint`（`oxlint` 159 文件 `0 warnings / 0 errors`）、`npm run typecheck`（`0 errors`）、`node scripts/audit_css_usage.mjs`（684 类 `0` 死类）、`npm test`（**`196/196`** TS 单测通过，含新增 `tests/nextgen-features.test.ts`）、`python -m unittest discover`（**`317/317`** Python 单测通过，含新增 `tests/test_sqlite_and_feeds.py`）、`exams_guard.py`（`343` 公告 / `4,575` 岗通过）、`npm run build`（5 环境构建全绿）、`smoke_pages.py` 与 Next-Gen 全特性 E2E 浏览器实测（桌面 `1440px` 浅色/深色分栏/`Ctrl+K`/考编岗位高亮、移动端 `390px` 与超窄屏 `320px` 均 `errors=0, hscroll=False`）全部通过。
+
 ## 2026-11-10 全站优化重构 · 阶段三与阶段四已推送部署并完成线上实测验收
 
 按照四阶段全站优化方案完成阶段三全部任务（`T3.1`–`T3.9`）、阶段四必选任务（`T4.1`–`T4.2`），并推送部署至线上环境（`Push Checks`、`Python Unit Tests` 与 `Daily Job Radar Pipeline` `deploy_only=true` 全部通过）：

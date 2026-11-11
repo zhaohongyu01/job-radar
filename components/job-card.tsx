@@ -35,6 +35,7 @@ import {
   effectiveJobTypes,
   formatEducationDisplay,
   cardJobTitle,
+  sanitizeDisplayExcerpt,
   chinaDayStart,
   duplicateSourceNames,
 } from '@/lib/jobs';
@@ -189,7 +190,7 @@ function JobCardInner({
   const countdown = getDeadlineCountdown(job.deadline, now);
   const { cleanTitle, salary } = extractSalary(job);
   const summary = cardSummaryFor(job);
-  const excerptText = summary.text;
+  const excerptText = sanitizeDisplayExcerpt(summary.text);
   const summaryId = useId();
   const summaryLabel = { company: '单位介绍', responsibilities: '岗位职责', notice: '招聘说明' }[summary.kind];
   const stageInfo = getLifecycleStage(job, now);
@@ -478,7 +479,7 @@ function JobCardInner({
 
         <div className="opp-actions">
           <OutLink
-            className="btn btn-primary btn-sm"
+            className="btn btn-tonal btn-sm opp-apply-cta"
             url={job.application_url || job.source_url}
             onOpen={() => {
               report('event', 'click_apply');

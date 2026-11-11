@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, Check, ChevronDown, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
+import { Bell, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Columns2, Plus, X } from 'lucide-react';
 import {
   Pagination,
   PaginationContent,
@@ -323,6 +323,10 @@ export interface ResultsToolbarProps {
   currentPage: number;
   onPageChange: (page: number) => void;
   locationOptions: LocationScopeOption[];
+  splitView?: boolean;
+  onToggleSplitView?: () => void;
+  agendaCollapsed?: boolean;
+  onToggleAgendaCollapsed?: () => void;
 }
 
 export function ResultsToolbar({
@@ -355,6 +359,10 @@ export function ResultsToolbar({
   currentPage,
   onPageChange,
   locationOptions,
+  splitView = false,
+  onToggleSplitView,
+  agendaCollapsed = false,
+  onToggleAgendaCollapsed,
 }: ResultsToolbarProps) {
   const showCohortStat = filters.type === '校招' && filters.year !== '全部';
   const toolbarStats = useMemo(() => {
@@ -574,6 +582,31 @@ export function ResultsToolbar({
                 紧凑
               </button>
             </fieldset>
+          )}
+
+          {onToggleSplitView && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm split-toggle-btn"
+              aria-pressed={splitView}
+              onClick={onToggleSplitView}
+              title="桌面端左右分栏速览，支持 J / K 键极速翻阅"
+            >
+              <Columns2 size={14} />
+              <span>分栏速览</span>
+            </button>
+          )}
+
+          {!splitView && agendaCollapsed && onToggleAgendaCollapsed && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm split-toggle-btn"
+              onClick={onToggleAgendaCollapsed}
+              title="展开右侧校园宣讲日程栏"
+            >
+              <CalendarDays size={14} />
+              <span>校园日程</span>
+            </button>
           )}
 
           {pages > 1 && !searchPending && (

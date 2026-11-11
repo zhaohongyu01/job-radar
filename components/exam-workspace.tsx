@@ -3,15 +3,12 @@
 import '@/app/exams.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bookmark,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
-  Database,
+  Command,
   Download,
-  FileSpreadsheet,
-  Kanban,
-  Landmark,
+  Radar,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -49,6 +46,12 @@ import { ExamSourcesSheet } from '@/components/exams/exam-sources-sheet';
 import { BackupImportSheet } from '@/components/backup-import-sheet';
 import { ShortcutsDialog } from '@/components/shortcuts-dialog';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
+import { WorkspaceSwitch } from '@/components/workspace-switch';
+import { PersonalReminders } from '@/components/personal-reminders';
+import { FeedSubscribePopover } from '@/components/feed-subscribe-popover';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { CommandPalette } from '@/components/command-palette';
+import { StatusButton } from '@/components/jobs/app-header';
 import { formatMonthDay } from '@/components/exam-ui';
 import { useToast } from '@/components/toast-provider';
 import { useExamSnapshot } from '@/hooks/use-exam-snapshot';
@@ -91,31 +94,31 @@ export function ExamWorkspace() {
     }
   }, [toast]);
   const [selectedExam, setSelectedExam] = useState<ExamAnnouncement | null>(null);
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const raw = new URLSearchParams(window.location.search).get('pos');
+    return raw && /^[\w:-]{1,96}$/.test(raw) ? raw : null;
+  });
   const [linkedExamId, setLinkedExamId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     return parseExamUrl(window.location.search).examId || null;
   });
   const [sourceOpen, setSourceOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [savedSubTab, setSavedSubTab] = useState<'announcements' | 'candidates' | 'hidden'>('announcements');
   const [page, setPage] = useState(() => {
     if (typeof window === 'undefined') return 1;
     return parseExamUrl(window.location.search).page || 1;
   });
 
-  const resetPage = useCallback(() => setPage(1), []);
+  useEffect(() => {
+    const t = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
 
-  const {
-    snapshot,
-    loading,
-    error,
-    today,
-    reload,
-    allExams,
-    activeExamCount,
-    endedExamCount,
-    freshnessMeta,
-  } = useExamSnapshot({ onNotice: setNotice });
+  const resetPage = useCallback(() => setPage(1), []);
 
   const {
     profile,
@@ -136,6 +139,26 @@ export function ExamWorkspace() {
     trackedCount,
     hiddenCount,
   } = useExamPersonal({ onNotice: setNotice, onPageReset: resetPage });
+
+  const needsEagerPositions =
+    filters.view === 'positions' ||
+    profile.onlyMatchProfile ||
+    isExamProfileActive(profile) ||
+    Object.values(personal).some((rec) => (rec.savedPositionIds?.length || 0) > 0);
+
+  const {
+    snapshot,
+    loading,
+    positionsLoading,
+    positionsReady,
+    error,
+    today,
+    reload,
+    allExams,
+    activeExamCount,
+    endedExamCount,
+    freshnessMeta,
+  } = useExamSnapshot({ onNotice: setNotice, eagerPositions: needsEagerPositions });
 
   const [searchDraft, setSearchDraft] = useState(() => filters.query);
 
@@ -203,17 +226,18 @@ export function ExamWorkspace() {
   }, [allExams, setFilters]);
 
   const openExam = useCallback(
-    (exam: ExamAnnouncement, pushHistory = true) => {
+    (exam: ExamAnnouncement, pushHistory = true, focusRowId?: string) => {
       report('event', 'open_detail');
       setSelectedExam(exam);
+      setFocusedRowId(focusRowId ?? null);
       setLinkedExamId(exam.id);
       if (typeof window !== 'undefined' && pushHistory) {
         const newQuery = formatExamUrl({ filters, examId: exam.id, page });
         const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
         if (window.history.state?.overlay === 'exam') {
-          window.history.replaceState({ overlay: 'exam', examId: exam.id }, '', newUrl);
+          window.history.replaceState({ overlay: 'exam', examId: exam.id, posId: focusRowId ?? null }, '', newUrl);
         } else {
-          window.history.pushState({ overlay: 'exam', examId: exam.id }, '', newUrl);
+          window.history.pushState({ overlay: 'exam', examId: exam.id, posId: focusRowId ?? null }, '', newUrl);
         }
       }
       if (!personal[exam.id]?.readAt) {
@@ -246,6 +270,7 @@ export function ExamWorkspace() {
       return;
     }
     setSelectedExam(null);
+    setFocusedRowId(null);
     setLinkedExamId(null);
   }, []);
   const {
@@ -365,7 +390,7 @@ export function ExamWorkspace() {
       }
     }
     let stale = 0;
-    if (allExams.length > 0) {
+    if (allExams.length > 0 && positionsReady) {
       for (const rec of Object.values(personal)) {
         for (const id of rec.savedPositionIds || []) {
           if (!validIds.has(id)) stale += 1;
@@ -373,7 +398,7 @@ export function ExamWorkspace() {
       }
     }
     return { validPositionRowIds: validIds, candidateRows: cands, staleCandidateCount: stale };
-  }, [allExams, personal, profile]);
+  }, [allExams, personal, profile, positionsReady]);
 
   const savedAnnouncementExams = useMemo(
     () => filteredExams.filter((ex) => personal[ex.id]?.saved && !personal[ex.id]?.hidden),
@@ -453,108 +478,167 @@ export function ExamWorkspace() {
   const pagedExams = activeExamList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const pagedPositions = flattenedPositions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const tabs: { key: ExamFilters['view']; label: string; icon: typeof Landmark; count: number }[] = [
-    { key: 'announcements', label: '招考公告', icon: Landmark, count: filteredExams.length },
-    { key: 'positions', label: '职位库', icon: FileSpreadsheet, count: flattenedPositions.length },
-    { key: 'saved', label: '收藏', icon: Bookmark, count: savedCount },
-    { key: 'tracker', label: '报考进度', icon: Kanban, count: trackedCount },
+  const handleChangeTrackStatus = useCallback(
+    (examId: string, status: ExamTrackStatus) => {
+      updatePersonalRecord(examId, {
+        status,
+        saved: status !== 'none' ? true : personal[examId]?.saved,
+      });
+      if (status !== 'none') {
+        setNotice(`报考进度：${getTrackStageInfo(status)?.label ?? status}`);
+      }
+    },
+    [personal, setNotice, updatePersonalRecord],
+  );
+
+  const navTabs: { key: ExamFilters['view']; label: string; count: number }[] = [
+    { key: 'announcements', label: '招考公告', count: filteredExams.length },
+    {
+      key: 'positions',
+      label: '职位库',
+      count: !positionsReady && snapshot ? snapshot.total_positions : flattenedPositions.length,
+    },
+    { key: 'saved', label: '我的收藏', count: savedCount },
+    { key: 'tracker', label: '报考进度', count: trackedCount },
   ];
 
   return (
-    <div className="exw">
-      {/* ---------- Header ---------- */}
-      <header className="exw-head">
-        <div className="exw-head-text">
-          <p className="exw-eyebrow">山东省 · 16 地市 · 全国性考试 · 每日更新</p>
-          <h1 className="exw-title">考公考编</h1>
-        </div>
-        <div className="exw-stats">
-          <div className="exw-stat">
-            <strong>{snapshot ? activeExamCount : '—'}</strong>
-            <span>在招公告</span>
+    <>
+      <header className="app-bar">
+        <div className="app-bar-inner">
+          <div className="brand-mark">
+            <Radar size={26} />
+            <div className="brand-text">
+              <strong>职讯雷达</strong>
+              <small>考公考编工作台</small>
+            </div>
           </div>
-          <div className="exw-stat">
-            <strong>{snapshot ? snapshot.total_positions : '—'}</strong>
-            <span>岗位明细</span>
-          </div>
-          <div className={`exw-stat${freshnessMeta?.stale ? ' is-stale' : ''}`}>
-            <strong>{freshnessMeta ? freshnessMeta.label : '—'}</strong>
-            <span>{freshnessMeta?.stale ? '数据可能过期' : '数据状态'}</span>
-          </div>
-        </div>
-        <div className="exw-head-actions">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => void importPersonal(e.target.files?.[0])}
-          />
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSourceOpen(true)}>
-            <Database size={15} />
-            信息来源 {snapshot ? snapshot.sources.length : ''}
-          </button>
-          <button
-            type="button"
-            className="exw-icon-btn"
-            aria-label="导出个人记录备份"
-            title="导出个人记录备份（含考编与求职记录）"
-            onClick={exportPersonal}
-          >
-            <Download size={15} />
-          </button>
-          <button
-            type="button"
-            className="exw-icon-btn"
-            aria-label="导入个人记录备份"
-            title="导入恢复个人记录备份"
-            onClick={triggerFilePicker}
-          >
-            <Upload size={15} />
-          </button>
-          <button
-            type="button"
-            className="exw-icon-btn"
-            aria-label="刷新数据"
-            title="刷新数据"
-            onClick={reload}
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? 'spinning' : ''} />
-          </button>
-        </div>
-      </header>
 
-      {/* ---------- Eligibility profile ---------- */}
-      <ExamProfilePanel
-        profile={profile}
-        onUpdateProfile={updateProfile}
-        onClearProfile={clearProfile}
-      />
+          <WorkspaceSwitch active="exams" />
 
-      {/* ---------- Toolbar ---------- */}
-      <div className="exw-toolbar">
-        <div className="exw-tabs" role="tablist" aria-label="视图切换">
-          {tabs.map((t) => {
-            const Icon = t.icon;
-            const on = filters.view === t.key;
-            return (
+          <nav className="app-nav" aria-label="考编工作台导航">
+            {navTabs.map((t) => (
               <button
                 key={t.key}
                 type="button"
-                role="tab"
-                aria-selected={on}
-                className={`exw-tab${on ? ' is-on' : ''}`}
+                className="app-nav-item"
+                aria-current={filters.view === t.key ? 'page' : undefined}
                 onClick={() => switchView(t.key)}
               >
-                <Icon size={15} />
-                <span>{t.label}</span>
-                <span className="exw-tab-count">{t.count}</span>
+                {t.label}{' '}
+                <span className="app-nav-count">{snapshot ? t.count : '—'}</span>
               </button>
-            );
-          })}
+            ))}
+          </nav>
+
+          <div className="app-bar-actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm cmdk-trigger-btn"
+              onClick={() => setCmdOpen(true)}
+              aria-label="打开全局快捷命令与检索（Ctrl+K）"
+              title="全局检索与操作（⌘K / Ctrl+K）"
+            >
+              <Command size={13} />
+              <span>速查</span>
+              <kbd className="kbd">⌘K</kbd>
+            </button>
+            <PersonalReminders
+              now={nowMs}
+              exams={allExams}
+              examPersonal={personal}
+              onSelectExam={(ex) => openExam(ex)}
+            />
+            <FeedSubscribePopover />
+            <StatusButton
+              hasData={Boolean(snapshot)}
+              loading={loading || positionsLoading}
+              stale={Boolean(freshnessMeta?.stale)}
+              lastSuccessAt={snapshot?.generated_at}
+              progressiveProgress={null}
+              onClick={() => setSourceOpen(true)}
+            />
+            <ThemeToggle />
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="刷新考编数据"
+              title="刷新考编数据"
+              onClick={reload}
+              disabled={loading}
+            >
+              <RefreshCw size={14} className={loading ? 'spinning' : ''} />
+            </button>
+          </div>
         </div>
-        <div className="exw-search">
+        {(loading || positionsLoading) && (
+          <div className="app-bar-progress" aria-hidden="true">
+            <div className="app-bar-progress-fill is-indeterminate" />
+          </div>
+        )}
+      </header>
+
+      <main className="page">
+        <div className="exw">
+          {/* ---------- Compact Summary Header ---------- */}
+          <header className="exw-head">
+            <div className="exw-head-text">
+              <h1 className="exw-title">考公考编</h1>
+              <p className="exw-eyebrow">山东省 16 地市 · 国考省考 · 事业编 · 选调 · 教招医疗</p>
+            </div>
+            <div className="exw-stats">
+              <div className="exw-stat">
+                <strong>{snapshot ? activeExamCount : '—'}</strong>
+                <span>在招公告</span>
+              </div>
+              <div className="exw-stat">
+                <strong>{snapshot ? snapshot.total_positions : '—'}</strong>
+                <span>岗位明细</span>
+              </div>
+              <div className={`exw-stat is-meta${freshnessMeta?.stale ? ' is-stale' : ''}`}>
+                <strong>{freshnessMeta ? freshnessMeta.label : '—'}</strong>
+                <span>{freshnessMeta?.stale ? '数据可能过期' : '更新状态'}</span>
+              </div>
+            </div>
+            <div className="exw-head-actions">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/json,.json"
+                hidden
+                onChange={(e) => void importPersonal(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                className="exw-icon-btn"
+                aria-label="导出个人记录备份"
+                title="导出个人记录备份（含考编与求职记录）"
+                onClick={exportPersonal}
+              >
+                <Download size={15} />
+              </button>
+              <button
+                type="button"
+                className="exw-icon-btn"
+                aria-label="导入个人记录备份"
+                title="导入恢复个人记录备份"
+                onClick={triggerFilePicker}
+              >
+                <Upload size={15} />
+              </button>
+            </div>
+          </header>
+
+          {/* ---------- Eligibility profile ---------- */}
+          <ExamProfilePanel
+            profile={profile}
+            onUpdateProfile={updateProfile}
+            onClearProfile={clearProfile}
+          />
+
+          {/* ---------- Toolbar ---------- */}
+          <div className="exw-toolbar">
+            <div className="exw-search">
           <Search size={16} />
           <input
             ref={searchInputRef}
@@ -768,28 +852,42 @@ export function ExamWorkspace() {
             ))}
 
           {/* Saved candidate compare */}
-          {filters.view === 'saved' && savedSubTab === 'candidates' && (
-            <ExamPositionTable
-              variant="candidates"
-              rows={candidateRows}
-              staleCount={staleCandidateCount}
-              onCleanupStale={() => cleanupStalePositions(validPositionRowIds)}
-              onSelectExam={openExam}
-              onToggleCandidate={toggleCandidate}
-            />
-          )}
+          {filters.view === 'saved' && savedSubTab === 'candidates' &&
+            ((loading && !snapshot) || (positionsLoading && !positionsReady) ? (
+              <div className="exw-skeleton-list" aria-label="加载岗位中">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="exw-skeleton" />
+                ))}
+              </div>
+            ) : (
+              <ExamPositionTable
+                variant="candidates"
+                rows={candidateRows}
+                staleCount={staleCandidateCount}
+                onCleanupStale={() => cleanupStalePositions(validPositionRowIds)}
+                onSelectExam={(ex, focusRowId) => openExam(ex, true, focusRowId)}
+                onToggleCandidate={toggleCandidate}
+              />
+            ))}
 
           {/* Positions */}
-          {filters.view === 'positions' && (
-            <ExamPositionTable
-              variant="workspace"
-              rows={pagedPositions}
-              profileActive={profileActive}
-              personal={personal}
-              onSelectExam={openExam}
-              onToggleCandidate={toggleCandidate}
-            />
-          )}
+          {filters.view === 'positions' &&
+            ((loading && !snapshot) || (positionsLoading && !positionsReady) ? (
+              <div className="exw-skeleton-list" aria-label="加载职位库中">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="exw-skeleton" />
+                ))}
+              </div>
+            ) : (
+              <ExamPositionTable
+                variant="workspace"
+                rows={pagedPositions}
+                profileActive={profileActive}
+                personal={personal}
+                onSelectExam={(ex, focusRowId) => openExam(ex, true, focusRowId)}
+                onToggleCandidate={toggleCandidate}
+              />
+            ))}
 
           {/* Tracker */}
           {filters.view === 'tracker' && (
@@ -799,6 +897,7 @@ export function ExamWorkspace() {
               trackedCount={trackedCount}
               today={today}
               onSelectExam={openExam}
+              onChangeStatus={handleChangeTrackStatus}
               onNotify={setNotice}
             />
           )}
@@ -844,22 +943,18 @@ export function ExamWorkspace() {
       </div>
 
       <ExamDetailDrawer
-        exam={selectedExam}
+        exam={selectedExam ? allExams.find((item) => item.id === selectedExam.id) || selectedExam : null}
         exams={filteredExams}
         detailShards={snapshot?.detail_shards}
         profile={profile}
         personal={selectedExam ? personal[selectedExam.id] : undefined}
+        focusPositionId={focusedRowId}
         onClose={closeExam}
         onSelectExam={(nextExam) => openExam(nextExam, false)}
         onToggleSave={toggleSaveExam}
         onToggleHide={toggleHideExam}
         onUpdatePersonal={updatePersonalRecord}
-        onChangeStatus={(examId: string, status: ExamTrackStatus) => {
-          updatePersonalRecord(examId, { status, saved: status !== 'none' ? true : personal[examId]?.saved });
-          if (status !== 'none') {
-            setNotice(`报考进度：${getTrackStageInfo(status)?.label ?? status}`);
-          }
-        }}
+        onChangeStatus={handleChangeTrackStatus}
         onNotify={setNotice}
       />
 
@@ -881,6 +976,24 @@ export function ExamWorkspace() {
         onConfirm={(preferImported) => void confirmImport(preferImported)}
       />
 
+      <CommandPalette
+        workspace="exams"
+        open={cmdOpen}
+        onOpenChange={setCmdOpen}
+        exams={allExams}
+        onSelectExam={(ex) => openExam(ex)}
+        onApplyCity={(city) => {
+          updateFilters({ cities: [city] });
+        }}
+        onApplySearch={(q) => {
+          setSearchDraft(q);
+          flushSearchQuery(q);
+        }}
+        onSwitchView={(v) => switchView(v as ExamFilters['view'])}
+        onExportBackup={exportPersonal}
+        onImportBackup={triggerFilePicker}
+      />
+
       <ShortcutsDialog />
 
       <BottomTabBar
@@ -890,6 +1003,8 @@ export function ExamWorkspace() {
         savedCount={savedCount}
         trackedCount={trackedCount}
       />
-    </div>
+        </div>
+      </main>
+    </>
   );
 }

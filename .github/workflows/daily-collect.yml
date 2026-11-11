@@ -129,6 +129,9 @@ jobs:
           npx tsc --noEmit
 
       - name: Build Web Application
+        env:
+          CF_D1_DATABASE_ID: ${{ vars.CF_D1_DATABASE_ID }}
+          CF_D1_DATABASE_NAME: ${{ vars.CF_D1_DATABASE_NAME }}
         run: npm run build
 
       - name: Upload Built Application
@@ -281,15 +284,9 @@ jobs:
         if: ${{ !inputs.deploy_only }}
         run: python scripts/audit_freshness.py --public-dir public --output data/freshness-report.json
 
-      - name: Collect Civil Service Exams snapshot
+      - name: Preserve freshest Civil Service Exams snapshot
         if: ${{ !inputs.deploy_only }}
-        continue-on-error: true
-        timeout-minutes: 10
-        run: python scripts/collect_exams.py --public-dir public
-
-      - name: Guard exams snapshot quality
-        if: ${{ !inputs.deploy_only }}
-        run: python scripts/exams_guard.py --public-dir public --site https://sites-project.job-radar.workers.dev
+        run: python scripts/exams_guard.py --public-dir public --site https://sites-project.job-radar.workers.dev --require-fresh
 
       - name: Save Collector State
         if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}
@@ -326,7 +323,24 @@ jobs:
           cache: npm
 
       - name: Build lightweight browsing index without collection
-        run: node --experimental-strip-types scripts/build_browse_index.mjs --public-dir ${{ inputs.deploy_only && 'data/live-public' || 'public' }}
+        env:
+          SITE_ORIGIN: ${{ vars.PUBLIC_SITE_ORIGIN || 'https://sites-project.job-radar.workers.dev' }}
+          TARGET_PUB: ${{ inputs.deploy_only && 'data/live-public' || 'public' }}
+        run: |
+          node --experimental-strip-types scripts/build_browse_index.mjs --public-dir "$TARGET_PUB"
+          python scripts/build_feeds.py --public-dir "$TARGET_PUB" --site "$SITE_ORIGIN"
+
+      - name: Sync SQLite index to Cloudflare D1 (optional)
+        if: ${{ vars.CF_D1_DATABASE_ID != '' }}
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DB_NAME: ${{ vars.CF_D1_DATABASE_NAME || 'job-radar-db' }}
+          TARGET_PUB: ${{ inputs.deploy_only && 'data/live-public' || 'public' }}
+        run: |
+          python scripts/build_radar_sqlite.py --public-dir "$TARGET_PUB" --output-sqlite data/radar.sqlite --output-d1-sql data/d1-sync.sql
+          npx --yes --package wrangler@4.92.0 wrangler d1 execute "$D1_DB_NAME" --remote --file data/d1-sync.sql
 
       - name: Attach Validated Data to Application
         run: python scripts/stage_public.py --public-dir ${{ inputs.deploy_only && 'data/live-public' || 'public' }} --dist-dir dist

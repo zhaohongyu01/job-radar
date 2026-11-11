@@ -123,9 +123,13 @@ export function EmployerEntry({ job, name }: { job: Job; name: string }) {
   // Only advertise reputation when this employer actually has public evidence;
   // the name stays clickable for personal intent notes either way.
   const hasEvidence = !!match && (match.item.experience_count + match.item.interview_count + match.item.question_count) > 0;
+  const hintLabel =
+    hasEvidence && score == null && match!.item.experience_count === 0 && match!.item.interview_count > 0
+      ? `面经 ${match!.item.interview_count}`
+      : '口碑';
   return <button type="button" className="employer-entry" aria-label={`查看企业口碑：${name}`}
     title="查看企业评价来源与我的意向评分" onClick={() => workspace.open(job)}>
-    <span>{name}</span>{hasEvidence && <span className="employer-entry-hint">口碑</span>}
+    <span>{name}</span>{hasEvidence && <span className="employer-entry-hint">{hintLabel}</span>}
     {rating != null && <span className="employer-rating-pill">我的 {rating}/5</span>}
     {score != null ? <span className="employer-public-pill">{REPUTATION_PROVIDERS[match!.item.provider].label}体验参考 {score}/5</span>
       : match && match.item.experience_count > 0 && <span className="employer-public-pill">{match.reference ? '范围参考 · ' : ''}{match.item.experience_count}条体验</span>}

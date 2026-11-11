@@ -1465,23 +1465,34 @@ def write_exam_snapshot(payload: Dict[str, Any], public_dir: Path) -> Dict[str, 
     assets_dir = (public_dir / 'exam-assets').resolve()
     assets_dir.mkdir(parents=True, exist_ok=True)
 
-    # Remove old detail-*.json files inside public/exam-assets/ before generating new ones.
-    for old in assets_dir.glob('detail-*.json'):
-        if old.resolve().is_relative_to(assets_dir):
-            old.unlink()
+    # Remove old detail-*.json and positions-*.json files inside public/exam-assets/ before generating new ones.
+    for pattern in ('detail-*.json', 'positions-*.json'):
+        for old in assets_dir.glob(pattern):
+            if old.resolve().is_relative_to(assets_dir):
+                old.unlink()
 
     shard_groups: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    positions_by_exam: Dict[str, List[Dict[str, Any]]] = {}
     slim_exams: List[Dict[str, Any]] = []
 
     for exam in payload.get('exams') or []:
         eid = str(exam.get('id') or '')
         prefix = exam_shard_prefix(eid)
+        pos_list = list(exam.get('positions') or [])
+        if pos_list:
+            positions_by_exam[eid] = pos_list
+
         detail_entry: Dict[str, Any] = {}
         for field in ('body', 'attachments', 'links'):
             if exam.get(field) is not None:
                 detail_entry[field] = exam[field]
+        if pos_list:
+            detail_entry['positions'] = pos_list
         shard_groups.setdefault(prefix, {})[eid] = detail_entry
-        slim_exams.append({k: v for k, v in exam.items() if k not in ('body', 'attachments', 'links')})
+
+        slim_exam = {k: v for k, v in exam.items() if k not in ('body', 'attachments', 'links', 'positions')}
+        slim_exam['parsed_position_count'] = len(pos_list)
+        slim_exams.append(slim_exam)
 
     detail_shards: Dict[str, str] = {}
     for prefix, group_exams in sorted(shard_groups.items()):
@@ -1495,9 +1506,20 @@ def write_exam_snapshot(payload: Dict[str, Any], public_dir: Path) -> Dict[str, 
         (assets_dir / filename).write_bytes(raw_bytes)
         detail_shards[prefix] = f'/exam-assets/{filename}'
 
+    positions_payload = {
+        'schema_version': 1,
+        'positions_by_exam': positions_by_exam,
+    }
+    positions_bytes = json.dumps(positions_payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    positions_digest20 = hashlib.sha256(positions_bytes).hexdigest()[:20]
+    positions_filename = f'positions-{positions_digest20}.json'
+    (assets_dir / positions_filename).write_bytes(positions_bytes)
+    positions_url = f'/exam-assets/{positions_filename}'
+
     out_payload = {
         **payload,
         'detail_shards': detail_shards,
+        'positions_url': positions_url,
         'exams': slim_exams,
     }
     out_path = public_dir / 'exams.json'
@@ -1505,16 +1527,40 @@ def write_exam_snapshot(payload: Dict[str, Any], public_dir: Path) -> Dict[str, 
     return out_payload
 
 
+def repack_existing_exam_snapshot(public_dir: Path) -> Dict[str, Any]:
+    try:
+        from snapshot_assets import hydrate_exam_snapshot
+    except ImportError:
+        from scripts.snapshot_assets import hydrate_exam_snapshot
+
+    public_dir = Path(public_dir).resolve()
+    exams_file = public_dir / 'exams.json'
+    if not exams_file.is_file():
+        raise FileNotFoundError(f'Missing {exams_file}')
+    snap = json.loads(exams_file.read_text(encoding='utf-8'))
+    hydrated = hydrate_exam_snapshot(
+        snap,
+        lambda rel_path: json.loads((public_dir / rel_path.lstrip('/')).read_text(encoding='utf-8')),
+    )
+    hydrated.pop('detail_shards', None)
+    hydrated.pop('positions_url', None)
+    return write_exam_snapshot(hydrated, public_dir)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description='Collect and export Civil Service & Public Institution exams.')
     parser.add_argument('--public-dir', default=str(ROOT / 'public'))
     parser.add_argument('--offline-only', action='store_true', help='Only extract from existing snapshot without network requests')
+    parser.add_argument('--repack-existing', action='store_true', help='Losslessly repackage existing public/exams.json into externalized position/detail shards')
     args = parser.parse_args()
 
-    res = collect_and_export_exams(
-        public_dir=Path(args.public_dir),
-        live_crawl=not args.offline_only,
-    )
+    if args.repack_existing:
+        res = repack_existing_exam_snapshot(Path(args.public_dir))
+    else:
+        res = collect_and_export_exams(
+            public_dir=Path(args.public_dir),
+            live_crawl=not args.offline_only,
+        )
     print(
         f"Exported exams.json: total_exams={res['total_exams']}, "
         f"total_positions={res['total_positions']}, total_headcount={res['total_headcount']}, "

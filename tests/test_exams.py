@@ -19,7 +19,7 @@ from scripts.collect_exams import (
     parse_dtdjzx_basic_lines,
     write_exam_snapshot,
 )
-from scripts.snapshot_assets import EXAM_DETAIL_ASSET
+from scripts.snapshot_assets import EXAM_DETAIL_ASSET, EXAM_POSITIONS_ASSET, hydrate_exam_snapshot
 from scripts.stage_public import stage
 from scripts.parse_exam_positions import (
     clean_exam_title,
@@ -362,14 +362,32 @@ class ExamParserTests(unittest.TestCase):
             out = write_exam_snapshot(raw_payload, pub)
             self.assertFalse(stale_pub_shard.exists())
             self.assertEqual(set(out["detail_shards"].keys()), {"0a", "1b"})
+            self.assertIsNotNone(EXAM_POSITIONS_ASSET.fullmatch(out["positions_url"]))
 
             written_exams = json.loads((pub / "exams.json").read_text(encoding="utf-8"))
             for ex in written_exams["exams"]:
                 self.assertNotIn("body", ex)
                 self.assertNotIn("attachments", ex)
                 self.assertNotIn("links", ex)
+                self.assertNotIn("positions", ex)
                 self.assertIn("excerpt", ex)
-                self.assertIn("positions", ex)
+                self.assertIn("parsed_position_count", ex)
+
+            pos_asset_file = pub / written_exams["positions_url"].lstrip("/")
+            self.assertTrue(pos_asset_file.is_file())
+            pos_asset_json = json.loads(pos_asset_file.read_text(encoding="utf-8"))
+            self.assertEqual(pos_asset_json["schema_version"], 1)
+            self.assertEqual(
+                pos_asset_json["positions_by_exam"]["0a111111111111111111"][0]["row_id"],
+                "r1",
+            )
+
+            hydrated = hydrate_exam_snapshot(
+                written_exams,
+                lambda rel: json.loads((pub / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            self.assertEqual(len(hydrated["exams"][0]["positions"]), 1)
+            self.assertIn("完整正文段落A1", hydrated["exams"][0]["body"])
 
             for prefix, rel_path in written_exams["detail_shards"].items():
                 match = EXAM_DETAIL_ASSET.fullmatch(rel_path)
@@ -384,6 +402,7 @@ class ExamParserTests(unittest.TestCase):
                     self.assertIn("完整正文段落A1", entry["body"])
                     self.assertEqual(len(entry["attachments"]), 1)
                     self.assertEqual(len(entry["links"]), 1)
+                    self.assertEqual(len(entry["positions"]), 1)
 
             # Prepare minimal valid jobs.json + dist/server/wrangler.json for stage_public.stage()
             search_bytes = b'{"jobs":{}}'

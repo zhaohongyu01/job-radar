@@ -162,6 +162,7 @@ export interface ExamAnnouncement {
   notice_role: '招考简章' | '报名统计' | '准考证/笔试' | '成绩/进面' | '资格复审/面试' | '体检/递补/公示' | '补充公告';
   total_positions: number | null;
   total_headcount: number | null;
+  parsed_position_count?: number;
   positions_status?: 'parsed' | 'prose' | 'attachment_only' | 'none';
   schedule: ExamSchedule;
   exam_subjects: string[];
@@ -204,6 +205,7 @@ export interface ExamSnapshot {
   total_exams_with_positions?: number;
   cities: string[];
   detail_shards?: Record<string, string>;
+  positions_url?: string;
   exams: ExamAnnouncement[];
   sources: {
     id: string;
@@ -1261,6 +1263,7 @@ export interface ExamDetailEntry {
   body?: string;
   attachments?: { title: string; url: string; parse_status?: string }[];
   links?: { title: string; url: string }[];
+  positions?: ExamPositionRow[];
 }
 
 export interface ExamDetailShard {
@@ -1268,8 +1271,15 @@ export interface ExamDetailShard {
   exams: Record<string, ExamDetailEntry>;
 }
 
+export interface ExamPositionsAsset {
+  schema_version: 1;
+  positions_by_exam: Record<string, ExamPositionRow[]>;
+}
+
 const EXAM_DETAIL_SHARD_RE = /^\/exam-assets\/detail-[0-9a-z]{2}-[0-9a-f]{20}\.json$/;
+const EXAM_POSITIONS_ASSET_RE = /^\/exam-assets\/positions-[0-9a-f]{20}\.json$/;
 const examDetailShardCache = new Map<string, Promise<ExamDetailShard>>();
+const examPositionsAssetCache = new Map<string, Promise<ExamPositionsAsset>>();
 
 export function examShardPrefix(examId: string): string {
   const cleaned = String(examId || '').toLowerCase().replace(/[^0-9a-z]/g, '0');
@@ -1289,12 +1299,46 @@ export function loadExamDetailShard(url: string): Promise<ExamDetailShard> {
       throw new Error('Invalid exam detail shard payload');
     }
     return json;
+  }).catch((err) => {
+    examDetailShardCache.delete(url);
+    throw err;
   });
   examDetailShardCache.set(url, promise);
   return promise;
 }
 
+export function loadExamPositionsAsset(url: string): Promise<ExamPositionsAsset> {
+  if (!EXAM_POSITIONS_ASSET_RE.test(url)) {
+    return Promise.reject(new Error('Invalid exam positions asset path'));
+  }
+  const cached = examPositionsAssetCache.get(url);
+  if (cached) return cached;
+  const promise = fetch(url, { cache: 'force-cache' }).then(async (resp) => {
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = (await resp.json()) as ExamPositionsAsset;
+    if (
+      !json ||
+      json.schema_version !== 1 ||
+      !json.positions_by_exam ||
+      typeof json.positions_by_exam !== 'object'
+    ) {
+      throw new Error('Invalid exam positions asset payload');
+    }
+    return json;
+  }).catch((err) => {
+    examPositionsAssetCache.delete(url);
+    throw err;
+  });
+  examPositionsAssetCache.set(url, promise);
+  return promise;
+}
+
 export function clearExamDetailShardCache(url?: string): void {
-  if (url) examDetailShardCache.delete(url);
-  else examDetailShardCache.clear();
+  if (url) {
+    examDetailShardCache.delete(url);
+    examPositionsAssetCache.delete(url);
+  } else {
+    examDetailShardCache.clear();
+    examPositionsAssetCache.clear();
+  }
 }

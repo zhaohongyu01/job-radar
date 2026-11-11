@@ -9,23 +9,26 @@ import { EMPLOYER_PERSONAL_STORAGE, validateEmployerRecords } from './employer-p
 import type { EmployerRecords } from './employer-personal.ts';
 import { EXAM_PERSONAL_STORAGE, EXAM_PROFILE_STORAGE, validateExamPersonal, validateExamProfile } from './exams.ts';
 import type { ExamPersonalStore, ExamUserProfile } from './exams.ts';
+import { UNIFIED_PROFILE_STORAGE, validateUnifiedProfile } from './unified-profile.ts';
+import type { UnifiedCareerProfile } from './unified-profile.ts';
 
 export const PERSONAL_STORAGE = 'quancheng-personal-v1';
 export const BROWSING_STORAGE = 'job-radar-browsing-v1';
 export type PersonalBackup = { version: 5; records: Personal; agenda?: AgendaFilters; event_records?: EventPersonal; employer_records?: EmployerRecords;
-  exam_records?: ExamPersonalStore; exam_profile?: ExamUserProfile;
+  exam_records?: ExamPersonalStore; exam_profile?: ExamUserProfile; unified_profile?: UnifiedCareerProfile;
   browsing?: ReturnType<typeof restoreBrowsing>; radar_presets?: RadarPreset[]; active_preset?: string | null; reminders_enabled?: boolean };
 
 export function validateBackup(input: unknown): PersonalBackup {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('备份格式不正确');
   const value = input as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5].includes(value.version as number)) throw Error('不支持此备份版本');
-  if (![4, 5].includes(value.version as number) && value.employer_records !== undefined) throw Error('包含企业个人记录的备份必须使用v4格式');
+  if (![1, 2, 3, 4, 5, 6].includes(value.version as number)) throw Error('不支持此备份版本');
+  if (![4, 5, 6].includes(value.version as number) && value.employer_records !== undefined) throw Error('包含企业个人记录的备份必须使用v4格式');
   const result: PersonalBackup = { version: 5, records: validatePersonal(value.records) };
-  if ([4, 5].includes(value.version as number) && value.employer_records !== undefined) result.employer_records = validateEmployerRecords(value.employer_records);
-  if (value.version === 5) {
+  if ([4, 5, 6].includes(value.version as number) && value.employer_records !== undefined) result.employer_records = validateEmployerRecords(value.employer_records);
+  if ((value.version as number) >= 5) {
     if (value.exam_records !== undefined) result.exam_records = validateExamPersonal(value.exam_records);
     if (value.exam_profile !== undefined) result.exam_profile = validateExamProfile(value.exam_profile);
+    if (value.unified_profile !== undefined) result.unified_profile = validateUnifiedProfile(value.unified_profile);
   }
   if ((value.version as number) >= 3) {
     if (value.reminders_enabled !== undefined) {
@@ -53,7 +56,7 @@ export function validateBackup(input: unknown): PersonalBackup {
 export function createBackup(records: Personal, storage: Pick<Storage, 'getItem'>): PersonalBackup {
   const parse = (key: string) => { const raw = storage.getItem(key); return raw ? JSON.parse(raw) : undefined; };
   return validateBackup({ version: 5, records, agenda: parse(AGENDA_STORAGE), event_records: parse(EVENT_PERSONAL_STORAGE), employer_records: parse(EMPLOYER_PERSONAL_STORAGE),
-    exam_records: parse(EXAM_PERSONAL_STORAGE), exam_profile: parse(EXAM_PROFILE_STORAGE),
+    exam_records: parse(EXAM_PERSONAL_STORAGE), exam_profile: parse(EXAM_PROFILE_STORAGE), unified_profile: parse(UNIFIED_PROFILE_STORAGE),
     browsing: parse(BROWSING_STORAGE), radar_presets: parse(RADAR_PRESETS_STORAGE), active_preset: storage.getItem(RADAR_ACTIVE_PRESET_STORAGE), reminders_enabled: parse('job-radar-reminders-v1') });
 }
 
@@ -65,6 +68,7 @@ export function writeBackup(backup: PersonalBackup, storage: Pick<Storage, 'getI
   if (backup.employer_records) writes.push([EMPLOYER_PERSONAL_STORAGE, JSON.stringify(backup.employer_records)]);
   if (backup.exam_records) writes.push([EXAM_PERSONAL_STORAGE, JSON.stringify(backup.exam_records)]);
   if (backup.exam_profile) writes.push([EXAM_PROFILE_STORAGE, JSON.stringify(backup.exam_profile)]);
+  if (backup.unified_profile) writes.push([UNIFIED_PROFILE_STORAGE, JSON.stringify(backup.unified_profile)]);
   if (backup.browsing) writes.push([BROWSING_STORAGE, JSON.stringify(backup.browsing)]);
   if (backup.radar_presets) writes.push([RADAR_PRESETS_STORAGE, JSON.stringify(backup.radar_presets)]);
   if (backup.active_preset !== undefined) writes.push([RADAR_ACTIVE_PRESET_STORAGE, backup.active_preset || '']);

@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { CalendarDays, MapPin, Bookmark, Download } from 'lucide-react';
+import { CalendarDays, MapPin, Bookmark, Download, PanelRightClose } from 'lucide-react';
 import type { Job, Personal, Filters, TalkEvent } from '@/lib/jobs';
-import { externalUrl, eventDisplayTitle } from '@/lib/jobs';
+import { externalUrl, eventDisplayTitle, sanitizeVenueDisplay } from '@/lib/jobs';
 import { loadAllCities } from '@/lib/cities';
 import {
   Combobox,
@@ -22,10 +22,11 @@ import type { CoverageReport } from '@/lib/city-coverage';
 
 const SYNC = 'job-radar-local-workspace-change';
 
-export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverage, indexReady = true }: {
+export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverage, indexReady = true, onCollapse }: {
   jobs: Job[]; personal: Personal; city: string; now: number; ready?: boolean;
   onDetail: (job: Job) => void; onView?: (view: Filters['view']) => void; coverage?: CoverageReport | null;
   indexReady?: boolean;
+  onCollapse?: () => void;
 }) {
   const [filters, setFilters] = useState<AgendaFilters>(() => defaultAgenda(city));
   const [saved, setSaved] = useState<EventPersonal>({});
@@ -91,7 +92,23 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
   return (
     <aside className="plan-rail" aria-label="宣讲日程安排">
       <section className="plan-card">
-        <div className="plan-head"><h2><CalendarDays size={16} />校园日程</h2><span className="chip">{talks.length} 场</span></div>
+        <div className="plan-head">
+          <h2><CalendarDays size={16} />校园日程</h2>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span className="chip">{talks.length} 场</span>
+            {onCollapse && (
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="收起校园日程栏"
+                title="收起校园日程栏，拓宽列表视野"
+                onClick={onCollapse}
+              >
+                <PanelRightClose size={14} />
+              </button>
+            )}
+          </div>
+        </div>
         <p className="plan-caption">按举办地点 · 北京时间；与工作城市独立设置</p>
         <div className="agenda-controls">
           <div className="agenda-primary">
@@ -173,7 +190,7 @@ export function ActionRail({ jobs, personal, city, now, ready, onDetail, coverag
             {displayed.map(({ job, event }) => <li key={event.id}>
               <div className="agenda-date"><span>{Number(event.date.slice(5, 7))}月</span><strong>{event.date.slice(8)}</strong></div>
               <div className="agenda-event">
-                <button onClick={() => onDetail(job)}><strong>{eventDisplayTitle(job)}</strong><span>{event.start_time || '时间待确认'} · {event.school}</span><small><MapPin size={11} />{event.venue || '地点待核实'}</small></button>
+                <button onClick={() => onDetail(job)}><strong>{eventDisplayTitle(job)}</strong><span>{event.start_time || '时间待确认'} · {event.school}</span><small><MapPin size={11} />{sanitizeVenueDisplay(event.venue, event.school) || '地点待核实'}</small></button>
                 <small>{EVENT_TYPES[event.event_type || 'unknown']} · {event.status === 'cancelled' ? '已取消' : event.mode === 'online' ? '线上' : event.mode === 'offline' ? '线下' : '形式待核实'}</small>
                 <small>入场：{event.access_policy || '原文未说明，请向学校核对'}</small>
                 {eventChanged(event, saved[event.id]) && <small className="agenda-changed">安排有变化，请重新核对来源</small>}

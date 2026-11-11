@@ -54,6 +54,7 @@ interface ExamDetailDrawerProps {
   detailShards?: Record<string, string>;
   profile: ExamUserProfile;
   personal?: ExamPersonalRecord;
+  focusPositionId?: string | null;
   onClose: () => void;
   onSelectExam: (exam: ExamAnnouncement) => void;
   onToggleSave: (examId: string) => void;
@@ -69,6 +70,7 @@ export function ExamDetailDrawer({
   detailShards,
   profile,
   personal,
+  focusPositionId,
   onClose,
   onSelectExam,
   onToggleSave,
@@ -101,6 +103,7 @@ export function ExamDetailDrawer({
             currentIndex={currentIndex}
             profile={profile}
             personal={personal}
+            focusPositionId={focusPositionId}
             posQuery={posQuery}
             setPosQuery={setPosQuery}
             onlyMatchedPos={onlyMatchedPos}
@@ -126,6 +129,7 @@ function DrawerContent({
   currentIndex,
   profile,
   personal,
+  focusPositionId,
   posQuery,
   setPosQuery,
   onlyMatchedPos,
@@ -144,6 +148,7 @@ function DrawerContent({
   currentIndex: number;
   profile: ExamUserProfile;
   personal?: ExamPersonalRecord;
+  focusPositionId?: string | null;
   posQuery: string;
   setPosQuery: (v: string) => void;
   onlyMatchedPos: boolean;
@@ -204,7 +209,7 @@ function DrawerContent({
   const isHidden = Boolean(personal?.hidden);
   const trackStatus = personal?.status || 'none';
   const savedPosIds = personal?.savedPositionIds || [];
-  const positions = exam.positions || [];
+  const positions = exam.positions ?? resolvedEntry?.positions ?? [];
   const profileActive = isExamProfileActive(profile);
   const onlyMatched = onlyMatchedPos || profile.onlyMatchProfile;
   const applyHref = exam.registration_url || exam.source_url;
@@ -214,6 +219,7 @@ function DrawerContent({
   const rows = positions
     .map((pos) => ({ pos, elig: evaluateExamPositionEligibility(pos, profile) }))
     .filter(({ pos, elig }) => {
+      if (focusPositionId && pos.row_id === focusPositionId) return true;
       if (onlyMatched && elig.status === 'ineligible') return false;
       const q = posQuery.trim().toLowerCase();
       if (!q) return true;
@@ -221,6 +227,27 @@ function DrawerContent({
         .toLowerCase()
         .includes(q);
     });
+
+  useEffect(() => {
+    if (!focusPositionId || positions.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const desktopRow = document.getElementById(`exam-pos-${focusPositionId}`);
+      const mobileCard = document.querySelector<HTMLElement>(
+        `[data-pos-id="${CSS.escape(focusPositionId)}"]`,
+      );
+      const target =
+        desktopRow && desktopRow.offsetParent !== null
+          ? desktopRow
+          : mobileCard && mobileCard.offsetParent !== null
+            ? mobileCard
+            : desktopRow || mobileCard;
+      target?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'center',
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [focusPositionId, positions.length, exam.id]);
 
   const toggleCandidate = (pos: ExamPositionRow) => {
     const exists = savedPosIds.includes(pos.row_id);
@@ -561,6 +588,7 @@ function DrawerContent({
                   rows={rows}
                   profileActive={profileActive}
                   personal={personal}
+                  focusPositionId={focusPositionId}
                   onToggleCandidate={toggleCandidate}
                   onLockTarget={lockTarget}
                 />

@@ -8,7 +8,7 @@ import {
   EXAM_TRACK_STAGES,
   isTerminalTrackStatus,
 } from '@/lib/exams';
-import type { ExamAnnouncement, ExamPersonalStore } from '@/lib/exams';
+import type { ExamAnnouncement, ExamPersonalStore, ExamTrackStatus } from '@/lib/exams';
 import { downloadExamCalendar } from '@/lib/exam-calendar';
 import { categoryLabel, formatMonthDay } from '@/components/exam-ui';
 
@@ -18,6 +18,7 @@ export interface ExamTrackerBoardProps {
   trackedCount: number;
   today?: string;
   onSelectExam: (exam: ExamAnnouncement) => void;
+  onChangeStatus?: (examId: string, status: ExamTrackStatus) => void;
   onNotify?: (msg: string) => void;
 }
 
@@ -27,6 +28,7 @@ export function ExamTrackerBoard({
   trackedCount,
   today = '',
   onSelectExam,
+  onChangeStatus,
   onNotify,
 }: ExamTrackerBoardProps) {
   const [terminalExpanded, setTerminalExpanded] = useState(false);
@@ -97,27 +99,51 @@ export function ExamTrackerBoard({
                         : '（已截止）'
                       : '';
                   return (
-                    <button
-                      key={ex.id}
-                      type="button"
-                      className="exw-kcard"
-                      onClick={() => onSelectExam(ex)}
-                    >
-                      <span className="exw-kcard-title">{ex.title}</span>
-                      <span className="exw-kcard-meta">
-                        <MapPin size={11} />
-                        {ex.cities[0] || ex.province} · {categoryLabel(ex.exam_category)}
-                      </span>
-                      {rec?.targetPositionCode && (
-                        <span className="exw-kcard-note">主报：{rec.targetPositionCode}</span>
-                      )}
-                      {nextStep && (
-                        <span className="exw-kcard-date">
-                          下一步：{nextStep.label}
-                          {stepDateLabel ? ` · 截止 ${stepDateLabel}${daysText}` : ''}
+                    <article key={ex.id} className="exw-kcard">
+                      <button
+                        type="button"
+                        className="exw-kcard-body"
+                        onClick={() => onSelectExam(ex)}
+                      >
+                        <span className="exw-kcard-title">{ex.title}</span>
+                        <span className="exw-kcard-meta">
+                          <MapPin size={11} />
+                          {ex.cities[0] || ex.province} · {categoryLabel(ex.exam_category)}
                         </span>
+                        {rec?.targetPositionCode && (
+                          <span className="exw-kcard-note">主报：{rec.targetPositionCode}</span>
+                        )}
+                        {nextStep && (
+                          <span className="exw-kcard-date">
+                            下一步：{nextStep.label}
+                            {stepDateLabel ? ` · 截止 ${stepDateLabel}${daysText}` : ''}
+                          </span>
+                        )}
+                      </button>
+                      {onChangeStatus && (
+                        <div className="exw-kcard-foot">
+                          <select
+                            className="exw-kcard-select"
+                            aria-label={`更新「${ex.title}」报考阶段`}
+                            value={rec?.status || stage.key}
+                            onChange={(e) =>
+                              onChangeStatus(ex.id, e.target.value as ExamTrackStatus)
+                            }
+                          >
+                            {EXAM_TRACK_STAGES.map((st) => (
+                              <option key={st.key} value={st.key}>
+                                {st.shortLabel}
+                              </option>
+                            ))}
+                            {EXAM_TERMINAL_STAGES.map((st) => (
+                              <option key={st.key} value={st.key}>
+                                {st.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       )}
-                    </button>
+                    </article>
                   );
                 })}
                 {stageExams.length === 0 && <p className="exw-kempty">—</p>}

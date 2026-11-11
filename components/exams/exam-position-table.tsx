@@ -55,7 +55,7 @@ export interface WorkspacePositionTableProps {
   rows: FlattenedExamPosition[];
   profileActive: boolean;
   personal: ExamPersonalStore;
-  onSelectExam: (exam: ExamAnnouncement) => void;
+  onSelectExam: (exam: ExamAnnouncement, focusRowId?: string) => void;
   onToggleCandidate: (examId: string, rowId: string, positionName: string) => void;
 }
 
@@ -64,6 +64,7 @@ export interface DrawerPositionTableProps {
   rows: { pos: ExamPositionRow; elig: PositionEligibilityResult }[];
   profileActive: boolean;
   personal?: ExamPersonalRecord;
+  focusPositionId?: string | null;
   onToggleCandidate: (pos: ExamPositionRow) => void;
   onLockTarget: (pos: ExamPositionRow) => void;
 }
@@ -73,7 +74,7 @@ export interface CandidateCompareTableProps {
   rows: FlattenedExamPosition[];
   staleCount?: number;
   onCleanupStale?: () => void;
-  onSelectExam: (exam: ExamAnnouncement) => void;
+  onSelectExam: (exam: ExamAnnouncement, focusRowId?: string) => void;
   onToggleCandidate: (examId: string, rowId: string, positionName: string) => void;
 }
 
@@ -150,7 +151,7 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
                         <button
                           type="button"
                           className="exw-row-title"
-                          onClick={() => onSelectExam(row.exam)}
+                          onClick={() => onSelectExam(row.exam, row.row_id)}
                         >
                           {row.position_name}
                         </button>
@@ -215,7 +216,7 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
                         <button
                           type="button"
                           className="exw-row-title"
-                          onClick={() => onSelectExam(row.exam)}
+                          onClick={() => onSelectExam(row.exam, row.row_id)}
                         >
                           {row.position_name}
                         </button>
@@ -296,7 +297,7 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
                       <button
                         type="button"
                         className="exw-row-title"
-                        onClick={() => onSelectExam(row.exam)}
+                        onClick={() => onSelectExam(row.exam, row.row_id)}
                       >
                         {row.position_name}
                       </button>
@@ -373,7 +374,7 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
                     <button
                       type="button"
                       className="exw-row-title"
-                      onClick={() => onSelectExam(row.exam)}
+                      onClick={() => onSelectExam(row.exam, row.row_id)}
                     >
                       {row.position_name}
                     </button>
@@ -406,7 +407,7 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
     );
   }
 
-  const { rows, profileActive, personal, onToggleCandidate, onLockTarget } = props;
+  const { rows, profileActive, personal, focusPositionId, onToggleCandidate, onLockTarget } = props;
   const savedPosIds = personal?.savedPositionIds || [];
 
   return (
@@ -427,6 +428,7 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
             {rows.map(({ pos, elig }) => {
               const isCand = savedPosIds.includes(pos.row_id);
               const isLocked = Boolean(personal?.targetRowId && pos.row_id === personal.targetRowId);
+              const isFocused = Boolean(focusPositionId && pos.row_id === focusPositionId);
               const extra = [
                 pos.political_status && pos.political_status !== '不限' ? pos.political_status : '',
                 pos.fresh_grad_rule && !/^(不限|应往届均可)$/.test(pos.fresh_grad_rule)
@@ -437,7 +439,8 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
               return (
                 <tr
                   key={pos.row_id}
-                  className={`${profileActive && elig.matched ? 'is-ok' : ''}${isLocked ? ' is-target' : ''}`}
+                  id={`exam-pos-${pos.row_id}`}
+                  className={`${profileActive && elig.matched ? 'is-ok' : ''}${isLocked ? ' is-target' : ''}${isFocused ? ' is-focused' : ''}`}
                 >
                   <td className="exw-td-main">
                     <strong>{pos.position_name}</strong>
@@ -506,10 +509,12 @@ export function ExamPositionTable(props: ExamPositionTableProps) {
         {rows.map(({ pos, elig }) => {
           const isCand = savedPosIds.includes(pos.row_id);
           const isLocked = Boolean(personal?.targetRowId && pos.row_id === personal.targetRowId);
+          const isFocused = Boolean(focusPositionId && pos.row_id === focusPositionId);
           return (
             <article
               key={pos.row_id}
-              className={`exw-pos-card${profileActive && elig.matched ? ' is-ok' : ''}${isLocked ? ' is-target' : ''}`}
+              data-pos-id={pos.row_id}
+              className={`exw-pos-card${profileActive && elig.matched ? ' is-ok' : ''}${isLocked ? ' is-target' : ''}${isFocused ? ' is-focused' : ''}`}
             >
               <div className="exw-pos-card-head">
                 <div>

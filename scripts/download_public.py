@@ -4,13 +4,14 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 from urllib.request import Request, urlopen
 
 try:
-    from stage_public import ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths
+    from stage_public import ASSET, EXAM_ASSET, asset_paths, exam_asset_paths
     from employer_identity import employer_identity, refine_company_facts
 except ImportError:
-    from scripts.stage_public import ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths
+    from scripts.stage_public import ASSET, EXAM_ASSET, asset_paths, exam_asset_paths
     from scripts.employer_identity import employer_identity, refine_company_facts
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
@@ -158,18 +159,27 @@ def download(site, public, repair_zhiye_urls=False, prefer_newer_exams_dir=None)
             repo_exams_file = Path(prefer_newer_exams_dir) / 'exams.json'
             if repo_exams_file.is_file():
                 repo_exam = json.loads(repo_exams_file.read_text(encoding='utf-8'))
-                repo_has_shards = bool(repo_exam.get('detail_shards'))
-                live_has_shards = bool(exam_snapshot.get('detail_shards'))
+                repo_has_shards = bool(repo_exam.get('detail_shards')) and bool(repo_exam.get('positions_url'))
+                live_has_shards = bool(exam_snapshot.get('detail_shards')) and bool(exam_snapshot.get('positions_url'))
                 repo_gen = str(repo_exam.get('generated_at') or '')
                 live_gen = str(exam_snapshot.get('generated_at') or '')
                 if (repo_has_shards and not live_has_shards) or (repo_gen and live_gen and repo_gen > live_gen):
                     skip_stale_live_exams = True
+                    prefer_root = Path(prefer_newer_exams_dir).resolve()
+                    if prefer_root != public.resolve():
+                        shutil.copy2(repo_exams_file, public / 'exams.json')
+                        for rel_path in exam_asset_paths(repo_exam):
+                            src_asset = prefer_root / rel_path.lstrip('/')
+                            if src_asset.is_file() and src_asset.resolve().is_relative_to(prefer_root):
+                                dst_asset = public / rel_path.lstrip('/')
+                                dst_asset.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(src_asset, dst_asset)
                     print(f'Kept newer built exams snapshot (repo={repo_gen}, live={live_gen})')
         if not skip_stale_live_exams:
             exam_paths = exam_asset_paths(exam_snapshot)
 
             def fetch_exam_asset(path):
-                match = EXAM_DETAIL_ASSET.fullmatch(path)
+                match = EXAM_ASSET.fullmatch(path)
                 if not match:
                     raise ValueError('Invalid published exam asset path')
                 raw = fetch(path)
@@ -181,9 +191,10 @@ def download(site, public, repair_zhiye_urls=False, prefer_newer_exams_dir=None)
 
             exam_assets_dir = (public / 'exam-assets').resolve()
             if exam_assets_dir.is_dir():
-                for old in exam_assets_dir.glob('detail-*.json'):
-                    if old.resolve().is_relative_to(exam_assets_dir) and f'/exam-assets/{old.name}' not in exam_paths:
-                        old.unlink()
+                for pattern in ('detail-*.json', 'positions-*.json'):
+                    for old in exam_assets_dir.glob(pattern):
+                        if old.resolve().is_relative_to(exam_assets_dir) and f'/exam-assets/{old.name}' not in exam_paths:
+                            old.unlink()
             if exam_paths:
                 with ThreadPoolExecutor(max_workers=8) as pool:
                     list(pool.map(fetch_exam_asset, sorted(exam_paths)))

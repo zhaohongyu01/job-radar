@@ -143,11 +143,13 @@ export function FilterSidebar({
   onImport,
   className = '',
   facts,
+  cityCounts,
 }: {
   filters: Filters;
   data: Snapshot | null;
   years: string[];
   facts?: { verified: number; salaryKnown: number; total: number; hasReputationScores: boolean };
+  cityCounts?: Record<string, number>;
   ready: boolean;
   onChange: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
   onReset: () => void;
@@ -286,6 +288,7 @@ export function FilterSidebar({
         <fieldset className="quick-filter-pills" aria-label="热门城市快捷选择">
           {QUICK_CITIES.map((city) => {
             const active = selectedCities.includes(city);
+            const cnt = cityCounts?.[city];
             return (
               <button
                 key={city}
@@ -294,7 +297,10 @@ export function FilterSidebar({
                 className={`toggle-chip toggle-chip-xs${active ? ' is-active' : ''}`}
                 onClick={() => toggleQuickCity(city)}
               >
-                {city}
+                <span>{city}</span>
+                {typeof cnt === 'number' && cnt > 0 && (
+                  <small className="pill-facet-count">{cnt}</small>
+                )}
               </button>
             );
           })}

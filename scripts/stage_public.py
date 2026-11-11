@@ -6,9 +6,9 @@ from pathlib import Path
 import shutil
 
 try:
-    from snapshot_assets import ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths, MAX_ASSET_BYTES
+    from snapshot_assets import ASSET, EXAM_ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths, MAX_ASSET_BYTES
 except ImportError:
-    from scripts.snapshot_assets import ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths, MAX_ASSET_BYTES
+    from scripts.snapshot_assets import ASSET, EXAM_ASSET, EXAM_DETAIL_ASSET, asset_paths, exam_asset_paths, MAX_ASSET_BYTES
 
 
 def stage(public, dist):
@@ -52,7 +52,7 @@ def stage(public, dist):
         exam_snapshot = json.loads((public/'exams.json').read_text(encoding='utf-8'))
         exam_paths = exam_asset_paths(exam_snapshot)
         for path in exam_paths:
-            match = EXAM_DETAIL_ASSET.fullmatch(path)
+            match = EXAM_ASSET.fullmatch(path)
             if not match:
                 raise ValueError('Unexpected exam asset path: ' + str(path))
             source = public/path.lstrip('/')
@@ -65,14 +65,23 @@ def stage(public, dist):
                 raise ValueError('Exam asset is missing or corrupt: ' + path)
         exam_assets = destination/'exam-assets'
         exam_assets.mkdir(parents=True, exist_ok=True)
-        for old in exam_assets.glob('detail-*.json'):
-            if not old.resolve().is_relative_to(destination):
-                raise ValueError('Exam asset path escaped the built client directory')
-            if '/exam-assets/'+old.name not in exam_paths:
-                old.unlink()
+        for pattern in ('detail-*.json', 'positions-*.json'):
+            for old in exam_assets.glob(pattern):
+                if not old.resolve().is_relative_to(destination):
+                    raise ValueError('Exam asset path escaped the built client directory')
+                if '/exam-assets/'+old.name not in exam_paths:
+                    old.unlink()
         for path in exam_paths:
             shutil.copy2(public/path.lstrip('/'), destination/path.lstrip('/'))
         shutil.copy2(public/'exams.json', destination/'exams.json')
+    feeds_src = public/'feeds'
+    if feeds_src.is_dir():
+        feeds_dst = destination/'feeds'
+        feeds_dst.mkdir(parents=True, exist_ok=True)
+        for feed_name in ('exams-shandong.xml', 'jobs-latest.xml', 'exams-shandong.ics'):
+            f_src = feeds_src/feed_name
+            if f_src.is_file() and f_src.resolve().is_relative_to(public):
+                shutil.copy2(f_src, feeds_dst/feed_name)
     for path in destination.rglob('*'):
         if path.is_file() and path.stat().st_size > MAX_ASSET_BYTES:
             raise ValueError(f'Built asset exceeds 25 MiB: {path.relative_to(destination)}')

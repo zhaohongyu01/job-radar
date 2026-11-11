@@ -208,6 +208,9 @@ jobs:
         run: npm ci
 
       - name: Build Web Application
+        env:
+          CF_D1_DATABASE_ID: ${{ vars.CF_D1_DATABASE_ID }}
+          CF_D1_DATABASE_NAME: ${{ vars.CF_D1_DATABASE_NAME }}
         run: npm run build
 
       - name: Upload Built Application
@@ -321,7 +324,22 @@ jobs:
         run: node --experimental-strip-types scripts/build_browse_index.mjs --public-dir public
 
       - name: Keep latest exams snapshot
-        run: python scripts/exams_guard.py --public-dir public --site https://sites-project.job-radar.workers.dev --require-fresh
+        env:
+          SITE_ORIGIN: ${{ vars.PUBLIC_SITE_ORIGIN || 'https://sites-project.job-radar.workers.dev' }}
+        run: |
+          python scripts/exams_guard.py --public-dir public --site https://sites-project.job-radar.workers.dev --require-fresh
+          python scripts/build_feeds.py --public-dir public --site "$SITE_ORIGIN"
+
+      - name: Sync SQLite index to Cloudflare D1 (optional)
+        if: ${{ vars.CF_D1_DATABASE_ID != '' }}
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DB_NAME: ${{ vars.CF_D1_DATABASE_NAME || 'job-radar-db' }}
+        run: |
+          python scripts/build_radar_sqlite.py --public-dir public --output-sqlite data/radar.sqlite --output-d1-sql data/d1-sync.sql
+          npx --yes --package wrangler@4.92.0 wrangler d1 execute "$D1_DB_NAME" --remote --file data/d1-sync.sql
 
       - name: Attach Validated Data to Application
         run: python scripts/stage_public.py --public-dir public --dist-dir dist

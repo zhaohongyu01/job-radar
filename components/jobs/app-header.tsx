@@ -1,9 +1,11 @@
 'use client';
 
-import { Radar, RefreshCw } from 'lucide-react';
+import { Command, Radar, RefreshCw } from 'lucide-react';
 import type { Filters, Job, Personal } from '@/lib/jobs';
 import { WorkspaceSwitch } from '@/components/workspace-switch';
 import { PersonalReminders } from '@/components/personal-reminders';
+import { FeedSubscribePopover } from '@/components/feed-subscribe-popover';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export interface AppHeaderProps {
   activeView: Filters['view'];
@@ -17,6 +19,7 @@ export interface AppHeaderProps {
   progressiveProgress: { loaded: number; total: number } | null;
   onOpenSources: () => void;
   onRefresh: () => void;
+  onOpenCommandPalette?: () => void;
   jobs: Job[];
   personal: Personal;
   now: number;
@@ -89,6 +92,7 @@ export function AppHeader({
   progressiveProgress,
   onOpenSources,
   onRefresh,
+  onOpenCommandPalette,
   jobs,
   personal,
   now,
@@ -98,6 +102,12 @@ export function AppHeader({
   const isSavedSection =
     activeView === 'planned' || activeView === 'saved' || activeView === 'hidden';
   const isTrackingSection = activeView === 'pipeline' || activeView === 'applied';
+  const progressPct = progressiveProgress
+    ? Math.min(
+        100,
+        Math.max(4, Math.round((progressiveProgress.loaded / Math.max(1, progressiveProgress.total)) * 100)),
+      )
+    : null;
 
   return (
     <header className="app-bar">
@@ -140,9 +150,23 @@ export function AppHeader({
         </nav>
 
         <div className="app-bar-actions">
+          {onOpenCommandPalette && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm cmdk-trigger-btn"
+              onClick={onOpenCommandPalette}
+              aria-label="打开全局快捷命令与检索（Ctrl+K）"
+              title="全局检索与操作（⌘K / Ctrl+K）"
+            >
+              <Command size={13} />
+              <span>速查</span>
+              <kbd className="kbd">⌘K</kbd>
+            </button>
+          )}
           {ready && (
             <PersonalReminders jobs={jobs} personal={personal} now={now} onDetail={onDetail} />
           )}
+          <FeedSubscribePopover />
           <StatusButton
             hasData={hasData}
             loading={loading}
@@ -151,6 +175,7 @@ export function AppHeader({
             progressiveProgress={progressiveProgress}
             onClick={onOpenSources}
           />
+          <ThemeToggle />
           <button
             type="button"
             className="icon-btn"
@@ -163,6 +188,14 @@ export function AppHeader({
           </button>
         </div>
       </div>
+      {loading && (
+        <div className="app-bar-progress" aria-hidden="true">
+          <div
+            className={`app-bar-progress-fill${progressPct === null ? ' is-indeterminate' : ''}`}
+            style={progressPct !== null ? { width: `${progressPct}%` } : undefined}
+          />
+        </div>
+      )}
     </header>
   );
 }

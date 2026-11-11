@@ -18,6 +18,13 @@ import type {
   ExamUserProfile,
 } from '@/lib/exams';
 import { readStore, subscribeStore, writeStore } from '@/lib/local-store';
+import {
+  examProfileToUnified,
+  isUnifiedProfileConfigured,
+  readUnifiedProfile,
+  unifiedToExamProfilePatch,
+  writeUnifiedProfile,
+} from '@/lib/unified-profile';
 import { report } from '@/lib/rum';
 
 const EXAM_FILTERS_MIGRATED_KEY = 'job-radar-exam-filters-migrated-v2';
@@ -45,9 +52,23 @@ export interface UseExamPersonalOptions {
 }
 
 export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOptions) {
-  const [profile, setProfile] = useState<ExamUserProfile>(() =>
-    readStore(EXAM_PROFILE_STORAGE, validateExamProfile, DEFAULT_EXAM_PROFILE),
-  );
+  const [profile, setProfile] = useState<ExamUserProfile>(() => {
+    const stored = readStore(EXAM_PROFILE_STORAGE, validateExamProfile, DEFAULT_EXAM_PROFILE);
+    if (typeof window !== 'undefined') {
+      try {
+        const hasRawExamProfile = Boolean(window.localStorage.getItem(EXAM_PROFILE_STORAGE));
+        if (!hasRawExamProfile) {
+          const unified = readUnifiedProfile();
+          if (isUnifiedProfileConfigured(unified)) {
+            return { ...stored, ...unifiedToExamProfilePatch(unified) };
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return stored;
+  });
   const [filters, setFilters] = useState<ExamFilters>(() => {
     let loaded: ExamFilters = readStore(
       EXAM_FILTERS_STORAGE,
@@ -104,13 +125,14 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
       setProfile((prev) => {
         const next = { ...prev, ...patch };
         writeStore(EXAM_PROFILE_STORAGE, next);
+        writeUnifiedProfile(examProfileToUnified(next, filters.cities, readUnifiedProfile()));
         return next;
       });
       clearTimeout(profileReportTimer.current);
       profileReportTimer.current = setTimeout(() => report('event', 'exam_profile_set'), 400);
       onPageReset();
     },
-    [onPageReset],
+    [filters.cities, onPageReset],
   );
 
   const clearProfile = useCallback(() => {
@@ -171,9 +193,13 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
       }
       const cur = filters.cities.filter((c) => c !== '全部');
       const next = cur.includes(city) ? cur.filter((c) => c !== city) : [...cur, city];
-      updateFilters({ cities: next.length > 0 ? next : ['全部'] });
+      const finalCities = next.length > 0 ? next : ['全部'];
+      updateFilters({ cities: finalCities });
+      if (next.length > 0) {
+        writeUnifiedProfile(examProfileToUnified(profile, next, readUnifiedProfile()));
+      }
     },
-    [filters.cities, updateFilters],
+    [filters.cities, profile, updateFilters],
   );
 
   const toggleCandidate = useCallback(

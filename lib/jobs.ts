@@ -377,18 +377,50 @@ export function formatEducationDisplay(education?: string | null, fallback = '�
   }
   return cleaned;
 }
+const TRAILING_ATS_CODE_RE =
+  /\s*[(（[【]\s*(?:岗位编号|职位编号|职位代码|岗位代码|编号)?\s*[:：]?\s*[A-Za-z]{1,4}[-_]?\d{4,12}\s*[)）\]】]\s*$/;
+
+export function stripTrailingAtsCode(title: string): string {
+  return title.replace(TRAILING_ATS_CODE_RE, '').trim();
+}
+
+export function sanitizeDisplayExcerpt(text: string | null | undefined): string {
+  if (!text) return '';
+  const trimmed = text.trim();
+  if (!trimmed || trimmed === '单位介绍与岗位说明请查看原公告。') return '';
+  return trimmed
+    .replace(/([：:])\s*[：:]+/g, '：')
+    .replace(/([；;])\s*[；;]+/g, '；')
+    .replace(/([，,])\s*[，,]+/g, '，')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+export function sanitizeVenueDisplay(venue: string | null | undefined, school?: string | null): string {
+  const raw = (venue ?? '').trim();
+  if (!raw) return '';
+  let out = raw.replace(/\s+/g, ' ');
+  const schoolTrimmed = (school ?? '').trim();
+  if (schoolTrimmed && out.startsWith(schoolTrimmed) && out.length > schoolTrimmed.length) {
+    out = out.slice(schoolTrimmed.length).replace(/^[\s·•—-]+/, '').trim() || out;
+  }
+  out = out.replace(/^([\u4e00-\u9fa5A-Za-z0-9]{2,14}?)\s*\1+/, '$1');
+  return out.trim();
+}
+
 export function cardJobTitle(cleanTitle: string, company?: string | null, displayCompany?: string | null): string {
-  const title = cleanTitle.trim();
-  if (!title) return title;
+  const rawTitle = cleanTitle.trim();
+  if (!rawTitle) return rawTitle;
+  const stripped = stripTrailingAtsCode(rawTitle) || rawTitle;
   for (const candidate of [displayCompany, company]) {
     const prefix = (candidate ?? '').trim();
     if (!prefix) continue;
-    if (title.startsWith(prefix)) {
-      const rest = title.slice(prefix.length).replace(/^\s*[·•—\-:：]\s*/, '').trim();
+    if (stripped.startsWith(prefix)) {
+      const rest = stripped.slice(prefix.length).replace(/^\s*[·•—\-:：]\s*/, '').trim();
       if (rest) return rest;
     }
   }
-  return title;
+  return stripped;
 }
 export function eventDisplayTitle(job: Job): string {
   return job.company ? formatCompanyDisplay(job.company, job.title, job.source_id).displayCompany : job.title || '校园活动';

@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { Briefcase, ShieldCheck } from 'lucide-react';
 import type { WorkspaceMode } from '@/lib/exams';
 import { report } from '@/lib/rum';
@@ -12,30 +11,36 @@ export interface WorkspaceSwitchProps {
 export function WorkspaceSwitch({ active }: WorkspaceSwitchProps) {
   return (
     <nav className="workspace-mode-switcher" aria-label="工作台">
-      <Link
+      <a
         href="/"
-        prefetch={false}
         aria-current={active === 'jobs' ? 'page' : undefined}
         className={`workspace-mode-btn ${active === 'jobs' ? 'is-active' : ''}`}
-        onClick={() => {
-          if (active !== 'jobs') report('event', 'switch_workspace');
+        onClick={(e) => {
+          if (active === 'jobs') {
+            e.preventDefault();
+            return;
+          }
+          report('event', 'switch_workspace');
         }}
       >
         <Briefcase size={15} />
         <span>企业求职</span>
-      </Link>
-      <Link
+      </a>
+      <a
         href="/exams"
-        prefetch={false}
         aria-current={active === 'exams' ? 'page' : undefined}
         className={`workspace-mode-btn is-exam ${active === 'exams' ? 'is-active' : ''}`}
-        onClick={() => {
-          if (active !== 'exams') report('event', 'switch_workspace');
+        onClick={(e) => {
+          if (active === 'exams') {
+            e.preventDefault();
+            return;
+          }
+          report('event', 'switch_workspace');
         }}
       >
         <ShieldCheck size={15} />
         <span>考公考编</span>
-      </Link>
+      </a>
     </nav>
   );
 }

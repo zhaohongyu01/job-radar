@@ -1,5 +1,3 @@
-import Link from 'next/link';
-
 export default function NotFound() {
   return (
     <main className="page" style={{ minHeight: '72vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -9,12 +7,12 @@ export default function NotFound() {
           你访问的链接可能已过期或地址有误，请从下方入口返回工作台。
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link href="/" prefetch={false} className="btn btn-primary">
+          <a href="/" className="btn btn-primary">
             回到招聘机会
-          </Link>
-          <Link href="/exams" prefetch={false} className="btn btn-secondary">
+          </a>
+          <a href="/exams" className="btn btn-secondary">
             考公考编
-          </Link>
+          </a>
         </div>
       </div>
     </main>

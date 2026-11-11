@@ -41,6 +41,7 @@
     "import/no-anonymous-default-export": "warn",
     "jsx-a11y/control-has-associated-label": "warn",
     "jsx-a11y/no-noninteractive-element-interactions": "warn",
+    "nextjs/no-html-link-for-pages": "off",
     "react/display-name": "error",
     "react/jsx-no-comment-textnodes": "error",
     "react/no-unescaped-entities": "error",

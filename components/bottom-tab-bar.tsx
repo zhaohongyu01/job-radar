@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import {
   Bookmark,
   Briefcase,
@@ -70,15 +69,14 @@ export function BottomTabBar(props: BottomTabBarProps) {
             跟进{hasData && trackingCount > 0 ? ` ${trackingCount}` : ''}
           </span>
         </button>
-        <Link
+        <a
           href="/exams"
-          prefetch={false}
           className="bottom-tab"
           onClick={() => report('event', 'switch_workspace')}
         >
           <Landmark size={18} />
           <span>考编</span>
-        </Link>
+        </a>
       </nav>
     );
   }
@@ -122,15 +120,14 @@ export function BottomTabBar(props: BottomTabBarProps) {
         <Kanban size={18} />
         <span>进度{trackedCount > 0 ? ` ${trackedCount}` : ''}</span>
       </button>
-      <Link
+      <a
         href="/"
-        prefetch={false}
         className="bottom-tab"
         onClick={() => report('event', 'switch_workspace')}
       >
         <Briefcase size={18} />
         <span>求职</span>
-      </Link>
+      </a>
     </nav>
   );
 }

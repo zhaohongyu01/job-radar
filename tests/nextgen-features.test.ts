@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import {
@@ -157,5 +158,22 @@ void test('queryRadarJobs supports portable node:sqlite and graceful static fall
     assert.ok(liveRes.total > 0);
     assert.ok(liveRes.jobs.length > 0 && liveRes.jobs.length <= 5);
     assert.ok(liveRes.facets && Object.keys(liveRes.facets.cities).length > 0);
+  }
+});
+
+void test('cross-workspace navigation uses native anchors instead of broken vinext next/link chunk', () => {
+  const files = [
+    'components/workspace-switch.tsx',
+    'components/bottom-tab-bar.tsx',
+    'app/not-found.tsx',
+  ];
+  for (const rel of files) {
+    const src = fs.readFileSync(path.resolve(process.cwd(), rel), 'utf-8');
+    assert.ok(
+      !src.includes("from 'next/link'") && !src.includes('from "next/link"'),
+      `${rel} must not import next/link (Rolldown production bundle mangles navigateClientSide)`,
+    );
+    assert.match(src, /href="\/exams"/);
+    assert.match(src, /href="\/"/);
   }
 });

@@ -3,9 +3,13 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
-## 2026-11-11 Cloudflare D1 免费层自动配库增量同步 & 数据深度与体验小步精进
+## 2026-11-11 Cloudflare D1 免费层自动配库增量同步、NAS 国内链路打通 & 数据深度精进
 
-按用户指令完成 Cloudflare D1 免费库自动化配库/增量同步管线接入，以及考编 `.zip` 附件深度解析、山东龙头名企/金融机构面经源扩容与宣讲场地清洗精进：
+按用户指令完成 Cloudflare D1 免费库自动化配库/增量同步管线接入、考编 `.zip` 附件深度解析、山东龙头名企/金融机构面经源扩容、宣讲场地清洗精进，以及考编/口碑双流水线国内 NAS 节点直连与 GitHub Actions Node 24 运行时升级：
+- **考编与企业口碑接入国内 NAS Runner 零权限隔离抓取 + GitHub Actions Node 24 升级 (`.github/workflows/*.yml`)**：
+  1. `employer-reputation.yml` 与 `exams-collect.yml` 重构为「云端准备极简种子 → 国内 `[self-hosted, linux, job-radar-nas]` 零写权限 `NO_PROXY='*'` 直连抓取（牛客网与山东 16 地市 `.gov.cn` 政务网）→ 云端校验、合并发布与 Cloudflare 部署」三段式安全管线，同时支持 `runner_mode=cloud` 备用开关与 NAS 结单断联产物恢复。
+  2. 修复 `scripts/collect_exams.py` 中 `load_hydrated_existing_jobs` 在 `P1.1` 外部化 `positions[]` 后未通过 `hydrate_exam_snapshot` 回填既有岗位明细的隐蔽缺陷，并新增 `--live-site` 参数避免 NAS 节点直连模式下无效请求 `workers.dev`；`scripts/prepare_nas_python.py` 补齐 `xlrd` 环境自检。
+  3. 全部 6 个 GitHub Actions 工作流统一升级至 Node 24 官方版本（`checkout@v7`、`setup-node@v7`、`setup-python@v7`、`cache@v6`、`upload-artifact@v7`、`download-artifact@v8`、`github-script@v9`），彻底消除 Node 20 运行时弃用告警。
 - **Cloudflare D1 免费层配额安全增量同步 (`scripts/sync_cloudflare_d1.py` + `lib/server/radar-db.ts`)**：
   1. 新增 `scripts/sync_cloudflare_d1.py`：在 `.github/workflows/{daily-collect,exams-collect,nas-universities}.yml` 中通过 Cloudflare D1 REST API 自动查找或创建 `job-radar-db`，按主键与 `row_hash` 执行增量 Diff 同步（单条 SQL 限制 `<= 15` 行且 `<= 50 KB`，单次 HTTP 批次 `<= 200 KB`，无 `BEGIN TRANSACTION`；`exams-collect.yml` 使用 `--mode exams-only`），并将获得的 `database_id` 动态写入 `dist/server/wrangler.json` 的 `d1_databases`（`binding: "DB"`）。若 `CLOUDFLARE_API_TOKEN` 尚未勾选 `Account -> D1 -> Edit` 权限，则输出 `::warning::` 提示并无损回退静态分片部署，绝不阻断上线。
   2. 为保护 Cloudflare Free Plan 每日 `100,000 rows written` 免费额度，D1 端不建 FTS5 影子表，仅同步非 `withdrawn` 在招记录，`lib/server/radar-db.ts` 在 `engine === 'd1'` 时使用 `INSTR(j.search_text, ?)` 直查，日常单日增量写入 `< 1,500` 行（`< 1.5%` 免费配额）。

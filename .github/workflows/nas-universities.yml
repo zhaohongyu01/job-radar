@@ -33,10 +33,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
           cache: pip
@@ -46,7 +46,7 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Restore Collector State
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             data/state.json
@@ -65,7 +65,7 @@ jobs:
           cp scripts/shard_baseline.py data/universities-baseline/shard_baseline.py
 
       - name: Upload universities-only baseline
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: collector-baseline-universities-b
           path: data/universities-baseline/
@@ -75,7 +75,7 @@ jobs:
 
       - name: Upload Full Collector Baseline
         if: ${{ !inputs.baseline_diagnostic }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: collector-baseline
           path: |
@@ -94,7 +94,7 @@ jobs:
       - name: Download universities baseline (maximum 5 minutes)
         id: download
         timeout-minutes: 5
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: collector-baseline-universities-b
           path: ${{ runner.temp }}/baseline-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
@@ -114,7 +114,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -125,7 +125,7 @@ jobs:
         id: baseline_download
         continue-on-error: true
         timeout-minutes: 5
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: collector-baseline-universities-b
           path: data
@@ -138,7 +138,7 @@ jobs:
         id: baseline_download_retry
         if: ${{ steps.baseline_download.outcome == 'failure' }}
         timeout-minutes: 5
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: collector-baseline-universities-b
           path: data
@@ -176,7 +176,7 @@ jobs:
       - name: Upload Shard State
         timeout-minutes: 3
         if: ${{ always() && (steps.collector.outcome == 'success' || steps.collector.outcome == 'failure') && hashFiles('data/state.json') != '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: collector-shard-universities-b
           path: |
@@ -196,10 +196,10 @@ jobs:
         run: |
           python3 -c "import os; run=os.environ.get('REUSE_RUN_ID',''); assert not run or (run.isascii() and run.isdecimal()), 'Recovery run ID must contain digits only'; assert not run or os.environ.get('BASELINE_DIAGNOSTIC') != 'true', 'Do not combine recovery with baseline_diagnostic'"
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -214,7 +214,7 @@ jobs:
         run: npm run build
 
       - name: Upload Built Application
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: built-application
           path: |
@@ -236,10 +236,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
           cache: pip
@@ -249,7 +249,7 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Download Collector Baseline
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: collector-baseline
           path: data
@@ -258,7 +258,7 @@ jobs:
 
       - name: Download Universities Shard
         id: download_shard
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: collector-shard-universities-b
           path: data/shards/collector-shard-universities-b
@@ -289,7 +289,7 @@ jobs:
       - name: Save Collector State
         if: ${{ always() && steps.merge.outcome == 'success' && hashFiles('data/state.json') != '' }}
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             data/state.json
@@ -299,7 +299,7 @@ jobs:
       - name: Upload Collection Diagnostics
         if: ${{ always() && hashFiles('data/ci-report.json') != '' }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: collection-report-${{ github.run_attempt }}
           path: |
@@ -309,13 +309,13 @@ jobs:
           retention-days: 7
 
       - name: Download Built Application
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: built-application
           path: dist
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

@@ -920,29 +920,29 @@ def load_hydrated_existing_jobs(public_dir: Path, live_site: str = 'https://site
     local_detail_shards: Dict[str, str] = {}
     live_detail_shards: Dict[str, str] = {}
 
-    # 0. Existing public/exams.json seed
+    # 0. Existing public/exams.json seed (hydrate detail_shards and externalized positions_url)
     exams_path = public_dir / 'exams.json'
     if exams_path.exists():
         try:
+            try:
+                from snapshot_assets import hydrate_exam_snapshot
+            except ImportError:
+                from scripts.snapshot_assets import hydrate_exam_snapshot
+
             existing_snap = json.loads(exams_path.read_text(encoding='utf-8'))
-            exam_detail_by_id: Dict[str, Dict[str, Any]] = {}
-            for shard_rel in (existing_snap.get('detail_shards') or {}).values():
-                shard_file = public_dir / str(shard_rel).lstrip('/')
-                if shard_file.is_file():
-                    try:
-                        shard_json = json.loads(shard_file.read_text(encoding='utf-8'))
-                        for eid, entry in (shard_json.get('exams') or {}).items():
-                            if isinstance(entry, dict):
-                                exam_detail_by_id[eid] = entry
-                    except Exception:
-                        pass
-            for ex in existing_snap.get('exams') or []:
+            hydrated_snap = hydrate_exam_snapshot(
+                existing_snap,
+                lambda rel_path: (
+                    json.loads((public_dir / str(rel_path).lstrip('/')).read_text(encoding='utf-8'))
+                    if (public_dir / str(rel_path).lstrip('/')).is_file()
+                    else {}
+                ),
+            )
+            for ex in hydrated_snap.get('exams') or []:
                 if isinstance(ex, dict) and ex.get('id') and ex.get('source_url'):
                     merged_ex = dict(ex)
-                    if ex['id'] in exam_detail_by_id:
-                        for k in ('body', 'attachments', 'links'):
-                            if merged_ex.get(k) is None and exam_detail_by_id[ex['id']].get(k) is not None:
-                                merged_ex[k] = exam_detail_by_id[ex['id']][k]
+                    if merged_ex.get('positions') and not merged_ex.get('exam_positions'):
+                        merged_ex['exam_positions'] = list(merged_ex['positions'])
                     jobs_by_id[ex['id']] = merged_ex
         except Exception:
             pass
@@ -1238,6 +1238,7 @@ def link_related_exam_notices(exams: List[Dict[str, Any]]) -> None:
 def collect_and_export_exams(
     public_dir: Path = ROOT / 'public',
     live_crawl: bool = True,
+    live_site: str = 'https://sites-project.job-radar.workers.dev',
 ) -> Dict[str, Any]:
     now_iso = dt.datetime.now(TZ).isoformat(timespec='seconds')
     today_str = now_iso[:10]
@@ -1280,7 +1281,7 @@ def collect_and_export_exams(
     # 1. Extract civil exam records already present in public/jobs.json and live snapshot
     existing_exam_jobs = load_hydrated_existing_jobs(
         public_dir,
-        live_site='https://sites-project.job-radar.workers.dev' if live_crawl else '',
+        live_site=live_site if live_crawl else '',
     )
     for job in existing_exam_jobs:
         url = job.get('source_url') or ''
@@ -1553,6 +1554,7 @@ def repack_existing_exam_snapshot(public_dir: Path) -> Dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description='Collect and export Civil Service & Public Institution exams.')
     parser.add_argument('--public-dir', default=str(ROOT / 'public'))
+    parser.add_argument('--live-site', default='https://sites-project.job-radar.workers.dev', help='Live site origin for supplementing snapshot jobs (pass empty string to skip)')
     parser.add_argument('--offline-only', action='store_true', help='Only extract from existing snapshot without network requests')
     parser.add_argument('--repack-existing', action='store_true', help='Losslessly repackage existing public/exams.json into externalized position/detail shards')
     args = parser.parse_args()
@@ -1563,6 +1565,7 @@ def main() -> None:
         res = collect_and_export_exams(
             public_dir=Path(args.public_dir),
             live_crawl=not args.offline_only,
+            live_site=args.live_site,
         )
     print(
         f"Exported exams.json: total_exams={res['total_exams']}, "

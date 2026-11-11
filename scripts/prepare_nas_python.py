@@ -36,7 +36,7 @@ for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
     if line and not line.startswith('#'):
         name, version = line.split('==', 1)
         assert m.version(name) == version, name
-import bs4, soupsieve, typing_extensions, openpyxl, et_xmlfile, pymupdf
+import bs4, soupsieve, typing_extensions, openpyxl, et_xmlfile, pymupdf, xlrd
 '''
     with (root / f'{key}.lock').open('a') as lock:
         # Fail promptly rather than wait behind another long installation.

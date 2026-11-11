@@ -15,6 +15,7 @@ from scripts.collect_exams import (
     is_civil_exam_record,
     is_in_shandong_or_national_scope,
     link_related_exam_notices,
+    load_hydrated_existing_jobs,
     merge_sibling_position_table_entries,
     parse_dtdjzx_basic_lines,
     write_exam_snapshot,
@@ -726,6 +727,53 @@ class ExamParserTests(unittest.TestCase):
         self.assertEqual(parsed[0]["employer"], "济南市第一人民医院")
         self.assertEqual(parsed[0]["position_name"], "临床医师")
         self.assertEqual(parsed[0]["recruit_count"], 3)
+
+    def test_load_hydrated_existing_jobs_preserves_externalized_positions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pub = Path(tmp) / "public"
+            pub.mkdir(parents=True)
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": "2026-11-11T00:00:00+08:00",
+                    "last_success_at": "2026-11-11T00:00:00+08:00",
+                    "total_exams": 1,
+                    "total_positions": 1,
+                    "total_headcount": 2,
+                    "cities": ["济南"],
+                    "exams": [
+                        {
+                            "id": "0a111111111111111111",
+                            "title": "2026年济南市事业单位公开招聘工作人员简章",
+                            "organizer": "济南市人社局",
+                            "source_url": "https://jnhrss.jinan.gov.cn/art/1.html",
+                            "excerpt": "摘要",
+                            "body": "完整正文内容",
+                            "attachments": [{"title": "岗位汇总表.xlsx", "url": "https://jnhrss.jinan.gov.cn/1.xlsx"}],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "r1",
+                                    "exam_id": "0a111111111111111111",
+                                    "employer": "济南市人社局",
+                                    "position_name": "综合管理岗",
+                                    "recruit_count": 2,
+                                    "major_raw": "计算机科学与技术",
+                                    "source": "attachment",
+                                }
+                            ],
+                        }
+                    ],
+                    "sources": [],
+                },
+                pub,
+            )
+
+            seeded = load_hydrated_existing_jobs(pub, live_site="")
+            self.assertEqual(len(seeded), 1)
+            self.assertEqual(len(seeded[0].get("positions") or []), 1)
+            self.assertEqual(len(seeded[0].get("exam_positions") or []), 1)
+            self.assertEqual(seeded[0]["positions"][0]["position_name"], "综合管理岗")
 
 
 if __name__ == "__main__":

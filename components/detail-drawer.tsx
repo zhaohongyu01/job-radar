@@ -213,6 +213,7 @@ export function DetailDrawer({
       major: filters.major || '',
       year: filters.type === '校招' ? filters.year : '全部',
       includeUnknown: filters.includeUncertain,
+      includeUnlimitedMajor: Boolean(filters.includeUnlimitedMajor),
     };
     const matched = list.filter((position) => positionMatches(position, criteria));
     return new Set(matched.length < list.length ? matched : []);

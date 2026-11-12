@@ -18,7 +18,7 @@ const ENUMS = {
   employmentType: ['all', 'full_time', 'internship', 'part_time'],
   validity: ['all', 'confirmed_open', 'long_term', 'unconfirmed'],
 } as const;
-const BOOLEANS = ['includeUncertain', 'showExpired', 'onlyNew', 'onlyUnread', 'includeRelatedTalks', 'includeUnrated'] as const;
+const BOOLEANS = ['includeUncertain', 'showExpired', 'onlyNew', 'onlyUnread', 'includeRelatedTalks', 'includeUnrated', 'includeUnlimitedMajor'] as const;
 const TEXT = ['query', 'education', 'major'] as const;
 const legacySector = (value: unknown) => value === '综合' || value === '综合（高校 / 平台公告）' ? UNKNOWN_SECTOR : value;
 const cityName = (value: unknown) => typeof value === 'string' && /^[\u4e00-\u9fff]{2,24}$/.test(value)

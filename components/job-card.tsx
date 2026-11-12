@@ -224,6 +224,7 @@ function JobCardInner({
           major: filters.major || '',
           year: filters.type === '校招' ? filters.year : '全部',
           includeUnknown: filters.includeUncertain,
+          includeUnlimitedMajor: Boolean(filters.includeUnlimitedMajor),
         }),
       ),
     [job.position_matches, job.positions, filters],

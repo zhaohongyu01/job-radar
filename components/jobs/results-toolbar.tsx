@@ -687,7 +687,7 @@ export function ResultsToolbar({
               ['direction', filters.direction, '全部', filters.direction],
               ['salary', filters.salary, '全部', `薪资${filters.salary}`],
               ['education', filters.education, '', `学历：${filters.education}`],
-              ['major', filters.major || '', '', `专业：${filters.major}`],
+              ['major', filters.major || '', '', `专业：${filters.major}${filters.includeUnlimitedMajor ? '（含不限）' : ''}`],
               [
                 'employmentType',
                 filters.employmentType || 'all',

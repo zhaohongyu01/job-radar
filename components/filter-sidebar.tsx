@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/combobox';
 import type { Filters, Snapshot } from '@/lib/jobs';
 import { countActiveFilters, selectedWorkCities } from '@/lib/jobs';
+import { resolveJobMajorProfile } from '@/lib/job-major-matcher';
 import { loadAllCities, normalizeCity } from '@/lib/cities';
 
 function Choice({
@@ -130,7 +131,20 @@ const QUICK_EDUCATION = [
   { label: '硕士', value: '硕士' },
   { label: '博士', value: '博士' },
 ] as const;
-const QUICK_MAJORS = ['计算机', '软件工程', '电气', '电子信息', '机械', '会计', '金融', '法学', '汉语言'] as const;
+const QUICK_MAJORS = [
+  '计算机',
+  '软件工程',
+  '电子信息',
+  '电气',
+  '机械',
+  '会计',
+  '资产评估',
+  '经济学',
+  '金融',
+  '管理',
+  '法学',
+  '汉语言',
+] as const;
 
 export function FilterSidebar({
   filters,
@@ -188,6 +202,7 @@ export function FilterSidebar({
   };
 
   const currentMajor = filters.major || '';
+  const majorProfile = resolveJobMajorProfile(currentMajor);
   const [majorDraft, setMajorDraft] = useState(currentMajor);
   const [majorBase, setMajorBase] = useState(currentMajor);
   if (majorBase !== currentMajor) {
@@ -419,7 +434,7 @@ export function FilterSidebar({
           onKeyDown={(event) => {
             if (event.key === 'Enter') updateMajor(majorDraft, true);
           }}
-          placeholder="例如会计、软件工程"
+          placeholder="例如会计、资产评估、经济学、软件工程"
         />
         <fieldset className="quick-filter-pills" aria-label="热门专业快捷选择">
           {QUICK_MAJORS.map((major) => {
@@ -437,6 +452,16 @@ export function FilterSidebar({
             );
           })}
         </fieldset>
+        {majorProfile.active && (
+          <>
+            <p className="filter-help">{majorProfile.summaryHint}</p>
+            <Toggle
+              label="含写明“专业不限”的岗位"
+              checked={Boolean(filters.includeUnlimitedMajor)}
+              onChange={(v) => onChange('includeUnlimitedMajor', v)}
+            />
+          </>
+        )}
       </div>
       <details className="filter-more">
         <summary>

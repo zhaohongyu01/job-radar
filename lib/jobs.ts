@@ -1,6 +1,7 @@
 import { PROVINCE_CITIES, citiesInText, workplaceEvidence } from './cities.ts';
 import { assessOpportunityValidity, deadlineTime } from './opportunity-validity.ts';
 import { positionMatches } from './eligibility.ts';
+import { jobMatchesMajor, MAX_EXTRACTED_MAJORS } from './job-major-matcher.ts';
 import { PERSONAL_DETAIL_FIELDS, validatePersonalDetails, mergePersonalRecords } from './personal-records.ts';
 import employerBrands from '../config/employer-brands.json' with { type: 'json' };
 import type { CardSummaryMeta } from './card-summary.ts';
@@ -258,6 +259,7 @@ export type Filters = {
   employmentType?: 'all' | 'full_time' | 'internship' | 'part_time';
   validity?: 'all' | 'confirmed_open' | 'long_term' | 'unconfirmed';
   major?: string;
+  includeUnlimitedMajor?: boolean;
   reputationMin?: 'all' | '3' | '4';
   includeUnrated?: boolean;
   applicationStage?: 'all' | NonNullable<PersonalRecord['application_stage']>;
@@ -286,6 +288,7 @@ export const defaultFilters: Filters = {
   employmentType: 'all',
   validity: 'all',
   major: '',
+  includeUnlimitedMajor: false,
   reputationMin: 'all',
   includeUnrated: true,
   applicationStage: 'all',
@@ -608,7 +611,7 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         existing.position_count = existing.positions.length;
       }
       if (job.majors?.length) {
-        existing.majors = [...new Set([...(existing.majors ?? []), ...job.majors])].slice(0, 15);
+        existing.majors = [...new Set([...(existing.majors ?? []), ...job.majors])].slice(0, MAX_EXTRACTED_MAJORS);
       }
       if (job.sample_positions?.length && !(existing.sample_positions?.length)) {
         existing.sample_positions = job.sample_positions;
@@ -1413,6 +1416,7 @@ function matchesContentConditions(
           major: f.major || '',
           year: f.type === '校招' ? f.year : '全部',
           includeUnknown: f.includeUncertain,
+          includeUnlimitedMajor: Boolean(f.includeUnlimitedMajor),
         }),
       )
     ) {
@@ -1420,8 +1424,7 @@ function matchesContentConditions(
     }
   } else if (
     f.major &&
-    !j.majors?.some((major) => major.includes(f.major!)) &&
-    !(f.includeUncertain && !j.majors?.length)
+    !jobMatchesMajor(j, f.major, { includeUnlimited: Boolean(f.includeUnlimitedMajor) })
   ) {
     return false;
   }

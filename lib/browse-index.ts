@@ -3,6 +3,7 @@ import { duplicateSourceNames, hasLongTermText, hasSelectionNotice, meaningfulCh
   mergeDuplicateOpportunities, parseSalaryRange, positionChangeDates } from './jobs.ts';
 import { extractSalary } from './salary-display.ts';
 import { buildCardSummaries, extractCardSummary, validateCardSummary } from './card-summary.ts';
+import { extractProseMajorsFromText, extractProseSamplePositions } from './job-major-matcher.ts';
 
 export const BROWSE_EXCERPT_LIMIT = 90;
 
@@ -38,6 +39,25 @@ export function projectBrowsingJobs(input: Job[], fullText: Readonly<Record<stri
     if (job.classification_note?.startsWith('仅核实')) listing_facts.detail_pending = true;
     excerpts[job.id] = job.excerpt || '';
     const result = { ...job, listing_facts };
+    if (!result.majors?.length || (!result.sample_positions?.length && !result.positions?.length && !result.position_matches?.length)) {
+      const sourceProse = [
+        job.body || '',
+        job.excerpt || '',
+        ...[job.id, ...(job.duplicate_ids ?? [])].map((id) => fullText[id] || ''),
+      ]
+        .filter(Boolean)
+        .join('\n');
+      if (sourceProse) {
+        if (!result.majors?.length) {
+          const proseMajors = extractProseMajorsFromText(sourceProse);
+          if (proseMajors.length) result.majors = proseMajors;
+        }
+        if (!result.sample_positions?.length && !result.positions?.length && !result.position_matches?.length) {
+          const prosePositions = extractProseSamplePositions(sourceProse);
+          if (prosePositions.length) result.sample_positions = prosePositions;
+        }
+      }
+    }
     for (const field of ['body', 'timeline', 'duplicate_sources', 'classification_note'] as const) delete result[field];
     // Version 2 keeps one display string, avoiding a second copy of the source
     // preview in every row. Original excerpts stay in canonical assets/search;

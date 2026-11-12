@@ -7,6 +7,19 @@ export interface MajorMatchOptions {
   includeUnlimited?: boolean;
 }
 
+export interface SingleTermMajorProfile {
+  summaryHint: string;
+  concreteSubstrings: string[];
+  concreteExactTokens: string[];
+  umbrellaSubstrings: string[];
+  umbrellaExactTokens: string[];
+  broadUmbrellaSubstrings: string[];
+  broadUmbrellaExactTokens: string[];
+  offTrackRolePatterns: RegExp[];
+  roleKeywords: string[];
+  financeSectorRoleKeywords: string[];
+}
+
 export interface ResolvedJobMajorProfile {
   active: boolean;
   summaryHint: string;
@@ -14,8 +27,11 @@ export interface ResolvedJobMajorProfile {
   concreteExactTokens: string[];
   umbrellaSubstrings: string[];
   umbrellaExactTokens: string[];
+  broadUmbrellaSubstrings: string[];
+  broadUmbrellaExactTokens: string[];
   roleKeywords: string[];
   financeSectorRoleKeywords: string[];
+  subProfiles: SingleTermMajorProfile[];
 }
 
 interface MajorFamilyRule {
@@ -26,15 +42,30 @@ interface MajorFamilyRule {
   concreteExactTokens?: readonly string[];
   umbrellaSubstrings: readonly string[];
   umbrellaExactTokens?: readonly string[];
+  broadUmbrellaSubstrings?: readonly string[];
+  broadUmbrellaExactTokens?: readonly string[];
+  offTrackRolePattern?: RegExp;
   roleKeywords: readonly string[];
   financeSectorRoleKeywords?: readonly string[];
 }
+
+const FINANCE_ACCOUNTING_OFF_TRACK_ROLE_RE =
+  /人力资源|人事|\bhr\b|\bhrbp\b|招聘|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|宣传|市场|营销|品牌|公关|广告|策划|新媒体|文案|编辑|记者|主播|直播|美工|设计|产品策略|产品经理|产品专员|产品运营|用户运营|内容运营|活动运营|电商运营|社群运营|门店运营|销售|渠道|客户代表|客户经理|大客户|商务拓展|\bbd\b|招商|置业顾问|外贸|国际贸易|海外营销|海外销售|跨境|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|关务|单证|法务|律师|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间|安全员/;
+
+const ECONOMICS_OFF_TRACK_ROLE_RE =
+  /人力资源|人事|\bhr\b|\bhrbp\b|招聘|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|纪检|法务|律师|诉讼|出纳|文案|编辑|记者|新媒体|主播|直播|美工|设计|产品策略|产品经理|用户运营|内容运营|活动运营|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间/;
+
+const FINANCE_TRACK_OFF_TRACK_ROLE_RE =
+  /人力资源|人事|\bhr\b|\bhrbp\b|招聘|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|纪检|法务|律师|诉讼|出纳|文案|编辑|记者|新媒体|主播|直播|美工|设计|产品策略|产品经理|市场推广|品牌|公关|广告|用户运营|内容运营|活动运营|外贸业务|国际贸易销售|货代|报关|单证|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间/;
+
+const HUMANITIES_OFF_TRACK_ROLE_RE =
+  /销售|外贸|国际贸易|跨境|海外营销|海外销售|渠道|客户代表|客户经理|大客户|商务拓展|\bbd\b|招商|置业顾问|理财|信贷|核保|理赔|客服|客群服务|话务|导购|门店|店长|财务|会计|审计|出纳|税务|法务|律师|采购|物流|供应链|仓储|研发|软件|算法|前端|后端|硬件|机械|电气|设备|工艺/;
 
 const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
   {
     id: 'asset-appraisal',
     triggers: ['资产评估', '评估师', '资产评估学', 'mv'],
-    summaryHint: '已关联可投范围：资产评估/财会审计/税务/投资 · 财经/经管/工商管理类及评估财审投融资岗',
+    summaryHint: '已关联可投范围：资产评估/财会审计/税务/投资 · 财经/财会/经管类及评估财审投融资岗',
     concreteSubstrings: [
       '资产评估',
       '房地产评估',
@@ -52,19 +83,10 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '房地产开发与管理',
     ],
     concreteExactTokens: ['评估', '财务', '财政', '投资'],
-    umbrellaSubstrings: [
-      '财经',
-      '财会',
-      '财务类',
-      '经济管理',
-      '经管',
-      '工商管理类',
-      '管理学类',
-      '管理类',
-      '财政学类',
-      '商科',
-    ],
-    umbrellaExactTokens: ['管理', '管理学', '工商管理'],
+    umbrellaSubstrings: ['财经', '财会', '财务类', '财政学类'],
+    broadUmbrellaSubstrings: ['经济管理', '经管', '工商管理类', '管理学类', '管理类', '商科'],
+    broadUmbrellaExactTokens: ['管理', '管理学', '工商管理'],
+    offTrackRolePattern: FINANCE_ACCOUNTING_OFF_TRACK_ROLE_RE,
     roleKeywords: [
       '资产评估',
       '评估师',
@@ -84,12 +106,19 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '出纳',
       '总账',
       '资金管理',
-      '预算',
+      '预算管理',
+      '财务预算',
+      '全面预算',
+      '预算会计',
       '成本会计',
       '成本管理',
       '内控',
       '资产管理',
-      '资管',
+      '大资管',
+      '资管岗',
+      '资管专员',
+      '资管经理',
+      '资管部',
       '产权管理',
       '投融资',
       '投资经理',
@@ -103,7 +132,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '信贷',
       '不良资产',
     ],
-    financeSectorRoleKeywords: ['客户经理', '理财经理', '柜员'],
+    financeSectorRoleKeywords: ['综合柜员', '柜员'],
   },
   {
     id: 'accounting-audit',
@@ -124,7 +153,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       'mpacc',
       'maud',
     ],
-    summaryHint: '已关联可投范围：会计/财务管理/审计/税务/资产评估 · 财经/财会/经管/工商管理类及财会审计税务岗',
+    summaryHint: '已关联可投范围：会计/财务管理/审计/税务/资产评估 · 财经/财会/经管类及财会审计税务岗',
     concreteSubstrings: [
       '会计',
       '财务管理',
@@ -144,19 +173,10 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       'mpacc',
     ],
     concreteExactTokens: ['财务', '财政'],
-    umbrellaSubstrings: [
-      '财经',
-      '财会',
-      '财务类',
-      '经济管理',
-      '经管',
-      '工商管理类',
-      '管理学类',
-      '管理类',
-      '财政学类',
-      '商科',
-    ],
-    umbrellaExactTokens: ['管理', '管理学', '工商管理'],
+    umbrellaSubstrings: ['财经', '财会', '财务类', '财政学类'],
+    broadUmbrellaSubstrings: ['经济管理', '经管', '工商管理类', '管理学类', '管理类', '商科'],
+    broadUmbrellaExactTokens: ['管理', '管理学', '工商管理'],
+    offTrackRolePattern: FINANCE_ACCOUNTING_OFF_TRACK_ROLE_RE,
     roleKeywords: [
       '会计',
       '财务',
@@ -165,22 +185,37 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '出纳',
       '总账',
       '核算',
-      '资金',
-      '预算',
-      '成本',
+      '资金管理',
+      '资金结算',
+      '资金专员',
+      '资金主管',
+      '资金岗',
+      '司库',
+      '预算管理',
+      '财务预算',
+      '全面预算',
+      '预算会计',
+      '成本会计',
+      '成本核算',
+      '成本管理',
+      '成本分析',
+      '成本控制',
       '内控',
       '风控',
       '风险管理',
-      '结算',
+      '财务结算',
+      '清算结算',
+      '结算专员',
+      '结算会计',
+      '结算岗',
       '应收',
       '应付',
       '资产评估',
       '精算',
       '稽核',
-      '柜员',
       '投融资',
     ],
-    financeSectorRoleKeywords: ['客户经理', '理财经理'],
+    financeSectorRoleKeywords: ['综合柜员', '柜员'],
   },
   {
     id: 'economics-trade',
@@ -247,16 +282,13 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '经济与贸易类',
       '经贸类',
       '财经',
-      '经济管理',
-      '经管',
       '金融类',
       '金融学类',
       '财政学类',
-      '商科',
-      '人文社科',
-      '社科类',
     ],
-    umbrellaExactTokens: ['管理', '管理学', '社科'],
+    broadUmbrellaSubstrings: ['经济管理', '经管', '商科', '人文社科', '社科类'],
+    broadUmbrellaExactTokens: ['管理', '管理学', '社科'],
+    offTrackRolePattern: ECONOMICS_OFF_TRACK_ROLE_RE,
     roleKeywords: [
       '经济研究',
       '宏观研究',
@@ -285,7 +317,6 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '风险管理',
       '信贷',
       '授信',
-      '柜员',
       '国际贸易',
       '外贸',
       '进出口',
@@ -297,7 +328,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '商务专员',
       '商务经理',
     ],
-    financeSectorRoleKeywords: ['客户经理', '大堂经理', '综合柜员', '业务经理'],
+    financeSectorRoleKeywords: ['客户经理', '理财经理', '综合柜员', '柜员', '大堂经理'],
   },
   {
     id: 'finance',
@@ -345,12 +376,11 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '经济类',
       '经济学类',
       '财经',
-      '经济管理',
-      '经管',
       '财政学类',
-      '商科',
     ],
-    umbrellaExactTokens: ['管理', '管理学'],
+    broadUmbrellaSubstrings: ['经济管理', '经管', '商科'],
+    broadUmbrellaExactTokens: ['管理', '管理学'],
+    offTrackRolePattern: FINANCE_TRACK_OFF_TRACK_ROLE_RE,
     roleKeywords: [
       '金融',
       '投研',
@@ -368,7 +398,11 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '财富管理',
       '理财',
       '资产管理',
-      '资管',
+      '大资管',
+      '资管岗',
+      '资管专员',
+      '资管经理',
+      '资管部',
       '投融资',
       '投资经理',
       '投资专员',
@@ -379,8 +413,6 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '风险管理',
       '信贷',
       '授信',
-      '柜员',
-      '大堂经理',
       '核保',
       '理赔',
       '精算',
@@ -388,7 +420,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '交易员',
       '外汇',
     ],
-    financeSectorRoleKeywords: ['客户经理', '渠道经理', '营业部'],
+    financeSectorRoleKeywords: ['客户经理', '理财经理', '综合柜员', '柜员', '大堂经理', '营业部'],
   },
   {
     id: 'management-broad',
@@ -446,12 +478,12 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '工业工程类',
       '经济管理',
       '经管',
-      '财经',
       '商科',
-      '人文社科',
-      '社科类',
     ],
-    umbrellaExactTokens: ['社科'],
+    broadUmbrellaSubstrings: ['财经', '人文社科', '社科类'],
+    broadUmbrellaExactTokens: ['社科'],
+    offTrackRolePattern:
+      /法务|律师|诉讼|记者|采编|编导|翻译|口译|笔译|语文|英语教师|历史教师|政治教师|美工|设计|研发|软件|算法|硬件/,
     roleKeywords: [
       '管培生',
       '管理培训生',
@@ -524,8 +556,11 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '应用心理学',
       '心理学',
     ],
-    umbrellaSubstrings: ['工商管理类', '公共管理类', '管理类', '管理学类', '经济管理', '经管', '人文社科', '社科类', '商科'],
+    umbrellaSubstrings: ['工商管理类', '公共管理类', '管理类', '管理学类'],
     umbrellaExactTokens: ['管理', '管理学'],
+    broadUmbrellaSubstrings: ['经济管理', '经管', '人文社科', '社科类', '商科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|资产评估|投研|行研|证券|基金|信贷|授信|销售|外贸|国际贸易|跨境|采购|物流|供应链|仓储|产品策略|产品经理|市场推广|广告|法务|律师|研发|软件|算法|硬件/,
     roleKeywords: [
       '人力资源',
       '人事',
@@ -566,8 +601,12 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '秘书学',
       'mpa',
     ],
-    umbrellaSubstrings: ['公共管理类', '工商管理类', '管理类', '管理学类', '经济管理', '经管', '人文社科', '社科类'],
-    umbrellaExactTokens: ['管理', '管理学', '文科'],
+    umbrellaSubstrings: ['公共管理类', '工商管理类', '管理类', '管理学类'],
+    umbrellaExactTokens: ['管理', '管理学'],
+    broadUmbrellaSubstrings: ['经济管理', '经管', '人文社科', '社科类'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|投研|证券|销售|外贸|国际贸易|跨境|采购|物流|供应链|仓储|产品策略|产品经理|广告|研发|软件|算法|硬件/,
     roleKeywords: [
       '行政',
       '综合管理',
@@ -585,7 +624,8 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '人力资源',
       '管培生',
       '管理培训生',
-      '社区',
+      '社区工作者',
+      '社区管理',
     ],
   },
   {
@@ -606,8 +646,11 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '信息管理与信息系统',
     ],
     concreteExactTokens: ['物流', '供应链'],
-    umbrellaSubstrings: ['物流管理与工程类', '物流类', '工商管理类', '管理科学与工程类', '管理类', '管理学类', '经济管理', '经管'],
-    umbrellaExactTokens: ['管理', '管理学'],
+    umbrellaSubstrings: ['物流管理与工程类', '物流类', '管理科学与工程类'],
+    broadUmbrellaSubstrings: ['工商管理类', '管理类', '管理学类', '经济管理', '经管'],
+    broadUmbrellaExactTokens: ['管理', '管理学'],
+    offTrackRolePattern:
+      /人力资源|人事|\bhr\b|招聘|行政|文秘|党群|法务|财务|会计|审计|出纳|税务|新媒体|文案|记者|主播|产品策略|研发|软件|算法|硬件/,
     roleKeywords: [
       '物流',
       '供应链',
@@ -642,8 +685,11 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '国际经济与贸易',
     ],
     concreteExactTokens: ['营销', '市场'],
-    umbrellaSubstrings: ['工商管理类', '管理类', '管理学类', '经济管理', '经管', '经济与贸易类', '商科'],
-    umbrellaExactTokens: ['管理', '管理学'],
+    umbrellaSubstrings: ['经济与贸易类'],
+    broadUmbrellaSubstrings: ['工商管理类', '管理类', '管理学类', '经济管理', '经管', '商科'],
+    broadUmbrellaExactTokens: ['管理', '管理学'],
+    offTrackRolePattern:
+      /人力资源|人事|\bhr\b|招聘|行政|文秘|党群|法务|财务|会计|审计|出纳|税务|采购|物流|仓储|研发|软件|算法|硬件/,
     roleKeywords: [
       '市场营销',
       '市场专员',
@@ -693,8 +739,11 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '法硕',
     ],
     concreteExactTokens: ['法律', '法'],
-    umbrellaSubstrings: ['法学类', '法律类', '法律相关', '政法', '人文社科', '社科类'],
-    umbrellaExactTokens: ['社科'],
+    umbrellaSubstrings: ['法学类', '法律类', '法律相关', '政法'],
+    broadUmbrellaSubstrings: ['人文社科', '社科类'],
+    broadUmbrellaExactTokens: ['社科'],
+    offTrackRolePattern:
+      /销售|营销|市场|品牌|公关|广告|产品策略|产品经理|运营|新媒体|文案|编辑|主播|直播|客服|客群服务|话务|外贸|国际贸易|跨境|采购|物流|供应链|仓储|财务|会计|审计|出纳|税务|研发|软件|算法|硬件|设计|美工|门店|导购/,
     roleKeywords: [
       '法务',
       '法律顾问',
@@ -715,7 +764,10 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '监察',
       '稽核',
       '清收',
-      '保全',
+      '资产保全',
+      '财产保全',
+      '诉讼保全',
+      '法律保全',
     ],
   },
   {
@@ -738,13 +790,14 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '编辑出版',
       '网络与新媒体',
       '新媒体',
-      '广告学',
       '历史学',
       '哲学',
     ],
     concreteExactTokens: ['中文', '文学'],
-    umbrellaSubstrings: ['中国语言文学类', '中文类', '文学类', '文史', '新闻传播', '人文社科', '人文类', '社科类', '文科'],
-    umbrellaExactTokens: ['人文', '社科'],
+    umbrellaSubstrings: ['中国语言文学类', '中文类', '文史', '新闻传播'],
+    broadUmbrellaSubstrings: ['人文社科', '人文类', '社科类', '文科'],
+    broadUmbrellaExactTokens: ['人文', '社科', '文科'],
+    offTrackRolePattern: HUMANITIES_OFF_TRACK_ROLE_RE,
     roleKeywords: [
       '文秘',
       '秘书',
@@ -794,8 +847,11 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '汉语言',
       '秘书学',
     ],
-    concreteExactTokens: ['中文', '传播', '广告', '编导'],
-    umbrellaSubstrings: ['新闻传播', '传媒类', '中国语言文学类', '中文类', '文学类', '文史', '人文社科', '社科类', '文科'],
+    concreteExactTokens: ['中文', '文学', '传播', '广告', '编导'],
+    umbrellaSubstrings: ['新闻传播', '传媒类', '中国语言文学类', '中文类', '文史'],
+    broadUmbrellaSubstrings: ['人文社科', '社科类', '文科'],
+    broadUmbrellaExactTokens: ['人文', '社科', '文科'],
+    offTrackRolePattern: HUMANITIES_OFF_TRACK_ROLE_RE,
     roleKeywords: [
       '新媒体',
       '内容运营',
@@ -1168,7 +1224,11 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '国际商务',
       '国际经济与贸易',
     ],
-    umbrellaSubstrings: ['外国语言文学类', '外语类', '语言类', '人文社科', '文科'],
+    umbrellaSubstrings: ['外国语言文学类', '外语类', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|语文教师|历史教师|政治教师|党群|党建|纪检|研发|软件|算法|硬件/,
     roleKeywords: [
       '翻译',
       '口译',
@@ -1246,6 +1306,7 @@ function cleanCandidateMajorSegment(raw: string): string {
     .replace(/(?:专业)$/g, '')
     .replace(/(?:等相关|及相关|类相关|相关|等)+$/g, '')
     .replace(/^[（()）【】[\]·•*◆●—:：\s-]+|[（()）【】[\]·•*◆●—:：\s-]+$/g, '')
+    .replace(/^[与及和或]+/, '')
     .trim();
 
   if (s.includes('（') && !s.includes('）')) s = s.split('（')[0].trim();
@@ -1382,7 +1443,7 @@ export function extractProseSamplePositions(rawText: string): string[] {
 
 const profileCache = new Map<string, ResolvedJobMajorProfile>();
 
-function buildSingleTermProfile(termLower: string): Omit<ResolvedJobMajorProfile, 'active'> {
+function buildSingleTermProfile(termLower: string): SingleTermMajorProfile {
   const matchedRules = MAJOR_FAMILY_RULES.filter((rule) =>
     rule.triggers.some((trigger) => trigger.toLowerCase() === termLower),
   );
@@ -1401,6 +1462,8 @@ function buildSingleTermProfile(termLower: string): Omit<ResolvedJobMajorProfile
   const concreteExactTokens = new Set<string>();
   const umbrellaSubstrings = new Set<string>();
   const umbrellaExactTokens = new Set<string>();
+  const broadUmbrellaSubstrings = new Set<string>();
+  const broadUmbrellaExactTokens = new Set<string>();
   const roleKeywords = new Set<string>();
   const financeSectorRoleKeywords = new Set<string>();
 
@@ -1410,13 +1473,17 @@ function buildSingleTermProfile(termLower: string): Omit<ResolvedJobMajorProfile
   }
 
   if (effectiveRules.length > 0) {
+    const offTrackRolePatterns: RegExp[] = [];
     for (const rule of effectiveRules) {
       for (const s of rule.concreteSubstrings) concreteSubstrings.add(s.toLowerCase());
       for (const s of rule.concreteExactTokens ?? []) concreteExactTokens.add(s.toLowerCase());
       for (const s of rule.umbrellaSubstrings) umbrellaSubstrings.add(s.toLowerCase());
       for (const s of rule.umbrellaExactTokens ?? []) umbrellaExactTokens.add(s.toLowerCase());
+      for (const s of rule.broadUmbrellaSubstrings ?? []) broadUmbrellaSubstrings.add(s.toLowerCase());
+      for (const s of rule.broadUmbrellaExactTokens ?? []) broadUmbrellaExactTokens.add(s.toLowerCase());
       for (const s of rule.roleKeywords) roleKeywords.add(s.toLowerCase());
       for (const s of rule.financeSectorRoleKeywords ?? []) financeSectorRoleKeywords.add(s.toLowerCase());
+      if (rule.offTrackRolePattern) offTrackRolePatterns.push(rule.offTrackRolePattern);
     }
     return {
       summaryHint: effectiveRules[0].summaryHint,
@@ -1424,6 +1491,10 @@ function buildSingleTermProfile(termLower: string): Omit<ResolvedJobMajorProfile
       concreteExactTokens: Array.from(concreteExactTokens),
       umbrellaSubstrings: Array.from(umbrellaSubstrings),
       umbrellaExactTokens: Array.from(umbrellaExactTokens),
+      broadUmbrellaSubstrings: Array.from(broadUmbrellaSubstrings),
+      broadUmbrellaExactTokens: Array.from(broadUmbrellaExactTokens),
+      offTrackRolePatterns:
+        offTrackRolePatterns.length === effectiveRules.length ? offTrackRolePatterns : [],
       roleKeywords: Array.from(roleKeywords),
       financeSectorRoleKeywords: Array.from(financeSectorRoleKeywords),
     };
@@ -1453,6 +1524,9 @@ function buildSingleTermProfile(termLower: string): Omit<ResolvedJobMajorProfile
     concreteExactTokens: Array.from(concreteExactTokens),
     umbrellaSubstrings: Array.from(umbrellaSubstrings),
     umbrellaExactTokens: Array.from(umbrellaExactTokens),
+    broadUmbrellaSubstrings: [],
+    broadUmbrellaExactTokens: [],
+    offTrackRolePatterns: [],
     roleKeywords: Array.from(roleKeywords),
     financeSectorRoleKeywords: Array.from(financeSectorRoleKeywords),
   };
@@ -1468,8 +1542,11 @@ export function resolveJobMajorProfile(rawQuery: string): ResolvedJobMajorProfil
       concreteExactTokens: [],
       umbrellaSubstrings: [],
       umbrellaExactTokens: [],
+      broadUmbrellaSubstrings: [],
+      broadUmbrellaExactTokens: [],
       roleKeywords: [],
       financeSectorRoleKeywords: [],
+      subProfiles: [],
     };
   }
 
@@ -1489,8 +1566,11 @@ export function resolveJobMajorProfile(rawQuery: string): ResolvedJobMajorProfil
     concreteExactTokens: [...new Set(subProfiles.flatMap((p) => p.concreteExactTokens))],
     umbrellaSubstrings: [...new Set(subProfiles.flatMap((p) => p.umbrellaSubstrings))],
     umbrellaExactTokens: [...new Set(subProfiles.flatMap((p) => p.umbrellaExactTokens))],
+    broadUmbrellaSubstrings: [...new Set(subProfiles.flatMap((p) => p.broadUmbrellaSubstrings))],
+    broadUmbrellaExactTokens: [...new Set(subProfiles.flatMap((p) => p.broadUmbrellaExactTokens))],
     roleKeywords: [...new Set(subProfiles.flatMap((p) => p.roleKeywords))],
     financeSectorRoleKeywords: [...new Set(subProfiles.flatMap((p) => p.financeSectorRoleKeywords))],
+    subProfiles,
   };
 
   if (profileCache.size > 200) profileCache.clear();
@@ -1498,24 +1578,45 @@ export function resolveJobMajorProfile(rawQuery: string): ResolvedJobMajorProfil
   return merged;
 }
 
-function majorListMatchesProfile(explicitMajors: readonly string[], profile: ResolvedJobMajorProfile): boolean {
+function majorListMatchesDirect(explicitMajors: readonly string[], sub: SingleTermMajorProfile): boolean {
   const joinedLower = explicitMajors.join(' 、 ').toLowerCase();
-  for (const sub of profile.concreteSubstrings) {
-    if (sub && joinedLower.includes(sub)) return true;
+  for (const s of sub.concreteSubstrings) {
+    if (s && joinedLower.includes(s)) return true;
   }
-  for (const sub of profile.umbrellaSubstrings) {
-    if (sub && joinedLower.includes(sub)) return true;
+  for (const s of sub.umbrellaSubstrings) {
+    if (s && joinedLower.includes(s)) return true;
   }
-  if (profile.concreteExactTokens.length > 0 || profile.umbrellaExactTokens.length > 0) {
+  if (sub.concreteExactTokens.length > 0 || sub.umbrellaExactTokens.length > 0) {
     const tokens = tokenizeMajorClauses(joinedLower);
-    for (const exact of profile.concreteExactTokens) {
+    for (const exact of sub.concreteExactTokens) {
       if (tokens.has(exact) || tokens.has(`${exact}类`) || tokens.has(`${exact}学`)) return true;
     }
-    for (const exact of profile.umbrellaExactTokens) {
+    for (const exact of sub.umbrellaExactTokens) {
       if (tokens.has(exact) || tokens.has(`${exact}类`) || tokens.has(`${exact}学`)) return true;
     }
   }
   return false;
+}
+
+function majorListMatchesBroadUmbrella(explicitMajors: readonly string[], sub: SingleTermMajorProfile): boolean {
+  if (sub.broadUmbrellaSubstrings.length === 0 && sub.broadUmbrellaExactTokens.length === 0) return false;
+  const joinedLower = explicitMajors.join(' 、 ').toLowerCase();
+  for (const s of sub.broadUmbrellaSubstrings) {
+    if (s && joinedLower.includes(s)) return true;
+  }
+  if (sub.broadUmbrellaExactTokens.length > 0) {
+    const tokens = tokenizeMajorClauses(joinedLower);
+    for (const exact of sub.broadUmbrellaExactTokens) {
+      if (tokens.has(exact) || tokens.has(`${exact}类`) || tokens.has(`${exact}学`)) return true;
+    }
+  }
+  return false;
+}
+
+function isOffTrackSingleRole(roleCheckText: string, sub: SingleTermMajorProfile): boolean {
+  if (!roleCheckText || sub.offTrackRolePatterns.length === 0) return false;
+  const lower = roleCheckText.toLowerCase();
+  return sub.offTrackRolePatterns.every((re) => re.test(lower));
 }
 
 function containsKeywordWithAsciiBoundary(haystackLower: string, keyword: string): boolean {
@@ -1530,14 +1631,24 @@ function containsKeywordWithAsciiBoundary(haystackLower: string, keyword: string
 const PURE_ANNOUNCEMENT_SUFFIX_RE =
   /^[-—·:：\s]*(?:202\d\s*[年届]?)?\s*(?:春季|秋季|春招|秋招|暑期|寒假|校园|社会|公开|专项|正式|补录|社招|校招)*\s*(?:招聘简章|招聘公告|招聘启事|招聘信息|校园招聘|社会招聘|公开招聘|人才引进公告|人才招聘|招募令|招聘)\s*$/;
 
+const TRAILING_ATS_JOB_CODE_RE = /(?:\s*[（([][A-Za-z]{1,5}[-_]?\d{3,10}[)）\]])+\s*$/;
+
+const LEADING_EMPLOYER_PREFIX_RE =
+  /^[^\s·—-]{2,26}(?:股份有限公司|有限责任公司|有限公司|集团有限公司|集团|研究院|研究所|开发局|就业局|银行|分行|支行|财险|产险|寿险|人寿)(?:[-—·]?[^\s·—-]{0,12}(?:分行|支行|分公司|子公司|支公司|事业部))?/;
+
+const LEADING_ORG_UNIT_PREFIX_RE =
+  /^(?:[^-—·/\s]{1,20}(?:分公司|子公司|支公司|分行|支行|事业部|营销中心|研发中心|技术中心|共享中心|运营中心|服务中心|管理中心|制造中心|供应链中心|财经中心|交付中心|品牌中心|总部|中国区|华北区|华东区|华南区|华中区|西南区|西北区|东北区|大区|片区|省区)\s*[-—·]+\s*)+/;
+
 /**
- * Strips the employer/organization name from `job.title` so words inside the company name
- * (e.g. "青岛数能电气工程有限公司招聘", "海南省人力资源开发局招聘", "某某投资集团招聘")
- * never falsely trigger role-title matching when no role is actually named in the title.
+ * Strips the employer/organization/department prefix from `job.title` so words inside the company
+ * or center name (e.g. "青岛数能电气工程有限公司招聘", "海南省人力资源开发局招聘", "全国营销中心-财务管理")
+ * never falsely trigger or block role-title matching.
  */
 export function extractRolePortionFromJobTitle(job: Pick<Job, 'title' | 'company'>): string {
   let title = (job.title || '').trim();
   if (!title) return '';
+
+  title = title.replace(TRAILING_ATS_JOB_CODE_RE, '').trim();
 
   if (title.includes('·')) {
     const parts = title.split('·').map((p) => p.trim()).filter(Boolean);
@@ -1548,35 +1659,69 @@ export function extractRolePortionFromJobTitle(job: Pick<Job, 'title' | 'company
     const company = (job.company || '').trim();
     if (company && company !== '招聘单位见原页面' && title.startsWith(company)) {
       title = title.slice(company.length).trim();
-    } else if (/^[^\s·—-]{2,26}(?:股份有限公司|有限责任公司|有限公司|集团有限公司|集团|研究院|研究所|开发局|就业局|银行|分行|支行)/.test(title)) {
-      title = title.replace(
-        /^[^\s·—-]{2,26}(?:股份有限公司|有限责任公司|有限公司|集团有限公司|集团|研究院|研究所|开发局|就业局|银行|分行|支行)(?:[^\s·—-]{0,10}(?:分行|支行|分公司|子公司|事业部))?/,
-        '',
-      ).trim();
+    } else if (LEADING_EMPLOYER_PREFIX_RE.test(title)) {
+      title = title.replace(LEADING_EMPLOYER_PREFIX_RE, '').trim();
     }
+  }
+
+  title = title.replace(/^[-—·:：\s]+/, '').trim();
+  const withoutOrgUnit = title.replace(LEADING_ORG_UNIT_PREFIX_RE, '').trim();
+  if (withoutOrgUnit) {
+    title = withoutOrgUnit;
   }
 
   if (PURE_ANNOUNCEMENT_SUFFIX_RE.test(title)) return '';
   return title;
 }
 
-function roleTitleMatchesProfile(
+function roleTitleMatchesSubProfile(
   roleTexts: readonly (string | undefined)[],
-  profile: ResolvedJobMajorProfile,
-  isFinanceSector = false,
+  sub: SingleTermMajorProfile,
+  isBankBrokerageSector = false,
 ): boolean {
   const combined = roleTexts.filter(Boolean).join(' · ').toLowerCase();
   if (!combined) return false;
 
-  for (const kw of profile.roleKeywords) {
+  for (const kw of sub.roleKeywords) {
     if (containsKeywordWithAsciiBoundary(combined, kw)) return true;
   }
-  if (isFinanceSector) {
-    for (const kw of profile.financeSectorRoleKeywords) {
+  if (isBankBrokerageSector) {
+    for (const kw of sub.financeSectorRoleKeywords) {
       if (containsKeywordWithAsciiBoundary(combined, kw)) return true;
     }
   }
   return false;
+}
+
+function singleProfileMatchesPosition(
+  explicitMajors: readonly string[],
+  unlimitedItems: readonly string[],
+  roleTexts: readonly (string | undefined)[],
+  roleCheckText: string,
+  sub: SingleTermMajorProfile,
+  options?: MajorMatchOptions,
+): boolean {
+  if (explicitMajors.length > 0) {
+    if (majorListMatchesDirect(explicitMajors, sub)) return true;
+    if (majorListMatchesBroadUmbrella(explicitMajors, sub)) {
+      if (roleTitleMatchesSubProfile(roleTexts, sub) || !isOffTrackSingleRole(roleCheckText, sub)) {
+        return true;
+      }
+    }
+    if (
+      unlimitedItems.length > 0 &&
+      (Boolean(options?.includeUnlimited) || roleTitleMatchesSubProfile(roleTexts, sub))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  if (unlimitedItems.length > 0) {
+    return Boolean(options?.includeUnlimited) || roleTitleMatchesSubProfile(roleTexts, sub);
+  }
+
+  return roleTitleMatchesSubProfile(roleTexts, sub);
 }
 
 /**
@@ -1595,23 +1740,11 @@ export function positionMatchesMajor(
   const unlimitedItems = rawMajors.filter(isUnlimitedMajorText);
   const explicitMajors = rawMajors.filter((m) => !isUnlimitedMajorText(m));
   const roleTexts = [position.name, position.category];
+  const roleCheckText = [position.name, position.category].filter(Boolean).join(' · ');
 
-  if (explicitMajors.length > 0) {
-    if (majorListMatchesProfile(explicitMajors, profile)) return true;
-    if (
-      unlimitedItems.length > 0 &&
-      (Boolean(options?.includeUnlimited) || roleTitleMatchesProfile(roleTexts, profile))
-    ) {
-      return true;
-    }
-    return false;
-  }
-
-  if (unlimitedItems.length > 0) {
-    return Boolean(options?.includeUnlimited) || roleTitleMatchesProfile(roleTexts, profile);
-  }
-
-  return roleTitleMatchesProfile(roleTexts, profile);
+  return profile.subProfiles.some((sub) =>
+    singleProfileMatchesPosition(explicitMajors, unlimitedItems, roleTexts, roleCheckText, sub, options),
+  );
 }
 
 const jobDerivedFactsCache = new WeakMap<
@@ -1653,7 +1786,55 @@ function getEffectiveJobMajorFacts(job: Job): { majors: string[]; samplePosition
   return entry;
 }
 
-const FINANCE_CONTEXT_RE = /银行|证券|基金|期货|保险|信托|财富|金融|资管|资产管理|投行|农信|信用社|人寿|财险/;
+const BANK_BROKERAGE_CONTEXT_RE = /银行|证券|基金|期货|信托|投行|农信|信用社|理财子公司/;
+
+function singleProfileMatchesJob(
+  job: Job,
+  explicitMajors: readonly string[],
+  unlimitedItems: readonly string[],
+  samplePositionsCount: number,
+  roleTexts: readonly (string | undefined)[],
+  singleRoleCheckText: string,
+  isBankBrokerageSector: boolean,
+  sub: SingleTermMajorProfile,
+  options?: MajorMatchOptions,
+): boolean {
+  if (explicitMajors.length > 0) {
+    if (majorListMatchesDirect(explicitMajors, sub)) return true;
+    if (majorListMatchesBroadUmbrella(explicitMajors, sub)) {
+      if (
+        job.kind === '招聘公告' ||
+        roleTitleMatchesSubProfile(roleTexts, sub, isBankBrokerageSector) ||
+        !isOffTrackSingleRole(singleRoleCheckText, sub)
+      ) {
+        return true;
+      }
+    }
+    if (
+      job.kind === '招聘公告' &&
+      samplePositionsCount >= 2 &&
+      roleTitleMatchesSubProfile(roleTexts, sub, isBankBrokerageSector)
+    ) {
+      return true;
+    }
+    if (
+      unlimitedItems.length > 0 &&
+      (Boolean(options?.includeUnlimited) || roleTitleMatchesSubProfile(roleTexts, sub, isBankBrokerageSector))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  if (unlimitedItems.length > 0) {
+    return (
+      Boolean(options?.includeUnlimited) ||
+      roleTitleMatchesSubProfile(roleTexts, sub, isBankBrokerageSector)
+    );
+  }
+
+  return roleTitleMatchesSubProfile(roleTexts, sub, isBankBrokerageSector);
+}
 
 /**
  * Evaluates whether a job announcement (without row-level `positions`) matches the user's major filter.
@@ -1666,29 +1847,24 @@ export function jobMatchesMajor(job: Job, rawQuery: string, options?: MajorMatch
   const unlimitedItems = rawMajors.filter(isUnlimitedMajorText);
   const explicitMajors = rawMajors.filter((m) => !isUnlimitedMajorText(m));
 
-  const isFinanceSector =
-    job.sectors.some((s) => s === '银行' || s === '保险') ||
-    FINANCE_CONTEXT_RE.test(`${job.company || ''} ${job.title || ''}`);
+  const isBankBrokerageSector =
+    job.sectors.includes('银行') ||
+    BANK_BROKERAGE_CONTEXT_RE.test(`${job.company || ''} ${job.title || ''}`);
   const roleTitle = extractRolePortionFromJobTitle(job);
   const roleTexts = [roleTitle, ...samplePositions];
+  const singleRoleCheckText = roleTitle || samplePositions.join(' · ');
 
-  if (explicitMajors.length > 0) {
-    if (majorListMatchesProfile(explicitMajors, profile)) return true;
-    if (job.kind === '招聘公告' && roleTitleMatchesProfile(roleTexts, profile, isFinanceSector)) {
-      return true;
-    }
-    if (
-      unlimitedItems.length > 0 &&
-      (Boolean(options?.includeUnlimited) || roleTitleMatchesProfile(roleTexts, profile, isFinanceSector))
-    ) {
-      return true;
-    }
-    return false;
-  }
-
-  if (unlimitedItems.length > 0) {
-    return Boolean(options?.includeUnlimited) || roleTitleMatchesProfile(roleTexts, profile, isFinanceSector);
-  }
-
-  return roleTitleMatchesProfile(roleTexts, profile, isFinanceSector);
+  return profile.subProfiles.some((sub) =>
+    singleProfileMatchesJob(
+      job,
+      explicitMajors,
+      unlimitedItems,
+      samplePositions.length,
+      roleTexts,
+      singleRoleCheckText,
+      isBankBrokerageSector,
+      sub,
+      options,
+    ),
+  );
 }

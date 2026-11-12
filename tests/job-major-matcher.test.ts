@@ -264,3 +264,115 @@ await test('projectBrowsingJobs enriches prose majors and sample_positions from 
   assert.deepEqual(mergeDuplicateOpportunities(jobs), jobs);
   assert.deepEqual(extractProseSamplePositions(fullText[raw.id]), ['资产评估岗', '财务管理岗', '法务合规岗']);
 });
+
+await test('broad mega-umbrellas on single-role JDs and insurance sales roles do not pollute specific major filters', () => {
+  const hisenseHr = fixtureJob({
+    title: '海信集团 · 人力资源管理(J44684)',
+    company: '海信集团',
+    kind: '具体岗位',
+    majors: ['经管类'],
+  });
+  const hisenseProductStrategy = fixtureJob({
+    title: '海信集团 · 产品策略(J44685)',
+    company: '海信集团',
+    kind: '具体岗位',
+    majors: ['经管类'],
+  });
+  const hisenseFinanceWithMarketingDept = fixtureJob({
+    title: '海信集团 · 全国营销中心-财务管理(J44699)',
+    company: '海信集团',
+    kind: '具体岗位',
+    majors: ['经管类'],
+  });
+  const multiRoleCampusNotice = fixtureJob({
+    title: '某大型控股集团2027校园招聘公告',
+    company: '某大型控股集团',
+    kind: '招聘公告',
+    majors: ['经管类', '理工类'],
+  });
+  const insuranceSales = fixtureJob({
+    title: '人保财险-湖南分公司-商团客户经理岗',
+    company: '中国人民财产保险股份有限公司',
+    kind: '具体岗位',
+    sectors: ['保险'],
+    majors: undefined,
+  });
+  const bankTeller = fixtureJob({
+    title: '齐鲁银行 · 综合柜员',
+    company: '齐鲁银行',
+    kind: '具体岗位',
+    sectors: ['银行'],
+    majors: undefined,
+  });
+  const foreignTradeSalesArts = fixtureJob({
+    title: '某外贸公司 · 国际贸易销售',
+    company: '某外贸公司',
+    kind: '具体岗位',
+    majors: ['文科'],
+  });
+
+  assert.equal(extractRolePortionFromJobTitle(hisenseHr), '人力资源管理');
+  assert.equal(extractRolePortionFromJobTitle(hisenseFinanceWithMarketingDept), '财务管理');
+  assert.equal(extractRolePortionFromJobTitle(insuranceSales), '商团客户经理岗');
+
+  for (const major of ['资产评估', '会计', '经济学', '金融']) {
+    assert.equal(jobMatchesMajor(hisenseHr, major), false, `HR with 经管类 should not match ${major}`);
+    assert.equal(jobMatchesMajor(hisenseProductStrategy, major), false, `产品策略 with 经管类 should not match ${major}`);
+    assert.equal(jobMatchesMajor(insuranceSales, major), false, `insurance sales without majors should not match ${major}`);
+    assert.equal(jobMatchesMajor(multiRoleCampusNotice, major), true, `multi-role 招聘公告 with 经管类 should match ${major}`);
+    assert.equal(jobMatchesMajor(bankTeller, major), true, `bank 综合柜员 should match ${major}`);
+  }
+
+  assert.equal(jobMatchesMajor(hisenseHr, '管理'), true);
+  assert.equal(jobMatchesMajor(hisenseHr, '人力资源'), true);
+  assert.equal(jobMatchesMajor(hisenseHr, '会计 人力资源'), true);
+  assert.equal(jobMatchesMajor(hisenseProductStrategy, '管理'), true);
+
+  assert.equal(jobMatchesMajor(hisenseFinanceWithMarketingDept, '资产评估'), true);
+  assert.equal(jobMatchesMajor(hisenseFinanceWithMarketingDept, '会计'), true);
+  assert.equal(
+    jobMatchesMajor({ ...hisenseFinanceWithMarketingDept, majors: undefined }, '市场营销'),
+    false,
+  );
+
+  assert.equal(jobMatchesMajor(foreignTradeSalesArts, '汉语言'), false);
+  assert.equal(jobMatchesMajor(foreignTradeSalesArts, '英语'), true);
+
+  // Compound-word substring trap guards: 物资管理 != 资管, 设备保全 != 财产保全, 外国语言文学类 != 汉语言文学类
+  const materialMgmt = fixtureJob({
+    title: '中建某局 · 物资管理',
+    company: '中建某局',
+    kind: '招聘公告',
+    majors: ['材料', '物流'],
+  });
+  assert.equal(jobMatchesMajor(materialMgmt, '资产评估'), false);
+  assert.equal(jobMatchesMajor(materialMgmt, '金融'), false);
+  assert.equal(jobMatchesMajor(materialMgmt, '物流'), true);
+
+  assert.equal(
+    jobMatchesMajor(fixtureJob({ title: '某工厂 · 设备保全员', company: '某工厂' }), '法学'),
+    false,
+  );
+  assert.equal(
+    jobMatchesMajor(fixtureJob({ title: '某银行 · 资产保全岗', company: '某银行' }), '法学'),
+    true,
+  );
+  assert.equal(
+    jobMatchesMajor(fixtureJob({ title: '某建设公司 · 工程预结算员', company: '某建设公司' }), '会计'),
+    false,
+  );
+  assert.equal(
+    jobMatchesMajor(
+      fixtureJob({ title: '某外贸企业 · 国际贸易销售', company: '某外贸企业', majors: ['外国语言文学类'] }),
+      '汉语言',
+    ),
+    false,
+  );
+  assert.equal(
+    jobMatchesMajor(
+      fixtureJob({ title: '某中学 · 教师招聘', company: '某中学', majors: ['文学类'] }),
+      '汉语言',
+    ),
+    true,
+  );
+});

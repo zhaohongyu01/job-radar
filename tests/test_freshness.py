@@ -310,6 +310,38 @@ class FreshnessTests(unittest.TestCase):
         self.assertIsNone(row['published_at'])
         self.assertEqual(row['source_published_at'], '2027-01-17')
 
+    def test_merge_locks_initial_publication_date_and_heals_ats_daily_bump(self):
+        initial_job = {
+            'id': 'hisense-1',
+            'title': '销售经理（全国）',
+            'company': '海信集团',
+            'source_id': 'hisense-campus',
+            'source_name': '海信集团 · 校园招聘',
+            'source_url': 'https://hisense.zhiye.com/campus/detail?jobAdId=1234',
+            'published_at': '2026-09-15',
+            'cities': ['济南'],
+            'location_evidence': ['工作地点：济南'],
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'education': '本科',
+            'deadline': None,
+            'application_url': 'https://hisense.zhiye.com/campus/detail?jobAdId=1234',
+            'body': '负责销售业务拓展与客户维护。',
+        }
+        prev, _ = c.merge({}, [initial_job], '2026-09-15T09:20:59+08:00')
+        bumped_incoming = dict(initial_job, published_at='2026-11-13')
+        merged, _ = c.merge(prev, [bumped_incoming], '2026-11-13T21:00:00+08:00')
+        self.assertEqual(merged['hisense-1']['published_at'], '2026-09-15')
+        self.assertEqual(merged['hisense-1']['source_published_at'], '2026-11-13')
+
+        # Already-polluted historical state is also healed back on merge and public_record
+        polluted_state = dict(prev['hisense-1'], published_at='2026-11-12', last_verified_at='2026-11-12T21:00:00+08:00')
+        healed_merge, _ = c.merge({'hisense-1': polluted_state}, [bumped_incoming], '2026-11-13T21:00:00+08:00')
+        self.assertEqual(healed_merge['hisense-1']['published_at'], '2026-09-15')
+        healed_public = c.public_record(polluted_state)
+        self.assertEqual(healed_public['published_at'], '2026-09-15')
+        self.assertEqual(healed_public['source_published_at'], '2026-11-12')
+
 
 if __name__ == '__main__':
     unittest.main()

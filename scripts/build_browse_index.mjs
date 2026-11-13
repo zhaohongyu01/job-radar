@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { projectBrowsingJobs, validateBrowsingJob } from '../lib/browse-index.ts';
+import { compareJobsByNewest } from '../lib/jobs.ts';
 
 const hash = (buffer) => createHash('sha256').update(buffer).digest('hex');
 const limit = 25 * 1024 * 1024;
@@ -57,6 +58,9 @@ export function buildBrowseIndex(directory) {
   // detail shards on first render or changing canonical filter/search fields.
   const { jobs, excerpts } = projectBrowsingJobs(rows, search);
   jobs.forEach(validateBrowsingJob);
+  const parsedGenAt = Date.parse(snapshot.generated_at || '');
+  const snapshotNow = Number.isFinite(parsedGenAt) ? parsedGenAt : Date.now();
+  const orderedJobs = jobs.slice().sort((a, b) => compareJobsByNewest(a, b, snapshotNow));
   mkdirSync(resolve(root, 'job-assets'), { recursive: true });
   if (!within(root, realpathSync(resolve(root, 'job-assets')))) throw Error('Asset directory escaped input directory');
   const atomic = (name, bytes) => {
@@ -70,11 +74,11 @@ export function buildBrowseIndex(directory) {
     const path = `/job-assets/${kind}-${hash(bytes).slice(0, 20)}.json`;
     atomic(path.slice(1), bytes); return path;
   };
-  const shards = splitRows(jobs, 256 * 1024).map((batch) => asset('index', { jobs: batch }));
+  const shards = splitRows(orderedJobs, 256 * 1024).map((batch) => asset('index', { jobs: batch }));
   // Reuse canonical full text; only supplement excerpts not already present.
   // Overlay rows contain both texts so the existing dictionary loader remains
   // deterministic and never overwrites a full announcement with a short excerpt.
-  const supplements = jobs.filter((job) => !search[job.id].includes(excerpts[job.id]))
+  const supplements = orderedJobs.filter((job) => !search[job.id].includes(excerpts[job.id]))
     .map((job) => [job.id, `${search[job.id]}\n${excerpts[job.id]}`]);
   const searchShards = [snapshot.search_url, ...(snapshot.search_shards || []),
     ...splitRows(supplements).map((batch) => asset('search', { jobs: Object.fromEntries(batch) }))];

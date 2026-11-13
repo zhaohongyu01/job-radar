@@ -237,6 +237,105 @@ class SqliteAndFeedsTests(unittest.TestCase):
             stage(pub, dist)
             self.assertFalse(staged_fs.exists())
 
+    def test_first_screen_and_feeds_rank_genuine_and_reopened_jobs_above_ats_bumped_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pub = Path(tmp) / 'public'
+            (pub / 'job-assets').mkdir(parents=True, exist_ok=True)
+            rows = [
+                {
+                    'id': '00000000000000000001',
+                    'title': '销售经理（全国）',
+                    'company': '海信集团',
+                    'cities': ['济南'],
+                    'kind': '具体岗位',
+                    'types': ['校招'],
+                    'sectors': ['其他企业'],
+                    'education': '本科',
+                    'published_at': '2026-11-13',
+                    'first_seen_at': '2026-09-15T09:20:59+08:00',
+                    'updated_at': '2026-11-08T20:34:50+08:00',
+                    'last_verified_at': '2026-11-13T18:10:15+08:00',
+                    'recent_change': {
+                        'type': 'content_updated',
+                        'label': '入口更新',
+                        'date': '2026-11-08',
+                        'detail': '网申投递入口已更新为最新链接',
+                    },
+                    'listing_status': 'active',
+                    'excerpt': '老岗位日常刷日期。',
+                },
+                {
+                    'id': 'aaaaaaaaaaaaaaaaaaaa',
+                    'title': '山东能源2027届校招补充公告',
+                    'company': '山东能源集团',
+                    'cities': ['济南'],
+                    'kind': '招聘公告',
+                    'types': ['校招'],
+                    'sectors': ['国企/央企'],
+                    'education': '本科',
+                    'published_at': '2026-11-13',
+                    'first_seen_at': '2026-10-10T09:00:00+08:00',
+                    'updated_at': '2026-11-12T10:00:00+08:00',
+                    'last_verified_at': '2026-11-13T18:00:00+08:00',
+                    'recent_change': {
+                        'type': 'supplemental',
+                        'label': '补录招募',
+                        'date': '2026-11-12',
+                        'detail': '招聘变更为补录 / 追加招聘批次',
+                    },
+                    'listing_status': 'active',
+                    'excerpt': '补录扩招。',
+                },
+                {
+                    'id': 'fffffffffffffffffff9',
+                    'title': '2027届管培生',
+                    'company': '真新发科技',
+                    'cities': ['济南'],
+                    'kind': '具体岗位',
+                    'types': ['校招'],
+                    'sectors': ['民营企业'],
+                    'education': '本科',
+                    'published_at': '2026-11-13',
+                    'first_seen_at': '2026-11-13T17:00:00+08:00',
+                    'updated_at': '2026-11-13T17:00:00+08:00',
+                    'last_verified_at': '2026-11-13T17:00:00+08:00',
+                    'listing_status': 'active',
+                    'excerpt': '真实今日首发岗位。',
+                },
+            ]
+            (pub / 'job-assets' / 'browse-000.json').write_text(
+                json.dumps({'jobs': rows}, ensure_ascii=False), encoding='utf-8'
+            )
+            (pub / 'jobs.json').write_text(
+                json.dumps(
+                    {
+                        'generated_at': '2026-11-13T21:53:22+08:00',
+                        'browse_index': {'shards': ['/job-assets/browse-000.json'], 'search_shards': []},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding='utf-8',
+            )
+
+            build_radar_sqlite(pub, output_sqlite=None, first_screen_only=True)
+            fs = json.loads((pub / 'first-screen.json').read_text(encoding='utf-8'))
+            self.assertEqual(
+                [j['id'] for j in fs['jobs']],
+                ['fffffffffffffffffff9', 'aaaaaaaaaaaaaaaaaaaa', '00000000000000000001'],
+            )
+
+            build_feeds(pub, site_origin='https://example.com')
+            job_root = ET.fromstring((pub / 'feeds' / 'jobs-latest.xml').read_text(encoding='utf-8'))
+            links = [item.findtext('link') for item in job_root.findall('./channel/item')]
+            self.assertEqual(
+                links,
+                [
+                    'https://example.com/?job=fffffffffffffffffff9',
+                    'https://example.com/?job=aaaaaaaaaaaaaaaaaaaa',
+                    'https://example.com/?job=00000000000000000001',
+                ],
+            )
+
 
 if __name__ == '__main__':
     unittest.main()

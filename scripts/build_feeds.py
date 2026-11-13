@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from xml.sax.saxutils import escape as xml_escape
 
+try:
+    from build_radar_sqlite import healed_publication_day, shanghai_day, sort_jobs_by_newest
+except ImportError:
+    from scripts.build_radar_sqlite import healed_publication_day, shanghai_day, sort_jobs_by_newest
+
 ROOT = Path(__file__).resolve().parents[1]
 TZ = dt.timezone(dt.timedelta(hours=8))
 DEFAULT_SITE = 'https://sites-project.job-radar.workers.dev'
@@ -249,14 +254,14 @@ def build_feeds(public_dir: Path, site_origin: str = DEFAULT_SITE) -> Dict[str, 
     # 2. Jobs RSS
     jobs_snap, job_rows = _load_jobs_for_feed(public_dir)
     jobs_snap_dt = _parse_dt(jobs_snap.get('generated_at'), now_dt)
-    active_jobs = [
-        j
-        for j in job_rows
-        if j.get('listing_status') != 'withdrawn' and j.get('kind') != '宣讲会'
-    ]
-    active_jobs.sort(
-        key=lambda x: (str(x.get('published_at') or ''), str(x.get('id') or '')),
-        reverse=True,
+    jobs_snap_day = shanghai_day(jobs_snap.get('generated_at')) or now_dt.date().isoformat()
+    active_jobs = sort_jobs_by_newest(
+        [
+            j
+            for j in job_rows
+            if j.get('listing_status') != 'withdrawn' and j.get('kind') != '宣讲会'
+        ],
+        jobs_snap_day,
     )
     job_items: List[Dict[str, str]] = []
     for j in active_jobs[:60]:
@@ -277,7 +282,8 @@ def build_feeds(public_dir: Path, site_origin: str = DEFAULT_SITE) -> Dict[str, 
             )
             if p
         )
-        pub_dt = _parse_dt(j.get('published_at'), jobs_snap_dt)
+        healed_day = healed_publication_day(j, jobs_snap_day)
+        pub_dt = _parse_dt(healed_day or j.get('first_seen_at'), jobs_snap_dt)
         job_items.append(
             {
                 'title': f'{company} · {title}' if company and company not in title else title,

@@ -20,7 +20,12 @@ export function chinaDayStart(ms: number): number {
 
 export function isTodayOpportunity(job: Job, now: number): boolean {
   const today = shanghaiDay(now);
-  return shanghaiDay(job.published_at || '') === today || shanghaiDay(job.first_seen_at) === today;
+  const pub = publicationDate(job, now);
+  return (
+    (pub ? shanghaiDay(pub) === today : false) ||
+    shanghaiDay(job.first_seen_at) === today ||
+    substantiveBoostDate(job, now) === today
+  );
 }
 
 export function isSupplementOpportunity(job: Job): boolean {
@@ -305,8 +310,93 @@ export function workCitiesLabel(filters: Filters): string {
 }
 export function publicationDate(job: Job, now = Date.now()): string {
   const value = job.published_at || '';
-  const today = new Date(now + 8 * 3600000).toISOString().slice(0, 10);
-  return value && Number.isFinite(Date.parse(value)) && value.slice(0, 10) <= today ? value : '';
+  if (!value || !Number.isFinite(Date.parse(value))) return '';
+  const today = shanghaiDay(now);
+  const rawDay = shanghaiDay(value);
+  if (!rawDay || rawDay > today) return '';
+
+  // Heal ATS portals (e.g. Zhiye / Haier) that refresh PostDate on every daily
+  // crawl without substantive recruitment changes: once verified on a later day
+  // than first_seen_at, an announcement's initial publication date cannot drift
+  // past its first-seen calendar day.
+  const firstSeenDay = job.first_seen_at ? shanghaiDay(job.first_seen_at) : '';
+  const verifiedDay = job.last_verified_at ? shanghaiDay(job.last_verified_at) : '';
+  if (firstSeenDay && verifiedDay > firstSeenDay && rawDay > firstSeenDay) {
+    const earliestTimelinePub = (job.timeline ?? [])
+      .filter((event) => event.type === 'published' && event.date)
+      .map((event) => shanghaiDay(event.date))
+      .filter((day) => Boolean(day) && day <= firstSeenDay)
+      .sort()[0];
+    return earliestTimelinePub || firstSeenDay;
+  }
+  return value;
+}
+
+/** Return true only when a recent change represents a genuine recruitment
+ * expansion (supplemental batch, deadline extension, added positions/majors, or
+ * newly added cities), excluding routine link/prose maintenance. */
+export function isSubstantiveReopenChange(change?: RecentChange | null): boolean {
+  if (!change) return false;
+  if (change.type === 'supplemental') return true;
+  if (change.type === 'deadline_extended') {
+    return deadlineChangeKind(change) === 'extended';
+  }
+  if (change.type === 'positions_updated') {
+    const text = (change.label || '') + (change.detail || '');
+    return !/就绪|首次提取/.test(text) && !/为 0 个职位/.test(change.detail || '');
+  }
+  if (change.type === 'content_updated') {
+    return change.label === '地点调整' && /新增/.test(change.detail || '');
+  }
+  return false;
+}
+
+export function substantiveBoostDate(job: Job, now = Date.now()): string {
+  if (!isSubstantiveReopenChange(job.recent_change)) return '';
+  const rawDate = job.recent_change?.date || '';
+  const changeDay = rawDate ? shanghaiDay(rawDate) : '';
+  if (!changeDay || changeDay > shanghaiDay(now)) return '';
+  return changeDay;
+}
+
+export function effectiveNewestDate(job: Job, now = Date.now()): string {
+  const pubRaw = publicationDate(job, now);
+  const pubDay = pubRaw ? shanghaiDay(pubRaw) : '';
+  const boostDay = substantiveBoostDate(job, now);
+  return boostDay > pubDay ? boostDay : pubDay;
+}
+
+function newestTieBreakerMs(job: Job, effectiveDay: string, pubDay: string): number {
+  if (!effectiveDay) return 0;
+  if (effectiveDay > pubDay) {
+    const updatedMs = Date.parse(job.updated_at || '');
+    return Number.isFinite(updatedMs) ? updatedMs : 0;
+  }
+  const firstSeenMs = Date.parse(job.first_seen_at || '');
+  if (Number.isFinite(firstSeenMs)) return firstSeenMs;
+  const pubMs = Date.parse(job.published_at || '');
+  return Number.isFinite(pubMs) ? pubMs : 0;
+}
+
+export function compareJobsByNewest(a: Job, b: Job, now = Date.now()): number {
+  const aPub = publicationDate(a, now);
+  const aPubDay = aPub ? shanghaiDay(aPub) : '';
+  const aBoostDay = substantiveBoostDate(a, now);
+  const aEff = aBoostDay > aPubDay ? aBoostDay : aPubDay;
+
+  const bPub = publicationDate(b, now);
+  const bPubDay = bPub ? shanghaiDay(bPub) : '';
+  const bBoostDay = substantiveBoostDate(b, now);
+  const bEff = bBoostDay > bPubDay ? bBoostDay : bPubDay;
+
+  const cmpDay = bEff.localeCompare(aEff);
+  if (cmpDay !== 0) return cmpDay;
+
+  const bTie = newestTieBreakerMs(b, bEff, bPubDay);
+  const aTie = newestTieBreakerMs(a, aEff, aPubDay);
+  if (bTie !== aTie) return bTie - aTie;
+
+  return a.id.localeCompare(b.id);
 }
 
 export function publicationText(job: Job, now = Date.now()): string {
@@ -1562,10 +1652,16 @@ export function applyPersonalView(
     matches.map((job) => {
       const range = f.sort === 'salary_desc' ? parseSalaryRange(job) : null;
       const plannedTime = f.view === 'planned' ? deadlineTime(job.deadline) : NaN;
+      const pubRaw = f.view === 'planned' ? '' : publicationDate(job, now);
+      const pubDay = pubRaw ? shanghaiDay(pubRaw) : '';
+      const boostDay = f.view === 'planned' ? '' : substantiveBoostDate(job, now);
+      const newestDay = boostDay > pubDay ? boostDay : pubDay;
+      const newestTie = f.view === 'planned' ? 0 : newestTieBreakerMs(job, newestDay, pubDay);
       return [
         job,
         {
-          published: f.view === 'planned' ? '' : publicationDate(job, now),
+          newestDay,
+          newestTie,
           expired: f.sort === 'deadline_asc' && isExpired(job, now),
           deadline:
             f.view === 'planned'
@@ -1587,14 +1683,23 @@ export function applyPersonalView(
     if (f.sort === 'deadline_asc') {
       if (ak.expired !== bk.expired) return ak.expired ? 1 : -1;
       if (Number.isFinite(ak.deadline) && Number.isFinite(bk.deadline)) {
-        return ak.deadline - bk.deadline || bk.published.localeCompare(ak.published) || a.id.localeCompare(b.id);
+        return (
+          ak.deadline - bk.deadline ||
+          bk.newestDay.localeCompare(ak.newestDay) ||
+          bk.newestTie - ak.newestTie ||
+          a.id.localeCompare(b.id)
+        );
       }
       if (Number.isFinite(ak.deadline) !== Number.isFinite(bk.deadline)) {
         return Number.isFinite(ak.deadline) ? -1 : 1;
       }
     }
     if (f.sort === 'salary_desc' && ak.salary !== bk.salary) return bk.salary - ak.salary;
-    return bk.published.localeCompare(ak.published) || a.id.localeCompare(b.id);
+    return (
+      bk.newestDay.localeCompare(ak.newestDay) ||
+      bk.newestTie - ak.newestTie ||
+      a.id.localeCompare(b.id)
+    );
   });
 }
 

@@ -6,7 +6,7 @@ import { JobTable } from '@/components/job-table';
 import { JobCard } from '@/components/job-card';
 import { buildGroupRoleItems } from '@/lib/grouping';
 import type { GroupRoleItem, JobGroup } from '@/lib/grouping';
-import { isUnread, personalFor, selectedWorkCities } from '@/lib/jobs';
+import { effectiveNewestDate, isUnread, personalFor, selectedWorkCities } from '@/lib/jobs';
 import type { Filters, Job, Personal } from '@/lib/jobs';
 import type { CardDensity, ViewMode } from '@/lib/browsing';
 
@@ -145,7 +145,7 @@ export function GroupedResults({
               <div className="opp-group-title">
                 <strong>{group.company}</strong>
                 <span>
-                  {group.label} · 最新 {group.jobs[0].published_at || '日期未明确'}
+                  {group.label} · 最新 {effectiveNewestDate(group.jobs[0], now) || '日期未明确'}
                 </span>
               </div>
               <div className="opp-group-count">

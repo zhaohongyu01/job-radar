@@ -3,6 +3,21 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
+## 2026-11-14 企业求职「最新发布」防 ATS 静默刷榜重构（方案 1：锁死真实首发日 + 实质扩招提权 + 同日入库破平局）
+
+按用户确认的 **方案 1** 彻底解决北森 Zhiye（如 `hisense-campus` / `hisense-social` / `qilu-pharma-social`）及海尔门户每日将全量在招岗位 `PostDate` 静默刷新为当天日期、叠加 `id` 十六进制字典序平局导致大厂陈旧岗位长期霸榜 #1 的问题：
+- **采集器源头锁死与历史状态自愈 (`scripts/collect.py`)**：
+  1. 在 `merge()` 中新增 `_lock_initial_publication()`（及 `_valid_iso_day()` / `_earliest_initial_pub_from_timeline()`）：当既有记录已收录且 `published_at` 在后续巡检时被上游刷新为更新日期时，锁死既有真实首发日（如 `2026-09-15`），并将最新抓到的上游日期留存至 `source_published_at`；同步自愈已被历史状态污染的 `published_at` 与 `首次发布` 时间线节点。
+  2. 在 `public_record()` 中保留未来日期（`published_day > observed_day` → `None`）校验契约的同时，补充对「`last_verified_at > first_seen_at` 且 `published_at > first_seen_at`」的历史漂移自愈，并在 `export_snapshot()` 对外发布前按同一 `sort_jobs_by_newest` 秩序排序。
+- **前端真实首发日自愈、实质扩招提权与同日破平局 (`lib/jobs.ts` + `components/jobs/grouped-results.tsx`)**：
+  1. 升级 `publicationDate()`：在不误伤合成单测（`verifiedDay <= firstSeenDay`）的前提下，对已跨天复核但 `published_at` 漂移至 `first_seen_at` 之后的记录自动回退至 `timeline` 最早 `published` 日期或 `first_seen_at` 日期；同步更新 `isTodayOpportunity()`，防止被刷日期的老岗位虚增今日更新计数。
+  2. 新增 `isSubstantiveReopenChange()`、`substantiveBoostDate()`、`effectiveNewestDate()` 与 `compareJobsByNewest()`：仅允许 `supplemental`（补录招募）、真正的 `deadline_extended`（截止延期，排除提前缩短与首次明确）、扩招类 `positions_updated`（排除 `岗位表就绪` / `首次提取` / `0 个职位`）及新增工作城市的 `地点调整` 将排序基准日提权至最近一次实质变更日；常规 `入口更新` / `内容更新` 不再提权，且卡片与组头日期显示统一使用真实首发日或实质提权日期。
+  3. 升级 `applyPersonalView()`：同日平局先按 `first_seen_at`（扩招提权条目按 `updated_at`）精确时间戳降序排列，最后才回退 `a.id.localeCompare(b.id)`，消除大厂 100+ 岗位凭最小哈希前缀稳定抢占首屏的现象。
+- **离线浏览分片、静态首屏快照与 RSS 订阅同构排序 (`scripts/build_browse_index.mjs` + `scripts/build_radar_sqlite.py` + `scripts/build_feeds.py`)**：
+  1. `build_browse_index.mjs` 使用 `snapshot.generated_at` 确定性时间通过 `compareJobsByNewest` 重排浏览分片（保持 `projectBrowsingJobs` 返回顺序与 `published_at` 字段契约不变，并确保二次构建字节级幂等）。
+  2. `build_radar_sqlite.py`（`first-screen.json` 首屏 `60` 条与本地 `radar.sqlite`）及 `build_feeds.py`（`jobs-latest.xml`）复用 `sort_jobs_by_newest` / `healed_publication_day` 保持冷启动首屏、完整分片与订阅源顺序完全一致，支持 `deploy_only=true` 离线立即净化上线。
+- **验证结果**：`audit_css_usage.mjs`（`0` 死类）、`oxlint`（`0 warnings / 0 errors`）、`tsc --noEmit`（`0 errors`）、`npm test`（**`212/212`** TS 单测通过）、`unittest`（**`322/322`** Python 单测通过）、`npm run build` 全部通过。
+
 ## 2026-11-12 企业求职专业筛选重构：全量正文专业离线补全 + 三层非对称可投专业族匹配
 
 按用户确认方案重构企业求职工作台（`/`）「专业关键词（同一岗位匹配）」筛选体系，解决此前 `88.2%` 纯文本 JD 缺失结构化 `majors`、仅做字面 `.includes()` 子串匹配及被 `includeUncertain` 混入未标专业岗位的问题：

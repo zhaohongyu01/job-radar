@@ -2296,6 +2296,64 @@ def reconcile_listings(jobs, source_id, seen_ids, complete, now):
     return result
 
 
+_ISO_DAY_RE = re.compile(r'20\d{2}-\d{2}-\d{2}')
+
+
+def _valid_iso_day(value):
+    day = str(value or '').strip()[:10]
+    return day if _ISO_DAY_RE.fullmatch(day) else ''
+
+
+def _earliest_initial_pub_from_timeline(row, max_day):
+    timeline = row.get('timeline')
+    if not isinstance(timeline, list):
+        return ''
+    candidates = sorted(
+        day
+        for day in (
+            _valid_iso_day(evt.get('date'))
+            for evt in timeline
+            if isinstance(evt, dict) and evt.get('type') == 'published'
+        )
+        if day and (not max_day or day <= max_day)
+    )
+    return candidates[0] if candidates else ''
+
+
+def _lock_initial_publication(job, old):
+    """Prevent ATS daily PostDate refreshes from overwriting an existing job's initial publication date."""
+    if not old or job.get('kind') == '宣讲会':
+        return job, old.get('source_published_at') if old else None
+
+    first_seen_day = _valid_iso_day(old.get('first_seen_at'))
+    old_pub = old.get('published_at')
+    old_pub_day = _valid_iso_day(old_pub)
+    source_pub = old.get('source_published_at')
+
+    if first_seen_day and old_pub_day and old_pub_day > first_seen_day:
+        locked_pub = _earliest_initial_pub_from_timeline(old, first_seen_day) or first_seen_day
+        source_pub = source_pub or old_pub
+    else:
+        locked_pub = old_pub
+
+    locked_day = _valid_iso_day(locked_pub)
+    new_pub = job.get('published_at')
+    new_pub_day = _valid_iso_day(new_pub)
+
+    if locked_day and new_pub_day and new_pub_day > locked_day:
+        effective_pub = locked_pub
+        source_pub = new_pub
+    elif not locked_day and first_seen_day and new_pub_day and new_pub_day > first_seen_day:
+        effective_pub = first_seen_day
+        source_pub = new_pub
+    elif locked_pub != old_pub:
+        effective_pub = locked_pub
+    else:
+        return job, source_pub
+
+    return dict(job, published_at=effective_pub), source_pub
+
+
 def merge(previous, incoming, now):
     # Old malformed and correct SDU URLs can both have saved browser records.
     # Refresh their facts together and collapse only the public presentation.
@@ -2321,7 +2379,19 @@ def merge(previous, incoming, now):
                 old_fp = compute_job_fingerprint(dict(old, cities=public_record(old).get('cities', old.get('cities', []))))
             changed = bool(old_fp != fingerprint)
 
-        timeline, recent_change = detect_job_events(job, old, now, changed)
+        locked_job, preserved_source_pub = _lock_initial_publication(job, old)
+        timeline, recent_change = detect_job_events(locked_job, old, now, changed)
+
+        # Heal any historical timeline '首次发布' event whose date drifted past first_seen_at
+        if old and timeline:
+            first_seen_day = _valid_iso_day(old.get('first_seen_at'))
+            locked_day = _valid_iso_day(locked_job.get('published_at')) or first_seen_day
+            if first_seen_day and locked_day:
+                for evt in timeline:
+                    if isinstance(evt, dict) and evt.get('type') == 'published':
+                        evt_day = _valid_iso_day(evt.get('date'))
+                        if evt_day and evt_day > first_seen_day:
+                            evt['date'] = locked_day
 
         # Clear out legacy generic boilerplate if no substantive change occurred
         if not changed and recent_change and recent_change.get('detail') == '招聘公告正文或附件内容已同步最新变动':
@@ -2329,12 +2399,14 @@ def merge(previous, incoming, now):
             if timeline:
                 timeline = [e for e in timeline if e.get('detail') != '招聘公告正文或附件内容已同步最新变动']
 
-        stage = compute_lifecycle_stage({**job, 'recent_change': recent_change}, now)
-        row = dict(job, fingerprint=fingerprint, content_fingerprint=fingerprint, fingerprint_version=3,
+        stage = compute_lifecycle_stage({**locked_job, 'recent_change': recent_change}, now)
+        row = dict(locked_job, fingerprint=fingerprint, content_fingerprint=fingerprint, fingerprint_version=3,
                    first_seen_at=old.get('first_seen_at', now) if old else now,
                    updated_at=now if changed or not old else old.get('updated_at', now), last_verified_at=now,
                    revision=old.get('revision', 1) + int(changed) if old else 1,
                    timeline=timeline, recent_change=recent_change, lifecycle_stage=stage)
+        if preserved_source_pub:
+            row['source_published_at'] = preserved_source_pub
         result[job['id']] = row
         counts['changed' if changed else 'unchanged' if old else 'new'] += 1
     return result, counts
@@ -2724,11 +2796,17 @@ def public_record(job):
     if row['kind'] == '宣讲会':
         return row  # an event title must not infer job location, cohort or eligibility
     observed_day = max((str(row.get(field) or '')[:10] for field in ('first_seen_at', 'last_verified_at', 'updated_at')), default='')
-    published_day = str(row.get('published_at') or '')[:10]
-    if observed_day and re.fullmatch(r'20\d{2}-\d{2}-\d{2}', published_day) and published_day > observed_day:
+    published_day = _valid_iso_day(row.get('published_at'))
+    if observed_day and published_day and published_day > observed_day:
         row['source_published_at'] = row['published_at']
         row['published_at'] = None
         row['publication_note'] = '来源发布日期晚于首次收录，日期待核实；按首次收录时间展示。'
+    else:
+        first_seen_day = _valid_iso_day(row.get('first_seen_at'))
+        verified_day = _valid_iso_day(row.get('last_verified_at'))
+        if first_seen_day and verified_day > first_seen_day and published_day and published_day > first_seen_day:
+            row['source_published_at'] = row['published_at']
+            row['published_at'] = _earliest_initial_pub_from_timeline(row, first_seen_day) or first_seen_day
 
     combined_text=row.get('title','')+'\n'+(row.get('body') or row.get('excerpt') or '')
     extra_years=extract_graduation_years(combined_text)
@@ -2862,10 +2940,14 @@ def schedule_enabled():
 def export_snapshot(state, public_dir, days=180, changes=None):
     """Publish the index last; immutable assets cannot mix across refreshes."""
     from snapshot_assets import chunks, MAX_ASSET_BYTES, FIRST_INDEX_BYTES
+    try:
+        from build_radar_sqlite import shanghai_day as sqlite_shanghai_day, sort_jobs_by_newest
+    except ImportError:
+        from scripts.build_radar_sqlite import shanghai_day as sqlite_shanghai_day, sort_jobs_by_newest
     jobs=repair_sdu_urls(state['jobs'])
     eligible = [j for j in jobs.values() if publishable_job(j)]
-    public_jobs=sorted(deduplicate([public_record(j) for j in eligible]),
-                       key=lambda j:j.get('published_at') or '',reverse=True)
+    snap_day = sqlite_shanghai_day(state.get('last_run_at')) or dt.datetime.now(TZ).date().isoformat()
+    public_jobs=sort_jobs_by_newest(deduplicate([public_record(j) for j in eligible]), snap_day)
     attach_talk_events(public_jobs)
     assets=public_dir/'job-assets'
     assets.mkdir(parents=True,exist_ok=True)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import datetime as dt
 import json
 import os
 from pathlib import Path
@@ -11,9 +12,120 @@ import sqlite3
 from typing import Any, Dict, Iterable, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
+TZ = dt.timezone(dt.timedelta(hours=8))
 
 NATIONWIDE_RE = re.compile(r'全国|各地|多地|不限地点|省内各地|全省|山东各地|山东省内')
 FIRST_SCREEN_PAGE_SIZE = 60
+_DATE_ONLY_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_POS_READY_RE = re.compile(r'就绪|首次提取')
+
+
+def _parse_iso_ms(value: Any) -> Optional[int]:
+    if not value:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        if _DATE_ONLY_RE.match(s):
+            parsed = dt.datetime.fromisoformat(f'{s}T00:00:00+08:00')
+        else:
+            parsed = dt.datetime.fromisoformat(s.replace('Z', '+00:00'))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=TZ)
+        return int(parsed.timestamp() * 1000)
+    except Exception:
+        return None
+
+
+def shanghai_day(value: Any) -> str:
+    if not value:
+        return ''
+    s = str(value).strip()
+    if _DATE_ONLY_RE.match(s):
+        return s
+    ms = _parse_iso_ms(s)
+    if ms is None:
+        return ''
+    return dt.datetime.fromtimestamp(ms / 1000, tz=TZ).date().isoformat()
+
+
+def healed_publication_day(job: Dict[str, Any], snap_day: str) -> str:
+    """Mirror frontend publicationDate() self-healing for silent ATS date refreshes."""
+    raw_day = shanghai_day(job.get('published_at'))
+    if not raw_day or (snap_day and raw_day > snap_day):
+        return ''
+    first_seen_day = shanghai_day(job.get('first_seen_at'))
+    verified_day = shanghai_day(job.get('last_verified_at'))
+    if first_seen_day and verified_day > first_seen_day and raw_day > first_seen_day:
+        timeline = job.get('timeline')
+        if isinstance(timeline, list):
+            pub_days = sorted(
+                d
+                for d in (
+                    shanghai_day(evt.get('date'))
+                    for evt in timeline
+                    if isinstance(evt, dict) and evt.get('type') == 'published'
+                )
+                if d and d <= first_seen_day
+            )
+            if pub_days:
+                return pub_days[0]
+        return first_seen_day
+    return raw_day
+
+
+def is_substantive_reopen_change(change: Any) -> bool:
+    """Mirror frontend isSubstantiveReopenChange()."""
+    if not isinstance(change, dict):
+        return False
+    ctype = change.get('type')
+    label = str(change.get('label') or '')
+    detail = str(change.get('detail') or '')
+    if ctype == 'supplemental':
+        return True
+    if ctype == 'deadline_extended':
+        if label == '明确截止时间' or detail.startswith('明确报名截止时间'):
+            return False
+        if label == '截止调整' or detail.startswith('报名截止时间调整为'):
+            return False
+        return True
+    if ctype == 'positions_updated':
+        return not _POS_READY_RE.search(label + detail) and '为 0 个职位' not in detail
+    if ctype == 'content_updated':
+        return label == '地点调整' and '新增' in detail
+    return False
+
+
+def substantive_boost_day(job: Dict[str, Any], snap_day: str) -> str:
+    change = job.get('recent_change')
+    if not is_substantive_reopen_change(change):
+        return ''
+    change_day = shanghai_day(change.get('date'))
+    if not change_day or (snap_day and change_day > snap_day):
+        return ''
+    return change_day
+
+
+def effective_job_newest_key(job: Dict[str, Any], snap_day: str) -> tuple[str, int]:
+    pub_day = healed_publication_day(job, snap_day)
+    boost_day = substantive_boost_day(job, snap_day)
+    eff_day = boost_day if boost_day > pub_day else pub_day
+    if not eff_day:
+        return ('', 0)
+    if eff_day > pub_day:
+        tie_ms = _parse_iso_ms(job.get('updated_at')) or 0
+    else:
+        tie_ms = _parse_iso_ms(job.get('first_seen_at'))
+        if tie_ms is None:
+            tie_ms = _parse_iso_ms(job.get('published_at')) or 0
+    return (eff_day, tie_ms)
+
+
+def sort_jobs_by_newest(jobs: List[Dict[str, Any]], snap_day: str) -> List[Dict[str, Any]]:
+    ordered = sorted(jobs, key=lambda r: str(r.get('id') or ''))
+    ordered.sort(key=lambda r: effective_job_newest_key(r, snap_day), reverse=True)
+    return ordered
 
 
 def _load_json(path: Path) -> Any:
@@ -181,6 +293,8 @@ def build_radar_sqlite(
         public_dir,
         include_search=need_sqlite,
     )
+    snap_day = shanghai_day(snapshot.get('generated_at')) or dt.datetime.now(TZ).date().isoformat()
+    job_rows = sort_jobs_by_newest(job_rows, snap_day)
     exam_snap, exam_rows = load_exams(public_dir) if need_sqlite else (None, [])
 
     city_counts: Counter[str] = Counter()
@@ -241,7 +355,7 @@ def build_radar_sqlite(
 
         types_pipe = f"|{'|'.join(types_list)}|" if types_list else ''
         sectors_pipe = f"|{'|'.join(sectors_list)}|" if sectors_list else ''
-        published_at = str(job.get('published_at') or '')
+        published_at, _ = effective_job_newest_key(job, snap_day)
         deadline = str(job.get('deadline') or '')
 
         salary_min: Optional[float] = None

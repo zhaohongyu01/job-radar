@@ -94,33 +94,38 @@ export function ExamWorkspace() {
     }
   }, [toast]);
   const [selectedExam, setSelectedExam] = useState<ExamAnnouncement | null>(null);
-  const [focusedRowId, setFocusedRowId] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    const raw = new URLSearchParams(window.location.search).get('pos');
-    return raw && /^[\w:-]{1,96}$/.test(raw) ? raw : null;
-  });
-  const [linkedExamId, setLinkedExamId] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return parseExamUrl(window.location.search).examId || null;
-  });
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+  const [linkedExamId, setLinkedExamId] = useState<string | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(0);
   const [savedSubTab, setSavedSubTab] = useState<'announcements' | 'candidates' | 'hidden'>('announcements');
-  const [page, setPage] = useState(() => {
-    if (typeof window === 'undefined') return 1;
-    return parseExamUrl(window.location.search).page || 1;
-  });
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
+    const initTimer = window.setTimeout(() => {
+      setNowMs(Date.now());
+      const params = new URLSearchParams(window.location.search);
+      const rawPos = params.get('pos');
+      setFocusedRowId(rawPos && /^[\w:-]{1,96}$/.test(rawPos) ? rawPos : null);
+      const urlState = parseExamUrl(window.location.search);
+      setLinkedExamId(urlState.examId || null);
+      if (urlState.page && urlState.page > 1) {
+        setPage(urlState.page);
+      }
+    }, 0);
     const t = window.setInterval(() => setNowMs(Date.now()), 60_000);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearTimeout(initTimer);
+      window.clearInterval(t);
+    };
   }, []);
 
   const resetPage = useCallback(() => setPage(1), []);
 
   const {
+    hydrated,
     profile,
     filters,
     setFilters,
@@ -160,7 +165,12 @@ export function ExamWorkspace() {
     freshnessMeta,
   } = useExamSnapshot({ onNotice: setNotice, eagerPositions: needsEagerPositions });
 
-  const [searchDraft, setSearchDraft] = useState(() => filters.query);
+  const [searchDraft, setSearchDraft] = useState('');
+  const [searchBase, setSearchBase] = useState(filters.query);
+  if (searchBase !== filters.query) {
+    setSearchBase(filters.query);
+    setSearchDraft(filters.query);
+  }
 
   useEffect(() => {
     if (!linkedExamId || allExams.length === 0) return;
@@ -177,7 +187,7 @@ export function ExamWorkspace() {
   }, [linkedExamId, allExams, selectedExam?.id, personal, updatePersonalRecord]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!hydrated || typeof window === 'undefined') return;
     const newQuery = formatExamUrl({ filters, examId: linkedExamId, page });
     if (window.location.search !== newQuery) {
       window.history.replaceState(
@@ -186,7 +196,7 @@ export function ExamWorkspace() {
         `${window.location.pathname}${newQuery}${window.location.hash}`,
       );
     }
-  }, [filters, linkedExamId, page]);
+  }, [hydrated, filters, linkedExamId, page]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

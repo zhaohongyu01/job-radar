@@ -56,38 +56,29 @@ export interface UseExamPersonalOptions {
 }
 
 export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOptions) {
-  const [profile, setProfile] = useState<ExamUserProfile>(() => {
-    const stored = readStore(EXAM_PROFILE_STORAGE, validateExamProfile, DEFAULT_EXAM_PROFILE);
-    if (typeof window !== 'undefined') {
-      try {
-        const hasRawExamProfile = Boolean(window.localStorage.getItem(EXAM_PROFILE_STORAGE));
-        const unified = readUnifiedProfile();
-        const lastSync = readWorkspaceUnifiedSync('exams');
-        if (
-          shouldApplyUnifiedSync(unified, lastSync) ||
-          (!hasRawExamProfile && isUnifiedProfileConfigured(unified))
-        ) {
-          return { ...stored, ...unifiedToExamProfilePatch(unified) };
-        }
-      } catch {
-        // ignore storage errors
-      }
-    }
-    return stored;
-  });
-  const [filters, setFilters] = useState<ExamFilters>(() => {
-    let loaded: ExamFilters = readStore(
-      EXAM_FILTERS_STORAGE,
-      validateExamFilters,
-      DEFAULT_EXAM_FILTERS,
-    );
-    if (typeof window !== 'undefined') {
+  const [hydrated, setHydrated] = useState(false);
+  const [profile, setProfile] = useState<ExamUserProfile>(DEFAULT_EXAM_PROFILE);
+  const [filters, setFilters] = useState<ExamFilters>(DEFAULT_EXAM_FILTERS);
+  const [personal, setPersonal] = useState<ExamPersonalStore>({});
+
+  useEffect(() => {
+    const initTimer = window.setTimeout(() => {
+      const storedProfile = readStore(
+        EXAM_PROFILE_STORAGE,
+        validateExamProfile,
+        DEFAULT_EXAM_PROFILE,
+      );
+      let loadedFilters: ExamFilters = readStore(
+        EXAM_FILTERS_STORAGE,
+        validateExamFilters,
+        DEFAULT_EXAM_FILTERS,
+      );
       try {
         if (!window.localStorage.getItem(EXAM_FILTERS_MIGRATED_KEY)) {
           window.localStorage.setItem(EXAM_FILTERS_MIGRATED_KEY, '1');
-          if (loaded.stage === '全部') {
-            loaded = { ...loaded, stage: DEFAULT_EXAM_FILTERS.stage };
-            persistExamFilters(loaded);
+          if (loadedFilters.stage === '全部') {
+            loadedFilters = { ...loadedFilters, stage: DEFAULT_EXAM_FILTERS.stage };
+            persistExamFilters(loadedFilters);
           }
         }
       } catch {
@@ -96,34 +87,38 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
       const urlState = parseExamUrl(window.location.search);
       const unified = readUnifiedProfile();
       const lastSync = readWorkspaceUnifiedSync('exams');
-      if (!urlState.filters?.cities && shouldApplyUnifiedSync(unified, lastSync)) {
-        loaded = {
-          ...loaded,
+      const syncDue = shouldApplyUnifiedSync(unified, lastSync);
+      let nextProfile = storedProfile;
+      try {
+        const hasRawExamProfile = Boolean(window.localStorage.getItem(EXAM_PROFILE_STORAGE));
+        if (syncDue || (!hasRawExamProfile && isUnifiedProfileConfigured(unified))) {
+          nextProfile = { ...storedProfile, ...unifiedToExamProfilePatch(unified) };
+        }
+      } catch {
+        // ignore storage errors
+      }
+      if (!urlState.filters?.cities && syncDue) {
+        loadedFilters = {
+          ...loadedFilters,
           cities: unified.cities.length > 0 ? [...unified.cities] : ['全部'],
         };
       }
       if (urlState.filters) {
-        loaded = { ...loaded, ...urlState.filters };
+        loadedFilters = { ...loadedFilters, ...urlState.filters };
       }
-    }
-    return loaded;
-  });
-  const [personal, setPersonal] = useState<ExamPersonalStore>(() =>
-    readStore(EXAM_PERSONAL_STORAGE, validateExamPersonal, {}),
-  );
-
-  const didInitSync = useRef(false);
-  useEffect(() => {
-    if (didInitSync.current) return;
-    didInitSync.current = true;
-    const unified = readUnifiedProfile();
-    const lastSync = readWorkspaceUnifiedSync('exams');
-    if (shouldApplyUnifiedSync(unified, lastSync)) {
-      recordWorkspaceUnifiedSync('exams', unified.updatedAt);
-      writeStore(EXAM_PROFILE_STORAGE, profile);
-      persistExamFilters(filters);
-    }
-  }, [profile, filters]);
+      if (syncDue) {
+        recordWorkspaceUnifiedSync('exams', unified.updatedAt);
+        writeStore(EXAM_PROFILE_STORAGE, nextProfile);
+        persistExamFilters(loadedFilters);
+      }
+      const storedPersonal = readStore(EXAM_PERSONAL_STORAGE, validateExamPersonal, {});
+      setProfile(nextProfile);
+      setFilters(loadedFilters);
+      setPersonal(storedPersonal);
+      setHydrated(true);
+    }, 0);
+    return () => window.clearTimeout(initTimer);
+  }, []);
 
   useEffect(() => {
     const unsubPersonal = subscribeStore(EXAM_PERSONAL_STORAGE, () => {
@@ -323,6 +318,7 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
   );
 
   return {
+    hydrated,
     profile,
     setProfile,
     filters,

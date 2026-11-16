@@ -642,18 +642,38 @@ export function evaluateExamPositionEligibility(
     reasons.push('不限专业');
   }
 
-  // 8. 年龄限制校验
+  // 8. 年龄限制校验（支持硕博研究生、应届及高级职称年龄放宽条款）
   if (profile.birthYear !== null && profile.birthYear !== undefined) {
     const ageText = row.age_limit || '';
-    const ageMatch = ageText.match(/(\d{2})\s*周岁(?:及)?以下/);
-    if (ageMatch) {
-      const maxAge = Number(ageMatch[1]);
+    const ageNums = [...ageText.matchAll(/(\d{2})\s*周岁(?:及)?以下/g)].map((m) => Number(m[1]));
+    if (ageNums.length > 0) {
+      const baseMaxAge = ageNums[0];
+      const relaxedMaxAge = Math.max(...ageNums);
+      let effectiveMax = baseMaxAge;
+
+      if (profile.education === '博士研究生') {
+        const phdM = ageText.match(/(?:博士|硕博|研究生)[^。；\n]*?(\d{2})\s*周岁/);
+        if (phdM) effectiveMax = Math.max(effectiveMax, Number(phdM[1]));
+      } else if (profile.education === '硕士研究生') {
+        const masterM = ageText.match(/(?:硕士|硕博|(?<!博士)研究生)[^。；\n]*?(\d{2})\s*周岁/);
+        if (masterM) effectiveMax = Math.max(effectiveMax, Number(masterM[1]));
+      }
+      if (profile.gradIdentity === '当年应届') {
+        const freshM = ageText.match(/应届[^。；\n]*?(\d{2})\s*周岁/);
+        if (freshM) effectiveMax = Math.max(effectiveMax, Number(freshM[1]));
+      }
+
       const curYear = new Date().getFullYear();
       const userAge = curYear - profile.birthYear;
-      if (userAge > maxAge) {
-        conflicts.push(`年龄上限 ${maxAge} 周岁`);
+      if (userAge <= effectiveMax) {
+        reasons.push(`年龄符合（≤${effectiveMax}周岁）`);
+      } else if (
+        userAge <= relaxedMaxAge &&
+        (profile.education === '全部' || /职称|特聘|退役|基层|工作经历|紧缺/.test(ageText))
+      ) {
+        unknowns.push(`年龄需核实放宽条件（常规≤${baseMaxAge}周岁，放宽≤${relaxedMaxAge}周岁）`);
       } else {
-        reasons.push(`年龄符合（≤${maxAge}周岁）`);
+        conflicts.push(`年龄上限 ${effectiveMax} 周岁`);
       }
     } else {
       unknowns.push('年龄要求未提取');
@@ -794,6 +814,25 @@ export function deriveExamStage(exam: ExamAnnouncement, today: string): ExamStag
   return 'unknown';
 }
 
+function matchesExamCitySelection(exam: ExamAnnouncement, selectedCities: string[]): boolean {
+  if (selectedCities.length === 0) return true;
+  return selectedCities.some((city) => {
+    if (city === '山东省直') {
+      return (
+        exam.cities.includes('山东省直') ||
+        (exam.region_level === '省级' && exam.province === '山东')
+      );
+    }
+    if (city === '全国') {
+      return exam.cities.includes('全国') || exam.region_level === '国家级';
+    }
+    return (
+      exam.cities.includes(city) ||
+      (exam.positions || []).some((p) => Boolean(p.city && p.city.includes(city)))
+    );
+  });
+}
+
 export function filterExams(
   exams: ExamAnnouncement[],
   filters: ExamFilters,
@@ -817,13 +856,7 @@ export function filterExams(
     }
 
     // City filter
-    if (selectedCities.length > 0) {
-      const cityHit =
-        selectedCities.some((c) => exam.cities.includes(c)) ||
-        (exam.region_level === '国家级' && exam.cities.length === 0) ||
-        (exam.region_level === '省级' && exam.province === '山东' && exam.cities.length === 0);
-      if (!cityHit) return false;
-    }
+    if (!matchesExamCitySelection(exam, selectedCities)) return false;
 
     // Category / Exam type filter
     if (filters.category !== '全部' && !matchesExamTypeFilter(exam, filters.category)) {
@@ -970,8 +1003,12 @@ export function flattenAndFilterExamPositions(
   const rows: FlattenedExamPosition[] = [];
   for (const exam of filteredExams) {
     for (const pos of exam.positions || []) {
-      if (selectedCities.length > 0 && pos.city) {
-        const cityMatched = selectedCities.some((c) => pos.city.includes(c) || exam.cities.includes(c));
+      if (selectedCities.length > 0) {
+        const cityMatched = selectedCities.some((c) => {
+          if (c === '山东省直') return exam.region_level === '省级' && exam.province === '山东';
+          if (c === '全国') return exam.region_level === '国家级';
+          return pos.city ? pos.city.includes(c) : exam.cities.includes(c);
+        });
         if (!cityMatched) continue;
       }
       if (filters.bianzhi !== '全部' && pos.bianzhi !== filters.bianzhi) continue;

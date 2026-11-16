@@ -11,9 +11,23 @@ from typing import Any, Dict, List, Tuple
 from xml.sax.saxutils import escape as xml_escape
 
 try:
-    from build_radar_sqlite import healed_publication_day, shanghai_day, sort_jobs_by_newest
+    from build_radar_sqlite import (
+        _parse_iso_ms,
+        effective_job_newest_key,
+        healed_publication_day,
+        is_job_expired_or_excluded,
+        shanghai_day,
+        sort_jobs_by_newest,
+    )
 except ImportError:
-    from scripts.build_radar_sqlite import healed_publication_day, shanghai_day, sort_jobs_by_newest
+    from scripts.build_radar_sqlite import (
+        _parse_iso_ms,
+        effective_job_newest_key,
+        healed_publication_day,
+        is_job_expired_or_excluded,
+        shanghai_day,
+        sort_jobs_by_newest,
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 TZ = dt.timezone(dt.timedelta(hours=8))
@@ -152,8 +166,14 @@ def build_feeds(public_dir: Path, site_origin: str = DEFAULT_SITE) -> Dict[str, 
         exam_snap = _load_json(exams_file)
         snap_dt = _parse_dt(exam_snap.get('generated_at'), now_dt)
         exams = list(exam_snap.get('exams') or [])
+        exams_for_rss = [
+            ex
+            for ex in exams
+            if ex.get('stage') != 'ended'
+            and (not ex.get('notice_role') or ex.get('notice_role') in ('招考简章', '补录递补', '职位表'))
+        ]
         exams_sorted = sorted(
-            exams,
+            exams_for_rss,
             key=lambda x: (str(x.get('published_at') or ''), str(x.get('id') or '')),
             reverse=True,
         )
@@ -254,12 +274,15 @@ def build_feeds(public_dir: Path, site_origin: str = DEFAULT_SITE) -> Dict[str, 
     # 2. Jobs RSS
     jobs_snap, job_rows = _load_jobs_for_feed(public_dir)
     jobs_snap_dt = _parse_dt(jobs_snap.get('generated_at'), now_dt)
+    jobs_snap_ms = _parse_iso_ms(jobs_snap.get('generated_at'))
+    if jobs_snap_ms is None:
+        jobs_snap_ms = int(jobs_snap_dt.timestamp() * 1000)
     jobs_snap_day = shanghai_day(jobs_snap.get('generated_at')) or now_dt.date().isoformat()
     active_jobs = sort_jobs_by_newest(
         [
             j
             for j in job_rows
-            if j.get('listing_status') != 'withdrawn' and j.get('kind') != '宣讲会'
+            if not is_job_expired_or_excluded(j, jobs_snap_ms) and j.get('kind') != '宣讲会'
         ],
         jobs_snap_day,
     )
@@ -282,8 +305,9 @@ def build_feeds(public_dir: Path, site_origin: str = DEFAULT_SITE) -> Dict[str, 
             )
             if p
         )
+        eff_day, _ = effective_job_newest_key(j, jobs_snap_day)
         healed_day = healed_publication_day(j, jobs_snap_day)
-        pub_dt = _parse_dt(healed_day or j.get('first_seen_at'), jobs_snap_dt)
+        pub_dt = _parse_dt(eff_day or healed_day or j.get('first_seen_at'), jobs_snap_dt)
         job_items.append(
             {
                 'title': f'{company} · {title}' if company and company not in title else title,

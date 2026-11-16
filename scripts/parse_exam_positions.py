@@ -1,10 +1,13 @@
 """Structured parser for Civil Service & Public Institution (考公考编) announcements and position tables."""
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import hashlib
 import io
+import json
 import re
+import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 from typing import Any, Dict, List, Optional, Tuple
@@ -616,6 +619,8 @@ def parse_exam_table_grid(
             continue
 
         edu = get_col(row, 'education') or get_col(row, 'edu_degree') or ''
+        if edu and INVALID_EXAM_EDU_RE.match(edu.strip()):
+            edu = ''
         deg = get_col(row, 'degree')
         if not deg and '学位' in edu:
             deg = edu
@@ -644,6 +649,8 @@ def parse_exam_table_grid(
 
         employer_val = employer or department or '用人单位见简章'
         pos_name_val = pos_name or get_col(row, 'position_category') or '公开招聘岗位'
+        if not is_valid_exam_position_name(pos_name_val):
+            continue
         pos_code_val = get_col(row, 'position_code')
         row_id = compute_position_row_id(exam_id, pos_code_val, employer_val, pos_name_val)
 
@@ -794,6 +801,13 @@ def parse_exam_pdf_bytes(
     if not rows:
         generic = parse_pdf_bytes(file_bytes, filename=filename, max_pages=15)
         for p in generic:
+            cand_name = clean_cell(p.get('position_name') or p.get('name') or '')
+            cand_edu = clean_cell(p.get('education') or '')
+            if not is_valid_exam_position_name(cand_name):
+                continue
+            if cand_edu and INVALID_EXAM_EDU_RE.match(cand_edu):
+                continue
+            p['position_name'] = cand_name
             p.setdefault('bianzhi', default_bianzhi)
             p.setdefault('city', default_city)
             p.setdefault('employer', default_employer)
@@ -963,6 +977,27 @@ def parse_exam_xls_bytes(
     return rows
 
 
+INVALID_EXAM_POS_NAME_RE = re.compile(
+    r'^(?:[\d.\-—/序号]+|序号|类别|岗位类别|岗位代码|职位代码|岗位编号|招聘单位|用人单位|主管部门|'
+    r'要求|学历|学历要求|学位|学位要求|专业|专业要求|其他条件|备注|等级|成绩|笔试成绩|面试成绩|'
+    r'面试分数|综合成绩|总成绩|姓名|准考证号|排名|名次|合计|总计|小计)$'
+)
+INVALID_EXAM_EDU_RE = re.compile(
+    r'^(?:[\d.\-—/]+|序号|类别|等级|要求|招聘单位|用人单位|主管部门|岗位名称|职位名称|岗位代码|职位代码|备注)$'
+)
+
+
+def is_valid_exam_position_name(name: str) -> bool:
+    cleaned = clean_cell(name)
+    if not cleaned or len(cleaned) > 60:
+        return False
+    if INVALID_EXAM_POS_NAME_RE.match(cleaned):
+        return False
+    if re.fullmatch(r'[\d\W_]+', cleaned):
+        return False
+    return True
+
+
 MAX_ZIP_MEMBERS = 30
 MAX_ZIP_TOTAL_UNCOMPRESSED = 25 * 1024 * 1024
 NON_POS_ZIP_MEMBER_RE = re.compile(
@@ -974,20 +1009,81 @@ JUNK_ATTACHMENT_URL_RE = re.compile(
     r'(?:huatu|offcn|fenbi)\.com|'
     r'AdminLogin\.aspx|BlankPage\.aspx|PharmacyWindow\.aspx|/Index\.aspx$|'
     r'cpta\.com\.cn/(?:promise|testPlan|certQuery|syllabus)\.html|'
+    r'fileTypeImages/icon_|/module/jslib/icons/|/channels/ch\d+/?$|'
+    r'/cms_files/filemanager/\d+/picture/|'
     r'gov\.cn/zhuanti/|(?:/statics/images/|/img/|/picture/)(?:[^?#]*?)(?:\.png|\.jpg|\.jpeg|\.gif)$|'
-    r'(?:wechat|qrcode|flogo|logo|foot-tel|foot-address|foot-car|inside-location|inside-icon|nav)\.(?:png|jpg|jpeg|gif)$',
+    r'(?:wechat|wx|qrcode|flogo|logo|foot-tel|foot-address|foot-car|inside-location|inside-icon|nav(?:-img)?)\.(?:png|jpg|jpeg|gif|svg)$',
     re.I,
 )
 
 
-def clean_exam_attachments(attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def normalize_exam_attachment_url(url: str, fallback_origin: str = '') -> str:
+    """Unwrap SDEI externalLink JWT wrappers and repair root-relative government download paths."""
+    raw = (url or '').strip()
+    if not raw:
+        return ''
+    try:
+        parts = urllib.parse.urlsplit(raw)
+    except Exception:
+        return raw
+
+    host = (parts.hostname or '').lower()
+    # 1. Unwrap school.gxjy.sdei.edu.cn/externalLink?target=<JWT>
+    if host.endswith('sdei.edu.cn') and parts.path.endswith('/externalLink'):
+        qs = urllib.parse.parse_qs(parts.query)
+        token = (qs.get('target') or [''])[0].strip()
+        seg_parts = token.split('.')
+        if len(seg_parts) >= 2:
+            payload_b64 = seg_parts[1]
+            payload_b64 += '=' * (-len(payload_b64) % 4)
+            try:
+                decoded = base64.urlsafe_b64decode(payload_b64.encode('ascii')).decode('utf-8', errors='ignore').strip()
+                target_val = ''
+                if decoded.startswith(('{', '"')):
+                    parsed_json = json.loads(decoded)
+                    if isinstance(parsed_json, str):
+                        target_val = parsed_json
+                    elif isinstance(parsed_json, dict):
+                        target_val = str(parsed_json.get('url') or parsed_json.get('target') or '')
+                else:
+                    target_val = decoded
+                if re.match(r'^https?%3A%2F%2F', target_val, re.I):
+                    target_val = urllib.parse.unquote(target_val)
+                t_split = urllib.parse.urlsplit(target_val)
+                if t_split.scheme.lower() in ('http', 'https') and t_split.netloc:
+                    return urllib.parse.urlunsplit(t_split)
+            except Exception:
+                pass
+
+    # 2. Repair root-relative government CMS paths erroneously resolved onto *.sdei.edu.cn
+    if host.endswith('sdei.edu.cn'):
+        path = parts.path or ''
+        if path.startswith('/resource/srst/att/'):
+            return urllib.parse.urlunsplit(('http', 'hrss.shandong.gov.cn', path, parts.query, ''))
+        # Strip school prefix before EasySite /n.../n.../c.../part/ path when present
+        easysite_m = re.match(r'^/[a-z]{2,12}(/n\d+/n\d+/c\d+/part/.+)$', path)
+        norm_path = easysite_m.group(1) if easysite_m else path
+        if fallback_origin and (
+            norm_path.startswith(('/api-gateway/jpaas-', '/module/download/downfile.jsp'))
+            or re.match(r'^/n\d+/n\d+/c\d+/part/', norm_path)
+        ):
+            fb = urllib.parse.urlsplit(fallback_origin)
+            if fb.scheme in ('http', 'https') and fb.netloc:
+                return urllib.parse.urlunsplit((fb.scheme, fb.netloc, norm_path, parts.query, ''))
+        if norm_path.startswith('/api-gateway/jpaas-') and not fallback_origin:
+            return urllib.parse.urlunsplit(('http', 'hrss.shandong.gov.cn', norm_path, parts.query, ''))
+
+    return raw
+
+
+def clean_exam_attachments(attachments: List[Dict[str, Any]], fallback_origin: str = '') -> List[Dict[str, Any]]:
     """Remove website chrome icons, commercial ad links, and duplicate URLs from exam attachments."""
     cleaned: List[Dict[str, Any]] = []
     seen_urls: set[str] = set()
     for att in attachments or []:
         if not isinstance(att, dict):
             continue
-        url = str(att.get('url') or '').strip()
+        url = normalize_exam_attachment_url(str(att.get('url') or '').strip(), fallback_origin=fallback_origin)
         title = str(att.get('title') or '').strip()
         if not url or url in seen_urls:
             continue
@@ -995,8 +1091,12 @@ def clean_exam_attachments(attachments: List[Dict[str, Any]]) -> List[Dict[str, 
             continue
         if title in ('官方附件', '') and re.match(r'^https?://(?:(?:www|mohrss|scs)\.)?gov\.cn/?$', url, re.I):
             continue
+        if title in ('招聘图片（文字未自动识别）', '查看链接', '官方附件', '') and re.search(
+            r'\.(?:gif|svg|ico)(?:\?|$)', url, re.I
+        ):
+            continue
         seen_urls.add(url)
-        cleaned.append(att)
+        cleaned.append({**att, 'url': url})
     return cleaned
 
 
@@ -1138,7 +1238,7 @@ def parse_exam_attachment_bytes(
 
     # 3. OLE2 Compound Document (.xls / .doc) or HTML-table-disguised .xls
     if file_bytes.startswith(b'\xd0\xcf\x11\xe0'):
-        return parse_exam_xls_bytes(
+        xls_rows = parse_exam_xls_bytes(
             file_bytes,
             exam_id=exam_id,
             default_bianzhi=default_bianzhi,
@@ -1146,6 +1246,55 @@ def parse_exam_attachment_bytes(
             default_employer=default_employer,
             filename=filename,
         )
+        if xls_rows:
+            return xls_rows
+        # Fallback for legacy binary Word 97-2003 .doc: extract UTF-16LE text runs
+        try:
+            utf16_chunks = re.findall(
+                r'[\u4e00-\u9fa5A-Za-z0-9，。、；：（）()/\-\t\r\n ]{8,}',
+                file_bytes.decode('utf-16le', errors='ignore'),
+            )
+            doc_text = '\n'.join(c.strip() for c in utf16_chunks if re.search(r'[\u4e00-\u9fa5]{2,}', c))
+            if len(doc_text) >= 20:
+                doc_generic = extract_positions_from_text(doc_text, max_rows=50)
+                doc_rows: List[Dict[str, Any]] = []
+                for p in doc_generic:
+                    pos_name = clean_cell(p.get('position_name') or p.get('name') or '')
+                    if not is_valid_exam_position_name(pos_name):
+                        continue
+                    majors_list = p.get('majors') or []
+                    cnt_m = re.search(r'(\d+)', str(p.get('count') or ''))
+                    cnt = int(cnt_m.group(1)) if cnt_m else None
+                    doc_rows.append({
+                        'row_id': compute_position_row_id(exam_id, '', default_employer, pos_name),
+                        'exam_id': exam_id,
+                        'department': default_employer or '招考主管部门',
+                        'employer': default_employer or '用人单位见简章',
+                        'position_name': pos_name,
+                        'position_code': '',
+                        'position_category': '',
+                        'bianzhi': default_bianzhi,
+                        'recruit_count': cnt if cnt and 0 < cnt <= 5000 else None,
+                        'city': p.get('city') or default_city,
+                        'education': p.get('education') or '',
+                        'degree': '',
+                        'majors': majors_list,
+                        'major_raw': '、'.join(majors_list),
+                        'political_status': '',
+                        'fresh_grad_rule': p.get('cohort') or '',
+                        'age_limit': '',
+                        'hukou_rule': '',
+                        'exam_ratio': '',
+                        'other_conditions': str(p.get('notes') or '')[:120],
+                        'source_file': filename or 'Word附件',
+                        'source': 'attachment',
+                    })
+                if doc_rows:
+                    assign_stable_row_ids(exam_id, doc_rows)
+                    return doc_rows
+        except Exception:
+            pass
+        return []
 
     head = file_bytes[:512].lstrip(b'\xef\xbb\xbf \t\r\n').lower()
     if b'<table' in head or (
@@ -1341,13 +1490,24 @@ def enrich_exam_record(
     elif re.search(r'区|县|街道|镇', title) and not re.search(r'市直|市属', title):
         region_level = '区县级'
 
-    # Convert or extract positions
+    # Convert or extract positions (only for genuine recruitment / supplemental notices, never plan-reduction or publicity rosters)
     default_city = cities[0] if cities else ''
     default_bz = bianzhi_types[0] if bianzhi_types else '事业编'
     exam_positions: List[Dict[str, Any]] = []
 
-    raw_positions = list(raw_item.get('exam_positions') or raw_item.get('positions') or [])
-    if not raw_positions and body:
+    allow_positions = (
+        notice_role in ('招考简章', '补充公告')
+        and not re.search(
+            r'核减|取消.*计划|改报|拟聘用|拟录用|拟录取|进入面试|入围.*名单|成绩查询|面试成绩|笔试成绩|综合成绩',
+            title,
+        )
+    )
+    raw_positions = (
+        list(raw_item.get('exam_positions') or raw_item.get('positions') or [])
+        if allow_positions
+        else []
+    )
+    if allow_positions and not raw_positions and body:
         # Attempt text-table extraction from body
         raw_positions = extract_positions_from_text(body, max_rows=50)
 
@@ -1356,6 +1516,10 @@ def enrich_exam_record(
             continue
         if 'position_name' in p and 'employer' in p:
             p_copy = dict(p)
+            if not is_valid_exam_position_name(str(p_copy.get('position_name') or '')):
+                continue
+            if p_copy.get('education') and INVALID_EXAM_EDU_RE.match(str(p_copy['education']).strip()):
+                p_copy['education'] = ''
             if p_copy.get('department') in CAMPUS_PORTAL_HOSTS or not p_copy.get('department'):
                 p_copy['department'] = organizer
             if p_copy.get('employer') in CAMPUS_PORTAL_HOSTS or not p_copy.get('employer'):
@@ -1366,7 +1530,7 @@ def enrich_exam_record(
             continue
         # Convert from generic PositionRequirement
         pos_name = (p.get('name') or '').strip()
-        if not pos_name or pos_name in ('其它相关职位', '其他相关职位'):
+        if not pos_name or pos_name in ('其它相关职位', '其他相关职位') or not is_valid_exam_position_name(pos_name):
             continue
         cnt_m = re.search(r'(\d+)', str(p.get('count') or ''))
         cnt = int(cnt_m.group(1)) if cnt_m else None
@@ -1454,7 +1618,7 @@ def enrich_exam_record(
     )
 
     # If no tabular positions were extracted yet for a 招考简章, extract prose positions from body
-    if not exam_positions and notice_role == '招考简章':
+    if allow_positions and not exam_positions and notice_role == '招考简章':
         prose_matches = re.findall(
             r'([\u4e00-\u9fa5A-Za-z]{2,16}?(?:专业技术岗位|专业技术人员|管理岗位|教师岗位|骨干教师|专任教师|教师|医师|护士|护理|医生|干事|科员|专员|工作人员|岗位|职位|人才|管理岗|技术岗|财务岗|会计|审计|文秘|法务|辅导员))'
             r'[：:\s（(]*?(?:招聘|招录|计划|拟聘|共)?\s*(\d{1,3})\s*[名人人]',
@@ -1531,7 +1695,14 @@ def enrich_exam_record(
     total_positions: Optional[int] = pos_count_val if pos_count_val > 0 else None
     total_headcount: Optional[int] = hc_count_val if hc_count_val > 0 else None
 
-    attachments = clean_exam_attachments(raw_item.get('attachments') or [])
+    gov_origin = ''
+    gov_m = re.search(r'https?://[a-z0-9.-]+\.gov\.cn(?::\d+)?', combined, re.I)
+    if gov_m:
+        gov_origin = gov_m.group(0)
+    elif region_level == '省级':
+        gov_origin = 'http://hrss.shandong.gov.cn'
+
+    attachments = clean_exam_attachments(raw_item.get('attachments') or [], fallback_origin=gov_origin)
     if any(p.get('source') in ('table', 'attachment') for p in exam_positions):
         positions_status = 'parsed'
     elif exam_positions:

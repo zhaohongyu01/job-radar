@@ -5,6 +5,8 @@ import {
   employerGroupName,
   formatCompanyDisplay,
   formatEducationDisplay,
+  normalizeCompanyName,
+  stripTrailingAtsCode,
 } from './jobs.ts';
 import { extractSalary } from './salary-display.ts';
 
@@ -31,7 +33,28 @@ export function buildGroupRoleItems(jobs: Job[], groupCompany?: string): GroupRo
       item.company,
       displayCompany,
     );
-    const cleanRole = rawRole.replace(/\s*[（(][A-Za-z]\d{4,}[)）]\s*$/, '').trim() || rawRole;
+    const strippedRole =
+      stripTrailingAtsCode(rawRole).replace(/\s*[（(][A-Za-z]\d{4,}[)）]\s*$/, '').trim() || rawRole;
+    const rawPosList = [
+      ...(item.positions || []).map((p) => p.name || p.position_name || ''),
+      ...(item.sample_positions || []),
+    ];
+    const posNames = [
+      ...new Set(
+        rawPosList
+          .map((n) => stripTrailingAtsCode(n.trim()))
+          .filter((name) => name.length > 0 && !/^\d+$/.test(name)),
+      ),
+    ];
+    const isGenericBrochureRole = /^(?:20\d{2}\s*[年届]?\s*)?(?:春季|秋季|校园|社会|公开)?(?:招聘|招聘简章|招聘公告|引才公告|简章|公告)$/.test(
+      strippedRole,
+    );
+    const cleanRole =
+      isGenericBrochureRole && posNames.length > 0
+        ? posNames.length === 1
+          ? posNames[0]
+          : `${posNames.slice(0, 2).join(' / ')}${posNames.length > 2 ? ` 等${posNames.length}岗` : ''}`
+        : strippedRole;
     const baseGroup = (groupCompany || employerGroupName(item) || '').trim();
     const rawComp = (item.company || '').trim();
     const subCandidate =
@@ -93,6 +116,8 @@ export function buildGroupRoleItems(jobs: Job[], groupCompany?: string): GroupRo
       cleanRole,
       subUnit,
       ...(item.cities || []),
+      ...(item.positions || []).map((p) => p.name || p.position_name || ''),
+      ...(item.sample_positions || []),
       eduShort,
       item.company || '',
     ]
@@ -117,7 +142,8 @@ export function groupJobs(jobs: Job[], enabled = true): JobGroup[] {
   const groups = new Map<string, JobGroup>();
   for (const job of jobs) {
     const groupName = employerGroupName(job);
-    const company = groupName.trim().replace(/\s+/g, '').replace(/（/g, '(').replace(/）/g, ')');
+    const rawTrimmed = groupName.trim().replace(/\s+/g, '').replace(/（/g, '(').replace(/）/g, ')');
+    const company = normalizeCompanyName(groupName) || rawTrimmed;
     const titleCohorts = [...new Set([...job.title.matchAll(/(20\d{2})\s*届/g)].map((m) => m[1]))];
     const cohorts = titleCohorts.length ? titleCohorts : job.graduation_years;
     const phase = /提前批|春(?:季校园招聘|季招聘|招)|秋(?:季校园招聘|季招聘|招)|补录|补招/.exec(job.title)?.[0]?.replace(/^春.*/, '春招').replace(/^秋.*/, '秋招') || '校招';

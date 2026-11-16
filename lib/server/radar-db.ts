@@ -109,8 +109,12 @@ export function buildJobsSqlQuery(
 } {
   const useFts = options?.useFts ?? true;
   const p = normalizeQueryParams(input);
-  const clauses: string[] = ["j.listing_status != 'withdrawn'"];
-  const params: (string | number)[] = [];
+  const todayCst = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const clauses: string[] = [
+    "j.listing_status != 'withdrawn'",
+    "(j.deadline = '' OR SUBSTR(j.deadline, 1, 10) >= ?)",
+  ];
+  const params: (string | number)[] = [todayCst];
 
   if (p.cities.length > 0) {
     const cityChecks = p.cities.map(() => 'INSTR(j.cities_pipe, ?) > 0');

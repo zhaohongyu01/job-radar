@@ -2029,10 +2029,22 @@ def detect_job_events(job, old, now, changed):
         event_title = None
         diff_snippets = []
 
-        # 1. Deadline change
+        was_pending_stub = (not old.get('body')) or str(old.get('classification_note') or '').startswith('仅核实')
+
+        # 1. Deadline change (ignore BYSJY rolling +365d horizon shifts)
         old_dl = old.get('deadline') or ''
         new_dl = job.get('deadline') or ''
+        is_rolling_dl = False
         if old_dl and new_dl and new_dl > old_dl:
+            try:
+                cd_d = dt.date.fromisoformat(today[:10])
+                nd_d = dt.date.fromisoformat(str(new_dl)[:10])
+                od_d = dt.date.fromisoformat(str(old_dl)[:10])
+                if (nd_d - cd_d).days >= 330 and (od_d - cd_d).days >= 300 and (nd_d - od_d).days <= 14:
+                    is_rolling_dl = True
+            except Exception:
+                pass
+        if old_dl and new_dl and new_dl > old_dl and not is_rolling_dl:
             diff_snippets.append(f'报名截止时间延长至 {new_dl}（原截止时间：{old_dl}）')
             event_type = 'deadline_extended'
             event_title = '截止延期'
@@ -2071,10 +2083,21 @@ def detect_job_events(job, old, now, changed):
         if new_pc != old_pc or (new_majors - old_majors):
             added = list(new_majors - old_majors)[:3]
             major_text = f"，新增专业：{'、'.join(added)}" if added else ''
-            diff_snippets.append(f'岗位需求变动为 {new_pc} 个职位{major_text}')
-            if not event_type:
-                event_type = 'positions_updated'
-                event_title = '岗位表更新'
+            if was_pending_stub and old_pc == 0 and new_pc > 0:
+                diff_snippets.append(f'首次提取 {new_pc} 个职位{major_text}')
+                if not event_type:
+                    event_type = 'positions_updated'
+                    event_title = '岗位表就绪'
+            elif new_pc < old_pc and not added:
+                diff_snippets.append(f'岗位数量缩减为 {new_pc} 个职位（原 {old_pc} 个）')
+                if not event_type:
+                    event_type = 'positions_updated'
+                    event_title = '岗位缩减'
+            else:
+                diff_snippets.append(f'岗位需求变动为 {new_pc} 个职位{major_text}')
+                if not event_type:
+                    event_type = 'positions_updated'
+                    event_title = '岗位表更新'
 
         # 5. Work location / Cities change
         old_cities = set(old.get('cities') or [])
@@ -2082,15 +2105,21 @@ def detect_job_events(job, old, now, changed):
         if old_cities != new_cities:
             added_cities = sorted(list(new_cities - old_cities))
             removed_cities = sorted(list(old_cities - new_cities))
-            if added_cities and not removed_cities:
-                diff_snippets.append(f'工作地点新增「{"、".join(added_cities)}」')
-            elif added_cities and removed_cities:
-                diff_snippets.append(f'工作地点调整为「{"、".join(sorted(new_cities))}」（新增{"、".join(added_cities)}）')
-            elif removed_cities and new_cities:
-                diff_snippets.append(f'工作地点调整为「{"、".join(sorted(new_cities))}」')
-            if not event_type:
-                event_type = 'content_updated'
-                event_title = '地点调整'
+            if was_pending_stub and added_cities:
+                diff_snippets.append(f'首次补全工作地点「{"、".join(sorted(new_cities))}」')
+                if not event_type:
+                    event_type = 'content_updated'
+                    event_title = '地点补全'
+            else:
+                if added_cities and not removed_cities:
+                    diff_snippets.append(f'工作地点新增「{"、".join(added_cities)}」')
+                elif added_cities and removed_cities:
+                    diff_snippets.append(f'工作地点调整为「{"、".join(sorted(new_cities))}」（新增{"、".join(added_cities)}）')
+                elif removed_cities and new_cities:
+                    diff_snippets.append(f'工作地点调整为「{"、".join(sorted(new_cities))}」')
+                if not event_type:
+                    event_type = 'content_updated'
+                    event_title = '地点调整'
 
         # 6. Application URL update
         old_app = (old.get('application_url') or '').strip()
@@ -2130,7 +2159,7 @@ def detect_job_events(job, old, now, changed):
                 event_title = '资格调整'
 
         # 9. Substantive text changes in announcement body / excerpt
-        if not diff_snippets:
+        if not diff_snippets and not is_rolling_dl:
             old_text = re.sub(r'<[^>]+>', ' ', old.get('body') or old.get('excerpt') or '')
             new_text = re.sub(r'<[^>]+>', ' ', job.get('body') or job.get('excerpt') or '')
             old_lines = set(line.strip() for line in old_text.splitlines() if len(line.strip()) >= 5)
@@ -2154,21 +2183,22 @@ def detect_job_events(job, old, now, changed):
                 event_type = 'content_updated'
                 event_title = '内容更新'
 
-        final_detail = '；'.join(diff_snippets[:2])
-        detected_event = {
+        if diff_snippets:
+            final_detail = '；'.join(diff_snippets[:2])
+            detected_event = {
             'date': today,
             'timestamp': now,
             'type': event_type or 'content_updated',
             'title': event_title or '信息更新',
             'detail': final_detail,
         }
-        recent_change = {
-            'type': event_type or 'content_updated',
-            'label': event_title or '信息更新',
-            'date': today,
-            'detail': final_detail,
-        }
-        timeline.append(detected_event)
+            recent_change = {
+                'type': event_type or 'content_updated',
+                'label': event_title or '信息更新',
+                'date': today,
+                'detail': final_detail,
+            }
+            timeline.append(detected_event)
 
     # Deduplicate timeline events by (date, type, title)
     seen_keys = set()
@@ -2220,7 +2250,7 @@ def compute_job_fingerprint(job):
             for a in (job.get('attachments') or []) if isinstance(a, dict)
         ]),
         'positions': sorted([
-            ((p.get('name') or '').strip(), (p.get('city') or '').strip(), (p.get('education') or '').strip(),
+            ((p.get('position_name') or p.get('name') or '').strip(), (p.get('city') or '').strip(), (p.get('education') or '').strip(),
              ','.join(sorted(p.get('majors') or [])))
             for p in (job.get('positions') or []) if isinstance(p, dict)
         ]),
@@ -2524,7 +2554,15 @@ def deduplicate(jobs):
             parent['duplicate_ids'].append(job['id'])
 
             if job.get('published_at'):
-                if not parent.get('published_at') or job['published_at'] < parent['published_at']:
+                if not parent.get('published_at'):
+                    p_first = _valid_iso_day(parent.get('first_seen_at'))
+                    p_ver = _valid_iso_day(parent.get('last_verified_at'))
+                    j_pub = _valid_iso_day(job.get('published_at'))
+                    if p_first and p_ver > p_first and j_pub > p_first:
+                        parent['published_at'] = p_first
+                    else:
+                        parent['published_at'] = job['published_at']
+                elif job['published_at'] < parent['published_at']:
                     parent['published_at'] = job['published_at']
             if not parent.get('application_url') and job.get('application_url'):
                 parent['application_url'] = job['application_url']
@@ -2604,6 +2642,8 @@ def deduplicate(jobs):
             if job.get('recent_change'):
                 if not parent.get('recent_change'):
                     parent['recent_change'] = job['recent_change']
+                    if (job.get('updated_at') or '') > (parent.get('updated_at') or ''):
+                        parent['updated_at'] = job['updated_at']
                 else:
                     curr_p = change_prio.get(parent['recent_change'].get('type'), 0)
                     new_p = change_prio.get(job['recent_change'].get('type'), 0)
@@ -2611,6 +2651,8 @@ def deduplicate(jobs):
                     new_is_placeholder = job['recent_change'].get('detail') == '招聘公告正文或附件内容已同步最新变动'
                     if new_p > curr_p or (new_p == curr_p and curr_is_placeholder and not new_is_placeholder):
                         parent['recent_change'] = job['recent_change']
+                        if (job.get('updated_at') or '') > (parent.get('updated_at') or ''):
+                            parent['updated_at'] = job['updated_at']
 
             if not parent.get('lifecycle_stage') and job.get('lifecycle_stage'):
                 parent['lifecycle_stage'] = job['lifecycle_stage']
@@ -3364,6 +3406,31 @@ def run(args):
                 prev_ok = prior_source.get('status') == 'ok' and not prior_source.get('errors')
                 prev_complete = (prior_source.get('list_complete') is True) and is_history_complete
                 no_pending = not previous.get('pending', {}).get(source['id'])
+                if (head_only and page == 1 and page_budget > 1 and found
+                        and source.get('channel') != 'talks'
+                        and source.get('adapter') not in {'sdu_talks', 'offerjack'}):
+                    prev_total = prior_source.get('total_items')
+                    curr_total = status.get('total_items') if status.get('total_items') is not None else total
+                    total_unchanged = (prev_total is None or curr_total is None or curr_total <= prev_total)
+                    def _head_item_unchanged(it):
+                        old_row = previous['jobs'].get(item_id(it))
+                        if not old_row:
+                            return False
+                        if old_row.get('title') != it.get('title') or old_row.get('published_at') != it.get('published_at'):
+                            return False
+                        if not publishable_job(old_row) or old_row.get('classification_note', '').startswith('仅核实'):
+                            return False
+                        sig = listing_signature(it)
+                        if sig and old_row.get('listing_signature') and old_row.get('listing_signature') != sig:
+                            return False
+                        if 'inline_html' in it and not requires_position_detail(it):
+                            fp = inline_announcement_fingerprint(it, source)
+                            if fp and old_row.get('inline_announcement_fingerprint') and old_row.get('inline_announcement_fingerprint') != fp:
+                                return False
+                        return True
+                    if total_unchanged and all(_head_item_unchanged(i) for i in found):
+                        status['early_exit'] = True
+                        break
                 if (is_chrono_feed and not is_deep_scan and not is_patrol_due and found and page == 1
                         and prev_ok and prev_complete and no_pending
                         and not resumed_tail

@@ -22,8 +22,12 @@ import {
   examProfileToUnified,
   isUnifiedProfileConfigured,
   readUnifiedProfile,
+  readWorkspaceUnifiedSync,
+  recordWorkspaceUnifiedSync,
+  shouldApplyUnifiedSync,
+  UNIFIED_PROFILE_STORAGE,
   unifiedToExamProfilePatch,
-  writeUnifiedProfile,
+  writeUnifiedProfileFromWorkspace,
 } from '@/lib/unified-profile';
 import { report } from '@/lib/rum';
 
@@ -57,11 +61,13 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     if (typeof window !== 'undefined') {
       try {
         const hasRawExamProfile = Boolean(window.localStorage.getItem(EXAM_PROFILE_STORAGE));
-        if (!hasRawExamProfile) {
-          const unified = readUnifiedProfile();
-          if (isUnifiedProfileConfigured(unified)) {
-            return { ...stored, ...unifiedToExamProfilePatch(unified) };
-          }
+        const unified = readUnifiedProfile();
+        const lastSync = readWorkspaceUnifiedSync('exams');
+        if (
+          shouldApplyUnifiedSync(unified, lastSync) ||
+          (!hasRawExamProfile && isUnifiedProfileConfigured(unified))
+        ) {
+          return { ...stored, ...unifiedToExamProfilePatch(unified) };
         }
       } catch {
         // ignore storage errors
@@ -88,6 +94,14 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
         // ignore storage errors
       }
       const urlState = parseExamUrl(window.location.search);
+      const unified = readUnifiedProfile();
+      const lastSync = readWorkspaceUnifiedSync('exams');
+      if (!urlState.filters?.cities && shouldApplyUnifiedSync(unified, lastSync)) {
+        loaded = {
+          ...loaded,
+          cities: unified.cities.length > 0 ? [...unified.cities] : ['全部'],
+        };
+      }
       if (urlState.filters) {
         loaded = { ...loaded, ...urlState.filters };
       }
@@ -97,6 +111,19 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
   const [personal, setPersonal] = useState<ExamPersonalStore>(() =>
     readStore(EXAM_PERSONAL_STORAGE, validateExamPersonal, {}),
   );
+
+  const didInitSync = useRef(false);
+  useEffect(() => {
+    if (didInitSync.current) return;
+    didInitSync.current = true;
+    const unified = readUnifiedProfile();
+    const lastSync = readWorkspaceUnifiedSync('exams');
+    if (shouldApplyUnifiedSync(unified, lastSync)) {
+      recordWorkspaceUnifiedSync('exams', unified.updatedAt);
+      writeStore(EXAM_PROFILE_STORAGE, profile);
+      persistExamFilters(filters);
+    }
+  }, [profile, filters]);
 
   useEffect(() => {
     const unsubPersonal = subscribeStore(EXAM_PERSONAL_STORAGE, () => {
@@ -111,9 +138,27 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     const unsubProfile = subscribeStore(EXAM_PROFILE_STORAGE, () => {
       setProfile(readStore(EXAM_PROFILE_STORAGE, validateExamProfile, DEFAULT_EXAM_PROFILE));
     });
+    const unsubUnified = subscribeStore(UNIFIED_PROFILE_STORAGE, () => {
+      const unified = readUnifiedProfile();
+      const lastSync = readWorkspaceUnifiedSync('exams');
+      if (!shouldApplyUnifiedSync(unified, lastSync)) return;
+      recordWorkspaceUnifiedSync('exams', unified.updatedAt);
+      setProfile((prev) => {
+        const next = { ...prev, ...unifiedToExamProfilePatch(unified) };
+        writeStore(EXAM_PROFILE_STORAGE, next);
+        return next;
+      });
+      setFilters((prev) => {
+        const nextCities = unified.cities.length > 0 ? [...unified.cities] : ['全部'];
+        const next = { ...prev, cities: nextCities };
+        persistExamFilters(next);
+        return next;
+      });
+    });
     return () => {
       unsubPersonal();
       unsubProfile();
+      unsubUnified();
     };
   }, [onNotice]);
 
@@ -125,7 +170,10 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
       setProfile((prev) => {
         const next = { ...prev, ...patch };
         writeStore(EXAM_PROFILE_STORAGE, next);
-        writeUnifiedProfile(examProfileToUnified(next, filters.cities, readUnifiedProfile()));
+        writeUnifiedProfileFromWorkspace(
+          'exams',
+          examProfileToUnified(next, filters.cities, readUnifiedProfile()),
+        );
         return next;
       });
       clearTimeout(profileReportTimer.current);
@@ -138,7 +186,11 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
   const clearProfile = useCallback(() => {
     setProfile(DEFAULT_EXAM_PROFILE);
     writeStore(EXAM_PROFILE_STORAGE, DEFAULT_EXAM_PROFILE);
-  }, []);
+    writeUnifiedProfileFromWorkspace(
+      'exams',
+      examProfileToUnified(DEFAULT_EXAM_PROFILE, filters.cities, readUnifiedProfile()),
+    );
+  }, [filters.cities]);
 
   const updateFilters = useCallback(
     (patch: Partial<ExamFilters>) => {
@@ -158,8 +210,12 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
       persistExamFilters(clean);
       return clean;
     });
+    writeUnifiedProfileFromWorkspace(
+      'exams',
+      examProfileToUnified(profile, ['全部'], readUnifiedProfile()),
+    );
     onPageReset();
-  }, [onPageReset]);
+  }, [onPageReset, profile]);
 
   const updatePersonalRecord = useCallback(
     (examId: string, patch: Partial<ExamPersonalRecord>) => {
@@ -189,15 +245,20 @@ export function useExamPersonal({ onNotice, onPageReset }: UseExamPersonalOption
     (city: string) => {
       if (city === '全部') {
         updateFilters({ cities: ['全部'] });
+        writeUnifiedProfileFromWorkspace(
+          'exams',
+          examProfileToUnified(profile, ['全部'], readUnifiedProfile()),
+        );
         return;
       }
       const cur = filters.cities.filter((c) => c !== '全部');
       const next = cur.includes(city) ? cur.filter((c) => c !== city) : [...cur, city];
       const finalCities = next.length > 0 ? next : ['全部'];
       updateFilters({ cities: finalCities });
-      if (next.length > 0) {
-        writeUnifiedProfile(examProfileToUnified(profile, next, readUnifiedProfile()));
-      }
+      writeUnifiedProfileFromWorkspace(
+        'exams',
+        examProfileToUnified(profile, finalCities, readUnifiedProfile()),
+      );
     },
     [filters.cities, profile, updateFilters],
   );

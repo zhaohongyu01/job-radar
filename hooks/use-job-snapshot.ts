@@ -97,6 +97,29 @@ export function useJobSnapshot({
         ? fetchColdStartPreview(controller.signal)
         : Promise.resolve(null);
 
+      let resolvedJson: Snapshot | null = null;
+      let earlyEdgeGen: string | null = null;
+      void edgeQueryPromise.then((edgeRes) => {
+        if (!current() || dataRef.current || !edgeRes?.ok) return;
+        if (resolvedJson && edgeRes.generated_at !== resolvedJson.generated_at) return;
+        earlyEdgeGen = edgeRes.generated_at;
+        if (edgeRes.facets) setServerFacets(edgeRes.facets);
+        if (!previewActivated && edgeRes.jobs.length > 0) {
+          const base: Snapshot = resolvedJson ?? {
+            schema_version: 3,
+            generated_at: edgeRes.generated_at,
+            last_success_at: edgeRes.generated_at,
+            schedule_enabled: false,
+            cities: Object.keys(edgeRes.facets?.cities || {}),
+            sources: [],
+            jobs: [],
+          };
+          if (resolvedJson) activateSnapshot(resolvedJson);
+          previewActivated = true;
+          setPreviewData({ ...base, jobs: edgeRes.jobs });
+        }
+      });
+
       const r = await fetch('/jobs.json', { cache: 'no-store', signal: controller.signal });
       if (!r.ok) throw Error('招聘信息暂时无法读取，请稍后重试。');
       const origin =
@@ -111,35 +134,20 @@ export function useJobSnapshot({
       ) {
         throw Error('招聘数据格式异常。');
       }
+      resolvedJson = json;
+      if (earlyEdgeGen && earlyEdgeGen !== json.generated_at) {
+        setServerFacets(null);
+        setPreviewData(null);
+        previewActivated = false;
+      } else if (previewActivated) {
+        activateSnapshot(json);
+      }
       if (json.index_shards?.length || supportedBrowseIndex(json)) {
         const signature = buildSnapshotCacheSignature(json);
         const cachedJobs = await readCachedSnapshotJobs(signature);
         if (cachedJobs && cachedJobs.length > 0) {
           json.jobs = cachedJobs;
-          void edgeQueryPromise.then((edgeRes) => {
-            if (current() && edgeRes?.ok && edgeRes.generated_at === json.generated_at && edgeRes.facets) {
-              setServerFacets(edgeRes.facets);
-            }
-          });
         } else {
-          void edgeQueryPromise.then((edgeRes) => {
-            if (
-              !current() ||
-              dataRef.current ||
-              !edgeRes?.ok ||
-              edgeRes.generated_at !== json.generated_at ||
-              edgeRes.jobs.length === 0
-            ) {
-              return;
-            }
-            if (edgeRes.facets) setServerFacets(edgeRes.facets);
-            if (!previewActivated) {
-              activateSnapshot(json);
-              previewActivated = true;
-              setPreviewData({ ...json, jobs: edgeRes.jobs });
-            }
-          });
-
           json.jobs = await loadIndexSnapshot(
             json,
             controller.signal,
@@ -160,12 +168,6 @@ export function useJobSnapshot({
             void writeCachedSnapshotJobs(signature, json.jobs);
           }
         }
-      } else {
-        void edgeQueryPromise.then((edgeRes) => {
-          if (current() && edgeRes?.ok && edgeRes.generated_at === json.generated_at && edgeRes.facets) {
-            setServerFacets(edgeRes.facets);
-          }
-        });
       }
       if (!current()) return;
       if (new Set(json.jobs.map((job) => job.id)).size !== json.jobs.length) {

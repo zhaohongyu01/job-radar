@@ -575,3 +575,77 @@ void test('mergeExamPersonal, examPersonalConflicts, and mergeExamProfile preser
   assert.equal(mergeExamProfile(activeLocalProfile, activeImportedProfile, false)?.education, '本科');
   assert.equal(mergeExamProfile(activeLocalProfile, activeImportedProfile, true)?.education, '硕士研究生');
 });
+
+void test('P1.3 strict city filtering (菏泽 vs 山东省直 vs 全国) and graduate age relaxation eligibility', () => {
+  const hezeExam = makeExam({
+    id: 'ex-heze',
+    title: '2026年菏泽市事业单位公开招聘简章',
+    region_level: '市级',
+    province: '山东',
+    cities: ['菏泽'],
+    positions: [makePosition({ row_id: 'pos-hz', exam_id: 'ex-heze', city: '菏泽' })],
+  });
+  const provincialNoCityExam = makeExam({
+    id: 'ex-sd-prov',
+    title: '山东省2027年度选拔录用选调生公告',
+    region_level: '省级',
+    province: '山东',
+    cities: [],
+    positions: [makePosition({ row_id: 'pos-prov', exam_id: 'ex-sd-prov', city: '' })],
+  });
+  const nationalNoCityExam = makeExam({
+    id: 'ex-national',
+    title: '中央机关及其直属机构2027年度考试录用公务员公告',
+    region_level: '国家级',
+    province: '全国',
+    cities: [],
+    positions: [makePosition({ row_id: 'pos-nat', exam_id: 'ex-national', city: '' })],
+  });
+  const pool = [hezeExam, provincialNoCityExam, nationalNoCityExam];
+
+  // Selecting 菏泽 must NOT dump cities=[] provincial/national notices into results
+  const hezeFiltered = filterExams(pool, { ...DEFAULT_EXAM_FILTERS, cities: ['菏泽'] }, DEFAULT_EXAM_PROFILE, {});
+  assert.deepEqual(hezeFiltered.map((e) => e.id), ['ex-heze']);
+  const hezePos = flattenAndFilterExamPositions(pool, { ...DEFAULT_EXAM_FILTERS, cities: ['菏泽'] }, DEFAULT_EXAM_PROFILE);
+  assert.deepEqual(hezePos.map((p) => p.row_id), ['pos-hz']);
+
+  // Selecting 山东省直 matches 省级 Shandong notices; 全国 matches 国家级 notices
+  const sdProvFiltered = filterExams(pool, { ...DEFAULT_EXAM_FILTERS, cities: ['山东省直'] }, DEFAULT_EXAM_PROFILE, {});
+  assert.deepEqual(sdProvFiltered.map((e) => e.id), ['ex-sd-prov']);
+  const nationalFiltered = filterExams(pool, { ...DEFAULT_EXAM_FILTERS, cities: ['全国'] }, DEFAULT_EXAM_PROFILE, {});
+  assert.deepEqual(nationalFiltered.map((e) => e.id), ['ex-national']);
+
+  // Graduate / fresh-grad age relaxation clause ("35周岁以下，2027年应届硕士、博士研究生放宽到40周岁以下")
+  const currentYear = new Date().getFullYear();
+  const posRelaxedAge = makePosition({
+    education: '本科及以上',
+    degree: '不限',
+    majors: ['不限专业'],
+    major_raw: '不限专业',
+    political_status: '不限',
+    fresh_grad_rule: '不限',
+    age_limit: '18周岁以上、35周岁以下（应届硕士、博士研究生放宽到40周岁以下）',
+  });
+
+  const master38 = evaluateExamPositionEligibility(posRelaxedAge, {
+    ...DEFAULT_EXAM_PROFILE,
+    education: '硕士研究生',
+    birthYear: currentYear - 38,
+  });
+  assert.equal(master38.status, 'eligible');
+
+  const undergradSocial38 = evaluateExamPositionEligibility(posRelaxedAge, {
+    ...DEFAULT_EXAM_PROFILE,
+    education: '本科',
+    gradIdentity: '在职/社会人员',
+    birthYear: currentYear - 38,
+  });
+  assert.equal(undergradSocial38.status, 'ineligible');
+
+  const unstatedEdu38 = evaluateExamPositionEligibility(posRelaxedAge, {
+    ...DEFAULT_EXAM_PROFILE,
+    education: '全部',
+    birthYear: currentYear - 38,
+  });
+  assert.equal(unstatedEdu38.status, 'unknown');
+});

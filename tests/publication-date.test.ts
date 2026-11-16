@@ -7,10 +7,12 @@ import { createHash } from 'node:crypto';
 import {
   applyPersonalView,
   compareJobsByNewest,
+  deadlineChangeKind,
   defaultFilters,
   effectiveNewestDate,
   isSubstantiveReopenChange,
   isTodayOpportunity,
+  mergeDuplicateOpportunities,
   publicationDate,
   publicationText,
 } from '../lib/jobs.ts';
@@ -223,4 +225,75 @@ void test('buildBrowseIndex puts genuine new jobs before ATS-bumped stale jobs a
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+void test('BYSJY rolling +365d deadline, position shrinkage, and stub backfill do not boost effectiveNewestDate', () => {
+  const checkNow = Date.parse('2026-11-14T12:00:00+08:00');
+  const baseOld = {
+    published_at: '2026-09-10',
+    first_seen_at: '2026-09-10T09:00:00+08:00',
+    updated_at: '2026-11-14T08:00:00+08:00',
+    last_verified_at: '2026-11-14T08:00:00+08:00',
+  };
+
+  const rollingDl = fixtureJob({
+    ...baseOld,
+    id: 'bysjy-rolling',
+    recent_change: {
+      type: 'deadline_extended',
+      label: '截止延期',
+      date: '2026-11-14',
+      detail: '报名截止时间延长至 2027-11-14（原截止时间：2027-11-13）',
+    },
+  });
+  const shrunkPos = fixtureJob({
+    ...baseOld,
+    id: 'shrunk-pos',
+    recent_change: {
+      type: 'positions_updated',
+      label: '岗位缩减',
+      date: '2026-11-14',
+      detail: '岗位数量缩减为 4 个职位（原 8 个）',
+    },
+  });
+  const stubCity = fixtureJob({
+    ...baseOld,
+    id: 'stub-city',
+    recent_change: {
+      type: 'content_updated',
+      label: '地点补全',
+      date: '2026-11-14',
+      detail: '首次补全工作地点「济南」',
+    },
+  });
+
+  assert.equal(deadlineChangeKind(rollingDl.recent_change), 'clarified');
+  assert.equal(isSubstantiveReopenChange(rollingDl.recent_change), false);
+  assert.equal(isSubstantiveReopenChange(shrunkPos.recent_change), false);
+  assert.equal(isSubstantiveReopenChange(stubCity.recent_change), false);
+  assert.equal(effectiveNewestDate(rollingDl, checkNow), '2026-09-10');
+  assert.equal(effectiveNewestDate(shrunkPos, checkNow), '2026-09-10');
+  assert.equal(effectiveNewestDate(stubCity, checkNow), '2026-09-10');
+
+  const parentNoPub = fixtureJob({
+    id: 'parent-early',
+    company: '山东某国企有限公司',
+    title: '山东某国企有限公司2027校园招聘',
+    published_at: null,
+    first_seen_at: '2026-09-05T10:00:00+08:00',
+    last_verified_at: '2026-11-14T08:00:00+08:00',
+  });
+  const lateRepost = fixtureJob({
+    id: 'repost-late',
+    company: '山东某国企有限公司',
+    title: '山东某国企有限公司2027校园招聘',
+    source_name: '某高校就业网',
+    source_url: 'https://career.example.edu.cn/999',
+    published_at: '2026-11-13',
+    first_seen_at: '2026-11-13T10:00:00+08:00',
+    last_verified_at: '2026-11-13T10:00:00+08:00',
+  });
+  const merged = mergeDuplicateOpportunities([parentNoPub, lateRepost]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].published_at, '2026-09-05');
 });

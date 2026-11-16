@@ -27,7 +27,7 @@ import {
   countByLocationScope,
   isExpired,
   mergeDuplicateOpportunities,
-  personalFor,
+  resetFilters as resetJobFilters,
   selectedWorkCities,
   workCitiesLabel,
   parseSalaryRange,
@@ -38,7 +38,6 @@ import { restoreBrowsing } from '@/lib/browsing';
 import { groupJobs } from '@/lib/grouping';
 import type { JobGroup } from '@/lib/grouping';
 import { FilterSidebar } from '@/components/filter-sidebar';
-import { JobCard } from '@/components/job-card';
 import { DetailDrawer } from '@/components/detail-drawer';
 import { ActionRail } from '@/components/action-rail';
 import { personalViewFilters } from '@/lib/workspace';
@@ -61,7 +60,11 @@ import { CommandPalette } from '@/components/command-palette';
 import { ShortcutsDialog } from '@/components/shortcuts-dialog';
 import { ToastProvider, useToast } from '@/components/toast-provider';
 import { loadRadarPresets, RADAR_ACTIVE_PRESET_STORAGE, saveRadarPresets } from '@/lib/radar';
-import { jobFiltersToUnified, readUnifiedProfile, writeUnifiedProfile } from '@/lib/unified-profile';
+import {
+  jobFiltersToUnified,
+  readUnifiedProfile,
+  writeUnifiedProfileFromWorkspace,
+} from '@/lib/unified-profile';
 import { useJobSnapshot } from '@/hooks/use-job-snapshot';
 import { usePersonalRecords } from '@/hooks/use-personal-records';
 import { useJobDetail } from '@/hooks/use-job-detail';
@@ -203,6 +206,7 @@ function HomeContent() {
     loading,
     error,
     progress: progressiveProgress,
+    serverFacets,
     refresh,
     refreshIfIdle,
     coverage,
@@ -308,9 +312,31 @@ function HomeContent() {
       onOpenEmployer: dismissDetailSilently,
     });
   }, [allJobs, openDetail, dismissDetailSilently, registerEmployerCatalog, employerCatalogReady]);
-  const previewJobs = useMemo(() => !data && filters.view === 'all' && !(filters.query.trim() && previewData?.search_url)
-    ? filterJobs(mergeDuplicateOpportunities(previewData?.jobs || []), filters, personal, since, today).slice(0, 10) : [],
-    [data, previewData, filters, personal, since, today]);
+  const previewDisplayBlocks = useMemo(() => {
+    if (data || filters.view !== 'all' || (filters.query.trim() && previewData?.search_url)) {
+      return [] as (JobGroup & { grouped: boolean })[];
+    }
+    const previewFiltered = filterJobs(
+      mergeDuplicateOpportunities(
+        (previewData?.jobs || []).filter((j) => j.source_id !== 'sdei-civil-exams'),
+      ),
+      filters,
+      personal,
+      since,
+      today,
+    );
+    const previewGroups = groupJobs(previewFiltered, groupCompanies).slice(0, 10);
+    const blocks: (JobGroup & { grouped: boolean })[] = [];
+    for (const group of previewGroups) {
+      const previous = blocks.at(-1);
+      if (viewMode === 'table' && group.jobs.length === 1 && previous && !previous.grouped) {
+        blocks[blocks.length - 1] = { ...previous, jobs: [...previous.jobs, ...group.jobs] };
+      } else {
+        blocks.push({ ...group, jobs: [...group.jobs], grouped: group.jobs.length > 1 });
+      }
+    }
+    return blocks;
+  }, [data, previewData, filters, personal, since, today, groupCompanies, viewMode]);
   const personalCounts = useMemo(
     () => computePersonalCounts(allJobs, personal, today),
     [allJobs, personal, today],
@@ -423,27 +449,35 @@ function HomeContent() {
     }
     const scored = !!reputation.index?.entities.some((item) => item.score !== null && Date.parse(item.valid_until) > today);
     return {
-      filterFacts: { verified, salaryKnown, total: allJobs.length, hasReputationScores: scored },
-      cityCounts: cCounts,
+      filterFacts: {
+        verified,
+        salaryKnown,
+        total: allJobs.length,
+        hasReputationScores: scored,
+      },
+      cityCounts: !data && serverFacets ? serverFacets.cities : cCounts,
     };
-  }, [allJobs, today, reputation.index]);
+  }, [allJobs, data, serverFacets, today, reputation.index]);
 
   const handleFilterChange = useCallback(
     <K extends keyof Filters>(key: K, value: Filters[K]) => {
       change(key, value);
       if (key === 'workCities' || key === 'city' || key === 'education' || key === 'major' || key === 'type') {
         try {
-          const nextFilters = { ...filters, [key]: value };
-          const hasProfileSignal =
-            (nextFilters.workCities && nextFilters.workCities.length > 0) ||
-            (nextFilters.city && nextFilters.city !== '全部城市') ||
-            Boolean(nextFilters.education) ||
-            Boolean((nextFilters.major || '').trim()) ||
-            nextFilters.type === '校招' ||
-            nextFilters.type === '社招';
-          if (hasProfileSignal) {
-            writeUnifiedProfile(jobFiltersToUnified(nextFilters, readUnifiedProfile()));
-          }
+          const nextFilters: Filters =
+            key === 'city'
+              ? { ...filters, city: value as string, workCities: undefined }
+              : key === 'workCities'
+                ? {
+                    ...filters,
+                    workCities: value as string[],
+                    city: (value as string[]).length === 1 ? (value as string[])[0] : '全部城市',
+                  }
+                : { ...filters, [key]: value };
+          writeUnifiedProfileFromWorkspace(
+            'jobs',
+            jobFiltersToUnified(nextFilters, readUnifiedProfile()),
+          );
         } catch {
           // ignore storage quota errors
         }
@@ -451,6 +485,19 @@ function HomeContent() {
     },
     [change, filters],
   );
+
+  const handleResetFilters = useCallback(() => {
+    resetFilters();
+    try {
+      const nextFilters = resetJobFilters(filters, ['city', 'workCities', 'view']);
+      writeUnifiedProfileFromWorkspace(
+        'jobs',
+        jobFiltersToUnified(nextFilters, readUnifiedProfile()),
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [resetFilters, filters]);
 
   const workCities = useMemo(() => selectedWorkCities(filters), [filters]);
 
@@ -619,7 +666,7 @@ function HomeContent() {
             cityCounts={cityCounts}
             ready={ready}
             onChange={handleFilterChange}
-            onReset={resetFilters}
+            onReset={handleResetFilters}
             onExport={exportPersonal}
             onImport={triggerFilePicker}
           />
@@ -634,6 +681,14 @@ function HomeContent() {
                   }).filters;
                   setFilters(next);
                   setPage(1);
+                  try {
+                    writeUnifiedProfileFromWorkspace(
+                      'jobs',
+                      jobFiltersToUnified(next, readUnifiedProfile()),
+                    );
+                  } catch {
+                    // ignore
+                  }
                   const currentPresets = loadRadarPresets();
                   const defaultPreset = {
                     id: `preset-default-${Date.now()}`,
@@ -759,11 +814,9 @@ function HomeContent() {
               onChange={handleFilterChange}
               onRemoveWorkCity={(c) => {
                 const nextCities = (filters.workCities || []).filter((item) => item !== c);
-                const nextCity = nextCities.length === 1 ? nextCities[0] : '全部城市';
-                setFilters({ ...filters, city: nextCity, workCities: nextCities });
-                setPage(1);
+                handleFilterChange('workCities', nextCities);
               }}
-              onResetFilters={resetFilters}
+              onResetFilters={handleResetFilters}
               hasReputationScores={filterFacts.hasReputationScores}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
@@ -799,9 +852,30 @@ function HomeContent() {
 
             {loading && !data ? (
               <div className="opp-list" aria-label="首批预览" aria-busy="true">
-                {previewJobs.map((job) => <JobCard key={job.id} job={job} filters={filters} record={personalFor(job, personal)} ready={ready} now={now} since={since}
-                  density={cardDensity} onDetail={openDetailFromList} onRead={markRead} onReadChange={setRead} onToggle={toggle} onStageChange={changeStage} onCopy={copyJob} />)}
-                {!previewJobs.length && <><div className="opp-skeleton" /><div className="opp-skeleton" /></>}
+                {previewDisplayBlocks.length > 0 ? (
+                  <GroupedResults
+                    displayBlocks={previewDisplayBlocks}
+                    viewMode={viewMode}
+                    filters={filters}
+                    personal={personal}
+                    ready={ready}
+                    now={now}
+                    since={since}
+                    cardDensity={cardDensity}
+                    selectedId={selected?.id ?? null}
+                    onDetail={openDetailFromList}
+                    onRead={markRead}
+                    onReadChange={setRead}
+                    onToggle={toggle}
+                    onStageChange={changeStage}
+                    onCopy={copyJob}
+                  />
+                ) : (
+                  <>
+                    <div className="opp-skeleton" />
+                    <div className="opp-skeleton" />
+                  </>
+                )}
               </div>
             ) : (
               <>
@@ -973,7 +1047,7 @@ function HomeContent() {
               cityCounts={cityCounts}
               ready={ready}
               onChange={handleFilterChange}
-              onReset={resetFilters}
+              onReset={handleResetFilters}
               onExport={exportPersonal}
               onImport={triggerFilePicker}
             />

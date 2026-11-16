@@ -133,4 +133,34 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(row['attribution'],'uncertain');self.assertEqual(row['signals'],[])
         self.assertEqual(row['collected_at'],AT)
 
+    def test_p1_untitled_moment_synthesis_expanded_attribution_and_platform_score(self):
+        # 1. Untitled momentData synthesizes title from content and attributes explicit target firsthand experience
+        untitled_doc = self.moment_document(
+            title='',
+            content='入职示例科技两年了，工作地点：青岛，双休不怎么加班，薪资待遇不错！',
+        )
+        page = c.parse_page(untitled_doc, 1, 'discussion', AT)
+        self.assertEqual(len(page['records']), 1)
+        rec = page['records'][0]
+        self.assertTrue(rec['title'].startswith('入职示例科技两年了'))
+        self.assertEqual(rec['kind'], 'experience')
+        self.assertEqual(rec['attribution'], 'target')
+        self.assertEqual(rec['city'], '青岛')
+        self.assertTrue(len(rec['signals']) >= 1)
+
+        # 2. Expanded attribution_for covers employee self-identification & experience titles while blocking transitions
+        self.assertEqual(c.attribution_for('综合评价', '作为示例科技在职员工，整体氛围很好。', ['示例科技']), 'target')
+        self.assertEqual(c.attribution_for('示例科技工作强度真实体验', '平时很少加班，双休稳定。', ['示例科技']), 'target')
+        self.assertEqual(c.attribution_for('想入职示例科技', '听说入职示例科技两年了涨薪快吗？', ['示例科技']), 'uncertain')
+
+        # 3. extract_platform_score extracts numeric platform score when present in SSR state
+        state = c.extract_state(document())
+        state['store']['enterprise']['enterpriseInfoNP']['avgScore'] = 4.6
+        state['store']['enterprise']['enterpriseInfoNP']['evaluateCount'] = 128
+        scored_doc = '<script>window.__INITIAL_STATE__=' + json.dumps(state) + '</script>'
+        scored_page = c.parse_page(scored_doc, 1, 'discussion', AT)
+        self.assertEqual(scored_page['platform_score']['value'], 4.6)
+        self.assertEqual(scored_page['platform_score']['scale'], 5)
+        self.assertEqual(scored_page['platform_score']['samples'], 128)
+
 if __name__=='__main__': unittest.main()

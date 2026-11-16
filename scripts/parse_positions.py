@@ -75,14 +75,20 @@ def clean_cell(text: Any) -> str:
     return re.sub(r'\s+', ' ', str(text)).strip()
 
 
+_MAJOR_NOISE_RE = re.compile(
+    r'热爱祖国|拥护|遵纪守法|品行端正|身体健康|无违法|服从分配|吃苦耐劳|沟通能力|团队精神|年龄|周岁|及以上学历|全日制本科|硕士研究生及以上'
+)
+
+
 def split_majors(text: str) -> List[str]:
     if not text:
         return []
     parts = re.split(r'[,，、;/；\s\n]+', text)
     cleaned = []
     for p in parts:
+        p = re.sub(r'^\d{4,6}[A-Za-z]?\s*(?=[\u4e00-\u9fa5])', '', p.strip())
         p = re.sub(r'(?:及相关专业|相关专业|等专业|等|类)$', '', p.strip())
-        if p and p not in {'不限', '无', '其他', '专业'}:
+        if p and p not in {'不限', '无', '其他', '专业', '本科', '硕士', '博士', '研究生', '大专', '专科'} and not _MAJOR_NOISE_RE.search(p):
             cleaned.append(p)
     return cleaned[:15]
 

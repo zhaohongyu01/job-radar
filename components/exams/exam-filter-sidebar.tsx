@@ -233,7 +233,7 @@ export function ExamFilterSidebar({
           <Chip active={selectedCities.length === 0} onClick={() => onToggleCity('全部')}>
             全部
           </Chip>
-          {SHANDONG_16.map((city) => (
+          {(['山东省直', '全国', ...SHANDONG_16] as const).map((city) => (
             <Chip
               key={city}
               active={filters.cities.includes(city)}

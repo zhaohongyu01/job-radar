@@ -17,7 +17,76 @@ TZ = dt.timezone(dt.timedelta(hours=8))
 NATIONWIDE_RE = re.compile(r'全国|各地|多地|不限地点|省内各地|全省|山东各地|山东省内')
 FIRST_SCREEN_PAGE_SIZE = 60
 _DATE_ONLY_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
-_POS_READY_RE = re.compile(r'就绪|首次提取')
+_POS_READY_RE = re.compile(r'就绪|首次提取|缩减|减少')
+_ROLLING_DL_RE = re.compile(
+    r'延长至\s*(\d{4}-\d{2}-\d{2})[^\d（(]*[（(]原截止时间[:：]\s*(\d{4}-\d{2}-\d{2})'
+)
+_TEST_RECORD_RE = re.compile(r'仅供测试使用|^测试(?:专业公司|岗位|职位)$')
+_HK_MO_RE = re.compile(r'(?:香港|澳门)(?:分行|支行|子公司|分公司|代表处|地区|工作)|港澳地区')
+_MAINLAND_RE = re.compile(r'国内|中国大陆|境内|内地|全国|各地可选|不限城市|各地招聘|各省市')
+
+
+def _deadline_ms(value: Any) -> Optional[int]:
+    if not value:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if _DATE_ONLY_RE.match(s):
+        try:
+            d = dt.date.fromisoformat(s)
+            if d.isoformat() != s:
+                return None
+            parsed = dt.datetime.fromisoformat(f'{s}T23:59:59.999000+08:00')
+            return int(parsed.timestamp() * 1000)
+        except Exception:
+            return None
+    return _parse_iso_ms(s)
+
+
+def is_job_expired_or_excluded(job: Dict[str, Any], snap_ms: Optional[int]) -> bool:
+    if str(job.get('listing_status') or '') == 'withdrawn':
+        return True
+    if job.get('talk_attached_to'):
+        return True
+    src_id = str(job.get('source_id') or '')
+    if src_id == 'sdei-civil-exams':
+        return True
+    if str(job.get('domestic_status') or '') == 'overseas':
+        return True
+    comp = str(job.get('company') or '').strip()
+    title = str(job.get('title') or '').strip()
+    if _TEST_RECORD_RE.search(comp) or _TEST_RECORD_RE.search(title):
+        return True
+    cities = [str(c) for c in (job.get('cities') or []) if c]
+    if not cities:
+        ev = ' '.join(str(x) for x in (job.get('location_evidence') or []))
+        header = f'{comp} {title} {ev}'
+        if _HK_MO_RE.search(header) and not _MAINLAND_RE.search(header):
+            return True
+    if job.get('kind') == '宣讲会' or src_id.endswith('-talks'):
+        te = job.get('talk_event')
+        if isinstance(te, dict) and te.get('status') == 'cancelled':
+            return True
+    dl_ms = _deadline_ms(job.get('deadline'))
+    if dl_ms is not None and snap_ms is not None and dl_ms < snap_ms:
+        return True
+    return False
+
+
+def _is_rolling_horizon_deadline_change(change: Dict[str, Any]) -> bool:
+    detail = str(change.get('detail') or '')
+    m = _ROLLING_DL_RE.search(detail)
+    c_day = shanghai_day(change.get('date'))
+    if not m or not c_day:
+        return False
+    try:
+        cd = dt.date.fromisoformat(c_day)
+        nd = dt.date.fromisoformat(m.group(1))
+        od = dt.date.fromisoformat(m.group(2))
+    except ValueError:
+        return False
+    return (nd - cd).days >= 330 and (od - cd).days >= 300 and (nd - od).days <= 14
 
 
 def _parse_iso_ms(value: Any) -> Optional[int]:
@@ -89,11 +158,13 @@ def is_substantive_reopen_change(change: Any) -> bool:
             return False
         if label == '截止调整' or detail.startswith('报名截止时间调整为'):
             return False
+        if _is_rolling_horizon_deadline_change(change):
+            return False
         return True
     if ctype == 'positions_updated':
         return not _POS_READY_RE.search(label + detail) and '为 0 个职位' not in detail
     if ctype == 'content_updated':
-        return label == '地点调整' and '新增' in detail
+        return label == '地点调整' and '补全' not in detail and '新增' in detail
     return False
 
 
@@ -294,6 +365,9 @@ def build_radar_sqlite(
         include_search=need_sqlite,
     )
     snap_day = shanghai_day(snapshot.get('generated_at')) or dt.datetime.now(TZ).date().isoformat()
+    snap_ms = _parse_iso_ms(snapshot.get('generated_at'))
+    if snap_ms is None:
+        snap_ms = int(dt.datetime.now(TZ).timestamp() * 1000)
     job_rows = sort_jobs_by_newest(job_rows, snap_day)
     exam_snap, exam_rows = load_exams(public_dir) if need_sqlite else (None, [])
 
@@ -327,7 +401,7 @@ def build_radar_sqlite(
         listing_status = str(job.get('listing_status') or 'active')
 
         slim_job: Optional[Dict[str, Any]] = None
-        if listing_status != 'withdrawn':
+        if not is_job_expired_or_excluded(job, snap_ms):
             active_jobs_count += 1
             for c_name in cities:
                 city_counts[c_name] += 1
@@ -359,9 +433,18 @@ def build_radar_sqlite(
         deadline = str(job.get('deadline') or '')
 
         salary_min: Optional[float] = None
-        lf_sal = ((job.get('listing_facts') or {}).get('salary') or {}).get('min')
+        lf_sal_obj = (job.get('listing_facts') or {}).get('salary') or {}
+        lf_sal = lf_sal_obj.get('min')
         if isinstance(lf_sal, (int, float)):
-            salary_min = float(lf_sal)
+            sal_raw = str(lf_sal_obj.get('raw') or '')
+            if (
+                lf_sal >= 60000
+                and re.search(r'[万wW]', sal_raw)
+                and not re.search(r'年|/月|月薪|每月', sal_raw)
+            ):
+                salary_min = float(round(lf_sal / 12))
+            else:
+                salary_min = float(lf_sal)
 
         majors_str = ' '.join(str(m) for m in (job.get('majors') or [])[:12] if m)
         directions_str = ' '.join(str(d) for d in (job.get('directions') or [])[:8] if d)

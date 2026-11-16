@@ -33,7 +33,15 @@ export function resolveEmployer(job: Pick<Job, 'id' | 'company' | 'source_id' | 
   if (name.length > 160) return null;
   // Abbreviations, conflicting names and departments remain scoped to their
   // original source until an explicit identity mapping can disambiguate them.
-  if (!job.company_conflict && /(?:有限责任公司|股份有限公司|有限公司|股份公司|分公司|分行|支行)$/.test(name))
+  if (
+    !job.company_conflict &&
+    (/(?:有限责任公司|股份有限公司|有限公司|股份公司|分公司|分行|支行)$/.test(name) ||
+      (name.length >= 4 &&
+        !/事业部|中心|项目部|工作站|筹备组/.test(name) &&
+        /(?:银行|农商银行|农村商业银行|信用合作社|(?:会计师|律师|税务师)事务所(?:[（(][^）)]+[）)])?|研究院|研究所|设计院|设计研究院|科学研究院|科学院|医院|大学|学院|广播电视台|出版社|报社)$/.test(
+          name,
+        )))
+  )
     return profile('name', name, '', brand || referenceBrand || undefined);
   return profile('source', name, canonical(job.source_id || job.source_name || job.id).slice(0, 120), brand || referenceBrand || undefined);
 }

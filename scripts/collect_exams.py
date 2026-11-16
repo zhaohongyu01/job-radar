@@ -27,6 +27,8 @@ from parse_exam_positions import (
     clean_exam_attachments,
     clean_exam_title,
     enrich_exam_record,
+    infer_notice_role,
+    normalize_exam_attachment_url,
     parse_exam_attachment_bytes,
     parse_exam_excel_bytes,
     parse_exam_pdf_bytes,
@@ -557,10 +559,16 @@ def parse_detail_body_and_tables(url: str, fallback_title: str, source_city: str
     if len(text) < 40:
         text = c.clean(root.text())
 
+    gov_m = re.search(r'https?://[a-z0-9.-]+\.gov\.cn(?::\d+)?', text, re.I)
+    gov_origin = gov_m.group(0) if gov_m else ''
+
     attachments: List[Dict[str, str]] = []
     seen_att_urls = set()
     for a in body_node.find('a'):
         href = c.safe_url(a.attrs.get('href', ''), url)
+        if not href:
+            continue
+        href = normalize_exam_attachment_url(href, fallback_origin=gov_origin)
         if not href or href in seen_att_urls:
             continue
         a_title = c.clean(a.text()) or clean_exam_title(a.attrs.get('title', '')) or '官方附件'
@@ -569,6 +577,7 @@ def parse_detail_body_and_tables(url: str, fallback_title: str, source_city: str
         ):
             seen_att_urls.add(href)
             attachments.append({'title': a_title[:100], 'url': href})
+    attachments = clean_exam_attachments(attachments, fallback_origin=gov_origin)
 
     exam_id = hashlib.sha256(url.encode('utf-8')).hexdigest()[:20]
     exam_positions: List[Dict[str, Any]] = []
@@ -899,9 +908,10 @@ def crawl_dtdjzx_exam(source: Dict[str, Any]) -> List[Dict[str, Any]]:
                 dl_atts = dl_detail.get('attachments') or []
                 if not dl_atts:
                     continue
-                core_prefix = re.sub(r'(?:招录|考试录用)?(?:职位表|岗位表|计划表|汇总表).*$', '', dl_row['title'])
+                dl_stem = _exam_series_stem(dl_row['title'])
                 for item in discovered:
-                    if core_prefix and len(core_prefix) >= 6 and core_prefix in item['title']:
+                    it_stem = _exam_series_stem(item['title'])
+                    if dl_stem and len(dl_stem) >= 6 and (dl_stem == it_stem or dl_stem in it_stem):
                         existing_atts = list(item.get('attachments') or [])
                         existing_urls = {a.get('url') for a in existing_atts}
                         for att in dl_atts:
@@ -1063,6 +1073,19 @@ def is_position_table_attachment(att: Dict[str, Any]) -> bool:
     return False
 
 
+def _exam_series_stem(title: str) -> str:
+    """Normalize announcement / position-table titles to a canonical exam series stem (preserving 补充)."""
+    s = clean_exam_title(title or '')
+    s = re.sub(
+        r'(?:关于|公布|发布|面向社会|统一公开招聘|公开招聘|公开招考|考试录用|考录|招录|录用|招聘|'
+        r'公务员|工作人员|人员|简章|公告|通知|启事|职位表|岗位表|计划表|汇总表|一览表|下载|'
+        r'[\s【】()（）·|｜—\-:：]+)',
+        '',
+        s,
+    )
+    return s
+
+
 def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) -> None:
     """Attach standalone 'XX职位表/岗位表' pages to their sibling 'XX公告/简章' and drop redundant shell items."""
     items = list(raw_by_url.values())
@@ -1073,8 +1096,8 @@ def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) 
             continue
         atts = item.get('attachments') or []
         pos = item.get('exam_positions') or item.get('positions') or []
-        prefix = re.sub(r'(?:招录|考试录用|公开招聘|面向社会)?(?:公务员|工作人员)?(?:职位表|岗位表|计划表|汇总表)$', '', title).strip()
-        if len(prefix) < 6:
+        stem = _exam_series_stem(title)
+        if len(stem) < 6:
             continue
         matched_sibling = False
         for target in items:
@@ -1083,7 +1106,12 @@ def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) 
             t_title = clean_exam_title(target.get('title') or '')
             if re.search(r'(?:职位表|岗位表|计划表|汇总表)$', t_title):
                 continue
-            if prefix in t_title and re.search(r'公告|简章|通知|启事', t_title):
+            if not re.search(r'公告|简章|通知|启事', t_title):
+                continue
+            if ('补充' in title) != ('补充' in t_title):
+                continue
+            t_stem = _exam_series_stem(t_title)
+            if stem == t_stem or (len(stem) >= 7 and (stem in t_stem or (len(t_stem) >= 7 and t_stem in stem))):
                 if atts:
                     existing_atts = list(target.get('attachments') or [])
                     existing_urls = {a.get('url') for a in existing_atts}
@@ -1096,7 +1124,7 @@ def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) 
                 matched_sibling = True
         if matched_sibling and len(str(item.get('body') or '')) < 300:
             urls_to_remove.add(item['source_url'])
-        elif not matched_sibling and re.search(r'2027年度.*考试录用公务员职位表', title) and len(str(item.get('body') or '')) < 300:
+        elif not matched_sibling and re.search(r'2027年度.*(?:考试录用公务员|公务员招录)职位表', title) and len(str(item.get('body') or '')) < 300:
             item['body'] = (
                 f"{title}\n"
                 "按照2027年度山东省各级机关考试录用公务员统一部署："
@@ -1115,6 +1143,11 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
     for item in items:
         if item.get('exam_positions') or (item.get('positions') and item.get('positions_status') == 'parsed'):
             continue
+        item_title = clean_exam_title(item.get('title') or '')
+        if infer_notice_role(item_title) not in ('招考简章', '补充公告') or re.search(
+            r'核减|取消.*计划|拟聘用|拟录用|进入面试|成绩', item_title
+        ):
+            continue
         atts = item.get('attachments') or []
         if any(is_position_table_attachment(a) for a in atts):
             candidates.append(item)
@@ -1130,7 +1163,9 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
         exam_id = item.get('id') or hashlib.sha256((item.get('source_url') or '').encode('utf-8')).hexdigest()[:20]
         src_city = item.get('source_city') or (item.get('cities') or [''])[0]
         parsed_rows: List[Dict[str, Any]] = []
-        cleaned_atts = clean_exam_attachments(item.get('attachments') or [])
+        gov_m = re.search(r'https?://[a-z0-9.-]+\.gov\.cn(?::\d+)?', str(item.get('body') or ''), re.I)
+        gov_origin = gov_m.group(0) if gov_m else ''
+        cleaned_atts = clean_exam_attachments(item.get('attachments') or [], fallback_origin=gov_origin)
         item['attachments'] = cleaned_atts
         candidate_atts = [a for a in cleaned_atts if is_position_table_attachment(a)][:6]
         for att in candidate_atts:
@@ -1369,10 +1404,11 @@ def collect_and_export_exams(
         with ThreadPoolExecutor(max_workers=8) as pool:
             list(pool.map(enrich_one, need_detail[:80]))
 
-        merge_sibling_position_table_entries(raw_by_url)
-
         # Parse .xlsx / .xls / .pdf / .docx position table attachments for announcements that lack tabular positions
+        merge_sibling_position_table_entries(raw_by_url)
         parse_position_attachments_for_items(list(raw_by_url.values()), max_items=60)
+    else:
+        merge_sibling_position_table_entries(raw_by_url)
 
     # 3. Enrich all records into ExamAnnouncement objects and deduplicate identical announcements
     deduped_exams: Dict[str, Dict[str, Any]] = {}

@@ -342,6 +342,79 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(healed_public['published_at'], '2026-09-15')
         self.assertEqual(healed_public['source_published_at'], '2026-11-12')
 
+    def test_head_only_short_circuits_page_two_when_page_one_all_verified_and_unchanged(self):
+        with TemporaryDirectory() as tmp:
+            now_dt = c.dt.datetime.now(c.TZ)
+            now = now_dt.isoformat(timespec='seconds')
+            today = now[:10]
+            sid = 'sdut-announcements'
+            source = next(s for s in c.SOURCES if s['id'] == sid)
+            page1_items = [
+                {
+                    'url': f'https://example.test/known/{i}',
+                    'title': f'已知招聘公告 {i}',
+                    'published_at': today,
+                    'inline_html': f'<div id="zoom">工作地点：济南。本科招聘岗位 {i}，详见原公告。</div>',
+                }
+                for i in range(10)
+            ]
+            seed_jobs = {}
+            for it in page1_items:
+                parsed = c.parse_detail(it['inline_html'], it, source)
+                parsed['inline_announcement_fingerprint'] = c.inline_announcement_fingerprint(it, source)
+                parsed['first_seen_at'] = now
+                parsed['updated_at'] = now
+                parsed['last_verified_at'] = now
+                parsed['detail_verified_at'] = now
+                seed_jobs[parsed['id']] = parsed
+
+            old_pending = [{'url': 'https://example.test/old/99', 'title': '历史积压', 'published_at': '2026-01-01'}]
+            c.atomic_json(
+                Path(tmp) / 'state.json',
+                {
+                    'jobs': seed_jobs,
+                    'sources': {
+                        sid: {
+                            'id': sid,
+                            'resume_page': 24,
+                            'patrol_page': 8,
+                            'total_items': 100,
+                            'list_complete': False,
+                            'head_scan_at': '2026-09-01T00:00:00+08:00',
+                            'last_success_at': '2026-09-01T00:00:00+08:00',
+                        }
+                    },
+                    'pending': {sid: old_pending},
+                    'last_run_at': now,
+                },
+            )
+            args = SimpleNamespace(
+                data_dir=tmp,
+                public_dir=tmp,
+                sources=sid,
+                pages=5,
+                days=30,
+                refresh_hours=72,
+                nankai_area=0,
+                target_city='',
+                offerjack_pages=1,
+                probe_budget=10,
+                state_only=True,
+                head_only=True,
+            )
+            with patch.object(c, 'sdei_list', side_effect=lambda src, pg: (page1_items if pg == 1 else [], 100)) as listing:
+                c.run(args)
+            self.assertEqual(listing.call_count, 1)
+            state = json.loads((Path(tmp) / 'state.json').read_text(encoding='utf-8'))
+            self.assertEqual(state['sources'][sid]['status'], 'ok')
+            self.assertEqual(state['sources'][sid]['pages'], 1)
+            self.assertTrue(state['sources'][sid].get('early_exit'))
+            self.assertGreaterEqual(state['sources'][sid]['head_scan_at'], now)
+            self.assertGreaterEqual(state['sources'][sid]['last_success_at'], now)
+            self.assertEqual(state['sources'][sid]['resume_page'], 24)
+            self.assertEqual(state['sources'][sid]['patrol_page'], 8)
+            self.assertEqual([p['url'] for p in state['pending'][sid]], ['https://example.test/old/99'])
+
 
 if __name__ == '__main__':
     unittest.main()

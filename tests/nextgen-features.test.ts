@@ -9,12 +9,15 @@ import {
   stripTrailingAtsCode,
 } from '../lib/jobs.ts';
 import {
+  DEFAULT_UNIFIED_PROFILE,
   examProfileToUnified,
   formatUnifiedProfileSummary,
   isUnifiedProfileConfigured,
   jobFiltersToUnified,
+  shouldApplyUnifiedSync,
   unifiedToExamProfilePatch,
   unifiedToJobFiltersPatch,
+  unifiedToJobFiltersSyncPatch,
   validateUnifiedProfile,
 } from '../lib/unified-profile.ts';
 import { buildExamPersonalReminders } from '../lib/reminders.ts';
@@ -98,6 +101,78 @@ void test('unified career profile maps cleanly between jobs filters and exam pro
   });
   assert.deepEqual(validated.cities, ['济南']);
   assert.equal(validated.education, '博士');
+});
+
+void test('P2.2 unified profile supports true bidirectional clearing and timestamp watermark sync', () => {
+  const initialUnified = examProfileToUnified(
+    {
+      ...DEFAULT_EXAM_PROFILE,
+      education: '硕士研究生',
+      majorCategory: '计算机类',
+      majorQuery: '软件工程',
+      gradIdentity: '择业期应届',
+    },
+    ['济南', '山东省直', '全国'],
+  );
+  // Special exam-only scope chips (山东省直 / 全国) are excluded from prefecture workCities
+  assert.deepEqual(initialUnified.cities, ['济南']);
+
+  // Preserves 择业期应届 when job workspace stays on 校招, and preserves majorCategory while majorQuery matches
+  const keptOnJobs = jobFiltersToUnified(
+    { workCities: ['济南'], city: '济南', education: '硕士', major: '软件工程', type: '校招' },
+    initialUnified,
+  );
+  assert.equal(keptOnJobs.gradIdentity, '择业期应届');
+  assert.equal(keptOnJobs.majorCategory, '计算机类');
+
+  // Clearing cities, education, major, and type on jobs workspace cleanly clears unified profile
+  const clearedFromJobs = jobFiltersToUnified(
+    { workCities: [], city: '全部城市', education: '', major: '', type: '全部' },
+    keptOnJobs,
+  );
+  assert.deepEqual(clearedFromJobs.cities, []);
+  assert.equal(clearedFromJobs.education, '全部');
+  assert.equal(clearedFromJobs.majorCategory, '');
+  assert.equal(clearedFromJobs.majorQuery, '');
+  assert.equal(clearedFromJobs.gradIdentity, '不限');
+  assert.equal(isUnifiedProfileConfigured(clearedFromJobs), false);
+
+  // Sync patch propagates cleared values back onto workspace filters
+  const syncPatch = unifiedToJobFiltersSyncPatch(clearedFromJobs);
+  assert.deepEqual(syncPatch, {
+    workCities: [],
+    city: '全部城市',
+    education: '',
+    major: '',
+    type: '全部',
+  });
+
+  // Clearing cities to ['全部'] on /exams clears unified cities while undefined preserves existing cities
+  const clearedExamCities = examProfileToUnified(DEFAULT_EXAM_PROFILE, ['全部'], initialUnified);
+  assert.deepEqual(clearedExamCities.cities, []);
+  const preservedExamCities = examProfileToUnified(DEFAULT_EXAM_PROFILE, undefined, initialUnified);
+  assert.deepEqual(preservedExamCities.cities, ['济南']);
+
+  // Watermark sync rules: unconfigured without prior sync does not clobber; newer updatedAt triggers sync (including clear)
+  assert.equal(shouldApplyUnifiedSync(DEFAULT_UNIFIED_PROFILE, null), false);
+  assert.equal(
+    shouldApplyUnifiedSync({ ...initialUnified, updatedAt: '2026-11-14T10:00:00Z' }, null),
+    true,
+  );
+  assert.equal(
+    shouldApplyUnifiedSync(
+      { ...initialUnified, updatedAt: '2026-11-14T10:00:00Z' },
+      '2026-11-14T10:00:00Z',
+    ),
+    false,
+  );
+  assert.equal(
+    shouldApplyUnifiedSync(
+      { ...clearedFromJobs, updatedAt: '2026-11-14T11:00:00Z' },
+      '2026-11-14T10:00:00Z',
+    ),
+    true,
+  );
 });
 
 void test('buildExamPersonalReminders surfaces upcoming registration and written exam milestones', () => {

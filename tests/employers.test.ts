@@ -59,6 +59,26 @@ await test('abbreviations and conflicting identities remain scoped to the recrui
     assert.equal(resolveEmployer(fixtureJob({ company })), null);
 });
 
+await test('institutional legal entities (banks, firms, institutes, hospitals, universities) resolve to cross-source name scope', () => {
+  for (const company of [
+    '齐鲁银行',
+    '立信会计师事务所（特殊普通合伙）',
+    '山东德衡律师事务所',
+    '山东省科学院',
+    '中国水产科学研究院黄海水产研究所',
+    '山东省立医院',
+    '山东第一医科大学',
+  ]) {
+    const fromSchoolA = resolveEmployer(fixtureJob({ company, source_id: 'sdu-jobs' }))!;
+    const fromSchoolB = resolveEmployer(fixtureJob({ company, source_id: 'ouc-jobs' }))!;
+    assert.equal(fromSchoolA.scope, 'name', `${company} should use name scope`);
+    assert.equal(fromSchoolA.id, fromSchoolB.id, `${company} should share identity across sources`);
+  }
+  // Bare internal centers/stations must still remain source-scoped when not under a registered brand source
+  const internalCenter = resolveEmployer(fixtureJob({ company: '技术研发中心', source_id: 'sdu-jobs' }))!;
+  assert.equal(internalCenter.scope, 'source');
+});
+
 await test('registered official brand and departments keep independent scores and stable source aliases', () => {
   const department = resolveEmployer(fixtureJob({ source_id: 'hisense-campus', company: '全球营销中心-中国区' }))!;
   const anotherSource = resolveEmployer(fixtureJob({ source_id: 'hisense-social', company: '全球营销中心-中国区' }))!;

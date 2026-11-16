@@ -1,6 +1,6 @@
 import { PROVINCE_CITIES, citiesInText, workplaceEvidence } from './cities.ts';
 import { assessOpportunityValidity, deadlineTime } from './opportunity-validity.ts';
-import { positionMatches } from './eligibility.ts';
+import { matchesEducationRequirement, positionMatches } from './eligibility.ts';
 import { jobMatchesMajor, MAX_EXTRACTED_MAJORS } from './job-major-matcher.ts';
 import { PERSONAL_DETAIL_FIELDS, validatePersonalDetails, mergePersonalRecords } from './personal-records.ts';
 import employerBrands from '../config/employer-brands.json' with { type: 'json' };
@@ -35,6 +35,7 @@ export function isSupplementOpportunity(job: Job): boolean {
 
 export type PositionRequirement = {
   name: string;
+  position_name?: string;
   category?: string;
   majors?: string[];
   education?: string;
@@ -272,7 +273,7 @@ export type Filters = {
 export const defaultFilters: Filters = {
   city: '济南',
   type: '全部',
-  year: '2027',
+  year: '全部',
   sector: '全部',
   direction: '全部',
   query: '',
@@ -343,10 +344,10 @@ export function isSubstantiveReopenChange(change?: RecentChange | null): boolean
   }
   if (change.type === 'positions_updated') {
     const text = (change.label || '') + (change.detail || '');
-    return !/就绪|首次提取/.test(text) && !/为 0 个职位/.test(change.detail || '');
+    return !/就绪|首次提取|缩减|减少/.test(text) && !/为 0 个职位/.test(change.detail || '');
   }
   if (change.type === 'content_updated') {
-    return change.label === '地点调整' && /新增/.test(change.detail || '');
+    return change.label === '地点调整' && !/补全/.test(change.detail || '') && /新增/.test(change.detail || '');
   }
   return false;
 }
@@ -403,9 +404,12 @@ export function publicationText(job: Job, now = Date.now()): string {
   return publicationDate(job, now) || (job.published_at ? '日期异常待核实' : '日期未明确');
 }
 
+const ATS_TEST_RECORD_RE = /仅供测试使用|^测试(?:专业公司|岗位|职位)$/;
+
 export function isExpired(job: Job, now = Date.now()) {
   if ((job.kind === '宣讲会' || (job.source_id || '').endsWith('-talks')) && job.talk_event?.status === 'cancelled') return true;
   if (job.listing_status === 'withdrawn') return true;
+  if (ATS_TEST_RECORD_RE.test((job.company || '').trim()) || ATS_TEST_RECORD_RE.test((job.title || '').trim())) return true;
   if (job.deadline) {
     const t = deadlineTime(job.deadline);
     return !Number.isNaN(t) && t < now;
@@ -427,9 +431,13 @@ export function employerBrand(sourceId?: string): string {
   return (employerBrands.sources as Record<string, string>)[sourceId || ''] || '';
 }
 export function employerGroupName(job: Job): string {
-  return departmentPattern.test(job.company || '')
-    ? employerBrand(job.source_id) || (employerBrands.reference_sources as Record<string, string>)[job.source_id || ''] || job.company
-    : job.company;
+  const raw = (job.company || '').trim();
+  const brand =
+    employerBrand(job.source_id) ||
+    (employerBrands.reference_sources as Record<string, string>)[job.source_id || ''] ||
+    '';
+  if (!raw) return brand;
+  return departmentPattern.test(raw) ? brand || job.company : job.company;
 }
 export function formatCompanyDisplay(company?: string | null, title?: string | null, sourceId?: string): { displayCompany: string; monogram: string } {
   const rawComp = (company ?? '').trim();
@@ -643,7 +651,15 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
       }
 
       if (job.published_at) {
-        if (!existing.published_at || job.published_at < existing.published_at) {
+        if (!existing.published_at) {
+          const exFirstDay = existing.first_seen_at ? shanghaiDay(existing.first_seen_at) : '';
+          const exVerDay = existing.last_verified_at ? shanghaiDay(existing.last_verified_at) : '';
+          const jobPubDay = shanghaiDay(job.published_at);
+          existing.published_at =
+            exFirstDay && exVerDay > exFirstDay && jobPubDay > exFirstDay
+              ? exFirstDay
+              : job.published_at;
+        } else if (job.published_at < existing.published_at) {
           existing.published_at = job.published_at;
         }
       }
@@ -763,11 +779,17 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         };
         if (!existing.recent_change) {
           existing.recent_change = job.recent_change;
+          if ((job.updated_at ?? '') > (existing.updated_at ?? '')) {
+            existing.updated_at = job.updated_at;
+          }
         } else {
           const currP = changePrio[existing.recent_change.type] ?? 0;
           const newP = changePrio[job.recent_change.type] ?? 0;
           if (newP > currP) {
             existing.recent_change = job.recent_change;
+            if ((job.updated_at ?? '') > (existing.updated_at ?? '')) {
+              existing.updated_at = job.updated_at;
+            }
           }
         }
       }
@@ -846,9 +868,18 @@ export function mergePersonal(current: Personal, imported: Personal): Personal {
 }
 export function isDomestic(job: Job) {
   if (job.domestic_status === 'overseas') return false;
-  if (job.domestic_status) return true;
   const locationLines = workplaceEvidence(job.location_evidence ?? []);
   const evidence = locationLines.join('\n');
+  if (!job.cities.length) {
+    const headerText = `${job.company || ''} ${job.title || ''} ${evidence}`;
+    if (
+      /(?:香港|澳门)(?:分行|支行|子公司|分公司|代表处|地区|工作)|港澳地区/.test(headerText) &&
+      !/国内|中国大陆|境内|内地|全国|各地可选|不限城市|各地招聘|各省市/.test(headerText)
+    ) {
+      return false;
+    }
+  }
+  if (job.domestic_status) return true;
   return !(
     /海外|国外|境外|境外地区|海外地区/.test(evidence) &&
     !job.cities.length &&
@@ -953,13 +984,26 @@ export type SalaryRange = {
 export function parseSalaryRange(job: Job): SalaryRange | null {
   if (job.listing_facts?.version === 1) {
     const salary = job.listing_facts.salary;
-    return salary ? { ...salary, max: salary.max ?? Number.POSITIVE_INFINITY } : null;
+    if (!salary) return null;
+    const rawMax = salary.max ?? Number.POSITIVE_INFINITY;
+    if (
+      salary.min >= 60000 &&
+      /[万wW]/.test(salary.raw) &&
+      !/年|\/月|月薪|每月/.test(salary.raw)
+    ) {
+      return {
+        min: Math.round(salary.min / 12),
+        max: Number.isFinite(rawMax) ? Math.round(rawMax / 12) : Number.POSITIVE_INFINITY,
+        raw: salary.raw,
+      };
+    }
+    return { ...salary, max: rawMax };
   }
   const title = job.title;
   const excerpt = job.excerpt || '';
   let salaryContext = title;
 
-  // 1. Check title end: (\n6000-8000元, (8k-15k), 20000元以上, 15~18W/年)
+  // 1. Check title end: (\n6000-8000元, (8k-15k), 20000元以上, 15~18W/年, 15W-50W)
   let m = title.match(
     /(?:[（(\n\s])(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*[-~至–]\s*(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天|人民币)?(?:[)）\s]*)$/,
   );
@@ -991,19 +1035,22 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
   if (/\/天|\/日|\/小时|日薪|时薪|美元|港币|USD|HKD/i.test(salaryContext)) return null;
 
   let val1 = Number.parseFloat(m[1]);
+  const rawNum1 = val1;
   const unit1 = m[2] || '';
 
   const matchedStr = m[0];
-  const isAnnual =
+  const hasExplicitMonthly = /\/月|月薪|每月/.test(salaryContext) || /\/月|月薪|每月/.test(matchedStr);
+  const hasExplicitAnnual =
     salaryContext.includes('/年') ||
     salaryContext.includes('年薪') ||
     matchedStr.includes('/年') ||
     matchedStr.includes('年');
 
   if (isAbove) {
-    if (['万', 'w', 'W'].includes(unit1)) val1 *= 10000;
+    const isWan = ['万', 'w', 'W'].includes(unit1);
+    if (isWan) val1 *= 10000;
     else if (['k', 'K'].includes(unit1)) val1 *= 1000;
-    if (isAnnual) {
+    if (hasExplicitAnnual || (isWan && !hasExplicitMonthly && rawNum1 >= 6)) {
       val1 /= 12;
     }
     if (val1 < 1000) return null;
@@ -1013,8 +1060,9 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
   let val2 = Number.parseFloat(m[3]);
   const unit2 = m[4] || '';
   const unit = unit2 || unit1 || '';
+  const isWan = ['万', 'w', 'W'].includes(unit);
 
-  if (['万', 'w', 'W'].includes(unit)) {
+  if (isWan) {
     val1 *= 10000;
     val2 *= 10000;
   } else if (['k', 'K'].includes(unit)) {
@@ -1022,14 +1070,14 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
     val2 *= 1000;
   }
 
-  if (isAnnual) {
+  if (hasExplicitAnnual || (isWan && !hasExplicitMonthly && rawNum1 >= 6)) {
     val1 /= 12;
     val2 /= 12;
   }
 
   if (val2 < 1000) return null;
   // Guard against calendar years e.g. 2024-2025 or 2026-0
-  if (val1 >= 2010 && val1 <= 2030 && val2 < 100) return null;
+  if (rawNum1 >= 2010 && rawNum1 <= 2030 && Number.parseFloat(m[3]) < 100) return null;
 
   return {
     min: Math.round(val1),
@@ -1088,6 +1136,23 @@ export function positionChangeDates(job: Job): string[] {
 
 export type DeadlineChangeKind = 'extended' | 'clarified' | 'adjusted';
 
+const ROLLING_DEADLINE_RE =
+  /延长至\s*(\d{4}-\d{2}-\d{2})[^\d（(]*[（(]原截止时间[:：]\s*(\d{4}-\d{2}-\d{2})/;
+
+function isRollingHorizonDeadlineChange(change: RecentChange): boolean {
+  const m = (change.detail || '').match(ROLLING_DEADLINE_RE);
+  if (!m || !change.date) return false;
+  const changeMs = Date.parse(`${shanghaiDay(change.date)}T00:00:00Z`);
+  const newMs = Date.parse(`${m[1]}T00:00:00Z`);
+  const oldMs = Date.parse(`${m[2]}T00:00:00Z`);
+  if (!Number.isFinite(changeMs) || !Number.isFinite(newMs) || !Number.isFinite(oldMs)) return false;
+  return (
+    newMs - changeMs >= 330 * 86400000 &&
+    oldMs - changeMs >= 300 * 86400000 &&
+    newMs - oldMs <= 14 * 86400000
+  );
+}
+
 /** The collector records first-known, later and earlier deadlines with the same
  * change type; its label/detail keep the distinction. Only a later deadline is
  * an extension. Unknown labels keep the historical "extended" meaning. */
@@ -1096,6 +1161,7 @@ export function deadlineChangeKind(change?: RecentChange | null): DeadlineChange
   const detail = change.detail || '';
   if (change.label === '明确截止时间' || detail.startsWith('明确报名截止时间')) return 'clarified';
   if (change.label === '截止调整' || detail.startsWith('报名截止时间调整为')) return 'adjusted';
+  if (isRollingHorizonDeadlineChange(change)) return 'clarified';
   return 'extended';
 }
 
@@ -1548,11 +1614,7 @@ function matchesContentConditions(
   if (
     f.education &&
     !positions?.length &&
-    !j.education.includes(f.education) &&
-    !(
-      f.includeUncertain &&
-      (j.education.includes('未明确') || formatEducationDisplay(j.education, '未明确').includes('未明确'))
-    )
+    !matchesEducationRequirement(j.education, f.education, f.includeUncertain)
   ) {
     return false;
   }

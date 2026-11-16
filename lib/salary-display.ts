@@ -10,10 +10,14 @@ export function extractSalary(
   if (job.listing_facts?.version === 1) return job.listing_facts.salary_display || { cleanTitle: displayJobTitle(job) || job.title, salary: null };
   let cleanTitle = displayJobTitle(job);
   let salary: string | null = null;
+  const trailingNegotiableRe = /(?:\r?\n|\s*[（(])面议[)）]?\s*$/;
+  if (trailingNegotiableRe.test(cleanTitle)) {
+    cleanTitle = cleanTitle.replace(trailingNegotiableRe, '').trim();
+  }
   const titleSalaryRegex =
-    /(?:[（(])?(\d+(?:\.\d+)?(?:k|K|万|元)?\s*[-~至–]\s*\d+(?:\.\d+)?(?:k|K|万|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天)?)(?:[)）])?$/;
+    /(?:\r?\n\s*|\s*[（(])?(\d+(?:\.\d+)?\s*(?:k|K|万|w|W|元)?\s*(?:[-~至–]\s*\d+(?:\.\d+)?\s*(?:k|K|万|w|W|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天)?|(?:k|K|万|w|W|元)\s*(?:以上|及以上)))(?:[)）])?\s*$/;
   const match = cleanTitle.match(titleSalaryRegex);
-  if (match) {
+  if (match && !/^(?:19|20)\d{2}\s*[-~至–]/.test(match[1].trim())) {
     salary = match[1].trim();
     cleanTitle = cleanTitle.replace(titleSalaryRegex, '').trim();
   } else {

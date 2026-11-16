@@ -3,6 +3,8 @@ import type { ExamUserProfile } from './exams.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 export const UNIFIED_PROFILE_STORAGE = 'job-radar-unified-profile-v1';
+export const JOBS_UNIFIED_SYNC_AT = 'job-radar-jobs-unified-sync-at-v1';
+export const EXAMS_UNIFIED_SYNC_AT = 'job-radar-exams-unified-sync-at-v1';
 
 export type UnifiedEducation = '全部' | '专科' | '本科' | '硕士' | '博士';
 export type UnifiedGradIdentity = '不限' | '当年应届' | '择业期应届' | '在职/社会人员';
@@ -90,7 +92,7 @@ export function formatUnifiedProfileSummary(profile: UnifiedCareerProfile): stri
 
 export function examProfileToUnified(
   examProfile: ExamUserProfile,
-  examCities: string[] = [],
+  examCities?: string[],
   existing: UnifiedCareerProfile = DEFAULT_UNIFIED_PROFILE,
 ): UnifiedCareerProfile {
   let education: UnifiedEducation = '全部';
@@ -99,9 +101,14 @@ export function examProfileToUnified(
   else if (examProfile.education === '硕士研究生') education = '硕士';
   else if (examProfile.education === '博士研究生') education = '博士';
 
-  const cleanCities = examCities.filter((c) => c && c !== '全部' && c !== '全部城市');
+  const cities =
+    examCities === undefined
+      ? existing.cities
+      : examCities.filter(
+          (c) => c && c !== '全部' && c !== '全部城市' && c !== '山东省直' && c !== '全国',
+        );
   return {
-    cities: cleanCities.length > 0 ? cleanCities : existing.cities,
+    cities,
     education,
     majorCategory: (examProfile.majorCategory || '').trim(),
     majorQuery: (examProfile.majorQuery || '').trim(),
@@ -134,24 +141,31 @@ export function jobFiltersToUnified(
       ? filters.workCities.filter((c) => c && c !== '全部城市')
       : filters.city && filters.city !== '全部城市'
         ? [filters.city]
-        : existing.cities;
+        : [];
 
-  let education: UnifiedEducation = existing.education;
+  let education: UnifiedEducation = '全部';
   if (filters.education === '大专') education = '专科';
   else if (filters.education === '本科') education = '本科';
   else if (filters.education === '硕士') education = '硕士';
   else if (filters.education === '博士') education = '博士';
 
-  let gradIdentity: UnifiedGradIdentity = existing.gradIdentity;
-  if (filters.type === '校招') gradIdentity = '当年应届';
-  else if (filters.type === '社招') gradIdentity = '在职/社会人员';
+  let gradIdentity: UnifiedGradIdentity = '不限';
+  if (filters.type === '校招') {
+    gradIdentity = existing.gradIdentity === '择业期应届' ? '择业期应届' : '当年应届';
+  } else if (filters.type === '社招') {
+    gradIdentity = '在职/社会人员';
+  }
 
   const majorTrimmed = (filters.major || '').trim();
+  const keepCategory =
+    Boolean(majorTrimmed) &&
+    (majorTrimmed === existing.majorQuery ||
+      majorTrimmed === existing.majorCategory.replace(/类$/, ''));
   return {
     cities,
     education,
-    majorCategory: existing.majorCategory,
-    majorQuery: majorTrimmed || existing.majorQuery,
+    majorCategory: keepCategory ? existing.majorCategory : '',
+    majorQuery: majorTrimmed,
     gradIdentity,
     updatedAt: new Date().toISOString(),
   };
@@ -178,10 +192,86 @@ export function unifiedToJobFiltersPatch(profile: UnifiedCareerProfile): Partial
   return patch;
 }
 
+export function unifiedToJobFiltersSyncPatch(profile: UnifiedCareerProfile): Partial<Filters> {
+  const majorText = (profile.majorQuery || profile.majorCategory || '').replace(/类$/, '').trim();
+  const type =
+    profile.gradIdentity === '当年应届' || profile.gradIdentity === '择业期应届'
+      ? '校招'
+      : profile.gradIdentity === '在职/社会人员'
+        ? '社招'
+        : '全部';
+  return {
+    workCities: [...profile.cities],
+    city: profile.cities.length === 1 ? profile.cities[0] : '全部城市',
+    education:
+      profile.education === '全部'
+        ? ''
+        : profile.education === '专科'
+          ? '大专'
+          : profile.education,
+    major: majorText,
+    type,
+  };
+}
+
+export function shouldApplyUnifiedSync(
+  unified: UnifiedCareerProfile,
+  lastWorkspaceSyncAt?: string | null,
+): boolean {
+  if (!unified.updatedAt) return false;
+  const unifiedMs = Date.parse(unified.updatedAt);
+  if (Number.isNaN(unifiedMs)) return false;
+  if (lastWorkspaceSyncAt) {
+    const lastMs = Date.parse(lastWorkspaceSyncAt);
+    if (!Number.isNaN(lastMs) && unifiedMs <= lastMs) return false;
+    return true;
+  }
+  return isUnifiedProfileConfigured(unified);
+}
+
+export function readWorkspaceUnifiedSync(workspace: 'jobs' | 'exams'): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(
+      workspace === 'jobs' ? JOBS_UNIFIED_SYNC_AT : EXAMS_UNIFIED_SYNC_AT,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function recordWorkspaceUnifiedSync(
+  workspace: 'jobs' | 'exams',
+  updatedAt?: string,
+): void {
+  if (typeof window === 'undefined' || !updatedAt) return;
+  try {
+    window.localStorage.setItem(
+      workspace === 'jobs' ? JOBS_UNIFIED_SYNC_AT : EXAMS_UNIFIED_SYNC_AT,
+      updatedAt,
+    );
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export function readUnifiedProfile(): UnifiedCareerProfile {
   return readStore(UNIFIED_PROFILE_STORAGE, validateUnifiedProfile, DEFAULT_UNIFIED_PROFILE);
 }
 
 export function writeUnifiedProfile(profile: UnifiedCareerProfile): void {
   writeStore(UNIFIED_PROFILE_STORAGE, validateUnifiedProfile(profile));
+}
+
+export function writeUnifiedProfileFromWorkspace(
+  workspace: 'jobs' | 'exams',
+  profile: UnifiedCareerProfile,
+): UnifiedCareerProfile {
+  const validated = validateUnifiedProfile({
+    ...profile,
+    updatedAt: profile.updatedAt || new Date().toISOString(),
+  });
+  writeStore(UNIFIED_PROFILE_STORAGE, validated);
+  recordWorkspaceUnifiedSync(workspace, validated.updatedAt);
+  return validated;
 }

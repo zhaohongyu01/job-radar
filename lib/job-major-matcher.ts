@@ -566,7 +566,13 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '人事',
       'hr',
       'hrbp',
-      '招聘',
+      '招聘专员',
+      '招聘主管',
+      '招聘经理',
+      '招聘顾问',
+      '人才招聘岗',
+      '校园招聘岗',
+      '招聘配置',
       '薪酬',
       '绩效',
       '组织发展',
@@ -973,6 +979,9 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '光电信息科学与工程',
       '信息工程',
       '电子信息科学与技术',
+      '信息与通信工程',
+      '光学工程',
+      '新一代电子信息技术',
     ],
     summaryHint: '已关联可投范围：电子信息/通信/微电子/集成电路/光电/自动化/计算机 · 电子信息/电气信息类及嵌入式硬件芯片通信岗',
     concreteSubstrings: [
@@ -1026,7 +1035,22 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
   },
   {
     id: 'electrical-automation',
-    triggers: ['电气', '电气工程', '电气工程及其自动化', '智能电网', '电力系统', '自动化', '机器人工程', '测控技术与仪器'],
+    triggers: [
+      '电气',
+      '电气工程',
+      '电气工程及其自动化',
+      '智能电网',
+      '电力系统',
+      '自动化',
+      '机器人工程',
+      '测控技术与仪器',
+      '控制科学与工程',
+      '控制工程',
+      '仪器科学与技术',
+      '动力工程及工程热物理',
+      '能源动力',
+      '能源与动力工程',
+    ],
     summaryHint: '已关联可投范围：电气工程/电力系统/智能电网/自动化/控制/机电 · 电气/自动化/能源动力类及电气继保电控PLC设备岗',
     concreteSubstrings: [
       '电气',
@@ -1153,7 +1177,23 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
   },
   {
     id: 'civil-construction',
-    triggers: ['土木', '土木工程', '工程造价', '工程管理', '建筑学', '城乡规划', '给排水', '水利', '道路桥梁'],
+    triggers: [
+      '土木',
+      '土木工程',
+      '土木水利',
+      '建筑与土木工程',
+      '工程造价',
+      '工程管理',
+      '建筑学',
+      '城乡规划',
+      '给排水',
+      '水利',
+      '水利工程',
+      '道路桥梁',
+      '测绘科学与技术',
+      '交通运输',
+      '交通运输工程',
+    ],
     summaryHint: '已关联可投范围：土木/道桥/给排水/建环/工程管理/工程造价/水利 · 土木/建筑/水利类及施工结构造价工程管理岗',
     concreteSubstrings: [
       '土木工程',
@@ -1203,7 +1243,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
   },
   {
     id: 'foreign-language',
-    triggers: ['英语', '商务英语', '翻译', '外语', '外国语言文学', '日语', '俄语', '法语', '德语', '西班牙语', '阿拉伯语', '韩语', '朝鲜语'],
+    triggers: ['外语', '外语类', '外国语言文学', '外国语言文学类', '小语种', '语言类'],
     summaryHint: '已关联可投范围：英语/商务英语/翻译/小语种/国际商务 · 外国语言文学/外语/经贸类及外贸海外销售翻译教研岗',
     concreteSubstrings: [
       '英语',
@@ -1221,6 +1261,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '韩语',
       '葡萄牙语',
       '意大利语',
+      '小语种',
       '国际商务',
       '国际经济与贸易',
     ],
@@ -1235,6 +1276,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '笔译',
       '英语',
       '外语',
+      '小语种',
       '外贸',
       '海外销售',
       '海外营销',
@@ -1245,6 +1287,158 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '外事',
       '出国留学',
     ],
+  },
+  {
+    id: 'english',
+    triggers: ['英语', '商务英语', '翻译', '英语笔译', '英语口译', '翻译硕士', 'mti'],
+    summaryHint: '已关联可投范围：英语/商务英语/翻译/国际商务 · 外国语言文学/外语类及英语翻译外贸海外销售教研岗',
+    concreteSubstrings: ['英语', '商务英语', '翻译', 'mti', '国际商务', '国际经济与贸易'],
+    umbrellaSubstrings: ['外国语言文学', '外国语言文学类', '外语类', '外语', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|语文教师|历史教师|政治教师|日语|俄语|法语|德语|西班牙语|阿拉伯语|韩语|朝鲜语|党群|党建|纪检|研发|软件|算法|硬件/,
+    roleKeywords: [
+      '英语',
+      '翻译',
+      '口译',
+      '笔译',
+      '外语',
+      '外贸',
+      '海外销售',
+      '海外营销',
+      '海外市场',
+      '海外客户',
+      '国际业务',
+      '跨境电商',
+      '外事',
+      '出国留学',
+    ],
+  },
+  {
+    id: 'japanese',
+    triggers: ['日语', '日语笔译', '日语口译'],
+    summaryHint: '已关联可投范围：日语/外国语言文学/小语种 · 外语类及对日翻译外贸海外市场岗',
+    concreteSubstrings: ['日语'],
+    umbrellaSubstrings: ['外国语言文学', '外国语言文学类', '外语类', '外语', '小语种', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|英语教师|语文教师|历史教师|政治教师|俄语|法语|德语|西班牙语|阿拉伯语|韩语|朝鲜语|党群|党建|纪检|研发|软件|算法|硬件/,
+    roleKeywords: ['日语', '对日', '日本市场', '小语种', '外贸', '海外销售', '海外营销', '海外市场', '国际业务'],
+  },
+  {
+    id: 'russian',
+    triggers: ['俄语', '俄语笔译', '俄语口译'],
+    summaryHint: '已关联可投范围：俄语/外国语言文学/小语种 · 外语类及对俄翻译外贸海外市场岗',
+    concreteSubstrings: ['俄语'],
+    umbrellaSubstrings: ['外国语言文学', '外国语言文学类', '外语类', '外语', '小语种', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|英语教师|语文教师|历史教师|政治教师|日语|法语|德语|西班牙语|阿拉伯语|韩语|朝鲜语|党群|党建|纪检|研发|软件|算法|硬件/,
+    roleKeywords: ['俄语', '对俄', '小语种', '外贸', '海外销售', '海外营销', '海外市场', '国际业务'],
+  },
+  {
+    id: 'french',
+    triggers: ['法语', '法语笔译', '法语口译'],
+    summaryHint: '已关联可投范围：法语/外国语言文学/小语种 · 外语类及法语翻译外贸海外市场岗',
+    concreteSubstrings: ['法语'],
+    umbrellaSubstrings: ['外国语言文学', '外国语言文学类', '外语类', '外语', '小语种', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|英语教师|语文教师|历史教师|政治教师|日语|俄语|德语|西班牙语|阿拉伯语|韩语|朝鲜语|党群|党建|纪检|研发|软件|算法|硬件/,
+    roleKeywords: ['法语', '小语种', '外贸', '海外销售', '海外营销', '海外市场', '国际业务'],
+  },
+  {
+    id: 'german',
+    triggers: ['德语', '德语笔译', '德语口译'],
+    summaryHint: '已关联可投范围：德语/外国语言文学/小语种 · 外语类及德语翻译外贸海外市场岗',
+    concreteSubstrings: ['德语'],
+    umbrellaSubstrings: ['外国语言文学', '外国语言文学类', '外语类', '外语', '小语种', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|英语教师|语文教师|历史教师|政治教师|日语|俄语|法语|西班牙语|阿拉伯语|韩语|朝鲜语|党群|党建|纪检|研发|软件|算法|硬件/,
+    roleKeywords: ['德语', '对德', '小语种', '外贸', '海外销售', '海外营销', '海外市场', '国际业务'],
+  },
+  {
+    id: 'spanish',
+    triggers: ['西班牙语', '西语'],
+    summaryHint: '已关联可投范围：西班牙语/外国语言文学/小语种 · 外语类及西语翻译外贸海外市场岗',
+    concreteSubstrings: ['西班牙语', '西语'],
+    umbrellaSubstrings: ['外国语言文学', '外国语言文学类', '外语类', '外语', '小语种', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|英语教师|语文教师|历史教师|政治教师|日语|俄语|法语|德语|阿拉伯语|韩语|朝鲜语|党群|党建|纪检|研发|软件|算法|硬件/,
+    roleKeywords: ['西班牙语', '西语', '小语种', '外贸', '海外销售', '海外营销', '海外市场', '国际业务'],
+  },
+  {
+    id: 'arabic',
+    triggers: ['阿拉伯语', '阿语'],
+    summaryHint: '已关联可投范围：阿拉伯语/外国语言文学/小语种 · 外语类及阿语翻译外贸海外市场岗',
+    concreteSubstrings: ['阿拉伯语', '阿语'],
+    umbrellaSubstrings: ['外国语言文学', '外国语言文学类', '外语类', '外语', '小语种', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|英语教师|语文教师|历史教师|政治教师|日语|俄语|法语|德语|西班牙语|韩语|朝鲜语|党群|党建|纪检|研发|软件|算法|硬件/,
+    roleKeywords: ['阿拉伯语', '阿语', '小语种', '外贸', '海外销售', '海外营销', '海外市场', '国际业务'],
+  },
+  {
+    id: 'korean',
+    triggers: ['韩语', '朝鲜语'],
+    summaryHint: '已关联可投范围：韩语/朝鲜语/外国语言文学/小语种 · 外语类及对韩翻译外贸海外市场岗',
+    concreteSubstrings: ['韩语', '朝鲜语'],
+    umbrellaSubstrings: ['外国语言文学', '外国语言文学类', '外语类', '外语', '小语种', '语言类'],
+    broadUmbrellaSubstrings: ['人文社科', '文科'],
+    broadUmbrellaExactTokens: ['文科'],
+    offTrackRolePattern:
+      /财务|会计|审计|出纳|税务|法务|律师|英语教师|语文教师|历史教师|政治教师|日语|俄语|法语|德语|西班牙语|阿拉伯语|党群|党建|纪检|研发|软件|算法|硬件/,
+    roleKeywords: ['韩语', '朝鲜语', '对韩', '小语种', '外贸', '海外销售', '海外营销', '海外市场', '国际业务'],
+  },
+  {
+    id: 'clinical-medicine',
+    triggers: [
+      '临床医学',
+      '内科学',
+      '外科学',
+      '妇产科学',
+      '儿科学',
+      '急诊医学',
+      '全科医学',
+      '神经病学',
+      '肿瘤学',
+      '影像医学与核医学',
+      '医学影像学',
+      '麻醉学',
+      '眼科学',
+      '耳鼻咽喉科学',
+      '皮肤病与性病学',
+    ],
+    summaryHint: '已关联可投范围：临床医学/内科/外科/儿科/影像/麻醉 · 临床医学/医学类及医院临床医师医疗岗',
+    concreteSubstrings: [
+      '临床医学',
+      '内科学',
+      '外科学',
+      '妇产科学',
+      '儿科学',
+      '急诊医学',
+      '全科医学',
+      '神经病学',
+      '肿瘤学',
+      '影像医学',
+      '医学影像',
+      '麻醉学',
+      '眼科学',
+      '耳鼻咽喉',
+      '皮肤病',
+      '中西医临床',
+    ],
+    umbrellaSubstrings: ['临床医学类', '医学类', '医药类', '医疗卫生类'],
+    roleKeywords: ['医师', '医生', '临床', '内科', '外科', '儿科', '妇产科', '急诊', '影像医师', '麻醉医师'],
   },
 ];
 
@@ -1299,6 +1493,7 @@ function cleanCandidateMajorSegment(raw: string): string {
   let s = raw
     .replace(/（[^）]{24,}）|\([^)]{24,}\)/g, ' ')
     .replace(/^\s*(?:\(?[一二三四五六七八九十\d]+[、.．)）]\s*)+/, '')
+    .replace(/^\s*\d{4,6}[A-Za-z]?\s*(?=[\u4e00-\u9fa5])/, '')
     .replace(/^.*?(?:我们希望你来自|如果你是|主要面向|主要招收|招聘专业为|所学专业为|需求专业为|专业要求为|专业为|专业是|专业限)/, '')
     .replace(/^(?:全日制|统招|普通高校|国内外|境内外|应届|往届|202\d届|毕业生|研究生|博士|硕士|本科|大专|专科|学士|及以上|以上|学历|学位)+/g, '')
     .replace(/^(?:面向[^\s，,、]{0,12})?(?:招收|招聘|诚聘|欢迎|吸纳|面向|限|要求|具有|具备|主修|所学|以)/, '')
@@ -1443,9 +1638,20 @@ export function extractProseSamplePositions(rawText: string): string[] {
 
 const profileCache = new Map<string, ResolvedJobMajorProfile>();
 
-function buildSingleTermProfile(termLower: string): SingleTermMajorProfile {
+function buildSingleTermProfile(rawTermLower: string): SingleTermMajorProfile {
+  const termLower = rawTermLower.replace(/^\d{4,6}[a-z]?\s*(?=[\u4e00-\u9fa5])/i, '').trim() || rawTermLower;
+  const rawDegreeStripped = termLower
+    .replace(/(?:专业硕士|学术硕士|专业学位|硕士研究生|博士研究生|研究生|硕士|博士|学士|本科|专科)$/, '')
+    .replace(/^新闻与传播$/, '新闻传播')
+    .trim();
+  const degreeStripped = rawDegreeStripped.length >= 2 ? rawDegreeStripped : termLower;
+  const candidateTerms = degreeStripped !== termLower ? [termLower, degreeStripped] : [termLower];
+
   const matchedRules = MAJOR_FAMILY_RULES.filter((rule) =>
-    rule.triggers.some((trigger) => trigger.toLowerCase() === termLower),
+    rule.triggers.some((trigger) => {
+      const tl = trigger.toLowerCase();
+      return candidateTerms.includes(tl);
+    }),
   );
 
   const effectiveRules =
@@ -1454,11 +1660,13 @@ function buildSingleTermProfile(termLower: string): SingleTermMajorProfile {
       : MAJOR_FAMILY_RULES.filter((rule) =>
           rule.triggers.some((t) => {
             const tl = t.toLowerCase();
-            return tl.length >= 3 && termLower.length >= 3 && (termLower.includes(tl) || tl.includes(termLower));
+            return candidateTerms.some(
+              (ct) => tl.length >= 3 && ct.length >= 3 && (ct.includes(tl) || tl.includes(ct)),
+            );
           }),
         );
 
-  const concreteSubstrings = new Set<string>([termLower]);
+  const concreteSubstrings = new Set<string>(candidateTerms);
   const concreteExactTokens = new Set<string>();
   const umbrellaSubstrings = new Set<string>();
   const umbrellaExactTokens = new Set<string>();
@@ -1467,9 +1675,11 @@ function buildSingleTermProfile(termLower: string): SingleTermMajorProfile {
   const roleKeywords = new Set<string>();
   const financeSectorRoleKeywords = new Set<string>();
 
-  for (const alias of MAJOR_ALIASES[termLower] ?? []) {
-    if (alias.length <= 2) concreteExactTokens.add(alias.toLowerCase());
-    else concreteSubstrings.add(alias.toLowerCase());
+  for (const ct of candidateTerms) {
+    for (const alias of MAJOR_ALIASES[ct] ?? []) {
+      if (alias.length <= 2) concreteExactTokens.add(alias.toLowerCase());
+      else concreteSubstrings.add(alias.toLowerCase());
+    }
   }
 
   if (effectiveRules.length > 0) {
@@ -1500,7 +1710,7 @@ function buildSingleTermProfile(termLower: string): SingleTermMajorProfile {
     };
   }
 
-  const categories = resolveMajorCategories(undefined, [termLower]);
+  const categories = resolveMajorCategories(undefined, candidateTerms);
   for (const cat of categories) {
     umbrellaSubstrings.add(cat.toLowerCase());
     const stem = cat.replace(/类$/, '').toLowerCase();
@@ -1513,8 +1723,11 @@ function buildSingleTermProfile(termLower: string): SingleTermMajorProfile {
       }
     }
   }
-  if (termLower.length >= 2) {
-    roleKeywords.add(termLower.replace(/学$/, ''));
+  const strippedStem = degreeStripped.replace(/学$/, '');
+  if (strippedStem.length >= 2) {
+    roleKeywords.add(strippedStem);
+  } else if (degreeStripped.length >= 2) {
+    roleKeywords.add(degreeStripped);
   }
 
   const catLabel = categories.length > 0 ? ` · ${categories.join('/')}同大类专业` : '';
@@ -1728,6 +1941,23 @@ function singleProfileMatchesPosition(
  * Evaluates whether a single structured position row matches the user's major filter.
  * Respects same-position alignment: explicit non-matching majors on this row block role-title fallback.
  */
+function sanitizeStoredMajors(items: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const raw of items) {
+    const trimmed = raw.trim().replace(/^\d{4,6}[A-Za-z]?\s*(?=[\u4e00-\u9fa5])/, '').trim();
+    if (!trimmed) continue;
+    if (isUnlimitedMajorText(trimmed)) {
+      out.push(trimmed);
+      continue;
+    }
+    if (DISQUALIFYING_MAJOR_TOKEN_RE.test(trimmed) && !KNOWN_ACADEMIC_MAJORS.has(trimmed.toLowerCase())) {
+      continue;
+    }
+    out.push(trimmed);
+  }
+  return out;
+}
+
 export function positionMatchesMajor(
   position: PositionRequirement,
   rawQuery: string,
@@ -1736,7 +1966,7 @@ export function positionMatchesMajor(
   const profile = resolveJobMajorProfile(rawQuery);
   if (!profile.active) return true;
 
-  const rawMajors = (position.majors ?? []).map((m) => m.trim()).filter(Boolean);
+  const rawMajors = sanitizeStoredMajors(position.majors ?? []);
   const unlimitedItems = rawMajors.filter(isUnlimitedMajorText);
   const explicitMajors = rawMajors.filter((m) => !isUnlimitedMajorText(m));
   const roleTexts = [position.name, position.category];
@@ -1770,7 +2000,8 @@ function getEffectiveJobMajorFacts(job: Job): { majors: string[]; samplePosition
   }
 
   const proseSource = `${job.body || ''}\n${job.card_summary ? '' : job.excerpt || ''}`;
-  const majors = job.majors?.length ? job.majors : extractProseMajorsFromText(proseSource);
+  const sanitizedStored = job.majors?.length ? sanitizeStoredMajors(job.majors) : [];
+  const majors = sanitizedStored.length ? sanitizedStored : extractProseMajorsFromText(proseSource);
   const samplePositions = job.sample_positions?.length
     ? job.sample_positions
     : extractProseSamplePositions(proseSource);

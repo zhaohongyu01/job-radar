@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / 'tests'))
 import collect
-from employer_identity import CONFIG, employer_identity
+from employer_identity import CONFIG, employer_identity, refine_company_facts
 from test_ci_collect import fixture
 
 
@@ -79,6 +79,36 @@ class EmployerIdentityTests(unittest.TestCase):
             search = json.loads((root / exported['search_url'].lstrip('/')).read_text(encoding='utf-8'))
             self.assertIn('海信集团', search['jobs'][job['id']])
         self.assertEqual(state, before)
+
+    def test_refine_company_facts_extracts_group_title_and_replaces_talks_host_school(self):
+        talk_row = refine_company_facts({
+            'source_id': 'sdu-talks',
+            'source_name': '山东大学 · 校园宣讲',
+            'company': '山东大学',
+            'title': '齐鲁银行2027届校园宣讲会',
+            'body': '宣讲单位：齐鲁银行股份有限公司。欢迎同学们参加。',
+        })
+        self.assertEqual(talk_row['company'], '齐鲁银行')
+        self.assertEqual(talk_row.get('company_original'), '山东大学')
+
+        group_row = refine_company_facts({
+            'source_id': 'ouc-announcements',
+            'source_name': '中国海洋大学 · 招聘公告',
+            'company': '',
+            'title': '浪潮集团2027届全球校园招聘简章',
+            'body': '欢迎投递浪潮集团校园招聘岗位。',
+        })
+        self.assertEqual(group_row['company'], '浪潮集团')
+
+        # Host school genuinely recruiting for itself keeps host school as company
+        own_talk = refine_company_facts({
+            'source_id': 'sdu-talks',
+            'source_name': '山东大学 · 校园宣讲',
+            'company': '山东大学',
+            'title': '山东大学2027年诚聘海内外优秀青年学者宣讲会',
+            'body': '山东大学人事部宣讲。',
+        })
+        self.assertEqual(own_talk['company'], '山东大学')
 
 
 if __name__ == '__main__':

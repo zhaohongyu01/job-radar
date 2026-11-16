@@ -3,6 +3,24 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
+## 2026-11-14 全站深度审计与三阶段臻善升级（P0–P2：企业合并、采集清洗、专业/考编精度、口碑提效与跨端双工同步）
+
+在完成全站岗位采集、企业合并、搜索筛选、考公考编、企业口碑及首屏架构审计后，按用户批准的三阶段路线图完成全部 **P0 → P1 → P2** 升级与回归测试：
+- **阶段 P0：数据纯净度与核心展示修正**
+  1. **默认开启「合并同企业」与企业名归一化分组 (`lib/browsing.ts` + `hooks/use-url-sync.ts` + `lib/grouping.ts` + `config/employer-brands.json`)**：`restoreBrowsing` 默认 `groupCompanies: true`，支持 `?group=0` URL 深链往返；`groupJobs` 使用 `normalizeCompanyName` 归一化企业全称/括号样式（严格保留分公司/分行、届别与招聘阶段隔离）；扩展 `employer-brands.json` `department_pattern` 覆盖裸部门（`中心|院|所|厂|基地`、`设计院|工程院`、`.+总公司`、测试专业公司等）；`buildGroupRoleItems` 剥离尾部 ATS 编号（如 `(J99881)`），并对泛化简章标题自动展开子岗位胶囊且纳入组内搜索索引。
+  2. **冷启动首屏、SQLite 检索与 RSS 订阅净洗 (`scripts/build_radar_sqlite.py` + `scripts/build_feeds.py` + `lib/server/radar-db.ts`)**：从 `first-screen.json`、`facets`、`radar.sqlite` 查询与 `jobs-latest.xml` 彻底剔除已过期、已撤回、纯海外、测试占位（`仅供测试使用`）及误混入的 `sdei-civil-exams` 招考通知；`jobs-latest.xml` `<pubDate>` 对齐真实首发日/实质扩招日，`exams-shandong.xml` 严格限定在招简章/补录/职位表（剔除体检公示与已结束通知）。
+  3. **薪资/学历/届别/港澳与变更信号精准化 (`lib/jobs.ts` + `lib/eligibility.ts` + `lib/salary-display.ts` + `scripts/collect.py`)**：修复年薪 `W/万` 区间被 12 倍放大为月薪的缺陷（`>= 6W` 且无 `/月` 按年薪折算并自愈 `listing_facts.salary`），剥离标题尾部 `\n面议` / `\n20000元以上`；补齐学历向下兼容筛选（`matchesEducationRequirement`）；`defaultFilters.year` 调整为 `'全部'` 防止切「校招」静默漏掉 26 届补录与未标届别校招；`isDomestic` 排除港澳分支机构；拦截 BYSJY 滚动 `+365` 天假延期、首次回填假扩招（改标 `岗位表就绪` / `地点补全`）与 `岗位缩减` 假提权；修复 `deduplicate()` / `mergeDuplicateOpportunities` 被晚发转载渠道倒灌刷新首发日及 `compute_job_fingerprint` 读取 `position_name` 字段对齐问题。
+- **阶段 P1：专业匹配、企业实体识别、考编附件解锁与口碑覆盖提升**
+  1. **专业族匹配与学科代码清洗 (`lib/job-major-matcher.ts` + `scripts/parse_positions.py`)**：移除 `hr-management` 中过宽的裸词 `'招聘'`（改为 `'招聘专员'` / `'招聘主管'` 等精确 HR 角色）；将 `foreign-language` 拆分为外语大类与 8 个独立语种画像（`英/日/俄/法/德/西/阿/韩`，互不串语种且向上兼容 `外语类/小语种`）；新增 `临床医学` 画像并扩充工学一级学科词条；支持剥离教育部 4–6 位学科代码前缀（如 `0812计算机科学与技术`）与专硕后缀（`会计硕士`、`电子信息硕士` 等），拦截单字词干（`化学/理学`）误匹配。
+  2. **企业法人身份识别与宣讲主办方纠偏 (`lib/employers.ts` + `scripts/employer_identity.py`)**：`resolveEmployer` 扩展识别银行、会计师/律师/税务师事务所、科研院所、医院、高校、广电报社出版社为跨源共享 `name` 作用域（保留内部研发中心为 `source` 作用域）；修复 `TITLE_EMPLOYER_PAT` 双重长度前缀导致 4 字机构名（如 `齐鲁银行`、`浪潮集团`）漏提的问题，并在 `-talks` 通道自动纠偏误填为主办高校名的宣讲企业。
+  3. **考编附件解包、城市严格筛选与年龄放宽判定 (`scripts/parse_exam_positions.py` + `scripts/collect_exams.py` + `lib/exams.ts` + `components/exams/exam-filter-sidebar.tsx`)**：新增 `normalize_exam_attachment_url` 自动解包省平台 `externalLink?target=<JWT>` 跳转链接（单次解码保留 `fileUrl` 内层 `%2F`）、修复 `/resource/srst/att/` 与政务网关相对下载路径、净洗 UEditor 文件图标；支持老式二进制 `.doc` UTF-16LE 文本表格兜底解析；拦截核减/公示/成绩通知伪岗位行与纯数字/表头残片；修复泰安等「考试录用公务员公告 + 公务员招录职位表」词序差异合并；修复 `/exams` 选择具体地市（如 `菏泽`）混入 `cities=[]` 全国/省直公告的问题（新增独立 `'山东省直'` 与 `'全国'` 筛选胶囊）；`evaluateExamPositionEligibility` 支持应届硕博年龄放宽条款（如 `35周岁以下，应届硕士、博士放宽到40周岁以下`）精准三态判定。
+  4. **牛客企业口碑无标题动态合成与归属扩容 (`scripts/collect_reputation.py`)**：对无 `title` 的 `momentData` 动态提取首句合成标题，扩充在职自述归属模式（含省主语 `入职XX两年了`、`作为XX在职员工`、体验标题等，严格隔离跳槽对比贴），并接入 SSR 数值评分 `extract_platform_score`。
+- **阶段 P2：高校慢源巡检加速、跨工作台画像真双向同步与冷启动零跳变**
+  1. **高校慢源 `--head-only` 首屏未变快路 (`scripts/collect.py`)**：在 `--head-only` 巡检非日历通道时，若第 1 页全部公告均已核验入库且标题/发布日/摘要指纹未变、总数未增，安全短路跳过第 2 页请求（削减约 50% 无效列表请求，同时刷新 `head_scan_at` / `last_success_at` 并完整保留历史游标与 `pending` 队列）。
+  2. **跨工作台共享画像真双向同步 (`lib/unified-profile.ts` + `hooks/use-url-sync.ts` + `hooks/use-exam-personal.ts` + `app/page.tsx`)**：消除清空城市/重置学历/清空专业时的粘性旧值回退，引入双工作台同步水位线（`JOBS_UNIFIED_SYNC_AT` / `EXAMS_UNIFIED_SYNC_AT` + `subscribeStore` 跨标签页实时监听），支持老用户在 `/` 与 `/exams` 间双向同步修改与清空（且绝不覆盖 URL 分享深链及考编专属户籍/政治面貌/出生年份字段）。
+  3. **冷启动零布局跳变打磨 (`hooks/use-job-snapshot.ts` + `app/page.tsx`)**：`/first-screen.json` 到达后无需苦等 `/jobs.json` 即刻激活首屏预览与城市计数胶囊（`serverFacets.cities`），且冷启动预览统一走 `groupJobs` + `GroupedResults` 合并渲染，消除全量分片就绪时的列表坍缩与胶囊宽度跳动。
+- **验证结果**：`audit_css_usage.mjs`（719 类 `0` 死类）、`oxlint`（164 文件 `0 warnings / 0 errors`）、`tsc --noEmit`（`0 errors`）、`npm test`（**`219/219`** TS 单测通过）、`unittest`（**`328/328`** Python 单测通过）、`npm run build` 全部通过。
+
 ## 2026-11-14 企业求职「最新发布」防 ATS 静默刷榜重构（方案 1：锁死真实首发日 + 实质扩招提权 + 同日入库破平局）
 
 按用户确认的 **方案 1** 彻底解决北森 Zhiye（如 `hisense-campus` / `hisense-social` / `qilu-pharma-social`）及海尔门户每日将全量在招岗位 `PostDate` 静默刷新为当天日期、叠加 `id` 十六进制字典序平局导致大厂陈旧岗位长期霸榜 #1 的问题：

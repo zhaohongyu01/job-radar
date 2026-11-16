@@ -33,7 +33,7 @@ export function restoreCardDensity(input: unknown): CardDensity {
 /** `legacyRelatedTalks` migrates browsing state saved before that option existed;
  * presets pass false so the same preset yields the same result before and after a reload. */
 export function restoreBrowsing(input: unknown, legacyRelatedTalks = true): { filters: Filters; viewMode: ViewMode; groupCompanies: boolean } {
-  const result = { filters: { ...defaultFilters }, viewMode: 'cards' as ViewMode, groupCompanies: false };
+  const result = { filters: { ...defaultFilters }, viewMode: 'cards' as ViewMode, groupCompanies: true };
   if (!input || typeof input !== 'object' || Array.isArray(input)) return result;
   const value = input as Record<string, unknown>;
   if (typeof value.groupCompanies === 'boolean') result.groupCompanies = value.groupCompanies;
@@ -68,12 +68,14 @@ export function restoreBrowsing(input: unknown, legacyRelatedTalks = true): { fi
   return result;
 }
 
-export function parseUrlState(search: string): { filters?: Partial<Filters>; jobId?: string; employerId?: string; page?: number } {
+export function parseUrlState(search: string): { filters?: Partial<Filters>; jobId?: string; employerId?: string; page?: number; groupCompanies?: boolean } {
   if (!search) return {};
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  const result: { filters?: Partial<Filters>; jobId?: string; employerId?: string; page?: number } = {};
+  const result: { filters?: Partial<Filters>; jobId?: string; employerId?: string; page?: number; groupCompanies?: boolean } = {};
   const page = Number(params.get('page'));
   if (Number.isSafeInteger(page) && page > 1 && page <= 10000) result.page = page;
+  const groupParam = params.get('group');
+  if (groupParam === '1' || groupParam === '0') result.groupCompanies = groupParam === '1';
   const employerId = params.get('employer');
   if (employerId) { try { result.employerId = employerFromId(employerId).id; } catch { /* Invalid shared identity is ignored. */ } }
 
@@ -82,7 +84,7 @@ export function parseUrlState(search: string): { filters?: Partial<Filters>; job
     result.jobId = jobId;
   }
 
-  const known = ['f', 'q', 'city', 'cities', 'year', ...Object.keys(ENUMS), ...BOOLEANS, ...TEXT];
+  const known = ['f', 'q', 'city', 'cities', 'year', 'group', ...Object.keys(ENUMS), ...BOOLEANS, ...TEXT];
   if (!result.jobId && !result.employerId && !known.some((key) => params.has(key))) return result;
   // A shared URL is a complete snapshot of conditions, not a patch to this device.
   const fields: Record<string, unknown> = { ...defaultFilters };
@@ -104,7 +106,13 @@ export function parseUrlState(search: string): { filters?: Partial<Filters>; job
   return result;
 }
 
-export function formatUrlQuery(filters: Filters, jobId?: string | null, employerId?: string | null, page = 1): string {
+export function formatUrlQuery(
+  filters: Filters,
+  jobId?: string | null,
+  employerId?: string | null,
+  page = 1,
+  groupCompanies?: boolean,
+): string {
   const params = new URLSearchParams({ f: '1' });
   const normalized = restoreBrowsing({ filters: { ...defaultFilters, ...filters } }).filters;
   if (jobId) params.set('job', jobId);
@@ -120,6 +128,7 @@ export function formatUrlQuery(filters: Filters, jobId?: string | null, employer
   for (const key of BOOLEANS) if (normalized[key] !== defaultFilters[key]) params.set(key, normalized[key] ? '1' : '0');
   for (const key of TEXT) if (normalized[key]) params.set(key === 'query' ? 'q' : key, normalized[key]!);
   if (normalized.year !== defaultFilters.year) params.set('year', normalized.year);
+  if (groupCompanies === false) params.set('group', '0');
   if (Number.isSafeInteger(page) && page > 1) params.set('page', String(page));
   return `?${params.toString()}`;
 }

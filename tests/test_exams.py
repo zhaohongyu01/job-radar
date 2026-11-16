@@ -34,6 +34,8 @@ from scripts.parse_exam_positions import (
     infer_bianzhi_types,
     infer_exam_category,
     infer_notice_role,
+    is_valid_exam_position_name,
+    normalize_exam_attachment_url,
     parse_exam_attachment_bytes,
     parse_exam_table_grid,
     valid_prose_position_name,
@@ -774,6 +776,90 @@ class ExamParserTests(unittest.TestCase):
             self.assertEqual(len(seeded[0].get("positions") or []), 1)
             self.assertEqual(len(seeded[0].get("exam_positions") or []), 1)
             self.assertEqual(seeded[0]["positions"][0]["position_name"], "综合管理岗")
+
+    def test_p1_attachment_unwrap_noise_guards_legacy_doc_and_taian_sibling_merge(self):
+        import base64
+        import urllib.parse
+
+        # 1. SDEI externalLink JWT unwrap (preserving single-unquoted %2F inside fileUrl) + /resource/srst/att/ rewrite + icon junk removal
+        raw_target = "https://www.zhifu.gov.cn/api-gateway/jpaas-jags-server/interface/gateway?fileUrl=a%2Fb.xlsx"
+        jwt_payload = base64.urlsafe_b64encode(json.dumps(urllib.parse.quote(raw_target, safe="")).encode("utf-8")).decode("ascii").rstrip("=")
+        wrapped = f"https://school.gxjy.sdei.edu.cn/sdu/externalLink?target=eyJhbGciOiJIUzI1NiJ9.{jwt_payload}.sig"
+        self.assertEqual(normalize_exam_attachment_url(wrapped), raw_target)
+        self.assertEqual(
+            normalize_exam_attachment_url("https://school.gxjy.sdei.edu.cn/resource/srst/att/202611/pos.xlsx"),
+            "http://hrss.shandong.gov.cn/resource/srst/att/202611/pos.xlsx",
+        )
+        cleaned_atts = clean_exam_attachments(
+            [
+                {"title": "icon_pdf.gif", "url": "http://hrss.shandong.gov.cn/ueditor/dialogs/attachment/fileTypeImages/icon_pdf.gif"},
+                {"title": "附件1：岗位汇总表.xlsx", "url": wrapped},
+            ]
+        )
+        self.assertEqual(len(cleaned_atts), 1)
+        self.assertEqual(cleaned_atts[0]["url"], raw_target)
+
+        # 2. Plan-reduction / publicity / score notices never emit recruitment positions, and numeric/header fragments are rejected
+        self.assertFalse(is_valid_exam_position_name("11"))
+        self.assertFalse(is_valid_exam_position_name("序号"))
+        self.assertFalse(is_valid_exam_position_name("类别"))
+        reduction_enriched = enrich_exam_record(
+            {
+                "id": "exam-reduce-1",
+                "title": "关于核减2026年某市事业单位公开招聘部分岗位计划的公告",
+                "body": "核减综合管理岗位计划2人。",
+                "positions": [{"name": "综合管理岗", "count": 2}, {"name": "1", "count": 1}],
+                "published_at": "2026-11-10",
+            },
+            today_str="2026-11-12",
+        )
+        self.assertEqual(reduction_enriched["positions"], [])
+
+        # 3. Legacy binary Word 97-2003 .doc UTF-16LE fallback inside parse_exam_attachment_bytes
+        doc_utf16 = (
+            "岗位名称\t招聘人数\t学历要求\t专业要求\n"
+            "临床医师岗\t2\t硕士研究生\t临床医学\n"
+        ).encode("utf-16le")
+        fake_ole2_doc = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64 + doc_utf16
+        doc_rows = parse_exam_attachment_bytes(
+            fake_ole2_doc,
+            exam_id="exam-doc-1",
+            default_employer="某市人民医院",
+            filename="岗位汇总表.doc",
+        )
+        self.assertEqual(len(doc_rows), 1)
+        self.assertEqual(doc_rows[0]["position_name"], "临床医师岗")
+        self.assertEqual(doc_rows[0]["recruit_count"], 2)
+
+        # 4. Taian civil service announcement + position-table sibling merge despite word-order difference
+        taian_by_url = {
+            "http://www.tadzzzb.gov.cn/art/ann.html": {
+                "id": "ta-ann",
+                "source_id": "sd-16cities-gwy",
+                "source_city": "泰安",
+                "title": "2027年度泰安市各级机关考试录用公务员公告",
+                "published_at": "2026-11-05",
+                "source_url": "http://www.tadzzzb.gov.cn/art/ann.html",
+                "attachments": [],
+                "links": [],
+            },
+            "http://www.tadzzzb.gov.cn/art/pos.html": {
+                "id": "ta-pos",
+                "source_id": "sd-16cities-gwy",
+                "source_city": "泰安",
+                "title": "2027年度泰安市各级机关公务员招录职位表",
+                "published_at": "2026-11-05",
+                "source_url": "http://www.tadzzzb.gov.cn/art/pos.html",
+                "attachments": [{"title": "泰安市职位表.xls", "url": "http://www.tadzzzb.gov.cn/pos.xls"}],
+                "exam_positions": [{"row_id": "ta-r1", "position_name": "一级科员", "recruit_count": 3}],
+            },
+        }
+        merge_sibling_position_table_entries(taian_by_url)
+        merged_taian = list(taian_by_url.values())
+        self.assertEqual(len(merged_taian), 1)
+        self.assertEqual(merged_taian[0]["id"], "ta-ann")
+        self.assertEqual(len(merged_taian[0]["attachments"]), 1)
+        self.assertEqual(len(merged_taian[0]["exam_positions"]), 1)
 
 
 if __name__ == "__main__":

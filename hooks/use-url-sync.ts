@@ -18,6 +18,15 @@ import {
 } from '@/lib/browsing';
 import type { CardDensity, ViewMode } from '@/lib/browsing';
 import { personalViewFilters } from '@/lib/workspace';
+import { subscribeStore } from '@/lib/local-store';
+import {
+  readUnifiedProfile,
+  readWorkspaceUnifiedSync,
+  recordWorkspaceUnifiedSync,
+  shouldApplyUnifiedSync,
+  UNIFIED_PROFILE_STORAGE,
+  unifiedToJobFiltersSyncPatch,
+} from '@/lib/unified-profile';
 import { report } from '@/lib/rum';
 
 export const BROWSING_STORAGE = 'job-radar-browsing-v1';
@@ -58,7 +67,7 @@ export function useUrlSync({
   const [pageSize, setPageSize] = useState(20);
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [cardDensity, setCardDensity] = useState<CardDensity>('standard');
-  const [groupCompanies, setGroupCompanies] = useState(false);
+  const [groupCompanies, setGroupCompanies] = useState(true);
   const [now, setNow] = useState(0);
   const [dayKey, setDayKey] = useState(0);
 
@@ -136,14 +145,23 @@ export function useUrlSync({
       const urlState = parseUrlState(window.location.search);
       selectEmployerId(urlState.employerId || null);
       setLinkedJobId(urlState.jobId || null);
-      setFilters(
-        urlState.filters
-          ? restoreBrowsing({ filters: urlState.filters }).filters
-          : restored.filters,
-      );
+      let initialFilters = urlState.filters
+        ? restoreBrowsing({ filters: urlState.filters }).filters
+        : restored.filters;
+      if (!urlState.filters) {
+        const unified = readUnifiedProfile();
+        const lastSync = readWorkspaceUnifiedSync('jobs');
+        if (shouldApplyUnifiedSync(unified, lastSync)) {
+          initialFilters = restoreBrowsing({
+            filters: { ...initialFilters, ...unifiedToJobFiltersSyncPatch(unified) },
+          }).filters;
+          recordWorkspaceUnifiedSync('jobs', unified.updatedAt);
+        }
+      }
+      setFilters(initialFilters);
       if (urlState.page) setPage(urlState.page);
       setViewMode(restored.viewMode);
-      setGroupCompanies(restored.groupCompanies);
+      setGroupCompanies(urlState.groupCompanies ?? restored.groupCompanies);
       try {
         const records = validatePersonal(JSON.parse(localStorage.getItem(STORAGE) || '{}'));
         setPersonal(records);
@@ -179,13 +197,13 @@ export function useUrlSync({
 
   useEffect(() => {
     if (!ready || typeof window === 'undefined') return;
-    const newQuery = formatUrlQuery(filters, linkedJobId, requestedEmployerId, page);
+    const newQuery = formatUrlQuery(filters, linkedJobId, requestedEmployerId, page, groupCompanies);
     const currentSearch = window.location.search;
     if (currentSearch !== newQuery) {
       const newUrl = `${window.location.pathname}${newQuery}${window.location.hash}`;
       window.history.replaceState({ ...window.history.state, jobId: linkedJobId }, '', newUrl);
     }
-  }, [ready, filters, linkedJobId, requestedEmployerId, page]);
+  }, [ready, filters, linkedJobId, requestedEmployerId, page, groupCompanies]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -202,6 +220,9 @@ export function useUrlSync({
           ? restoreBrowsing({ filters: urlState.filters }).filters
           : { ...defaultFilters },
       );
+      if (typeof urlState.groupCompanies === 'boolean') {
+        setGroupCompanies(urlState.groupCompanies);
+      }
       setPage(urlState.page || 1);
     };
     window.addEventListener('popstate', onPopState);
@@ -226,6 +247,21 @@ export function useUrlSync({
       }
     }
   }, [ready, filters, viewMode, groupCompanies, onNotice]);
+
+  useEffect(() => {
+    if (!ready) return;
+    return subscribeStore(UNIFIED_PROFILE_STORAGE, () => {
+      const unified = readUnifiedProfile();
+      const lastSync = readWorkspaceUnifiedSync('jobs');
+      if (!shouldApplyUnifiedSync(unified, lastSync)) return;
+      recordWorkspaceUnifiedSync('jobs', unified.updatedAt);
+      setFilters((prev) =>
+        prev.view === 'all'
+          ? restoreBrowsing({ filters: { ...prev, ...unifiedToJobFiltersSyncPatch(unified) } }).filters
+          : prev,
+      );
+    });
+  }, [ready]);
 
   const change = useCallback(<K extends keyof Filters>(key: K, value: Filters[K]) => {
     setFilters((f) => {

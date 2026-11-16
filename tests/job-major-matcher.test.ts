@@ -376,3 +376,52 @@ await test('broad mega-umbrellas on single-role JDs and insurance sales roles do
     true,
   );
 });
+
+await test('P1 major precision: per-language isolation, HR 招聘 guard, MOE codes, professional master suffixes, 临床医学, and short-stem guard', () => {
+  // 1. Per-language isolation: 日语 must NOT match 英语/俄语 jobs, while 外语类/小语种 umbrella matches upward
+  const englishJob = fixtureJob({ title: '某外贸企业 · 英语翻译', company: '某外贸企业', majors: ['英语', '商务英语'] });
+  const japaneseJob = fixtureJob({ title: '某日企 · 日语担当', company: '某日企', majors: ['日语'] });
+  const russianRoleOnly = fixtureJob({ title: '某能源企业 · 俄语商务经理', company: '某能源企业' });
+  const umbrellaForeignJob = fixtureJob({ title: '某跨境电商 · 海外管培生', company: '某跨境电商', majors: ['外语类', '小语种'] });
+
+  assert.equal(jobMatchesMajor(japaneseJob, '日语'), true);
+  assert.equal(jobMatchesMajor(englishJob, '日语'), false);
+  assert.equal(jobMatchesMajor(russianRoleOnly, '日语'), false);
+  assert.equal(jobMatchesMajor(japaneseJob, '英语'), false);
+  assert.equal(jobMatchesMajor(umbrellaForeignJob, '日语'), true);
+  assert.equal(jobMatchesMajor(umbrellaForeignJob, '俄语'), true);
+
+  // 2. HR bare "招聘" guard: generic recruitment titles must NOT trigger HR role fallback
+  const genericCampus = fixtureJob({ title: '某智能装备有限公司2027校园招聘', company: '某智能装备有限公司' });
+  const realHrRecruiter = fixtureJob({ title: '某智能装备有限公司 · 招聘专员', company: '某智能装备有限公司' });
+  assert.equal(jobMatchesMajor(genericCampus, '人力资源管理'), false);
+  assert.equal(jobMatchesMajor(realHrRecruiter, '人力资源管理'), true);
+
+  // 3. MOE 4-6 digit discipline codes & professional master's suffixes
+  const moeCodedJob = fixtureJob({
+    title: '某研究所2027公开招聘',
+    company: '某研究所',
+    majors: ['0812计算机科学与技术', '020204金融学'],
+  });
+  assert.equal(jobMatchesMajor(moeCodedJob, '081200计算机科学与技术'), true);
+  assert.equal(jobMatchesMajor(moeCodedJob, '金融硕士'), true);
+
+  const mpaccTarget = fixtureJob({ title: '某国企 · 财务审计岗', company: '某国企', majors: ['会计学', '审计学'] });
+  const eieTarget = fixtureJob({ title: '某通信公司 · 硬件研发岗', company: '某通信公司', majors: ['通信工程', '电子信息工程'] });
+  assert.equal(jobMatchesMajor(mpaccTarget, '会计硕士'), true);
+  assert.equal(jobMatchesMajor(eieTarget, '电子信息硕士'), true);
+
+  // 4. 临床医学 profile & <2-char stem guard ("化学" / "理学" must not strip "学" into 1-char "化" / "理")
+  const hospitalSurgeon = fixtureJob({
+    title: '某三甲医院 · 外科医师',
+    company: '某三甲医院',
+    majors: ['临床医学', '外科学'],
+  });
+  assert.equal(jobMatchesMajor(hospitalSurgeon, '临床医学'), true);
+  assert.equal(jobMatchesMajor(englishJob, '临床医学'), false);
+
+  const unrelatedCultureRole = fixtureJob({ title: '某传媒公司 · 企业文化专员', company: '某传媒公司' });
+  const unrelatedAdminRole = fixtureJob({ title: '某制造公司 · 总经理助理', company: '某制造公司' });
+  assert.equal(jobMatchesMajor(unrelatedCultureRole, '化学'), false);
+  assert.equal(jobMatchesMajor(unrelatedAdminRole, '理学'), false);
+});

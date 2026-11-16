@@ -336,6 +336,82 @@ class SqliteAndFeedsTests(unittest.TestCase):
                 ],
             )
 
+    def test_expired_test_and_non_recruitment_notices_are_excluded_from_first_screen_and_feeds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pub = Path(tmp) / 'public'
+            self._seed_public_dir(pub)
+            shard_path = pub / 'job-assets' / 'browse-000.json'
+            shard = json.loads(shard_path.read_text(encoding='utf-8'))
+            shard['jobs'].extend(
+                [
+                    {
+                        'id': 'expired-june',
+                        'title': '济南热电集团2026年校园招聘简章',
+                        'company': '济南热电集团',
+                        'cities': ['济南'],
+                        'kind': '招聘公告',
+                        'types': ['校招'],
+                        'sectors': ['国企/央企'],
+                        'education': '本科',
+                        'published_at': '2026-06-22',
+                        'deadline': '2026-06-22T23:59:59+08:00',
+                        'listing_status': 'active',
+                        'recent_change': {
+                            'type': 'positions_updated',
+                            'label': '岗位表更新',
+                            'date': '2026-11-11',
+                            'detail': '岗位需求变动为 12 个职位',
+                        },
+                    },
+                    {
+                        'id': 'taiping-test',
+                        'source_id': 'taiping-social',
+                        'title': '测试岗位（仅供测试使用）',
+                        'company': '测试专业公司（仅供测试使用）',
+                        'cities': ['济南'],
+                        'kind': '具体岗位',
+                        'types': ['社招'],
+                        'published_at': '2026-11-11',
+                        'listing_status': 'active',
+                    },
+                ]
+            )
+            shard_path.write_text(json.dumps(shard, ensure_ascii=False), encoding='utf-8')
+
+            exams_path = pub / 'exams.json'
+            exams_doc = json.loads(exams_path.read_text(encoding='utf-8'))
+            exams_doc['exams'].append(
+                {
+                    'id': 'exam-cancel-1',
+                    'title': '2026年某市事业单位公开招聘核减和取消岗位公告',
+                    'organizer': '某市人社局',
+                    'province': '山东',
+                    'cities': ['济南'],
+                    'exam_category': 'public_institution',
+                    'notice_role': '核减取消',
+                    'stage': 'ended',
+                    'published_at': '2026-11-11',
+                    'schedule': {},
+                }
+            )
+            exams_path.write_text(json.dumps(exams_doc, ensure_ascii=False), encoding='utf-8')
+
+            build_radar_sqlite(pub, output_sqlite=None, first_screen_only=True)
+            fs = json.loads((pub / 'first-screen.json').read_text(encoding='utf-8'))
+            fs_ids = [j['id'] for j in fs['jobs']]
+            self.assertNotIn('expired-june', fs_ids)
+            self.assertNotIn('taiping-test', fs_ids)
+            self.assertEqual(fs['facets']['cities']['济南'], 1)
+
+            res = build_feeds(pub, site_origin='https://example.com')
+            self.assertEqual(res['exam_rss_items'], 1)
+            self.assertEqual(res['job_rss_items'], 2)
+            exam_xml = (pub / 'feeds' / 'exams-shandong.xml').read_text(encoding='utf-8')
+            job_xml = (pub / 'feeds' / 'jobs-latest.xml').read_text(encoding='utf-8')
+            self.assertNotIn('exam-cancel-1', exam_xml)
+            self.assertNotIn('expired-june', job_xml)
+            self.assertNotIn('taiping-test', job_xml)
+
 
 if __name__ == '__main__':
     unittest.main()

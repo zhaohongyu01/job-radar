@@ -1280,3 +1280,77 @@ void test('countActiveFilters and resetFilters share a single 17-item filter con
   assert.equal(reset.sort, 'newest');
   assert.equal(countActiveFilters(reset), 1);
 });
+
+void test('annual W/万 salaries normalize to monthly without inflating 12x, HK branches stay overseas, and education matches downward', () => {
+  const now = Date.parse('2026-11-14T10:00:00+08:00');
+  const annualW = parseSalaryRange({
+    ...job,
+    title: '机械研发工程师',
+    excerpt: '薪资：15W-50W',
+    body: '薪资待遇：15W-50W',
+  });
+  assert.ok(annualW);
+  assert.equal(annualW.min, 12500);
+  assert.equal(annualW.max, 41667);
+
+  const annualLowW = parseSalaryRange({
+    ...job,
+    title: '行政专员',
+    excerpt: '薪资：8W-12W',
+    body: '薪资：8W-12W',
+  });
+  assert.ok(annualLowW);
+  assert.equal(annualLowW.min, 6667);
+  assert.equal(annualLowW.max, 10000);
+
+  const monthlyWan = parseSalaryRange({
+    ...job,
+    title: '架构师',
+    excerpt: '薪资：1.5万-2.5万',
+    body: '月薪1.5万-2.5万',
+  });
+  assert.ok(monthlyWan);
+  assert.equal(monthlyWan.min, 15000);
+  assert.equal(monthlyWan.max, 25000);
+
+  const healedFacts = parseSalaryRange({
+    ...job,
+    title: '高级顾问',
+    excerpt: '薪资：15W-30W',
+    listing_facts: { salary: { min: 150000, max: 300000 } } as unknown as Job['listing_facts'],
+  });
+  assert.ok(healedFacts);
+  assert.equal(healedFacts.min, 12500);
+  assert.equal(healedFacts.max, 25000);
+
+  const hkBranchJob: Job = {
+    ...job,
+    id: 'hk-branch',
+    company: '广发银行香港分行',
+    title: '财富管理部副总经理',
+    cities: [],
+    domestic_status: 'domestic',
+  };
+  const testPlaceholderJob: Job = {
+    ...job,
+    id: 'taiping-test',
+    source_id: 'taiping-social',
+    company: '测试专业公司（仅供测试使用）',
+    title: '测试岗位（仅供测试使用）',
+    cities: ['济南'],
+  };
+  assert.equal(filterJobs([hkBranchJob, testPlaceholderJob], { ...defaultFilters, city: '全部城市', locationScope: 'unknown' }, {}, null, now).length, 0);
+
+  const eduPool: Job[] = [
+    { ...job, id: 'edu-zhuanke', education: '专科生毕业', cities: ['济南'] },
+    { ...job, id: 'edu-buxian', education: '学历不限', cities: ['济南'] },
+    { ...job, id: 'edu-benke-up', education: '本科及以上', cities: ['济南'] },
+    { ...job, id: 'edu-shuoshi', education: '硕士研究生', cities: ['济南'] },
+    { ...job, id: 'edu-boshi', education: '博士研究生', cities: ['济南'] },
+  ];
+  const dazhuanIds = filterJobs(eduPool, { ...defaultFilters, education: '大专' }, {}, null, now).map((j) => j.id);
+  assert.deepEqual(dazhuanIds, ['edu-buxian', 'edu-zhuanke']);
+
+  const masterIds = filterJobs(eduPool, { ...defaultFilters, education: '硕士' }, {}, null, now).map((j) => j.id);
+  assert.deepEqual(masterIds, ['edu-benke-up', 'edu-buxian', 'edu-shuoshi']);
+});

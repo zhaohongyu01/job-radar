@@ -13,8 +13,9 @@ TITLE_EMPLOYER_PAT = re.compile(
     r'(?:'
     r'(?:有限责任公司|股份有限公司|有限公司)(?:[\u4e00-\u9fff0-9（）()]{2,24}?(?:分公司|支公司|分行|支行|中心|总厂|厂|研究所|研究院|设计院|分院|医院|学校|经营部|事业部|分所|实验室|局|处|站|部))?'
     r'|(?:集团|总)公司(?:[\u4e00-\u9fff0-9（）()]{2,20}?(?:研究所|研究院|设计院|分公司|医院|中心|厂|院|所))?'
+    r'|(?<!本)(?<!各)(?<!某)(?<!企业)(?<!公司)(?<=[\u4e00-\u9fff]{2})集团'
     r'|(?:会计师|律师|税务师)事务所(?:[（(][\u4e00-\u9fff]{2,15}[）)])?(?:[\u4e00-\u9fff]{2,12}分所)?'
-    r'|[\u4e00-\u9fff]{2,24}(?:银行(?:股份有限公司)?(?:[\u4e00-\u9fff]{0,15}(?:分行|支行|总行|中心|信用卡中心|软件中心))?|大学|学院|党校|中学|附属中学分校|学校|医院|研究院|研究所|设计院|设计研究院|科学研究院|科学院|实验室|开发局|就业局|气象局|地震局|水文局|航道局|海事局|管理局|广播电视台|报社|出版社)(?:[（(][\u4e00-\u9fff0-9]{2,20}[）)])?'
+    r'|(?<=[\u4e00-\u9fff]{2})(?:银行(?:股份有限公司)?(?:[\u4e00-\u9fff]{0,15}(?:分行|支行|总行|中心|信用卡中心|软件中心))?|大学|学院|党校|中学|附属中学分校|学校|医院|研究院|研究所|设计院|设计研究院|科学研究院|科学院|实验室|开发局|就业局|气象局|地震局|水文局|航道局|海事局|管理局|广播电视台|报社|出版社)(?:[（(][\u4e00-\u9fff0-9]{2,20}[）)])?'
     r'))(?=\s|招聘|20\d{2}|校园|社会|春季|秋季|寒假|暑假|高层次|公开|诚聘|选聘|引进|常年|教师|博士|硕士|简章|公告|启事|专场|实习|特别研究助理|[—\-｜|：:]|$)'
 )
 
@@ -101,7 +102,17 @@ def refine_company_facts(job):
             if stem.endswith(title_employer):
                 candidates.add(name)
     replacement = next(iter(candidates)) if len(candidates) == 1 else ''
-    conflict = bool(company and row.get('source_id', '').endswith('-announcements') and not company_matches_announcement(company, title, text))
+    conflict = bool(
+        company and (
+            (row.get('source_id', '').endswith('-announcements') and not company_matches_announcement(company, title, text))
+            or (
+                host_school
+                and company == host_school
+                and row.get('source_id', '').endswith('-talks')
+                and host_school not in title
+            )
+        )
+    )
     if replacement and (not company or conflict) and compact(replacement) != compact(company):
         row['company'] = replacement
         row['company_note'] = '企业名称按公告标题、明确简称或公司简介中的对应关系整理。'

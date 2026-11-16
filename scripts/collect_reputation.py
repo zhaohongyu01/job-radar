@@ -26,8 +26,14 @@ ORIGIN = 'https://www.nowcoder.com'
 CHANNELS = ('discussion', 'interview')
 NORMALIZER_VERSION = 4
 PROMO = re.compile(r'内推码|推荐码|加群|扫码|课程推广|\breferral\b|内推链接', re.I)
-FIRSTHAND = re.compile(r'(?:我|本人)(?:曾|之前)?在.{0,30}(?:工作|上班|实习|任职|待过|待了)|实习期间|工作了|干过|待过|离职(?:了|前|后)')
-EXPERIENCE_TITLE = re.compile(r'实习体验|工作体验|工作感悟|入职体验|就职体验|离职感想')
+FIRSTHAND = re.compile(
+    r'(?:我|本人)(?:曾|之前|目前|现在)?(?:在|入职|加入|来到).{0,30}(?:工作|上班|实习|任职|待过|待了|呆了|干过|干了|[一二三四五六七八九十两半\d]+\s*(?:年|个月))|'
+    r'(?<!想)(?<!准备)(?<!考虑)(?<!尚未)(?<!还没)(?:入职|加入)[\u4e00-\u9fffA-Za-z0-9（）()]{2,24}.{0,10}(?:工作|上班|实习|任职|待了|呆了|干了|[一二三四五六七八九十两半\d]+\s*(?:年|个月))|'
+    r'实习期间|工作了|干过|待过|离职(?:了|前|后)|在职(?:员工|期间|[一二三四五六七八九十两半\d]+\s*(?:年|个月))|老员工'
+)
+EXPERIENCE_TITLE = re.compile(
+    r'实习体验|工作体验|工作感悟|入职体验|就职体验|离职感想|工作感受|在职体验|在职感受|工作日常|实习总结|实习感受|转正体验'
+)
 QUESTION = re.compile(r'[?？]|有没有|有无|求问|求助|有人了解|想问|怎么样|是否|[吗么]$')
 RULES = {
     'pay': (r'待遇不错|福利还不错|待遇很好|按时发薪|薪资待遇不错|薪资很有竞争力|福利很好', r'拖欠工资|降薪|工资偏低|薪资偏低|福利几乎为0|不发工资|奖金没发|没有加班费'),
@@ -115,13 +121,66 @@ def attribution_for(title, text, names):
     if re.search(r'前公司|上家公司|相比|比起|对比|跳槽|离职后|入职慢脚', combined):
         return 'uncertain'
     aliases = [name for name in names if len(name) >= 2]
-    if EXPERIENCE_TITLE.search(title) and any(name in title for name in aliases) and not QUESTION.search(title):
+    if (
+        not QUESTION.search(title)
+        and any(name in title for name in aliases)
+        and (
+            EXPERIENCE_TITLE.search(title)
+            or re.search(r'工作强度|公司氛围|公司福利|成长空间|真实体验|真实感受|呆了|待了|在职|老员工', title)
+        )
+    ):
         return 'target'
     for name in aliases:
         target = re.escape(name)
-        if re.search(r'(?:我|本人)(?:曾|之前)?在[“\" ]*' + target + r'.{0,12}(?:工作|上班|实习|任职|待过|待了)', text):
+        if re.search(
+            r'(?:(?:我|本人)(?:曾|之前|目前|现在)?(?:在|入职|来|来到|加入)|(?:^|[，。！？!?；;\s])(?:入职|加入))[“\" ]*'
+            + target
+            + r'[^，。！？!?；;\n]{0,14}(?:工作|上班|实习|任职|待过|待了|呆了|干了|干过|在职|[一二三四五六七八九十两半\d]+\s*(?:年|个月))',
+            text,
+        ):
+            return 'target'
+        if re.search(
+            r'(?:作为|身为)[“\" ]*' + target + r'[^，。！？!?；;\n]{0,10}(?:员工|老员工|在职员工|内部员工|实习生|研发|开发|算法|测试)',
+            text,
+        ):
+            return 'target'
+        if re.search(
+            target + r'[^，。！？!?；;\n]{0,6}(?:在职员工|内部员工|老员工)(?:一枚|来答|说两句|客观评价)?',
+            text,
+        ):
             return 'target'
     return 'uncertain'
+
+
+def extract_platform_score(info, basic, enterprise_id, collected_at):
+    for container in (info, basic):
+        if not isinstance(container, dict):
+            continue
+        for key in ('score', 'avgScore', 'companyScore', 'comprehensiveScore', 'totalScore'):
+            raw_val = container.get(key)
+            if isinstance(raw_val, bool) or raw_val is None:
+                continue
+            try:
+                val = float(raw_val)
+            except (TypeError, ValueError):
+                continue
+            if not (0 < val <= 100):
+                continue
+            scale = 5 if val <= 5 else (10 if val <= 10 else 100)
+            samples = None
+            for skey in ('evaluateCount', 'scoreCount', 'commentCount', 'reviewCount'):
+                sc = container.get(skey)
+                if isinstance(sc, int) and not isinstance(sc, bool) and sc >= 0:
+                    samples = sc
+                    break
+            return {
+                'value': round(val, 1),
+                'scale': scale,
+                'samples': samples,
+                'checked_at': collected_at,
+                'url': f'{ORIGIN}/enterprise/{enterprise_id}/discussion',
+            }
+    return None
 
 
 def parse_page(document, enterprise_id, channel, collected_at, now=None):
@@ -166,6 +225,9 @@ def parse_page(document, enterprise_id, channel, collected_at, now=None):
             exclude('restricted_content')
             continue
         text, title = redact(clean(content.get('content'))), redact(clean(content.get('title')))
+        if variant == 'momentData' and not title and text:
+            first_clause = re.split(r'[。！？!?\n；;]', text, maxsplit=1)[0].strip()
+            title = (first_clause[:36] + ('…' if len(first_clause) > 36 else '')) or text[:36]
         if not text or not title or content.get('recommendAd') or content.get('staffAnswer') or PROMO.search(title + text) or re.search(r'内推|网申|投递入口|招聘开启|招人|捞人', title):
             exclude('empty_or_promotional')
             continue
@@ -197,11 +259,13 @@ def parse_page(document, enterprise_id, channel, collected_at, now=None):
             'contributor': hashlib.sha256(('nowcoder:' + str(author)).encode()).hexdigest()[:24] if author else None,
             'fingerprint': hashlib.sha256(re.sub(r'\W+', '', text).encode()).hexdigest(), 'signals': assessments,
         })
+    platform_score = extract_platform_score(info, basic, enterprise_id, collected_at)
     return {
         'id': f'nowcoder:{enterprise_id}', 'provider': 'nowcoder', 'names': names,
         'name': clean(info.get('simpleName') or info.get('companyName')), 'legal_name': clean(info.get('companyName')),
         'source_url': f'{ORIGIN}/enterprise/{enterprise_id}/{channel}', 'records': records,
         'channel': channel, 'excluded': excluded, 'exclusion_counts': exclusion_counts, 'public_rows': len(rows), 'partial': True,
+        **({'platform_score': platform_score} if platform_score else {}),
     }
 
 
@@ -430,6 +494,8 @@ def collect(config, state, state_path, budget, limit, force=False):
                     'second_page_mode': page.get('second_page_mode'),
                     'first_page_mode': page['first_page_mode'],
                 })
+                if page.get('platform_score'):
+                    entry['platform_score'] = page['platform_score']
                 channels[channel] = page
                 successes += 1
                 consecutive_blocks = 0

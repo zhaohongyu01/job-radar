@@ -12,6 +12,10 @@ on:
           - nas
           - cloud
         default: nas
+      force_refresh:
+        description: '忽略 48 小时缓存强制重抓（用于解析规则升级后立即重算）'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -89,13 +93,15 @@ jobs:
         id: collector
         env:
           NO_PROXY: '*'
+          FORCE_REFRESH: ${{ inputs.force_refresh && '1' || '' }}
         run: |
           export no_proxy="$NO_PROXY"
           timeout 200s "$NAS_PYTHON" scripts/collect_reputation.py \
             --budget 180 --limit 30 \
             --queue data/reputation/queue.json \
             --state data/reputation/state.json \
-            --report data/reputation/report.json
+            --report data/reputation/report.json \
+            ${FORCE_REFRESH:+--force}
       - name: Upload collected reputation state
         timeout-minutes: 3
         if: ${{ always() && hashFiles('data/reputation/state.json') != '' }}
@@ -126,12 +132,15 @@ jobs:
           name: reputation-input
           path: data/reputation
       - name: Collect public employer pages within separate time budget
+        env:
+          FORCE_REFRESH: ${{ inputs.force_refresh && '1' || '' }}
         run: |
           timeout 195s python scripts/collect_reputation.py \
             --budget 180 --limit 30 \
             --queue data/reputation/queue.json \
             --state data/reputation/state.json \
-            --report data/reputation/report.json
+            --report data/reputation/report.json \
+            ${FORCE_REFRESH:+--force}
       - uses: actions/upload-artifact@v7
         if: ${{ always() && hashFiles('data/reputation/state.json') != '' }}
         with:

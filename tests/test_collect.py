@@ -1903,5 +1903,82 @@ class CollectionTests(unittest.TestCase):
             # Should have run despite being in an idle rotation group because it was failed!
             self.assertEqual(len(positions_called), 1)
 
+    def test_rolling_deadline_stub_backfill_and_late_repost_do_not_fake_boost(self):
+        bysjy_old = {
+            'id': 'bysjy_1',
+            'title': '山东万豪生态农业集团有限公司 · 职能管培生',
+            'company': '山东万豪生态农业集团有限公司',
+            'source_name': '山东交通学院 · 在线直聘岗位',
+            'published_at': '2026-10-01',
+            'deadline': '2027-11-13',
+            'cities': ['济南'],
+            'body': '招聘单位：山东万豪生态农业集团有限公司\n岗位名称：职能管培生',
+        }
+        res_b1, _ = c.merge({}, [bysjy_old], '2026-11-13T10:00:00+08:00')
+        bysjy_next = dict(bysjy_old, deadline='2027-11-14')
+        res_b2, _ = c.merge(res_b1, [bysjy_next], '2026-11-14T10:00:00+08:00')
+        self.assertIsNone(res_b2['bysjy_1'].get('recent_change'))
+
+        stub_old = {
+            'id': 'stub_1',
+            'title': '某企业2027校园招聘简章',
+            'company': '某企业有限公司',
+            'source_name': '南开大学就业网',
+            'published_at': '2026-09-10',
+            'cities': [],
+            'position_count': 0,
+            'body': '',
+            'classification_note': '仅核实列表摘要，详情待补抓',
+        }
+        res_s1, _ = c.merge({}, [stub_old], '2026-09-10T10:00:00+08:00')
+        stub_filled = dict(
+            stub_old,
+            cities=['济南'],
+            position_count=2,
+            positions=[
+                {'position_name': '软件研发岗', 'majors': ['计算机科学与技术']},
+                {'position_name': '算法岗', 'majors': ['软件工程']},
+            ],
+            majors=['计算机科学与技术', '软件工程'],
+            body='完整详情正文，工作地点：济南。',
+            classification_note='标签根据公告文字整理；具体岗位资格请核对原文。',
+        )
+        res_s2, _ = c.merge(res_s1, [stub_filled], '2026-11-14T10:00:00+08:00')
+        self.assertEqual(res_s2['stub_1']['recent_change']['label'], '岗位表就绪')
+
+        shrunk = dict(
+            stub_filled,
+            position_count=1,
+            positions=[{'position_name': '软件研发岗', 'majors': ['计算机科学与技术']}],
+        )
+        res_s3, _ = c.merge(res_s2, [shrunk], '2026-11-15T10:00:00+08:00')
+        self.assertEqual(res_s3['stub_1']['recent_change']['label'], '岗位缩减')
+
+        parent_early = {
+            'id': 'p_early',
+            'title': '山东重工集团有限公司2027届校园招聘公告',
+            'company': '山东重工集团有限公司',
+            'source_name': '山东大学就业网',
+            'source_url': 'https://job.sdu.edu.cn/1',
+            'published_at': None,
+            'first_seen_at': '2026-09-05T09:00:00+08:00',
+            'last_verified_at': '2026-11-14T09:00:00+08:00',
+            'kind': '招聘公告',
+            'cities': ['济南'],
+            'body': '山东重工集团有限公司2027届校园招聘正式启动。',
+        }
+        repost_late = dict(
+            parent_early,
+            id='p_late',
+            source_name='齐鲁工业大学就业网',
+            source_url='https://job.qlu.edu.cn/99',
+            published_at='2026-11-13',
+            first_seen_at='2026-11-13T10:00:00+08:00',
+            last_verified_at='2026-11-13T10:00:00+08:00',
+        )
+        deduped = c.deduplicate([parent_early, repost_late])
+        self.assertEqual(len(deduped), 1)
+        self.assertEqual(deduped[0]['published_at'], '2026-09-05')
+
 
 if __name__=='__main__': unittest.main()

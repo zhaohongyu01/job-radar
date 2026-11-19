@@ -3,9 +3,9 @@
 > **适用对象**：后续接手本项目的任何 AI 助手（Claude, ChatGPT, Cursor, Copilot, Antigravity 等）或新开会话。  
 > **使用方法**：接手本项目时，**优先通读本文档**，可直接掌握全部架构设计、数据流、踩坑规避点与验证命令，避免重复排查与设计偏离。
 
-## 2026-11-14 全站深度审计与三阶段臻善升级（P0–P2：企业合并、采集清洗、专业/考编精度、口碑提效与跨端双工同步）
+## 2026-11-16 全站深度审计与三阶段臻善升级（P0–P2 已推送上线验收：`90c25a7` / `a22b60d`）
 
-在完成全站岗位采集、企业合并、搜索筛选、考公考编、企业口碑及首屏架构审计后，按用户批准的三阶段路线图完成全部 **P0 → P1 → P2** 升级与回归测试：
+在完成全站岗位采集、企业合并、搜索筛选、考公考编、企业口碑及首屏架构审计后，按用户批准的三阶段路线图完成全部 **P0 → P1 → P2** 升级、本地多端回归测试、GitHub Actions 4 条流水线跑通及线上生产环境实测验收（提交 `90c25a7` 与 `a22b60d`）：
 - **阶段 P0：数据纯净度与核心展示修正**
   1. **默认开启「合并同企业」与企业名归一化分组 (`lib/browsing.ts` + `hooks/use-url-sync.ts` + `lib/grouping.ts` + `config/employer-brands.json`)**：`restoreBrowsing` 默认 `groupCompanies: true`，支持 `?group=0` URL 深链往返；`groupJobs` 使用 `normalizeCompanyName` 归一化企业全称/括号样式（严格保留分公司/分行、届别与招聘阶段隔离）；扩展 `employer-brands.json` `department_pattern` 覆盖裸部门（`中心|院|所|厂|基地`、`设计院|工程院`、`.+总公司`、测试专业公司等）；`buildGroupRoleItems` 剥离尾部 ATS 编号（如 `(J99881)`），并对泛化简章标题自动展开子岗位胶囊且纳入组内搜索索引。
   2. **冷启动首屏、SQLite 检索与 RSS 订阅净洗 (`scripts/build_radar_sqlite.py` + `scripts/build_feeds.py` + `lib/server/radar-db.ts`)**：从 `first-screen.json`、`facets`、`radar.sqlite` 查询与 `jobs-latest.xml` 彻底剔除已过期、已撤回、纯海外、测试占位（`仅供测试使用`）及误混入的 `sdei-civil-exams` 招考通知；`jobs-latest.xml` `<pubDate>` 对齐真实首发日/实质扩招日，`exams-shandong.xml` 严格限定在招简章/补录/职位表（剔除体检公示与已结束通知）。
@@ -14,12 +14,19 @@
   1. **专业族匹配与学科代码清洗 (`lib/job-major-matcher.ts` + `scripts/parse_positions.py`)**：移除 `hr-management` 中过宽的裸词 `'招聘'`（改为 `'招聘专员'` / `'招聘主管'` 等精确 HR 角色）；将 `foreign-language` 拆分为外语大类与 8 个独立语种画像（`英/日/俄/法/德/西/阿/韩`，互不串语种且向上兼容 `外语类/小语种`）；新增 `临床医学` 画像并扩充工学一级学科词条；支持剥离教育部 4–6 位学科代码前缀（如 `0812计算机科学与技术`）与专硕后缀（`会计硕士`、`电子信息硕士` 等），拦截单字词干（`化学/理学`）误匹配。
   2. **企业法人身份识别与宣讲主办方纠偏 (`lib/employers.ts` + `scripts/employer_identity.py`)**：`resolveEmployer` 扩展识别银行、会计师/律师/税务师事务所、科研院所、医院、高校、广电报社出版社为跨源共享 `name` 作用域（保留内部研发中心为 `source` 作用域）；修复 `TITLE_EMPLOYER_PAT` 双重长度前缀导致 4 字机构名（如 `齐鲁银行`、`浪潮集团`）漏提的问题，并在 `-talks` 通道自动纠偏误填为主办高校名的宣讲企业。
   3. **考编附件解包、城市严格筛选与年龄放宽判定 (`scripts/parse_exam_positions.py` + `scripts/collect_exams.py` + `lib/exams.ts` + `components/exams/exam-filter-sidebar.tsx`)**：新增 `normalize_exam_attachment_url` 自动解包省平台 `externalLink?target=<JWT>` 跳转链接（单次解码保留 `fileUrl` 内层 `%2F`）、修复 `/resource/srst/att/` 与政务网关相对下载路径、净洗 UEditor 文件图标；支持老式二进制 `.doc` UTF-16LE 文本表格兜底解析；拦截核减/公示/成绩通知伪岗位行与纯数字/表头残片；修复泰安等「考试录用公务员公告 + 公务员招录职位表」词序差异合并；修复 `/exams` 选择具体地市（如 `菏泽`）混入 `cities=[]` 全国/省直公告的问题（新增独立 `'山东省直'` 与 `'全国'` 筛选胶囊）；`evaluateExamPositionEligibility` 支持应届硕博年龄放宽条款（如 `35周岁以下，应届硕士、博士放宽到40周岁以下`）精准三态判定。
-  4. **牛客企业口碑无标题动态合成与归属扩容 (`scripts/collect_reputation.py`)**：对无 `title` 的 `momentData` 动态提取首句合成标题，扩充在职自述归属模式（含省主语 `入职XX两年了`、`作为XX在职员工`、体验标题等，严格隔离跳槽对比贴），并接入 SSR 数值评分 `extract_platform_score`。
-- **阶段 P2：高校慢源巡检加速、跨工作台画像真双向同步与冷启动零跳变**
+  4. **牛客企业口碑无标题动态合成与归属扩容 (`scripts/collect_reputation.py` + `.github/workflows/employer-reputation.yml`)**：对无 `title` 的 `momentData` 动态提取首句合成标题，扩充在职自述归属模式（含省主语 `入职XX两年了`、`作为XX在职员工`、体验标题等，严格隔离跳槽对比贴），并接入 SSR 数值评分 `extract_platform_score`；工作流新增 `force_refresh` 手动强制重抓输入（注：综合数值分仍受 `config/reputation-policy.json` 至少 `10` 名近期贡献者且覆盖 `>= 3` 个维度的防噪声门禁保护，样本不足时按策略保持 `score = null`）。
+- **阶段 P2：高校慢源巡检加速、跨工作台画像真双向同步、冷启动零跳变与 SSR Hydration 根治**
   1. **高校慢源 `--head-only` 首屏未变快路 (`scripts/collect.py`)**：在 `--head-only` 巡检非日历通道时，若第 1 页全部公告均已核验入库且标题/发布日/摘要指纹未变、总数未增，安全短路跳过第 2 页请求（削减约 50% 无效列表请求，同时刷新 `head_scan_at` / `last_success_at` 并完整保留历史游标与 `pending` 队列）。
   2. **跨工作台共享画像真双向同步 (`lib/unified-profile.ts` + `hooks/use-url-sync.ts` + `hooks/use-exam-personal.ts` + `app/page.tsx`)**：消除清空城市/重置学历/清空专业时的粘性旧值回退，引入双工作台同步水位线（`JOBS_UNIFIED_SYNC_AT` / `EXAMS_UNIFIED_SYNC_AT` + `subscribeStore` 跨标签页实时监听），支持老用户在 `/` 与 `/exams` 间双向同步修改与清空（且绝不覆盖 URL 分享深链及考编专属户籍/政治面貌/出生年份字段）。
   3. **冷启动零布局跳变打磨 (`hooks/use-job-snapshot.ts` + `app/page.tsx`)**：`/first-screen.json` 到达后无需苦等 `/jobs.json` 即刻激活首屏预览与城市计数胶囊（`serverFacets.cities`），且冷启动预览统一走 `groupJobs` + `GroupedResults` 合并渲染，消除全量分片就绪时的列表坍缩与胶囊宽度跳动。
-- **验证结果**：`audit_css_usage.mjs`（719 类 `0` 死类）、`oxlint`（164 文件 `0 warnings / 0 errors`）、`tsc --noEmit`（`0 errors`）、`npm test`（**`219/219`** TS 单测通过）、`unittest`（**`328/328`** Python 单测通过）、`npm run build` 全部通过。
+  4. **考编工作台 SSR Hydration #418 根治 (`hooks/use-exam-personal.ts` + `components/exam-workspace.tsx` + `tests/smoke_pages.py`)**：将 URL 参数（`window.location.search`）、`localStorage` 与 `Date.now()` 读取从 `useState` 初始化器移至挂载后 `useEffect`（`setTimeout(..., 0)`），并用 `hydrated` 门禁守护 `window.history.replaceState`，彻底消除 `/exams?city=...` 深链与回访用户的 React #418 水合报错；`smoke_pages.py` 新增 `/exams?city=%E8%8F%8F%E6%B3%BD` 双视口门禁。
+- **保守设计边界（防止后续误改）**：
+  - `groupJobs` 严格保持独立法人子公司（如 `海信集团` 与 `海信视像`）、各地分公司/分行、届别与招聘阶段隔离，绝不跨法人强行折叠；
+  - `location_evidence` 为空时保持「地点待核实」，绝不根据企业名称字面猜测工作城市；
+  - 无明确截止日期的社招岗位展示「截止日期待核实」并依赖源站撤回/404 信号，不硬切 120 天自动过期以免误杀长期在招岗。
+- **验证与线上实测结果**：
+  - **本地回归与门禁**：`audit_css_usage.mjs`（719 类 `0` 死类）、`oxlint`（164 文件 `0 warnings / 0 errors`）、`tsc --noEmit`（`0 errors`）、`npm test`（**`219/219`** TS 单测通过）、`unittest`（**`328/328`** Python 单测通过）、`npm run build`、`smoke_pages.py`（`6/6` 桌面+移动零报错零横滚）、`usability-browser-regressions.mjs`（`5/5`）、`ui-state-regressions.mjs`（`18/18`）全部通过。
+  - **线上生产验收（`https://sites-project.job-radar.workers.dev`）**：`Push Checks`、`Daily Job Radar Pipeline`（`deploy_only=true`）、`Employer Reputation Pipeline`（`nas` + `force_refresh=true`）、`Civil Service Exams Pipeline`（`nas`）全部 `success`；`/` 默认开启企业合并且冷启动城市胶囊计数即刻就绪；`/first-screen.json` 与双 RSS 源 `0` 过期、`0` 混入考编、`0` 核减/公示噪声；`/exams.json` 增至 **`358`** 条公告 / **`5,159`** 条岗位（净增 `+76` 条解锁附件岗位，`attachment_only` 由 `19` 降至 `16`）；`/exams?city=菏泽` 严格展示地市公告并独立呈现 `'山东省直'` / `'全国'` 胶囊；`/api/reputation` 成功召回无标题动态（如 `nowcoder:9148` 青岛啤酒在职体验贴）。
 
 ## 2026-11-14 企业求职「最新发布」防 ATS 静默刷榜重构（方案 1：锁死真实首发日 + 实质扩招提权 + 同日入库破平局）
 
@@ -600,7 +607,9 @@ graph TD
 ## 4. 关键设计契约与必须遵守的铁律 (Critical Invariants & Gotchas)
 
 ### 规则 1：客户端 Hydration 防御（极易踩坑！）
-- **SSR 与 Client 隔离**：`Home` 组件初次挂载时 `data` 为 `null`，`useEffect` 触发 `fetch('/jobs.json')` 异步加载数据。
+- **SSR 与 Client 隔离**：
+  - `Home` 组件初次挂载时 `data` 为 `null`，可先用 `/first-screen.json` 预渲染预览，再异步加载全量分片。
+  - `Home`、`ExamWorkspace` / `useExamPersonal` 等 SSR 客户端组件**绝对禁止**在 `useState(() => ...)` 初始化器或首帧渲染期间同步读取 `window.location.search`、`window.localStorage` 或 `Date.now()`（会导致带参数深链如 `/exams?city=菏泽` 或老用户回访时触发 React Hydration Error `#418`）；必须先以确定性默认状态完成首帧水合，再于 `useEffect`（配合 `setTimeout(..., 0)` 满足 React Compiler 规则）恢复客户端状态，且 `window.history.replaceState` 必须受 `ready` / `hydrated` 门禁保护。
 - **来源状态可选性（Optional Properties）**：
   在 `jobs.json` 的 `sources` 列表中，因轮转休眠或限流冷却，很多来源的 `status` 为 `'deferred'` 或 `'blocked'`，**其 `errors` 数组可能为空或被省略**。
   - ❌ **绝对禁止**：`s.errors.length > 0`（会导致未捕获的 `TypeError: Cannot read properties of undefined`，整站崩溃！）。
@@ -622,8 +631,11 @@ graph TD
 - `job-radar-active-preset-v1`：当前激活的雷达预设 ID。
 - `job-radar-agenda-v1`：独立活动城市、学校、日期、形式与类型筛选。
 - `job-radar-event-personal-v1`：活动收藏及已观察到的安排，用于显示改期/取消。
+- `job-radar-employer-personal-v1`：企业个人意向评分与备注。
+- `job-radar-exam-personal-v1`、`job-radar-exam-profile-v1`、`job-radar-exam-filters-v1`：考公考编个人收藏与报考进度记录、个人资格画像及筛选条件。
+- `job-radar-unified-profile-v1`、`job-radar-jobs-unified-sync-at-v1`、`job-radar-exams-unified-sync-at-v1`：跨工作台共享求职画像（城市/学历/专业/届别身份）及双端同步水位线。
 
-个人备份兼容旧v1/v2，并以v3保留活动及设置；导入先验证与预览冲突，再事务保存。不清空旧存储来修复功能。
+个人备份当前导出格式为 `version: 5`（向下兼容导入 `v1`–`v4`，完整保留企业求职、宣讲日程、企业备注、考编记录/画像与跨端共享画像）；导入先验证与预览冲突，再事务保存，不清空旧存储来修复功能。
 
 ### 规则 4：安全规则（全局规范）
 - **未经用户明确指令，绝不执行 `git push`**。
@@ -650,7 +662,7 @@ npx tsc --noEmit
 npm run build
 ```
 
-工作流变动须用 Actionlint；现有 `.github/actionlint.yaml` 定义自建 Runner 标签。浏览器回归脚本为 `tests/browser-regressions.mjs`，须用专用本地服务和隔离上下文，启动方法见 [修复记录](docs/gemini-fixes-20261028.md)。真实数据一致性用 `scripts/audit_browse_index.mjs`，不得将忽略目录变成必需测试依赖。
+工作流变动须用 Actionlint；现有 `.github/actionlint.yaml` 定义自建 Runner 标签。浏览器回归脚本为 `tests/browser-regressions.mjs`，`tests/smoke_pages.py` 现覆盖 `/`、`/exams` 与 `/exams?city=%E8%8F%8F%E6%B3%BD` 桌面+移动双视口零控制台错误与横向溢出检查，须用专用本地服务和隔离上下文，启动方法见 [修复记录](docs/gemini-fixes-20261028.md)。另注 `tests/test_freshness.py` 的 `test_backfill_rotates_across_rounds_without_changing_head_coverage` 使用秒级 `now()`，若恰逢跨整秒边界存在极低概率偶发断言差异（重跑即可确认）。真实数据一致性用 `scripts/audit_browse_index.mjs`，不得将忽略目录变成必需测试依赖。
 
 ---
 

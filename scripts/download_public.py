@@ -1,11 +1,17 @@
 """Download the exact published snapshot for a deployment without collection."""
 import argparse
+import gzip
 import hashlib
+import http.client
 import json
 from pathlib import Path
 import re
 import shutil
+import ssl
+import time
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+import zlib
 
 try:
     from stage_public import ASSET, EXAM_ASSET, asset_paths, exam_asset_paths
@@ -15,6 +21,60 @@ except ImportError:
     from scripts.employer_identity import employer_identity, refine_company_facts
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
+RETRY_ATTEMPTS = 4
+RETRY_BASE_DELAY = 1.0
+MAX_WORKERS = 6
+RETRYABLE_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
+TRANSIENT_FETCH_ERRORS = (
+    http.client.HTTPException,
+    URLError,
+    TimeoutError,
+    ConnectionError,
+    ssl.SSLError,
+    EOFError,
+    gzip.BadGzipFile,
+    zlib.error,
+)
+
+
+def fetch_bytes(site, path, *, max_attempts=None, base_delay=None, timeout=30):
+    attempts = max(1, int(RETRY_ATTEMPTS if max_attempts is None else max_attempts))
+    delay = float(RETRY_BASE_DELAY if base_delay is None else base_delay)
+    headers = {
+        'User-Agent': USER_AGENT,
+        'Cache-Control': 'no-cache',
+        'Accept-Encoding': 'gzip',
+    }
+    for attempt in range(1, attempts + 1):
+        try:
+            request = Request(site + path, headers=headers)
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read()
+                resp_headers = getattr(response, 'headers', None)
+                content_encoding = ''
+                if resp_headers is not None:
+                    content_encoding = str(resp_headers.get('Content-Encoding') or '').lower()
+                if 'gzip' in content_encoding:
+                    raw = gzip.decompress(raw)
+                return raw
+        except HTTPError as exc:
+            if exc.code not in RETRYABLE_HTTP_CODES or attempt >= attempts:
+                raise
+            try:
+                exc.close()
+            except Exception:
+                pass
+            wait = delay * (2 ** (attempt - 1))
+            print(f'Retry {attempt}/{attempts - 1} for {path} after HTTP {exc.code} (sleep {wait:.1f}s)')
+            if wait > 0:
+                time.sleep(wait)
+        except TRANSIENT_FETCH_ERRORS as exc:
+            if attempt >= attempts:
+                raise
+            wait = delay * (2 ** (attempt - 1))
+            print(f'Retry {attempt}/{attempts - 1} for {path} after {type(exc).__name__}: {exc} (sleep {wait:.1f}s)')
+            if wait > 0:
+                time.sleep(wait)
 
 
 def repair_snapshot_zhiye_urls(public, snapshot, metadata):
@@ -115,9 +175,7 @@ def download(site, public, repair_zhiye_urls=False, prefer_newer_exams_dir=None)
     public = Path(public)
 
     def fetch(path):
-        request = Request(site + path, headers={'User-Agent': USER_AGENT, 'Cache-Control': 'no-cache'})
-        with urlopen(request, timeout=30) as response:
-            return response.read()
+        return fetch_bytes(site, path)
 
     metadata_raw = fetch('/snapshot-manifest.json')
     metadata = json.loads(metadata_raw)
@@ -140,7 +198,7 @@ def download(site, public, repair_zhiye_urls=False, prefer_newer_exams_dir=None)
         target.write_bytes(raw)
 
     # Never fall back to the older files checked into the repository.
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         list(pool.map(fetch_asset, sorted(paths)))
     public.mkdir(parents=True, exist_ok=True)
     if repair_zhiye_urls:
@@ -196,10 +254,15 @@ def download(site, public, repair_zhiye_urls=False, prefer_newer_exams_dir=None)
                         if old.resolve().is_relative_to(exam_assets_dir) and f'/exam-assets/{old.name}' not in exam_paths:
                             old.unlink()
             if exam_paths:
-                with ThreadPoolExecutor(max_workers=8) as pool:
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
                     list(pool.map(fetch_exam_asset, sorted(exam_paths)))
             (public / 'exams.json').write_bytes(exams_raw)
     except Exception as exc:
+        if hasattr(exc, 'close'):
+            try:
+                exc.close()
+            except Exception:
+                pass
         print(f'Skipped downloading /exams.json: {exc}')
     print(f'Reused published snapshot with {snapshot.get("index_count", len(snapshot["jobs"]))} records; no collection performed')
 

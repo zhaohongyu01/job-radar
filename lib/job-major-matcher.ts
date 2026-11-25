@@ -5,6 +5,7 @@ export const UNLIMITED_MAJOR_TOKEN = '专业不限';
 
 export interface MajorMatchOptions {
   includeUnlimited?: boolean;
+  includeUnstatedNotices?: boolean;
 }
 
 export interface SingleTermMajorProfile {
@@ -18,6 +19,7 @@ export interface SingleTermMajorProfile {
   offTrackRolePatterns: RegExp[];
   roleKeywords: string[];
   financeSectorRoleKeywords: string[];
+  matchFinancialInstitutionNotice: boolean;
 }
 
 export interface ResolvedJobMajorProfile {
@@ -47,16 +49,17 @@ interface MajorFamilyRule {
   offTrackRolePattern?: RegExp;
   roleKeywords: readonly string[];
   financeSectorRoleKeywords?: readonly string[];
+  matchFinancialInstitutionNotice?: boolean;
 }
 
 const FINANCE_ACCOUNTING_OFF_TRACK_ROLE_RE =
-  /人力资源|人事|\bhr\b|\bhrbp\b|招聘|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|宣传|市场|营销|品牌|公关|广告|策划|新媒体|文案|编辑|记者|主播|直播|美工|设计|产品策略|产品经理|产品专员|产品运营|用户运营|内容运营|活动运营|电商运营|社群运营|门店运营|销售|渠道|客户代表|客户经理|大客户|商务拓展|\bbd\b|招商|置业顾问|外贸|国际贸易|海外营销|海外销售|跨境|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|关务|单证|法务|律师|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间|安全员/;
+  /人力资源|人事|\bhr\b|\bhrbp\b|招聘专员|招聘主管|招聘经理|招聘顾问|招聘助理|校招专员|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|宣传|市场|营销|品牌|公关|广告|策划|新媒体|文案|编辑|记者|主播|直播|美工|设计|产品策略|产品经理|产品专员|产品运营|用户运营|内容运营|活动运营|电商运营|社群运营|门店运营|销售|渠道|客户代表|客户经理|大客户|商务拓展|\bbd\b|招商|置业顾问|外贸|国际贸易|海外营销|海外销售|跨境|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|关务|单证|法务|律师|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间|安全员/;
 
 const ECONOMICS_OFF_TRACK_ROLE_RE =
-  /人力资源|人事|\bhr\b|\bhrbp\b|招聘|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|纪检|法务|律师|诉讼|出纳|文案|编辑|记者|新媒体|主播|直播|美工|设计|产品策略|产品经理|用户运营|内容运营|活动运营|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间/;
+  /人力资源|人事|\bhr\b|\bhrbp\b|招聘专员|招聘主管|招聘经理|招聘顾问|招聘助理|校招专员|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|纪检|法务|律师|诉讼|出纳|文案|编辑|记者|新媒体|主播|直播|美工|设计|产品策略|产品经理|用户运营|内容运营|活动运营|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间/;
 
 const FINANCE_TRACK_OFF_TRACK_ROLE_RE =
-  /人力资源|人事|\bhr\b|\bhrbp\b|招聘|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|纪检|法务|律师|诉讼|出纳|文案|编辑|记者|新媒体|主播|直播|美工|设计|产品策略|产品经理|市场推广|品牌|公关|广告|用户运营|内容运营|活动运营|外贸业务|国际贸易销售|货代|报关|单证|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间/;
+  /人力资源|人事|\bhr\b|\bhrbp\b|招聘专员|招聘主管|招聘经理|招聘顾问|招聘助理|校招专员|薪酬|员工关系|组织发展|培训专员|行政|文秘|秘书|前台|后勤|党群|党建|纪检|法务|律师|诉讼|出纳|文案|编辑|记者|新媒体|主播|直播|美工|设计|产品策略|产品经理|市场推广|品牌|公关|广告|用户运营|内容运营|活动运营|外贸业务|国际贸易销售|货代|报关|单证|客服|客群服务|话务|导购|店长|门店|采购|物流|供应链|仓储|仓库|物控|研发|软件|算法|前端|后端|测试|运维|硬件|机械|电气|电子|结构|工艺|设备|质量|品质|生产|车间/;
 
 const HUMANITIES_OFF_TRACK_ROLE_RE =
   /销售|外贸|国际贸易|跨境|海外营销|海外销售|渠道|客户代表|客户经理|大客户|商务拓展|\bbd\b|招商|置业顾问|理财|信贷|核保|理赔|客服|客群服务|话务|导购|门店|店长|财务|会计|审计|出纳|税务|法务|律师|采购|物流|供应链|仓储|研发|软件|算法|前端|后端|硬件|机械|电气|设备|工艺/;
@@ -329,6 +332,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '商务经理',
     ],
     financeSectorRoleKeywords: ['客户经理', '理财经理', '综合柜员', '柜员', '大堂经理'],
+    matchFinancialInstitutionNotice: true,
   },
   {
     id: 'finance',
@@ -349,7 +353,7 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       'cfa',
       'frm',
     ],
-    summaryHint: '已关联可投范围：金融/金工/金融科技/投资/保险/经济 · 金融/财经/经济/经管类及投研风控银行券商岗',
+    summaryHint: '已关联可投范围：金融/金工/金融科技/投资/保险/经济 · 金融/财经/经济/经管类及投研风控资金银行券商岗',
     concreteSubstrings: [
       '金融',
       '投资学',
@@ -419,8 +423,24 @@ const MAJOR_FAMILY_RULES: readonly MajorFamilyRule[] = [
       '资金交易',
       '交易员',
       '外汇',
+      '资金管理',
+      '资金结算',
+      '资金专员',
+      '资金主管',
+      '资金岗',
+      '司库',
+      '财务分析',
+      '经营分析',
+      '财务管培',
+      '财经管培',
+      '金融管培',
+      '预算管理',
+      '内控',
+      '国际结算',
+      '清算结算',
     ],
     financeSectorRoleKeywords: ['客户经理', '理财经理', '综合柜员', '柜员', '大堂经理', '营业部'],
+    matchFinancialInstitutionNotice: true,
   },
   {
     id: 'management-broad',
@@ -1707,6 +1727,7 @@ function buildSingleTermProfile(rawTermLower: string): SingleTermMajorProfile {
         offTrackRolePatterns.length === effectiveRules.length ? offTrackRolePatterns : [],
       roleKeywords: Array.from(roleKeywords),
       financeSectorRoleKeywords: Array.from(financeSectorRoleKeywords),
+      matchFinancialInstitutionNotice: effectiveRules.some((r) => Boolean(r.matchFinancialInstitutionNotice)),
     };
   }
 
@@ -1742,6 +1763,7 @@ function buildSingleTermProfile(rawTermLower: string): SingleTermMajorProfile {
     offTrackRolePatterns: [],
     roleKeywords: Array.from(roleKeywords),
     financeSectorRoleKeywords: Array.from(financeSectorRoleKeywords),
+    matchFinancialInstitutionNotice: false,
   };
 }
 
@@ -1934,7 +1956,11 @@ function singleProfileMatchesPosition(
     return Boolean(options?.includeUnlimited) || roleTitleMatchesSubProfile(roleTexts, sub);
   }
 
-  return roleTitleMatchesSubProfile(roleTexts, sub);
+  if (roleTitleMatchesSubProfile(roleTexts, sub)) return true;
+  if (options?.includeUnstatedNotices && !isOffTrackSingleRole(roleCheckText, sub)) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -2018,6 +2044,8 @@ function getEffectiveJobMajorFacts(job: Job): { majors: string[]; samplePosition
 }
 
 const BANK_BROKERAGE_CONTEXT_RE = /银行|证券|基金|期货|信托|投行|农信|信用社|理财子公司/;
+const FINANCIAL_INSTITUTION_CONTEXT_RE =
+  /银行|证券|基金|期货|信托|投行|农信|信用社|理财子公司|资产管理公司|金融控股|金控|财务公司|融资租赁|保险|人寿|财险|产险/;
 
 function singleProfileMatchesJob(
   job: Job,
@@ -2027,6 +2055,7 @@ function singleProfileMatchesJob(
   roleTexts: readonly (string | undefined)[],
   singleRoleCheckText: string,
   isBankBrokerageSector: boolean,
+  isFinancialInstitution: boolean,
   sub: SingleTermMajorProfile,
   options?: MajorMatchOptions,
 ): boolean {
@@ -2064,7 +2093,26 @@ function singleProfileMatchesJob(
     );
   }
 
-  return roleTitleMatchesSubProfile(roleTexts, sub, isBankBrokerageSector);
+  if (roleTitleMatchesSubProfile(roleTexts, sub, isBankBrokerageSector)) return true;
+
+  if (
+    sub.matchFinancialInstitutionNotice &&
+    job.kind === '招聘公告' &&
+    isFinancialInstitution &&
+    !isOffTrackSingleRole(singleRoleCheckText, sub)
+  ) {
+    return true;
+  }
+
+  if (
+    options?.includeUnstatedNotices &&
+    job.kind === '招聘公告' &&
+    !isOffTrackSingleRole(singleRoleCheckText, sub)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -2078,9 +2126,13 @@ export function jobMatchesMajor(job: Job, rawQuery: string, options?: MajorMatch
   const unlimitedItems = rawMajors.filter(isUnlimitedMajorText);
   const explicitMajors = rawMajors.filter((m) => !isUnlimitedMajorText(m));
 
+  const employerHeaderText = `${job.company || ''} ${job.title || ''}`;
   const isBankBrokerageSector =
-    job.sectors.includes('银行') ||
-    BANK_BROKERAGE_CONTEXT_RE.test(`${job.company || ''} ${job.title || ''}`);
+    job.sectors.includes('银行') || BANK_BROKERAGE_CONTEXT_RE.test(employerHeaderText);
+  const isFinancialInstitution =
+    isBankBrokerageSector ||
+    job.sectors.includes('保险') ||
+    FINANCIAL_INSTITUTION_CONTEXT_RE.test(employerHeaderText);
   const roleTitle = extractRolePortionFromJobTitle(job);
   const roleTexts = [roleTitle, ...samplePositions];
   const singleRoleCheckText = roleTitle || samplePositions.join(' · ');
@@ -2094,6 +2146,7 @@ export function jobMatchesMajor(job: Job, rawQuery: string, options?: MajorMatch
       roleTexts,
       singleRoleCheckText,
       isBankBrokerageSector,
+      isFinancialInstitution,
       sub,
       options,
     ),

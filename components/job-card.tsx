@@ -225,9 +225,10 @@ function JobCardInner({
           year: filters.type === '校招' ? filters.year : '全部',
           includeUnknown: filters.includeUncertain,
           includeUnlimitedMajor: Boolean(filters.includeUnlimitedMajor),
+          includeUnstatedNotices: job.kind === '招聘公告' && Boolean(filters.includeUnstatedMajor),
         }),
       ),
-    [job.position_matches, job.positions, filters],
+    [job.kind, job.position_matches, job.positions, filters],
   );
 
   const activePositionPills = useMemo(() => {

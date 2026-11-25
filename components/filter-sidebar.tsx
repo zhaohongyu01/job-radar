@@ -460,6 +460,11 @@ export function FilterSidebar({
               checked={Boolean(filters.includeUnlimitedMajor)}
               onChange={(v) => onChange('includeUnlimitedMajor', v)}
             />
+            <Toggle
+              label="含未注明专业的综合简章"
+              checked={Boolean(filters.includeUnstatedMajor)}
+              onChange={(v) => onChange('includeUnstatedMajor', v)}
+            />
           </>
         )}
       </div>

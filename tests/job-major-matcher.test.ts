@@ -425,3 +425,119 @@ await test('P1 major precision: per-language isolation, HR 招聘 guard, MOE cod
   assert.equal(jobMatchesMajor(unrelatedCultureRole, '化学'), false);
   assert.equal(jobMatchesMajor(unrelatedAdminRole, '理学'), false);
 });
+
+await test('finance major recalls financial institution notices & corporate treasury/FP&A roles, and supports includeUnstatedMajor', () => {
+  // 1. Licensed financial institution general notices without extracted majors match 金融 & 经济学
+  const cmbCampusNotice = fixtureJob({
+    id: 'a1a1a1a1a1a1a1a1a1a1',
+    kind: '招聘公告',
+    title: '招商银行（多地）分行2027冬季校园招聘',
+    company: '招商银行',
+    sectors: ['银行'],
+    majors: undefined,
+  });
+  const securitiesNotice = fixtureJob({
+    id: 'b2b2b2b2b2b2b2b2b2b2',
+    kind: '招聘公告',
+    title: '中泰证券2027届秋招招聘',
+    company: '中泰证券',
+    majors: undefined,
+  });
+  const insuranceGeneralNotice = fixtureJob({
+    id: 'c3c3c3c3c3c3c3c3c3c3',
+    kind: '招聘公告',
+    title: '中国人寿山东省分公司2027校园招聘公告',
+    company: '中国人寿山东省分公司',
+    sectors: ['保险'],
+    majors: undefined,
+  });
+  const bankItSpecialNotice = fixtureJob({
+    id: 'd4d4d4d4d4d4d4d4d4d4',
+    kind: '招聘公告',
+    title: '招商银行信用卡中心 · 软件研发专项招聘',
+    company: '招商银行信用卡中心',
+    sectors: ['银行'],
+    majors: undefined,
+  });
+  const bankExplicitCsNotice = fixtureJob({
+    id: 'e5e5e5e5e5e5e5e5e5e5',
+    kind: '招聘公告',
+    title: '某银行金融科技子公司2027校园招聘公告',
+    company: '某银行金融科技子公司',
+    sectors: ['银行'],
+    majors: ['计算机科学与技术', '软件工程'],
+  });
+
+  assert.equal(jobMatchesMajor(cmbCampusNotice, '金融'), true);
+  assert.equal(jobMatchesMajor(cmbCampusNotice, '经济学'), true);
+  assert.equal(jobMatchesMajor(securitiesNotice, '金融'), true);
+  assert.equal(jobMatchesMajor(insuranceGeneralNotice, '金融'), true);
+  // Off-track IT role in notice title or explicit CS majors must still be blocked
+  assert.equal(jobMatchesMajor(bankItSpecialNotice, '金融'), false);
+  assert.equal(jobMatchesMajor(bankExplicitCsNotice, '金融'), false);
+
+  // 2. Corporate treasury / financial analysis / finance MT roles match 金融
+  const treasuryRole = fixtureJob({ title: '某集团 · 资金管理岗', company: '某集团', kind: '具体岗位' });
+  const fpaRole = fixtureJob({ title: '某实业公司 · 财务分析专员', company: '某实业公司', kind: '具体岗位' });
+  const financeMtNotice = fixtureJob({
+    title: '济南优然牧业有限责任公司招聘',
+    company: '济南优然牧业有限责任公司',
+    kind: '招聘公告',
+    sample_positions: ['人事行政管培生', '财务管培生'],
+  });
+  const cashierRole = fixtureJob({ title: '某电力公司 · 出纳', company: '某电力公司', kind: '具体岗位', majors: ['财务会计'] });
+
+  assert.equal(jobMatchesMajor(treasuryRole, '金融'), true);
+  assert.equal(jobMatchesMajor(fpaRole, '金融'), true);
+  assert.equal(jobMatchesMajor(financeMtNotice, '金融'), true);
+  assert.equal(jobMatchesMajor(cashierRole, '金融'), false);
+
+  // 3. includeUnstatedMajor recalls general 招聘公告 without majors while blocking blank 具体岗位 & off-track notices
+  const soeGeneralNotice = fixtureJob({
+    id: 'f6f6f6f6f6f6f6f6f6f6',
+    kind: '招聘公告',
+    title: '山东海洋集团有限公司2027届校园招聘公告',
+    company: '山东海洋集团',
+    majors: undefined,
+  });
+  const blankWelderRole = fixtureJob({
+    id: '07070707070707070707',
+    kind: '具体岗位',
+    title: '某机械厂 · 焊工',
+    company: '某机械厂',
+    majors: undefined,
+  });
+  const stemNotice = fixtureJob({
+    id: '08080808080808080808',
+    kind: '招聘公告',
+    title: '山推工程机械股份有限公司招聘',
+    company: '山推工程机械股份有限公司',
+    majors: ['机械工程', '电气工程'],
+  });
+
+  assert.equal(
+    filterJobs([soeGeneralNotice, blankWelderRole, stemNotice], { ...allCitiesFilter, major: '金融' }, {}, null, now).length,
+    0,
+  );
+  const withUnstated = filterJobs(
+    [soeGeneralNotice, blankWelderRole, stemNotice, bankItSpecialNotice],
+    { ...allCitiesFilter, major: '金融', includeUnstatedMajor: true },
+    {},
+    null,
+    now,
+  );
+  assert.deepEqual(
+    withUnstated.map((j) => j.id),
+    ['f6f6f6f6f6f6f6f6f6f6'],
+  );
+
+  // URL / storage round-trip & 17-item countActiveFilters contract
+  const custom = { ...defaultFilters, major: '金融', includeUnlimitedMajor: true, includeUnstatedMajor: true };
+  const query = formatUrlQuery(custom);
+  assert.ok(query.includes('includeUnstatedMajor=1'));
+  const parsed = parseUrlState(query);
+  assert.equal(parsed.filters?.includeUnstatedMajor, true);
+  assert.equal(restoreBrowsing({ filters: custom }).filters.includeUnstatedMajor, true);
+  assert.equal(resetFilters(custom).includeUnstatedMajor, false);
+  assert.equal(countActiveFilters(custom), 2); // default 济南 + major
+});

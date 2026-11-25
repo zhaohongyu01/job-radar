@@ -214,10 +214,11 @@ export function DetailDrawer({
       year: filters.type === '校招' ? filters.year : '全部',
       includeUnknown: filters.includeUncertain,
       includeUnlimitedMajor: Boolean(filters.includeUnlimitedMajor),
+      includeUnstatedNotices: selected?.kind === '招聘公告' && Boolean(filters.includeUnstatedMajor),
     };
     const matched = list.filter((position) => positionMatches(position, criteria));
     return new Set(matched.length < list.length ? matched : []);
-  }, [selected?.positions, filters]);
+  }, [selected?.kind, selected?.positions, filters]);
 
   const timelineEvents = useMemo(
     () => (selected ? generateJobTimeline(selected) : []),

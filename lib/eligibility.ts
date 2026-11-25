@@ -9,6 +9,7 @@ export type PositionCriteria = {
   year: string;
   includeUnknown: boolean;
   includeUnlimitedMajor?: boolean;
+  includeUnstatedNotices?: boolean;
 };
 
 const EDU_RANK: Record<string, number> = {
@@ -77,7 +78,10 @@ export function positionMatches(position: PositionRequirement, criteria: Positio
     (!criteria.cities.length ||
       (cities.length ? criteria.cities.some((c) => cities.includes(c)) : criteria.includeUnknown)) &&
     matchesEducationRequirement(position.education, criteria.education, criteria.includeUnknown) &&
-    positionMatchesMajor(position, criteria.major, { includeUnlimited: criteria.includeUnlimitedMajor }) &&
+    positionMatchesMajor(position, criteria.major, {
+      includeUnlimited: criteria.includeUnlimitedMajor,
+      includeUnstatedNotices: criteria.includeUnstatedNotices,
+    }) &&
     matches(position.cohort, criteria.year)
   );
 }

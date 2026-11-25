@@ -266,6 +266,7 @@ export type Filters = {
   validity?: 'all' | 'confirmed_open' | 'long_term' | 'unconfirmed';
   major?: string;
   includeUnlimitedMajor?: boolean;
+  includeUnstatedMajor?: boolean;
   reputationMin?: 'all' | '3' | '4';
   includeUnrated?: boolean;
   applicationStage?: 'all' | NonNullable<PersonalRecord['application_stage']>;
@@ -295,6 +296,7 @@ export const defaultFilters: Filters = {
   validity: 'all',
   major: '',
   includeUnlimitedMajor: false,
+  includeUnstatedMajor: false,
   reputationMin: 'all',
   includeUnrated: true,
   applicationStage: 'all',
@@ -1573,6 +1575,7 @@ function matchesContentConditions(
           year: f.type === '校招' ? f.year : '全部',
           includeUnknown: f.includeUncertain,
           includeUnlimitedMajor: Boolean(f.includeUnlimitedMajor),
+          includeUnstatedNotices: j.kind === '招聘公告' && Boolean(f.includeUnstatedMajor),
         }),
       )
     ) {
@@ -1580,7 +1583,10 @@ function matchesContentConditions(
     }
   } else if (
     f.major &&
-    !jobMatchesMajor(j, f.major, { includeUnlimited: Boolean(f.includeUnlimitedMajor) })
+    !jobMatchesMajor(j, f.major, {
+      includeUnlimited: Boolean(f.includeUnlimitedMajor),
+      includeUnstatedNotices: Boolean(f.includeUnstatedMajor),
+    })
   ) {
     return false;
   }

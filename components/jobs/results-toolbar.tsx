@@ -687,7 +687,20 @@ export function ResultsToolbar({
               ['direction', filters.direction, '全部', filters.direction],
               ['salary', filters.salary, '全部', `薪资${filters.salary}`],
               ['education', filters.education, '', `学历：${filters.education}`],
-              ['major', filters.major || '', '', `专业：${filters.major}${filters.includeUnlimitedMajor ? '（含不限）' : ''}`],
+              [
+                'major',
+                filters.major || '',
+                '',
+                (() => {
+                  const mods = [
+                    filters.includeUnlimitedMajor ? '含不限' : '',
+                    filters.includeUnstatedMajor ? '含未注简章' : '',
+                  ]
+                    .filter(Boolean)
+                    .join('·');
+                  return `专业：${filters.major}${mods ? `（${mods}）` : ''}`;
+                })(),
+              ],
               [
                 'employmentType',
                 filters.employmentType || 'all',

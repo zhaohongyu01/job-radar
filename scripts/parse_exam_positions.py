@@ -64,12 +64,13 @@ UNTIL_RE = re.compile(r'(?:有效期(?:至|截至|到)|自发布公告(?:之)?�
 
 # Exam-specific composite column header patterns
 COL_DEPARTMENT = re.compile(r'(?:主管部门|主管机关|主办单位|所属部门|上级主管部门|招录机关)', re.I)
-COL_EMPLOYER = re.compile(r'(?:招聘单位|用人单位|单位名称|招考单位|聘用单位|工作单位|学校名称|医院名称|卫生院名称|^单位$)', re.I)
+COL_EMPLOYER = re.compile(r'(?:招聘单位|用人单位|单位名称|招考单位|聘用单位|工作单位|所属单位|服务单位|招募单位|基层服务单位|招录单位|学校名称|医院名称|卫生院名称|^单位$)', re.I)
 COL_POS_NAME = re.compile(r'(?:岗位名称|职位名称|招聘岗位|招聘职位|需求岗位|招考职位|具体岗位|拟聘岗位|村?卫生室名称|^岗位$|^职位$)', re.I)
-COL_POS_CODE = re.compile(r'(?:岗位代码|职位代码|岗位编号|职位编号|岗位代号|代码)', re.I)
-COL_POS_CAT = re.compile(r'(?:岗位类别|职位类别|岗位性质|岗位等级|专业技术岗位|考试类别|试卷类别|笔试类别)', re.I)
+COL_POS_CODE = re.compile(r'(?:岗位代码|职位代码|岗位编号|职位编号|岗位编码|职位编码|岗位代号|代码|编码)', re.I)
+COL_POS_CAT = re.compile(r'(?:岗位类别|职位类别|岗位类型|职位类型|服务类型|服务类别|岗位性质|岗位等级|专业技术岗位|考试类别|试卷类别|笔试类别)', re.I)
+COL_POS_SUBCAT = re.compile(r'^(?:分项|岗位分项|子项|细分方向)$', re.I)
 COL_BIANZHI = re.compile(r'(?:编制性质|职位性质|经费形式|编制类型|经费来源|管理方式|总量控制)', re.I)
-COL_COUNT = re.compile(r'(?:招聘人数|招录人数|计划人数|拟聘人数|需求人数|招聘计划|招录计划|录用计划|招考人数|计划数|人数|名额)', re.I)
+COL_COUNT = re.compile(r'(?:招聘人数|招录人数|招募人数|计划人数|拟聘人数|需求人数|招聘计划|招录计划|招募计划|录用计划|招考人数|计划数|人数|名额)', re.I)
 COL_EDUCATION = re.compile(r'(?:^学历$|学历要求|文化程度|最低学历|学历层次)', re.I)
 COL_DEGREE = re.compile(r'(?:^学位$|学位要求|最低学位)', re.I)
 COL_EDU_DEGREE = re.compile(r'(?:学历学位|学历/学位|学历及学位)', re.I)
@@ -78,22 +79,41 @@ COL_POLITICAL = re.compile(r'(?:政治面貌|党派|党员)', re.I)
 COL_FRESH_GRAD = re.compile(r'(?:招聘对象|招录对象|招聘范围|应届要求|生源范围|毕业生范围|基层工作经历|基层工作最低年限|工作经历|人员范围)', re.I)
 COL_AGE = re.compile(r'(?:年龄|年龄要求|年龄限制|出生日期)', re.I)
 COL_HUKOU = re.compile(r'(?:户籍|生源地|户籍要求|生源要求)', re.I)
-COL_CITY = re.compile(r'(?:工作地点|工作地|所在地区|考区|城市|地点)', re.I)
+COL_CITY = re.compile(r'(?:工作地点|工作地|所在地区|考区|城市|地点|^市$|^地市$|^所属市$|^设区市$|^服务地市$)', re.I)
+COL_COUNTY = re.compile(r'^(?:县|区|县[（(]区[）)]|区[（(]县[）)]|县[（(]市[、,]?区[）)]|区县|所在县区|服务县区)$', re.I)
 COL_SUBJECTS = re.compile(r'(?:笔试科目|公共科目笔试类别|考试科目|考试内容|专业科目)', re.I)
 COL_RATIO = re.compile(r'(?:开考比例|面试人员比例|比例)', re.I)
 COL_PHONE = re.compile(r'(?:咨询电话|联系电话|单位电话)', re.I)
 COL_NOTES = re.compile(r'(?:其他条件|其他要求|备注|其他资格条件|职位简介|说明|附加条件)', re.I)
 
 EXAM_HEADER_KEYWORD = re.compile(
-    r'^(?:序号|编号|代码|主管部门|主管机关|招聘单位|用人单位|单位名称|招录机关|单位|'
-    r'岗位名称|职位名称|招聘岗位|招聘职位|岗位代码|职位代码|岗位编号|岗位类别|职位类别|职位属性|岗位等级|岗位性质|职位性质|'
-    r'经费形式|编制性质|招聘人数|招录人数|计划人数|需求人数|招聘计划|招录计划|录用计划|人数|名额|'
+    r'^(?:序号|编号|代码|编码|市|地市|所属市|设区市|县|区|县[（(]区[）)]|区[（(]县[）)]|县[（(]市[、,]?区[）)]|区县|'
+    r'主管部门|主管机关|招聘单位|用人单位|单位名称|所属单位|服务单位|招募单位|招录机关|单位|'
+    r'岗位名称|职位名称|招聘岗位|招聘职位|岗位代码|职位代码|岗位编号|岗位编码|职位编码|岗位类别|职位类别|岗位类型|职位类型|分项|职位属性|岗位等级|岗位性质|职位性质|'
+    r'经费形式|编制性质|招聘人数|招录人数|招募人数|计划人数|需求人数|招聘计划|招录计划|招募计划|录用计划|人数|名额|'
     r'学历|学历要求|学位|学位要求|学历学位|专业|专业要求|大学专科专业要求|大学本科专业要求|研究生专业要求|所学专业|需求专业|学科|'
     r'政治面貌|年龄|年龄要求|招聘对象|招录对象|招聘范围|应届|基层工作经历|基层工作最低年限|服务基层项目工作经历|工作经历|户籍|生源|'
-    r'开考比例|面试人员比例|笔试科目|公共科目笔试类别|考试科目|工作地点|地点|职位简介|其他条件|其他要求|资格条件|备注|咨询电话\d*|联系电话)'
+    r'开考比例|面试人员比例|笔试科目|公共科目笔试类别|考试科目|工作地点|地点|职位简介|其他条件|其他条件要求|其他要求|资格条件|备注|咨询电话\d*|联系电话)'
     r'(?:[（(【\[][^】\)】\]]{0,30}[）)】\]]|[/:：、及&+].*)?$',
     re.I,
 )
+
+
+def clean_exam_cell(val: Any) -> str:
+    """Normalize a table cell while preserving string leading zeros and joining CJK line wraps."""
+    if val is None:
+        return ''
+    if isinstance(val, bool):
+        return str(val)
+    if isinstance(val, float) and val.is_integer():
+        return str(int(val))
+    s = str(val).replace('\r\n', '\n').replace('\r', '\n').strip()
+    if not s:
+        return ''
+    # Merge line wraps inside narrow PDF/Excel cells for CJK words and fullwidth punctuation
+    s = re.sub(r'(?<=[\u4e00-\u9fff0-9）)》、，；：。！？])\s*\n\s*(?=[\u4e00-\u9fff（(《])', '', s)
+    s = re.sub(r'(?<=[\u4e00-\u9fff（(《])\s*\n\s*(?=[\u4e00-\u9fff0-9）)》、，；：。！？])', '', s)
+    return clean_cell(s)
 
 CAMPUS_PORTAL_HOSTS = {
     '山东省大学生就业服务平台',
@@ -480,19 +500,18 @@ def extract_exam_subjects(title: str, text: str) -> List[str]:
     return subjects[:4]
 
 
-def parse_exam_table_grid(
+def _detect_exam_table_header(
     grid: List[List[str]],
-    exam_id: str,
-    default_bianzhi: str = '事业编',
-    default_city: str = '',
-    default_employer: str = '',
-) -> List[Dict[str, Any]]:
-    """Parse a 2D table grid from an exam announcement or XLSX/PDF attachment into ExamPositionRow items."""
-    if not grid or len(grid) < 2:
-        return []
+) -> Optional[Tuple[int, int, int, Dict[str, int], List[Tuple[str, int]]]]:
+    """Detect the best header row span and column mapping for an exam position table."""
+    if not grid:
+        return None
+
+    def header_token(val: Any) -> str:
+        return re.sub(r'\s+', '', clean_exam_cell(val))
 
     def is_header_row(cells: List[str]) -> bool:
-        non_empty = [clean_cell(c) for c in cells if clean_cell(c)]
+        non_empty = [header_token(c) for c in cells if header_token(c)]
         if len(non_empty) < 2:
             return False
         hits = sum(
@@ -520,10 +539,10 @@ def parse_exam_table_grid(
                 parts = []
                 for r_idx in range(start_r, start_r + depth):
                     if c_idx < len(grid[r_idx]):
-                        val = clean_cell(grid[r_idx][c_idx])
+                        val = header_token(grid[r_idx][c_idx])
                         if val and val not in parts:
                             parts.append(val)
-                composite.append(' '.join(parts))
+                composite.append(''.join(parts))
 
             mapping: Dict[str, int] = {}
             major_cols: List[Tuple[str, int]] = []
@@ -540,6 +559,8 @@ def parse_exam_table_grid(
                     mapping['position_code'] = c_idx
                 elif 'position_category' not in mapping and COL_POS_CAT.search(cell):
                     mapping['position_category'] = c_idx
+                elif 'sub_category' not in mapping and COL_POS_SUBCAT.search(cell):
+                    mapping['sub_category'] = c_idx
                 elif 'bianzhi' not in mapping and COL_BIANZHI.search(cell):
                     mapping['bianzhi'] = c_idx
                 elif 'recruit_count' not in mapping and COL_COUNT.search(cell):
@@ -565,6 +586,8 @@ def parse_exam_table_grid(
                     mapping['hukou'] = c_idx
                 elif 'city' not in mapping and COL_CITY.search(cell):
                     mapping['city'] = c_idx
+                elif 'county' not in mapping and COL_COUNTY.search(cell):
+                    mapping['county'] = c_idx
                 elif 'subjects' not in mapping and COL_SUBJECTS.search(cell):
                     mapping['subjects'] = c_idx
                 elif 'ratio' not in mapping and COL_RATIO.search(cell):
@@ -579,6 +602,21 @@ def parse_exam_table_grid(
                 if best_header is None or score > best_header[0]:
                     best_header = (score, start_r, depth, mapping, major_cols)
 
+    return best_header
+
+
+def parse_exam_table_grid(
+    grid: List[List[str]],
+    exam_id: str,
+    default_bianzhi: str = '事业编',
+    default_city: str = '',
+    default_employer: str = '',
+) -> List[Dict[str, Any]]:
+    """Parse a 2D table grid from an exam announcement or XLSX/PDF attachment into ExamPositionRow items."""
+    if not grid or len(grid) < 2:
+        return []
+
+    best_header = _detect_exam_table_header(grid)
     if not best_header:
         return []
 
@@ -590,11 +628,11 @@ def parse_exam_table_grid(
         idx = col.get(key)
         if idx is None or idx >= len(row):
             return ''
-        return clean_cell(row[idx])
+        return clean_exam_cell(row[idx])
 
     for r_idx in range(data_start, len(grid)):
         row = grid[r_idx]
-        if not row or all(not clean_cell(c) for c in row):
+        if not row or all(not clean_exam_cell(c) for c in row):
             continue
         pos_name = get_col(row, 'position_name')
         employer = get_col(row, 'employer') or default_employer
@@ -602,20 +640,20 @@ def parse_exam_table_grid(
         if len(major_cols_best) > 1:
             major_parts: List[str] = []
             for tier, m_idx in major_cols_best:
-                val = clean_cell(row[m_idx]) if m_idx < len(row) else ''
-                if val:
+                val = clean_exam_cell(row[m_idx]) if m_idx < len(row) else ''
+                if val and val not in ('/', '-', '—', '--', '无'):
                     major_parts.append(f'{tier}：{val}' if tier else val)
             major_raw = major_parts[0].split('：', 1)[-1] if len(major_parts) == 1 else '；'.join(major_parts)
         else:
             major_raw = get_col(row, 'majors')
 
         # Skip summary/total/note rows
-        first_non_empty = next((clean_cell(c) for c in row if clean_cell(c)), '')
+        first_non_empty = next((clean_exam_cell(c) for c in row if clean_exam_cell(c)), '')
         if re.search(r'^(?:合计|总计|小计|汇总|注[：:]|说明[：:]|填表说明)', first_non_empty) or re.search(
             r'^(?:合计|总计|小计|汇总|注[：:])', pos_name or employer or department
         ):
             continue
-        if not pos_name and not major_raw and not get_col(row, 'employer'):
+        if not pos_name and not major_raw and not get_col(row, 'employer') and not get_col(row, 'position_category'):
             continue
 
         edu = get_col(row, 'education') or get_col(row, 'edu_degree') or ''
@@ -631,7 +669,17 @@ def parse_exam_table_grid(
         if recruit_count is not None and (recruit_count <= 0 or recruit_count > 5000):
             recruit_count = None
 
-        city_val = get_col(row, 'city') or default_city
+        raw_city = get_col(row, 'city')
+        raw_county = get_col(row, 'county')
+        if raw_city and raw_county:
+            if raw_county in raw_city:
+                city_val = raw_city
+            elif raw_city in raw_county:
+                city_val = raw_county
+            else:
+                city_val = f'{raw_city}{raw_county}'
+        else:
+            city_val = raw_city or raw_county or default_city
         if not city_val:
             detected_cities = cities_in_text(f'{department} {employer} {pos_name}', infer_counties=True)
             if detected_cities:
@@ -648,7 +696,14 @@ def parse_exam_table_grid(
                 bz = '公务员（行政编）'
 
         employer_val = employer or department or '用人单位见简章'
-        pos_name_val = pos_name or get_col(row, 'position_category') or '公开招聘岗位'
+        pos_cat_val = get_col(row, 'position_category')
+        sub_cat_val = get_col(row, 'sub_category')
+        fallback_name = ''
+        if sub_cat_val and sub_cat_val not in ('/', '-', '—', '--', '无') and is_valid_exam_position_name(sub_cat_val):
+            fallback_name = sub_cat_val
+        elif pos_cat_val:
+            fallback_name = pos_cat_val
+        pos_name_val = pos_name or fallback_name or '公开招聘岗位'
         if not is_valid_exam_position_name(pos_name_val):
             continue
         pos_code_val = get_col(row, 'position_code')
@@ -661,7 +716,7 @@ def parse_exam_table_grid(
             'employer': employer_val,
             'position_name': pos_name_val,
             'position_code': pos_code_val,
-            'position_category': get_col(row, 'position_category'),
+            'position_category': pos_cat_val,
             'bianzhi': bz,
             'recruit_count': recruit_count,
             'city': city_val or '',
@@ -697,6 +752,7 @@ def compute_position_row_id(
 def assign_stable_row_ids(exam_id: str, rows: List[Dict[str, Any]]) -> None:
     seen: Dict[str, int] = {}
     for row in rows:
+        row['exam_id'] = exam_id
         base_id = compute_position_row_id(
             exam_id=exam_id,
             position_code=str(row.get('position_code') or ''),
@@ -726,7 +782,7 @@ def parse_exam_excel_bytes(
             wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
             for sheet_name in wb.sheetnames:
                 sheet = wb[sheet_name]
-                grid = [[clean_cell(c) for c in r] for r in sheet.iter_rows(values_only=True)]
+                grid = [[clean_exam_cell(c) for c in r] for r in sheet.iter_rows(values_only=True)]
                 parsed = parse_exam_table_grid(
                     grid,
                     exam_id=exam_id,
@@ -746,7 +802,9 @@ def parse_exam_excel_bytes(
                     wb.close()
             except Exception:
                 pass
-    if not rows:
+    if rows:
+        assign_stable_row_ids(exam_id, rows)
+    else:
         # Fallback to generic parse_excel_bytes
         generic = parse_excel_bytes(file_bytes, filename=filename)
         for p in generic:
@@ -762,12 +820,13 @@ def parse_exam_pdf_bytes(
     default_employer: str = '',
     filename: str = '',
 ) -> List[Dict[str, Any]]:
-    """Parse a PDF attachment into ExamPositionRow items."""
+    """Parse a PDF attachment into ExamPositionRow items, supporting wrapped headers and multi-page continuations."""
     if not file_bytes:
         return []
     rows: List[Dict[str, Any]] = []
     if fitz is not None:
         doc = None
+        last_header_rows: List[List[str]] = []
         try:
             doc = fitz.open(stream=file_bytes, filetype='pdf')
             for page_idx in range(min(len(doc), 15)):
@@ -776,9 +835,18 @@ def parse_exam_pdf_bytes(
                     tables = page.find_tables()
                     if tables and tables.tables:
                         for t in tables.tables:
-                            grid = [[clean_cell(c) for c in r] for r in t.extract()]
+                            grid = [[clean_exam_cell(c) for c in r] for r in t.extract()]
+                            if not grid:
+                                continue
+                            detected = _detect_exam_table_header(grid)
+                            effective_grid = grid
+                            if detected is not None:
+                                _, start_r, depth, _, _ = detected
+                                last_header_rows = grid[start_r:start_r + depth]
+                            elif last_header_rows and len(grid[0]) == len(last_header_rows[-1]):
+                                effective_grid = last_header_rows + grid
                             parsed = parse_exam_table_grid(
-                                grid,
+                                effective_grid,
                                 exam_id=exam_id,
                                 default_bianzhi=default_bianzhi,
                                 default_city=default_city,
@@ -798,7 +866,9 @@ def parse_exam_pdf_bytes(
                     doc.close()
             except Exception:
                 pass
-    if not rows:
+    if rows:
+        assign_stable_row_ids(exam_id, rows)
+    else:
         generic = parse_pdf_bytes(file_bytes, filename=filename, max_pages=15)
         for p in generic:
             cand_name = clean_cell(p.get('position_name') or p.get('name') or '')
@@ -807,6 +877,7 @@ def parse_exam_pdf_bytes(
                 continue
             if cand_edu and INVALID_EXAM_EDU_RE.match(cand_edu):
                 continue
+            p['exam_id'] = exam_id
             p['position_name'] = cand_name
             p.setdefault('bianzhi', default_bianzhi)
             p.setdefault('city', default_city)
@@ -902,7 +973,7 @@ def _format_xls_cell(cell_type: int, value: Any) -> str:
     if cell_type == 2 and isinstance(value, float):
         if value.is_integer():
             return str(int(value))
-    return clean_cell(value)
+    return clean_exam_cell(value)
 
 
 def parse_exam_xls_bytes(
@@ -978,7 +1049,8 @@ def parse_exam_xls_bytes(
 
 
 INVALID_EXAM_POS_NAME_RE = re.compile(
-    r'^(?:[\d.\-—/序号]+|序号|类别|岗位类别|岗位代码|职位代码|岗位编号|招聘单位|用人单位|主管部门|'
+    r'^(?:[\d.\-—/序号]+|序号|类别|岗位|岗位名称|职位名称|岗位性质|岗位类别|岗位代码|职位代码|岗位编号|'
+    r'招聘单位|用人单位|主管部门|招聘人|招聘人数|招录人数|'
     r'要求|学历|学历要求|学位|学位要求|专业|专业要求|其他条件|备注|等级|成绩|笔试成绩|面试成绩|'
     r'面试分数|综合成绩|总成绩|姓名|准考证号|排名|名次|合计|总计|小计)$'
 )
@@ -1518,11 +1590,20 @@ def enrich_exam_record(
             p_copy = dict(p)
             if not is_valid_exam_position_name(str(p_copy.get('position_name') or '')):
                 continue
+            p_copy['exam_id'] = exam_id
             if p_copy.get('education') and INVALID_EXAM_EDU_RE.match(str(p_copy['education']).strip()):
                 p_copy['education'] = ''
-            if p_copy.get('department') in CAMPUS_PORTAL_HOSTS or not p_copy.get('department'):
+            if (
+                p_copy.get('department') in CAMPUS_PORTAL_HOSTS
+                or not p_copy.get('department')
+                or p_copy.get('department') == '招考主管部门'
+            ):
                 p_copy['department'] = organizer
-            if p_copy.get('employer') in CAMPUS_PORTAL_HOSTS or not p_copy.get('employer'):
+            if (
+                p_copy.get('employer') in CAMPUS_PORTAL_HOSTS
+                or not p_copy.get('employer')
+                or p_copy.get('employer') == '用人单位见简章'
+            ):
                 p_copy['employer'] = organizer
             if not p_copy.get('source'):
                 p_copy['source'] = 'attachment' if (p_copy.get('source_file') or p_copy.get('source_url')) else 'table'

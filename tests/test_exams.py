@@ -1456,6 +1456,908 @@ class ExamParserTests(unittest.TestCase):
             )
             self.assertEqual(qd_r3["attachments"][0].get("etag"), '"v2-hash"')
 
+    def test_sibling_merge_and_offline_export_heal_mismatched_exam_id(self):
+        from scripts.collect_exams import merge_sibling_position_table_entries
+
+        notice_url = "https://taian.dtdjzx.gov.cn/web/p896/lytzgg/131272.html"
+        table_url = "https://taian.dtdjzx.gov.cn/web/p896/lytzgg/131273.html"
+        notice_id = hashlib.sha256(notice_url.encode("utf-8")).hexdigest()[:20]
+        table_id = hashlib.sha256(table_url.encode("utf-8")).hexdigest()[:20]
+
+        # 1. Source merge must rewrite exam_id on copied sibling positions to the parent notice id
+        raw_by_url = {
+            notice_url: {
+                "id": notice_id,
+                "title": "2027年度泰安市各级机关考试录用公务员公告",
+                "source_url": notice_url,
+                "body": "按照2027年度山东省各级机关考试录用公务员统一部署，泰安市公开招录公务员。" * 5,
+                "attachments": [],
+            },
+            table_url: {
+                "id": table_id,
+                "title": "2027年度泰安市各级机关公务员招录职位表",
+                "source_url": table_url,
+                "body": "下载附件",
+                "attachments": [
+                    {
+                        "title": "2027年度泰安市各级机关公务员招录职位表",
+                        "url": "https://dyjyzyk.dtdjzx.gov.cn/file/taian.xlsx",
+                    }
+                ],
+                "exam_positions": [
+                    {
+                        "row_id": "old-taian-row",
+                        "exam_id": table_id,
+                        "department": "中共泰安市纪律检查委员会",
+                        "employer": "机关及所属机构",
+                        "position_name": "监督检查审查调查职位",
+                        "recruit_count": 2,
+                        "major_raw": "法学类",
+                        "source": "attachment",
+                    }
+                ],
+            },
+        }
+        merge_sibling_position_table_entries(raw_by_url)
+        self.assertIn(notice_url, raw_by_url)
+        self.assertNotIn(table_url, raw_by_url)
+        copied_rows = raw_by_url[notice_url]["exam_positions"]
+        self.assertEqual(len(copied_rows), 1)
+        self.assertEqual(copied_rows[0]["exam_id"], notice_id)
+
+        # 2. Offline export heals pre-existing historical snapshots whose positions carry stale exam_id
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "seed"
+            out_dir = root / "out"
+            seed_dir.mkdir(parents=True)
+
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": "2026-11-25T18:00:00+08:00",
+                    "last_success_at": "2026-11-25T18:00:00+08:00",
+                    "total_exams": 1,
+                    "total_positions": 1,
+                    "total_headcount": 2,
+                    "total_exams_with_positions": 1,
+                    "cities": ["泰安"],
+                    "exams": [
+                        {
+                            "id": notice_id,
+                            "title": "2027年度泰安市各级机关考试录用公务员公告",
+                            "organizer": "中共泰安市委组织部",
+                            "notice_role": "招考简章",
+                            "stage": "ended",
+                            "schedule": {"reg_start": "2026-11-06", "reg_end": "2026-11-09", "reg_mode": "window"},
+                            "source_id": "sd-16cities-gwy",
+                            "source_name": "山东省16市组织部 · 灯塔地市公务员招录专栏",
+                            "source_url": notice_url,
+                            "published_at": "2026-11-04",
+                            "last_verified_at": "2026-11-25T18:00:00+08:00",
+                            "positions_status": "parsed",
+                            "excerpt": "泰安市2027年度公务员招录公告",
+                            "body": "2027年度泰安市各级机关考试录用公务员公告，报名时间：2026年11月6日至11月9日。",
+                            "attachments": [],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "stale-row",
+                                    "exam_id": "1e18b2447b8f00d690c5",
+                                    "department": "中共泰安市纪律检查委员会",
+                                    "employer": "机关及所属机构",
+                                    "position_name": "监督检查审查调查职位",
+                                    "recruit_count": 2,
+                                    "major_raw": "法学类",
+                                    "source": "attachment",
+                                }
+                            ],
+                        }
+                    ],
+                    "sources": [],
+                },
+                seed_dir,
+            )
+
+            collect_and_export_exams(
+                public_dir=out_dir,
+                live_crawl=False,
+                live_site="",
+                seed_dir=seed_dir,
+            )
+
+            snap = json.loads((out_dir / "exams.json").read_text(encoding="utf-8"))
+            self.assertEqual(snap["last_success_at"], "2026-11-25T18:00:00+08:00")
+            pos_payload = json.loads((out_dir / snap["positions_url"].lstrip("/")).read_text(encoding="utf-8"))
+            healed_rows = pos_payload["positions_by_exam"][notice_id]
+            self.assertEqual(len(healed_rows), 1)
+            self.assertEqual(healed_rows[0]["exam_id"], notice_id)
+
+    def test_multi_attachment_partial_timeout_preserves_failed_table_positions(self):
+        today = dt.datetime.now(TZ).date()
+        pub_str = (today - dt.timedelta(days=2)).isoformat()
+        reg_start = (today - dt.timedelta(days=1)).isoformat()
+        reg_end = (today + dt.timedelta(days=6)).isoformat()
+        old_verified = f"{(today - dt.timedelta(days=2)).isoformat()}T08:00:00+08:00"
+
+        url_notice = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/t20261120_multiatt.shtml"
+        exam_id = hashlib.sha256(url_notice.encode("utf-8")).hexdigest()[:20]
+        att1_url = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/table_a.xls"
+        att2_url = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/table_b.xls"
+        body_text = (
+            "青岛市人力资源和社会保障局面向社会公开招聘事业单位工作人员20名。"
+            f"报名时间：{reg_start[:4]}年{int(reg_start[5:7])}月{int(reg_start[8:10])}日9:00—"
+            f"{int(reg_end[5:7])}月{int(reg_end[8:10])}日16:00。"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "seed"
+            round2_dir = root / "round2"
+            round3_dir = root / "round3"
+            seed_dir.mkdir(parents=True)
+
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": f"{pub_str}T10:00:00+08:00",
+                    "last_success_at": f"{pub_str}T10:00:00+08:00",
+                    "total_exams": 1,
+                    "total_positions": 2,
+                    "total_headcount": 3,
+                    "total_exams_with_positions": 1,
+                    "cities": ["青岛"],
+                    "exams": [
+                        {
+                            "id": exam_id,
+                            "title": "2026年青岛市市属事业单位公开招聘工作人员简章",
+                            "organizer": "青岛市人力资源和社会保障局",
+                            "notice_role": "招考简章",
+                            "stage": "registering",
+                            "schedule": {"reg_start": reg_start, "reg_end": reg_end, "reg_mode": "window"},
+                            "source_id": "qingdao-hrss-exam",
+                            "source_name": "青岛市人社局 · 公开招聘与引才专区",
+                            "source_url": url_notice,
+                            "published_at": pub_str,
+                            "last_verified_at": old_verified,
+                            "positions_status": "parsed",
+                            "excerpt": body_text[:120],
+                            "body": body_text,
+                            "attachments": [
+                                {"title": "附件1：综合类岗位汇总表.xls", "url": att1_url, "parse_status": "parsed"},
+                                {"title": "附件2：卫生类岗位汇总表.xls", "url": att2_url, "parse_status": "parsed"},
+                            ],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "a-old-1",
+                                    "exam_id": exam_id,
+                                    "department": "青岛市人社局",
+                                    "employer": "青岛市综合中心",
+                                    "position_name": "旧综合岗A",
+                                    "recruit_count": 1,
+                                    "major_raw": "汉语言文学",
+                                    "source": "attachment",
+                                    "source_file": "附件1：综合类岗位汇总表.xls",
+                                    "source_url": att1_url,
+                                },
+                                {
+                                    "row_id": "b-old-1",
+                                    "exam_id": exam_id,
+                                    "department": "青岛市卫健委",
+                                    "employer": "青岛市市立医院",
+                                    "position_name": "旧临床医师岗B",
+                                    "recruit_count": 2,
+                                    "major_raw": "临床医学",
+                                    "source": "attachment",
+                                    "source_file": "附件2：卫生类岗位汇总表.xls",
+                                    "source_url": att2_url,
+                                },
+                            ],
+                        }
+                    ],
+                    "sources": [],
+                },
+                seed_dir,
+            )
+
+            qd_list_html = f'<ul><li><a href="{url_notice}">2026年青岛市市属事业单位公开招聘工作人员简章</a> {pub_str}</li></ul>'
+            detail_html = (
+                f'<div class="TRS_Editor"><p>{body_text}</p>'
+                f'<p><a href="{att1_url}">附件1：综合类岗位汇总表.xls</a></p>'
+                f'<p><a href="{att2_url}">附件2：卫生类岗位汇总表.xls</a></p></div>'
+            )
+            att1_new_bytes = """<table>
+              <tr><th>招聘单位</th><th>岗位名称</th><th>计划人数</th><th>学历</th><th>专业要求</th></tr>
+              <tr><td>青岛市综合中心</td><td>新数据治理岗A1</td><td>2</td><td>硕士研究生</td><td>计算机科学与技术</td></tr>
+              <tr><td>青岛市综合中心</td><td>新财务审计岗A2</td><td>1</td><td>本科及以上</td><td>会计学</td></tr>
+            </table>""".encode("utf-8")
+            att2_new_bytes = """<table>
+              <tr><th>招聘单位</th><th>岗位名称</th><th>计划人数</th><th>学历</th><th>专业要求</th></tr>
+              <tr><td>青岛市市立医院</td><td>新外科医师岗B1</td><td>3</td><td>硕士研究生</td><td>临床医学</td></tr>
+            </table>""".encode("utf-8")
+
+            def fake_fetch_html(url: str, timeout: float = 6.0, referer: str = "") -> str:
+                if url == "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/":
+                    return qd_list_html
+                if url == url_notice:
+                    return detail_html
+                return "<html><body><ul></ul></body></html>"
+
+            # Round 2: att1 updates successfully, att2 times out -> MUST keep att1 new rows AND att2 old row!
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch(
+                    "scripts.collect_exams.fetch_bytes_quick",
+                    side_effect=lambda u, timeout=6.0, max_bytes=4_000_000: att1_new_bytes if u == att1_url else None,
+                ),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=round2_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=seed_dir,
+                )
+
+            snap_r2 = json.loads((round2_dir / "exams.json").read_text(encoding="utf-8"))
+            self.assertTrue(snap_r2["exams"][0].get("positions_pending_recheck"))
+            hydrated_r2 = hydrate_exam_snapshot(
+                snap_r2,
+                lambda rel: json.loads((round2_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd_r2 = hydrated_r2["exams"][0]
+            self.assertEqual(
+                {p["position_name"] for p in qd_r2["positions"]},
+                {"新数据治理岗A1", "新财务审计岗A2", "旧临床医师岗B"},
+            )
+            att_status_r2 = {a["url"]: a.get("parse_status") for a in qd_r2["attachments"]}
+            self.assertEqual(att_status_r2[att1_url], "parsed")
+            self.assertEqual(att_status_r2[att2_url], "deferred")
+
+            # Round 3: att2 recovers -> both attachments parsed cleanly, pending flag cleared
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch(
+                    "scripts.collect_exams.fetch_bytes_quick",
+                    side_effect=lambda u, timeout=6.0, max_bytes=4_000_000: (
+                        att1_new_bytes if u == att1_url else att2_new_bytes if u == att2_url else None
+                    ),
+                ),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=round3_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=round2_dir,
+                )
+
+            snap_r3 = json.loads((round3_dir / "exams.json").read_text(encoding="utf-8"))
+            self.assertNotIn("positions_pending_recheck", snap_r3["exams"][0])
+            hydrated_r3 = hydrate_exam_snapshot(
+                snap_r3,
+                lambda rel: json.loads((round3_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd_r3 = hydrated_r3["exams"][0]
+            self.assertEqual(
+                {p["position_name"] for p in qd_r3["positions"]},
+                {"新数据治理岗A1", "新财务审计岗A2", "新外科医师岗B1"},
+            )
+
+    def test_unparseable_attachment_never_reused_as_parsed_on_subsequent_round(self):
+        import io
+        import urllib.error
+        from scripts.collect_exams import parse_exam_attachment_bytes as real_parse_att
+
+        today = dt.datetime.now(TZ).date()
+        pub_str = (today - dt.timedelta(days=2)).isoformat()
+        reg_start = (today - dt.timedelta(days=1)).isoformat()
+        reg_end = (today + dt.timedelta(days=6)).isoformat()
+        old_verified = f"{(today - dt.timedelta(days=2)).isoformat()}T08:00:00+08:00"
+
+        url_notice = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/t20261120_badparse.shtml"
+        exam_id = hashlib.sha256(url_notice.encode("utf-8")).hexdigest()[:20]
+        att_url = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/positions_bad.xls"
+        body_text = (
+            "青岛市人力资源和社会保障局面向社会公开招聘事业单位工作人员10名。"
+            f"报名时间：{reg_start[:4]}年{int(reg_start[5:7])}月{int(reg_start[8:10])}日9:00—"
+            f"{int(reg_end[5:7])}月{int(reg_end[8:10])}日16:00。"
+        )
+        broken_bytes = b"<html><body><p>corrupt non-table document</p></body></html>"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "seed"
+            round2_dir = root / "round2"
+            round3_dir = root / "round3"
+            seed_dir.mkdir(parents=True)
+
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": f"{pub_str}T10:00:00+08:00",
+                    "last_success_at": f"{pub_str}T10:00:00+08:00",
+                    "total_exams": 1,
+                    "total_positions": 1,
+                    "total_headcount": 1,
+                    "total_exams_with_positions": 1,
+                    "cities": ["青岛"],
+                    "exams": [
+                        {
+                            "id": exam_id,
+                            "title": "2026年青岛市市属事业单位公开招聘工作人员简章",
+                            "organizer": "青岛市人力资源和社会保障局",
+                            "notice_role": "招考简章",
+                            "stage": "registering",
+                            "schedule": {"reg_start": reg_start, "reg_end": reg_end, "reg_mode": "window"},
+                            "source_id": "qingdao-hrss-exam",
+                            "source_name": "青岛市人社局 · 公开招聘与引才专区",
+                            "source_url": url_notice,
+                            "published_at": pub_str,
+                            "last_verified_at": old_verified,
+                            "positions_status": "parsed",
+                            "excerpt": body_text[:120],
+                            "body": body_text,
+                            "attachments": [
+                                {
+                                    "title": "附件1：公开招聘岗位汇总表.xls",
+                                    "url": att_url,
+                                    "parse_status": "parsed",
+                                    "etag": '"v1-ok"',
+                                    "sha256": "deadbeef" * 8,
+                                }
+                            ],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "v1-row-1",
+                                    "exam_id": exam_id,
+                                    "department": "青岛市人社局",
+                                    "employer": "青岛市某单位",
+                                    "position_name": "已核验旧岗V1",
+                                    "recruit_count": 1,
+                                    "major_raw": "经济学",
+                                    "source": "attachment",
+                                    "source_url": att_url,
+                                }
+                            ],
+                        }
+                    ],
+                    "sources": [],
+                },
+                seed_dir,
+            )
+
+            qd_list_html = f'<ul><li><a href="{url_notice}">2026年青岛市市属事业单位公开招聘工作人员简章</a> {pub_str}</li></ul>'
+            detail_html = f'<div class="TRS_Editor"><p>{body_text}</p><p><a href="{att_url}">附件1：公开招聘岗位汇总表.xls</a></p></div>'
+
+            def fake_fetch_html(url: str, timeout: float = 6.0, referer: str = "") -> str:
+                if url == "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/":
+                    return qd_list_html
+                if url == url_notice:
+                    return detail_html
+                return "<html><body><ul></ul></body></html>"
+
+            class FakeHttpResp(io.BytesIO):
+                def __init__(self, data: bytes, headers: dict):
+                    super().__init__(data)
+                    self.headers = headers
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    self.close()
+
+            # Round 2: server serves broken v2 file with ETag "v2-broken"; download succeeds but parse fails
+            def fake_opener_v2(req, timeout=6.0):
+                if req.full_url == att_url:
+                    hdrs = {k.lower(): v for k, v in req.header_items()}
+                    if hdrs.get("if-none-match") == '"v2-broken"':
+                        raise urllib.error.HTTPError(att_url, 304, "Not Modified", {}, None)
+                    return FakeHttpResp(broken_bytes, {"ETag": '"v2-broken"'})
+                raise urllib.error.URLError("unexpected")
+
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch("scripts.collect_exams.c.OPENER.open", side_effect=fake_opener_v2),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=round2_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=seed_dir,
+                )
+
+            snap_r2 = json.loads((round2_dir / "exams.json").read_text(encoding="utf-8"))
+            self.assertTrue(snap_r2["exams"][0].get("positions_pending_recheck"))
+            hydrated_r2 = hydrate_exam_snapshot(
+                snap_r2,
+                lambda rel: json.loads((round2_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd_r2 = hydrated_r2["exams"][0]
+            self.assertEqual([p["position_name"] for p in qd_r2["positions"]], ["已核验旧岗V1"])
+            self.assertEqual(qd_r2["attachments"][0].get("parse_status"), "deferred")
+            # Failed v2 version metadata MUST NOT be persisted as a reusable parsed version
+            self.assertNotIn("etag", qd_r2["attachments"][0])
+            self.assertNotIn("sha256", qd_r2["attachments"][0])
+
+            # Round 3: server still has v2-broken; MUST NOT send If-None-Match, MUST attempt parsing again,
+            # and MUST remain deferred with positions_pending_recheck=True
+            r3_req_headers = []
+            parse_calls = 0
+
+            def counting_parse(*args, **kwargs):
+                nonlocal parse_calls
+                parse_calls += 1
+                return real_parse_att(*args, **kwargs)
+
+            def fake_opener_r3(req, timeout=6.0):
+                if req.full_url == att_url:
+                    hdrs = {k.lower(): v for k, v in req.header_items()}
+                    r3_req_headers.append(hdrs)
+                    if hdrs.get("if-none-match") == '"v2-broken"':
+                        raise urllib.error.HTTPError(att_url, 304, "Not Modified", {}, None)
+                    return FakeHttpResp(broken_bytes, {"ETag": '"v2-broken"'})
+                raise urllib.error.URLError("unexpected")
+
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch("scripts.collect_exams.c.OPENER.open", side_effect=fake_opener_r3),
+                patch("scripts.collect_exams.parse_exam_attachment_bytes", side_effect=counting_parse),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=round3_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=round2_dir,
+                )
+
+            self.assertEqual(len(r3_req_headers), 1)
+            self.assertNotIn("if-none-match", r3_req_headers[0])
+            self.assertEqual(parse_calls, 1)
+            snap_r3 = json.loads((round3_dir / "exams.json").read_text(encoding="utf-8"))
+            self.assertTrue(snap_r3["exams"][0].get("positions_pending_recheck"))
+            hydrated_r3 = hydrate_exam_snapshot(
+                snap_r3,
+                lambda rel: json.loads((round3_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd_r3 = hydrated_r3["exams"][0]
+            self.assertEqual([p["position_name"] for p in qd_r3["positions"]], ["已核验旧岗V1"])
+            self.assertEqual(qd_r3["attachments"][0].get("parse_status"), "deferred")
+
+    def test_dezhou_real_pdf_parses_exact_eight_positions_across_two_pages(self):
+        fixture = Path(__file__).parent / "fixtures" / "exams" / "dezhou_2026_positions.pdf"
+        raw_bytes = fixture.read_bytes()
+        rows = parse_exam_attachment_bytes(
+            raw_bytes,
+            exam_id="8d7aae1d032277666b47",
+            default_bianzhi="事业编",
+            default_city="德州",
+            default_employer="德州智能技术职业学院",
+            filename="德州智能技术职业学院2026年公开招聘工作人员岗位计划表.pdf",
+            url="https://html.gxjy.sdei.edu.cn/manageredu/userfiles/file/2026/07/03/1783132477078.pdf",
+        )
+        expected = [
+            ("A01", "教师1", 3),
+            ("A02", "教师2", 5),
+            ("A03", "教师3", 6),
+            ("A04", "教师4", 4),
+            ("A05", "教师5", 5),
+            ("A06", "教师6", 5),
+            ("A07", "教师7", 4),
+            ("A08", "教师8", 3),
+        ]
+        self.assertEqual(len(rows), 8)
+        self.assertEqual(
+            [(r["position_code"], r["position_name"], r["recruit_count"]) for r in rows],
+            expected,
+        )
+        self.assertEqual(len({r["position_code"] for r in rows}), 8)
+        self.assertTrue(all(r["education"] == "研究生" for r in rows))
+        self.assertTrue(all(r["degree"] == "硕士及以上" for r in rows))
+        self.assertTrue(all(r["position_category"] == "专业技术岗位" for r in rows))
+        self.assertTrue(all(r["employer"] == "德州智能技术职业学院" for r in rows))
+        self.assertIn("智能科学与技术一级学科", rows[0]["major_raw"])
+        self.assertNotIn("智能科学与技 术", rows[0]["major_raw"])
+
+    def test_sanzhiyifu_2025_real_xls_parses_all_793_positions_with_leading_zero_and_ended_stage(self):
+        import io
+        import openpyxl
+
+        fixture = Path(__file__).parent / "fixtures" / "exams" / "sanzhiyifu_2025_positions.xls"
+        raw_bytes = fixture.read_bytes()
+        rows = parse_exam_attachment_bytes(
+            raw_bytes,
+            exam_id="a9b15db57a922069a42e",
+            default_bianzhi="三支一扶 / 基层项目",
+            default_city="",
+            default_employer="",
+            filename="附件1：2025年山东省高校毕业生“三支一扶”计划招募岗位表.xlsx",
+            url="https://html.gxjy.sdei.edu.cn/manageredu/userfiles/file/2025/02/27/1743142464268.xls",
+        )
+        wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True, data_only=True)
+        raw_sheet_rows = list(wb[wb.sheetnames[0]].iter_rows(values_only=True))[3:]
+        wb.close()
+
+        self.assertEqual(len(raw_sheet_rows), 793)
+        self.assertEqual(len(rows), 793)
+
+        # Verify first row explicitly (including leading zero '01001')
+        first = rows[0]
+        self.assertEqual(first["position_code"], "01001")
+        self.assertEqual(first["city"], "济南市章丘区")
+        self.assertEqual(first["employer"], "明水街道办事处")
+        self.assertEqual(first["position_name"], "就业和社会保障服务平台")
+        self.assertEqual(first["position_category"], "就业和社会保障服务平台")
+        self.assertEqual(first["recruit_count"], 1)
+        self.assertNotIn("专科：/", first["major_raw"])
+
+        # Row-by-row comparison against every single raw row in the official workbook
+        from scripts.parse_exam_positions import clean_exam_cell
+
+        for idx, (parsed, raw_r) in enumerate(zip(rows, raw_sheet_rows)):
+            raw_city = clean_exam_cell(raw_r[1])
+            raw_county = clean_exam_cell(raw_r[2])
+            raw_unit = clean_exam_cell(raw_r[3])
+            raw_code_val = raw_r[4]
+            expected_code = (
+                str(int(raw_code_val))
+                if isinstance(raw_code_val, float) and raw_code_val.is_integer()
+                else clean_exam_cell(raw_code_val)
+            )
+            expected_count = int(raw_r[5])
+            raw_type = clean_exam_cell(raw_r[6])
+
+            self.assertEqual(parsed["position_code"], expected_code, f"row {idx} position_code")
+            self.assertEqual(parsed["employer"], raw_unit, f"row {idx} employer")
+            self.assertEqual(parsed["recruit_count"], expected_count, f"row {idx} recruit_count")
+            self.assertEqual(parsed["position_category"], raw_type, f"row {idx} position_category")
+            self.assertIn(raw_city, parsed["city"], f"row {idx} city")
+            self.assertIn(raw_county, parsed["city"], f"row {idx} county")
+            self.assertNotEqual(parsed["position_name"], "公开招聘岗位", f"row {idx} placeholder pos")
+            self.assertNotEqual(parsed["employer"], "用人单位见简章", f"row {idx} placeholder emp")
+
+        # Verify 2025 recruitment stays marked as ended when enriched
+        enriched = enrich_exam_record(
+            {
+                "id": "a9b15db57a922069a42e",
+                "title": "2025年山东省高校毕业生“三支一扶”计划招募公告",
+                "source_id": "sdei-civil-exams",
+                "source_url": "https://gxjy.sdei.edu.cn/szyf2025",
+                "published_at": "2025-03-28",
+                "body": "2025年山东省高校毕业生“三支一扶”计划招募公告。网上报名时间：2025年3月31日9:00—4月4日16:00。",
+                "exam_positions": rows,
+            },
+            today_str="2026-11-25",
+        )
+        self.assertEqual(enriched["stage"], "ended")
+        self.assertEqual(len(enriched["positions"]), 793)
+
+    def test_reordered_and_renamed_attachment_timeout_keeps_new_b_once_and_preserves_old_a(self):
+        today = dt.datetime.now(TZ).date()
+        pub_str = (today - dt.timedelta(days=2)).isoformat()
+        reg_start = (today - dt.timedelta(days=1)).isoformat()
+        reg_end = (today + dt.timedelta(days=6)).isoformat()
+        old_verified = f"{(today - dt.timedelta(days=2)).isoformat()}T08:00:00+08:00"
+
+        url_notice = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/t20261120_reorder.shtml"
+        exam_id = hashlib.sha256(url_notice.encode("utf-8")).hexdigest()[:20]
+        att_a_old = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/table_a_v1.xls"
+        att_a_renamed = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/table_a_v2_renamed.xls"
+        att_b_url = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/table_b.xls"
+        body_text = (
+            "青岛市人力资源和社会保障局面向社会公开招聘事业单位工作人员20名。"
+            f"报名时间：{reg_start[:4]}年{int(reg_start[5:7])}月{int(reg_start[8:10])}日9:00—"
+            f"{int(reg_end[5:7])}月{int(reg_end[8:10])}日16:00。"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "seed"
+            out_dir = root / "out"
+            seed_dir.mkdir(parents=True)
+
+            # Seed order: [A, B]
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": f"{pub_str}T10:00:00+08:00",
+                    "last_success_at": f"{pub_str}T10:00:00+08:00",
+                    "total_exams": 1,
+                    "total_positions": 2,
+                    "total_headcount": 3,
+                    "total_exams_with_positions": 1,
+                    "cities": ["青岛"],
+                    "exams": [
+                        {
+                            "id": exam_id,
+                            "title": "2026年青岛市市属事业单位公开招聘工作人员简章",
+                            "organizer": "青岛市人力资源和社会保障局",
+                            "notice_role": "招考简章",
+                            "stage": "registering",
+                            "schedule": {"reg_start": reg_start, "reg_end": reg_end, "reg_mode": "window"},
+                            "source_id": "qingdao-hrss-exam",
+                            "source_name": "青岛市人社局 · 公开招聘与引才专区",
+                            "source_url": url_notice,
+                            "published_at": pub_str,
+                            "last_verified_at": old_verified,
+                            "positions_status": "parsed",
+                            "excerpt": body_text[:120],
+                            "body": body_text,
+                            "attachments": [
+                                {"title": "附件1：综合岗位汇总表.xls", "url": att_a_old, "parse_status": "parsed"},
+                                {"title": "附件2：医疗岗位汇总表.xls", "url": att_b_url, "parse_status": "parsed"},
+                            ],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "row-a-old",
+                                    "exam_id": exam_id,
+                                    "department": "青岛市人社局",
+                                    "employer": "青岛市发改委",
+                                    "position_name": "旧A岗",
+                                    "position_code": "A01",
+                                    "recruit_count": 1,
+                                    "major_raw": "经济学",
+                                    "source": "attachment",
+                                    "source_file": "附件1：综合岗位汇总表.xls",
+                                    "source_url": att_a_old,
+                                },
+                                {
+                                    "row_id": "row-b-old",
+                                    "exam_id": exam_id,
+                                    "department": "青岛市卫健委",
+                                    "employer": "青岛市市立医院",
+                                    "position_name": "旧B岗",
+                                    "position_code": "B01",
+                                    "recruit_count": 2,
+                                    "major_raw": "临床医学",
+                                    "source": "attachment",
+                                    "source_file": "附件2：医疗岗位汇总表.xls",
+                                    "source_url": att_b_url,
+                                },
+                            ],
+                        }
+                    ],
+                    "sources": [],
+                },
+                seed_dir,
+            )
+
+            # New detail HTML reverses order AND renames A: [B, A_renamed]
+            qd_list_html = f'<ul><li><a href="{url_notice}">2026年青岛市市属事业单位公开招聘工作人员简章</a> {pub_str}</li></ul>'
+            reordered_detail_html = (
+                f'<div class="TRS_Editor"><p>{body_text}</p>'
+                f'<p><a href="{att_b_url}">附件2：医疗岗位汇总表.xls</a></p>'
+                f'<p><a href="{att_a_renamed}">附件1：综合岗位汇总表（修订版）.xls</a></p></div>'
+            )
+            att_b_new_bytes = """<table>
+              <tr><th>招聘单位</th><th>岗位代码</th><th>岗位名称</th><th>计划人数</th><th>学历</th><th>专业要求</th></tr>
+              <tr><td>青岛市市立医院</td><td>B01</td><td>新B岗</td><td>3</td><td>硕士研究生</td><td>临床医学</td></tr>
+            </table>""".encode("utf-8")
+
+            def fake_fetch_html(url: str, timeout: float = 6.0, referer: str = "") -> str:
+                if url == "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/":
+                    return qd_list_html
+                if url == url_notice:
+                    return reordered_detail_html
+                return "<html><body><ul></ul></body></html>"
+
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch(
+                    "scripts.collect_exams.fetch_bytes_quick",
+                    side_effect=lambda u, timeout=6.0, max_bytes=4_000_000: att_b_new_bytes if u == att_b_url else None,
+                ),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=out_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=seed_dir,
+                )
+
+            snap = json.loads((out_dir / "exams.json").read_text(encoding="utf-8"))
+            self.assertTrue(snap["exams"][0].get("positions_pending_recheck"))
+            hydrated = hydrate_exam_snapshot(
+                snap,
+                lambda rel: json.loads((out_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd = hydrated["exams"][0]
+            pos_names = [p["position_name"] for p in qd["positions"]]
+            self.assertEqual(set(pos_names), {"旧A岗", "新B岗"})
+            self.assertEqual(len(pos_names), 2)
+            self.assertEqual(pos_names.count("新B岗"), 1)
+            self.assertNotIn("旧B岗", pos_names)
+            att_status = {a["url"]: a.get("parse_status") for a in qd["attachments"]}
+            self.assertEqual(att_status[att_b_url], "parsed")
+            self.assertEqual(att_status[att_a_renamed], "deferred")
+
+    def test_sibling_merge_preserves_both_parent_and_child_positions_with_dedup(self):
+        from scripts.collect_exams import merge_sibling_position_table_entries
+
+        notice_url = "https://taian.dtdjzx.gov.cn/web/p896/lytzgg/139991.html"
+        table_url = "https://taian.dtdjzx.gov.cn/web/p896/lytzgg/139992.html"
+        notice_id = hashlib.sha256(notice_url.encode("utf-8")).hexdigest()[:20]
+        table_id = hashlib.sha256(table_url.encode("utf-8")).hexdigest()[:20]
+
+        raw_by_url = {
+            notice_url: {
+                "id": notice_id,
+                "title": "2027年度泰安市各级机关考试录用公务员公告",
+                "source_url": notice_url,
+                "body": "2027年度泰安市各级机关考试录用公务员公告正文。" * 10,
+                "attachments": [{"title": "主公告附表", "url": "https://taian.gov.cn/p.xlsx"}],
+                "exam_positions": [
+                    {
+                        "row_id": "p-1",
+                        "exam_id": notice_id,
+                        "position_code": "001",
+                        "employer": "泰安市财政局",
+                        "position_name": "母公告A岗",
+                        "source_url": "https://taian.gov.cn/p.xlsx",
+                    },
+                    {
+                        "row_id": "p-dup",
+                        "exam_id": notice_id,
+                        "position_code": "003",
+                        "employer": "泰安市审计局",
+                        "position_name": "重复S岗",
+                        "source_url": "https://taian.gov.cn/shared.xlsx",
+                    },
+                ],
+            },
+            table_url: {
+                "id": table_id,
+                "title": "2027年度泰安市各级机关公务员招录职位表",
+                "source_url": table_url,
+                "body": "下载附件",
+                "attachments": [{"title": "子页职位表", "url": "https://taian.gov.cn/c.xlsx"}],
+                "exam_positions": [
+                    {
+                        "row_id": "c-1",
+                        "exam_id": table_id,
+                        "position_code": "002",
+                        "employer": "泰安市司法局",
+                        "position_name": "子页B岗",
+                        "source_url": "https://taian.gov.cn/c.xlsx",
+                    },
+                    {
+                        "row_id": "c-dup",
+                        "exam_id": table_id,
+                        "position_code": "003",
+                        "employer": "泰安市审计局",
+                        "position_name": "重复S岗",
+                        "source_url": "https://taian.gov.cn/shared.xlsx",
+                    },
+                ],
+            },
+        }
+
+        merge_sibling_position_table_entries(raw_by_url)
+        self.assertIn(notice_url, raw_by_url)
+        self.assertNotIn(table_url, raw_by_url)
+        merged_rows = raw_by_url[notice_url]["exam_positions"]
+        self.assertEqual(len(merged_rows), 3)
+        self.assertEqual({r["position_name"] for r in merged_rows}, {"母公告A岗", "子页B岗", "重复S岗"})
+        self.assertTrue(all(r["exam_id"] == notice_id for r in merged_rows))
+
+    def test_reparse_exam_ids_fails_fast_on_attachment_timeout_and_missing_id(self):
+        exam_id = "8d7aae1d032277666b47"
+        att_url = "https://html.gxjy.sdei.edu.cn/manageredu/userfiles/file/2026/07/03/1783132477078.pdf"
+        fixture = Path(__file__).parent / "fixtures" / "exams" / "dezhou_2026_positions.pdf"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "seed"
+            out_timeout = root / "out_timeout"
+            out_missing = root / "out_missing"
+            out_ok = root / "out_ok"
+            seed_dir.mkdir(parents=True)
+
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": "2026-11-25T18:08:16+08:00",
+                    "last_success_at": "2026-11-25T18:08:16+08:00",
+                    "total_exams": 1,
+                    "total_positions": 1,
+                    "total_headcount": 1,
+                    "total_exams_with_positions": 1,
+                    "cities": ["德州"],
+                    "exams": [
+                        {
+                            "id": exam_id,
+                            "title": "德州智能技术职业学院2026年公开招聘工作人员简章",
+                            "organizer": "德州智能技术职业学院",
+                            "notice_role": "招考简章",
+                            "stage": "ended",
+                            "schedule": {"reg_start": "2026-07-05", "reg_end": "2026-07-10", "reg_mode": "window"},
+                            "source_id": "sdei-civil-exams",
+                            "source_name": "山东省大学生就业服务平台",
+                            "source_url": "https://gxjy.sdei.edu.cn/dezhou2026",
+                            "published_at": "2026-07-03",
+                            "last_verified_at": "2026-11-25T18:08:16+08:00",
+                            "positions_status": "parsed",
+                            "excerpt": "德州智能技术职业学院公开招聘工作人员简章",
+                            "body": "德州智能技术职业学院2026年公开招聘工作人员简章。报名时间：2026年7月5日至7月10日。",
+                            "attachments": [
+                                {
+                                    "title": "德州智能技术职业学院2026年公开招聘工作人员岗位计划表.pdf",
+                                    "url": att_url,
+                                    "parse_status": "parsed",
+                                }
+                            ],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "old-bad-1",
+                                    "exam_id": exam_id,
+                                    "department": "德州智能技术职业学院",
+                                    "employer": "德州智能技术职业学院",
+                                    "position_name": "旧错误岗位",
+                                    "recruit_count": 1,
+                                    "major_raw": "旧错误岗位",
+                                    "source": "attachment",
+                                    "source_url": att_url,
+                                }
+                            ],
+                        }
+                    ],
+                    "sources": [],
+                },
+                seed_dir,
+            )
+
+            # 1. Attachment download timeout during explicit --reparse-exam-ids MUST fail and halt export
+            with patch("scripts.collect_exams.fetch_bytes_quick", return_value=None):
+                with self.assertRaises(RuntimeError) as ctx_timeout:
+                    collect_and_export_exams(
+                        public_dir=out_timeout,
+                        live_crawl=False,
+                        live_site="",
+                        seed_dir=seed_dir,
+                        reparse_exam_ids={exam_id},
+                    )
+            self.assertIn(exam_id, str(ctx_timeout.exception))
+            self.assertFalse((out_timeout / "exams.json").exists())
+
+            # 2. Unknown / mistyped exam ID in --reparse-exam-ids MUST fail and halt export
+            with patch("scripts.collect_exams.fetch_bytes_quick", return_value=fixture.read_bytes()):
+                with self.assertRaises(RuntimeError) as ctx_missing:
+                    collect_and_export_exams(
+                        public_dir=out_missing,
+                        live_crawl=False,
+                        live_site="",
+                        seed_dir=seed_dir,
+                        reparse_exam_ids={exam_id, "nonexistent0000000000"},
+                    )
+            self.assertIn("nonexistent0000000000", str(ctx_missing.exception))
+            self.assertFalse((out_missing / "exams.json").exists())
+
+            # 3. Valid ID + successful attachment parse passes verification cleanly
+            with patch("scripts.collect_exams.fetch_bytes_quick", return_value=fixture.read_bytes()):
+                res = collect_and_export_exams(
+                    public_dir=out_ok,
+                    live_crawl=False,
+                    live_site="",
+                    seed_dir=seed_dir,
+                    reparse_exam_ids={exam_id},
+                )
+            self.assertEqual(res["total_positions"], 8)
+            self.assertTrue((out_ok / "exams.json").is_file())
+            self.assertNotIn("positions_pending_recheck", res["exams"][0])
+
 
 if __name__ == "__main__":
     unittest.main()

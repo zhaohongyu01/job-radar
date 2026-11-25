@@ -266,6 +266,64 @@ class ExamsGuardTests(unittest.TestCase):
             self.assertIn("Exams Guard Fallback", summary_md)
             self.assertIn("last_success_at", summary_md)
 
+    def test_require_fresh_halts_publication_when_live_baseline_unreachable(self):
+        import os
+        from scripts.exams_guard import fetch_baseline_exams
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pub = Path(tmp) / "pub"
+            pub.mkdir(parents=True)
+            summary_file = Path(tmp) / "step_summary.md"
+
+            # Valid but stale Nov 11 snapshot; live baseline cannot be read due to transient outage
+            stale_cand = make_payload(50, generated_at="2026-11-11T13:18:08+08:00")
+            stale_cand["last_success_at"] = "2026-11-10T14:20:25+08:00"
+            (pub / "exams.json").write_text(json.dumps(stale_cand, ensure_ascii=False), encoding="utf-8")
+
+            ok, reason = validate_candidate(stale_cand, baseline=None, require_fresh=True)
+            self.assertFalse(ok)
+            self.assertIn("baseline", reason)
+
+            with (
+                patch("scripts.exams_guard.fetch_baseline_exams", return_value=(None, None)),
+                patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary_file)}),
+            ):
+                code = guard_exams(pub, "https://sites-project.job-radar.workers.dev", require_fresh=True)
+
+            self.assertEqual(code, 1)
+            summary_md = summary_file.read_text(encoding="utf-8")
+            self.assertIn("Exams Guard Halted", summary_md)
+
+        # Also verify fetch_baseline_exams retries transient network failures before giving up
+        base_payload = make_payload(40, generated_at="2026-11-25T06:41:50+08:00")
+        base_bytes = json.dumps(base_payload, ensure_ascii=False).encode("utf-8")
+
+        class FakeResp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.close()
+
+        attempts = 0
+
+        def flaky_urlopen(req, timeout=20):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise TimeoutError("transient baseline read timeout")
+            return FakeResp(base_bytes)
+
+        with patch("scripts.exams_guard.urlopen", side_effect=flaky_urlopen):
+            raw, data = fetch_baseline_exams(
+                "https://sites-project.job-radar.workers.dev",
+                retries=3,
+                backoff_seconds=0.0,
+            )
+        self.assertEqual(attempts, 2)
+        self.assertIsNotNone(raw)
+        self.assertEqual(data["generated_at"], "2026-11-25T06:41:50+08:00")
+
 
 if __name__ == "__main__":
     unittest.main()

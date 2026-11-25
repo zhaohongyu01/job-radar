@@ -1141,7 +1141,7 @@ def load_hydrated_existing_jobs(public_dir: Path, live_site: str = 'https://site
 
 POSITION_ATT_TITLE_RE = re.compile(r'岗位|职位|计划|汇总|需求|一览|简章附表|招聘名额', re.I)
 NON_POSITION_ATT_TITLE_RE = re.compile(
-    r'报名登记表|报名表|推荐表|政审表|考察表|体检表|诚信承诺书|同意报考|专业目录|报考指南|操作说明|笔试大纲|考试大纲',
+    r'报名登记表|报名表|推荐表|政审表|考察表|体检表|审批表|身份认定表|诚信承诺书|同意报考|专业目录|报考指南|操作说明|笔试大纲|考试大纲',
     re.I,
 )
 
@@ -1151,7 +1151,10 @@ def is_position_table_attachment(att: Dict[str, Any]) -> bool:
     url = str(att.get('url') or '').strip()
     if not url or not title:
         return False
-    if NON_POSITION_ATT_TITLE_RE.search(title) and not re.search(r'岗位|职位', title):
+    if NON_POSITION_ATT_TITLE_RE.search(title) and not re.search(
+        r'(?:岗位|职位|计划|需求)(?:汇总|一览|统计|信息|目录)?表',
+        title,
+    ):
         return False
     if POSITION_ATT_TITLE_RE.search(title):
         return True
@@ -1173,8 +1176,20 @@ def _exam_series_stem(title: str) -> str:
     return s
 
 
+def _position_merge_key(row: Dict[str, Any]) -> Tuple[str, ...]:
+    code = str(row.get('position_code') or '').strip()
+    src = str(row.get('source_url') or row.get('source_file') or '').strip()
+    emp = str(row.get('employer') or '').strip()
+    name = str(row.get('position_name') or row.get('name') or '').strip()
+    if code:
+        return ('code', code, src)
+    return ('name', emp, name, src)
+
+
 def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) -> None:
-    """Attach standalone 'XX职位表/岗位表' pages to their sibling 'XX公告/简章' and drop redundant shell items."""
+    """Attach standalone 'XX职位表/岗位表' pages to their sibling 'XX公告/简章' without dropping existing rows."""
+    from collections import Counter
+
     items = list(raw_by_url.values())
     urls_to_remove: set[str] = set()
     for item in items:
@@ -1182,11 +1197,12 @@ def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) 
         if not re.search(r'(?:职位表|岗位表|计划表|汇总表)$', title):
             continue
         atts = item.get('attachments') or []
-        pos = item.get('exam_positions') or item.get('positions') or []
+        pos = [p for p in (item.get('exam_positions') or item.get('positions') or []) if isinstance(p, dict)]
         stem = _exam_series_stem(title)
         if len(stem) < 6:
             continue
         matched_sibling = False
+        child_positions_preserved = True
         for target in items:
             if target is item or target['source_url'] in urls_to_remove:
                 continue
@@ -1206,10 +1222,33 @@ def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) 
                         if a.get('url') not in existing_urls:
                             existing_atts.append(a)
                     target['attachments'] = existing_atts
-                if pos and not target.get('exam_positions'):
-                    target['exam_positions'] = pos
+                if pos:
+                    target_id = (
+                        target.get('id')
+                        or hashlib.sha256((target.get('source_url') or '').encode('utf-8')).hexdigest()[:20]
+                    )
+                    parent_pos = [
+                        {**p, 'exam_id': target_id}
+                        for p in (target.get('exam_positions') or target.get('positions') or [])
+                        if isinstance(p, dict)
+                    ]
+                    parent_key_counts = Counter(_position_merge_key(p) for p in parent_pos)
+                    merged_pos = list(parent_pos)
+                    for child_row in pos:
+                        c_key = _position_merge_key(child_row)
+                        if parent_key_counts[c_key] > 0:
+                            parent_key_counts[c_key] -= 1
+                        else:
+                            merged_pos.append({**child_row, 'exam_id': target_id})
+                    merged_counts = Counter(_position_merge_key(p) for p in merged_pos)
+                    child_counts = Counter(_position_merge_key(p) for p in pos)
+                    if all(merged_counts[k] >= cnt for k, cnt in child_counts.items()):
+                        target['exam_positions'] = merged_pos
+                        target.pop('positions', None)
+                    else:
+                        child_positions_preserved = False
                 matched_sibling = True
-        if matched_sibling and len(str(item.get('body') or '')) < 300:
+        if matched_sibling and child_positions_preserved and len(str(item.get('body') or '')) < 300:
             urls_to_remove.add(item['source_url'])
         elif not matched_sibling and re.search(r'2027年度.*(?:考试录用公务员|公务员招录)职位表', title) and len(str(item.get('body') or '')) < 300:
             item['body'] = (
@@ -1224,8 +1263,26 @@ def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) 
         raw_by_url.pop(u, None)
 
 
+ATTACHMENT_PARSER_VERSION = 2
+
+
+def _has_degraded_parsed_positions(item: Dict[str, Any]) -> bool:
+    rows = item.get('exam_positions') or item.get('positions') or []
+    if not rows:
+        return False
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        pname = str(r.get('position_name') or '')
+        emp = str(r.get('employer') or '')
+        mraw = str(r.get('major_raw') or '')
+        if pname == '公开招聘岗位' or emp == '用人单位见简章' or (pname and mraw == pname):
+            return True
+    return False
+
+
 def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items: int = 60) -> None:
-    """Download and parse .xlsx/.xls/.pdf/.docx position table attachments, preserving prior positions on failure."""
+    """Download and parse position table attachments, preserving verified rows per attachment on failure."""
     candidates: List[Dict[str, Any]] = []
     for item in items:
         atts = item.get('attachments') or []
@@ -1233,8 +1290,19 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
             is_position_table_attachment(a) and a.get('parse_status') == 'deferred'
             for a in atts
         )
+        needs_parser_upgrade = (
+            _has_degraded_parsed_positions(item)
+            and any(
+                is_position_table_attachment(a)
+                and int(a.get('parser_version') or 1) < ATTACHMENT_PARSER_VERSION
+                for a in atts
+            )
+        )
+        if needs_parser_upgrade:
+            item['_force_reparse_parser_upgrade'] = True
         needs_reparse = bool(
             item.get('_needs_att_reparse')
+            or item.get('_force_reparse_parser_upgrade')
             or item.get('positions_pending_recheck')
             or has_deferred_att
         )
@@ -1252,7 +1320,11 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
             candidates.append(item)
 
     def sort_key(x: Dict[str, Any]) -> Tuple[int, int, str]:
-        reparse_prio = 1 if (x.get('_needs_att_reparse') or x.get('positions_pending_recheck')) else 0
+        reparse_prio = 1 if (
+            x.get('_needs_att_reparse')
+            or x.get('_force_reparse_parser_upgrade')
+            or x.get('positions_pending_recheck')
+        ) else 0
         st = str(x.get('stage') or '')
         is_active = 1 if st in ('registering', 'closing_soon', 'upcoming', 'rolling', 'payment_confirm', 'admit_exam', '') else 0
         return (reparse_prio, is_active, str(x.get('published_at') or ''))
@@ -1263,64 +1335,120 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
         exam_id = item.get('id') or hashlib.sha256((item.get('source_url') or '').encode('utf-8')).hexdigest()[:20]
         src_city = item.get('source_city') or (item.get('cities') or [''])[0]
         fallback_positions = list(item.get('exam_positions') or item.get('positions') or [])
-        old_att_by_url = {
-            str(a.get('url') or ''): a
-            for a in (item.get('_pre_crawl_attachments') or item.get('attachments') or [])
-            if isinstance(a, dict) and a.get('url')
-        }
-        parsed_rows: List[Dict[str, Any]] = []
-        any_failed = False
         gov_m = re.search(r'https?://[a-z0-9.-]+\.gov\.cn(?::\d+)?', str(item.get('body') or ''), re.I)
         gov_origin = gov_m.group(0) if gov_m else ''
+        old_atts_raw = clean_exam_attachments(
+            item.get('_pre_crawl_attachments') or item.get('attachments') or [],
+            fallback_origin=gov_origin,
+        )
+        old_att_by_url = {
+            str(a.get('url') or ''): a
+            for a in old_atts_raw
+            if isinstance(a, dict) and a.get('url')
+        }
         cleaned_atts = clean_exam_attachments(item.get('attachments') or [], fallback_origin=gov_origin)
         item['attachments'] = cleaned_atts
         candidate_atts = [a for a in cleaned_atts if is_position_table_attachment(a)][:6]
-        for att in candidate_atts:
+        force_parser_reparse = bool(item.get('_force_reparse_parser_upgrade'))
+
+        def exact_fallback_rows(att_url: str, att_title: str) -> List[Dict[str, Any]]:
+            if not fallback_positions:
+                return []
+            by_url = [r for r in fallback_positions if str(r.get('source_url') or '') == att_url]
+            if by_url:
+                return by_url
+            if att_title:
+                by_file = [
+                    r for r in fallback_positions
+                    if str(r.get('source_file') or '') == att_title
+                    and not str(r.get('source_url') or '')
+                ]
+                if by_file:
+                    return by_file
+            if len(candidate_atts) == 1:
+                return list(fallback_positions)
+            return []
+
+        per_att_rows: List[Tuple[int, Dict[str, Any], List[Dict[str, Any]], bool]] = []
+        any_failed = False
+        matched_old_urls: set[str] = set()
+        matched_old_titles: set[str] = set()
+        used_fallback_ids: set[int] = set()
+        freshly_parsed_sigs: set[Tuple[str, str, str]] = set()
+
+        def mark_identity_matched(att_url: str, att_title: str) -> None:
+            if att_url:
+                matched_old_urls.add(att_url)
+            prev_same = old_att_by_url.get(att_url)
+            if prev_same and prev_same.get('title'):
+                matched_old_titles.add(str(prev_same['title']))
+            elif att_title and any(str(a.get('title') or '') == att_title for a in old_atts_raw):
+                matched_old_titles.add(att_title)
+
+        for idx, att in enumerate(candidate_atts):
             att_url = str(att.get('url') or '')
             att_title = str(att.get('title') or '')
             prev_att = old_att_by_url.get(att_url) or {}
+            # Only versions previously parsed into verified positions (and not forced for parser upgrade)
+            # may send conditional cache headers or reuse cached rows via 304 / sha256 match.
+            prev_parsed_ok = (
+                prev_att.get('parse_status') == 'parsed'
+                and not (force_parser_reparse and int(prev_att.get('parser_version') or 1) < ATTACHMENT_PARSER_VERSION)
+            )
             is_zip = '.zip' in att_url.lower() or '.zip' in att_title.lower()
             status, raw_bytes, new_etag, new_lm = fetch_attachment_conditional(
                 att_url,
                 timeout=12.0 if is_zip else 6.0,
-                etag=str(prev_att.get('etag') or ''),
-                last_modified=str(prev_att.get('last_modified') or ''),
+                etag=str(prev_att.get('etag') or '') if prev_parsed_ok else '',
+                last_modified=str(prev_att.get('last_modified') or '') if prev_parsed_ok else '',
             )
-            if status == 'not_modified' and fallback_positions:
-                reused = [r for r in fallback_positions if r.get('source_url') == att_url]
-                if not reused and len(candidate_atts) == 1:
-                    reused = fallback_positions
+            if status == 'not_modified' and prev_parsed_ok and fallback_positions:
+                reused = exact_fallback_rows(att_url, att_title)
                 if reused:
-                    parsed_rows.extend(reused)
-                    for meta_k in ('sha256', 'etag', 'last_modified'):
+                    for r in reused:
+                        used_fallback_ids.add(id(r))
+                    mark_identity_matched(att_url, att_title)
+                    for meta_k in ('sha256', 'etag', 'last_modified', 'parser_version'):
                         if prev_att.get(meta_k):
                             att[meta_k] = prev_att[meta_k]
                     att['parse_status'] = 'parsed'
+                    per_att_rows.append((idx, att, [dict(r) for r in reused], False))
                     continue
 
             if status != 'ok' or not raw_bytes:
                 any_failed = True
                 att['parse_status'] = 'deferred'
+                for meta_k in ('sha256', 'etag', 'last_modified'):
+                    att.pop(meta_k, None)
+                preserved = exact_fallback_rows(att_url, att_title)
+                if preserved:
+                    for r in preserved:
+                        used_fallback_ids.add(id(r))
+                    mark_identity_matched(att_url, att_title)
+                per_att_rows.append((idx, att, [dict(r) for r in preserved], True))
                 continue
 
             digest = hashlib.sha256(raw_bytes).hexdigest()
-            att['sha256'] = digest
-            if new_etag:
-                att['etag'] = new_etag
-            if new_lm:
-                att['last_modified'] = new_lm
-
             if (
-                prev_att.get('sha256') == digest
+                prev_parsed_ok
+                and prev_att.get('sha256') == digest
                 and not item.get('_att_or_body_changed')
                 and fallback_positions
             ):
-                reused = [r for r in fallback_positions if r.get('source_url') == att_url]
-                if not reused and len(candidate_atts) == 1:
-                    reused = fallback_positions
+                reused = exact_fallback_rows(att_url, att_title)
                 if reused:
-                    parsed_rows.extend(reused)
+                    for r in reused:
+                        used_fallback_ids.add(id(r))
+                    mark_identity_matched(att_url, att_title)
+                    att['sha256'] = digest
+                    if new_etag or prev_att.get('etag'):
+                        att['etag'] = new_etag or prev_att.get('etag')
+                    if new_lm or prev_att.get('last_modified'):
+                        att['last_modified'] = new_lm or prev_att.get('last_modified')
+                    if prev_att.get('parser_version'):
+                        att['parser_version'] = prev_att['parser_version']
                     att['parse_status'] = 'parsed'
+                    per_att_rows.append((idx, att, [dict(r) for r in reused], False))
                     continue
 
             default_bz = '公务员（行政编）' if '公务员' in str(item.get('title') or '') else '事业编'
@@ -1329,17 +1457,78 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
                 exam_id=exam_id,
                 default_bianzhi=default_bz,
                 default_city=src_city,
+                default_employer=str(item.get('organizer') or ''),
                 filename=att_title,
                 url=att_url,
             )
             if rows:
                 for r in rows:
+                    r['exam_id'] = exam_id
                     r['source_url'] = att_url
-                parsed_rows.extend(rows)
+                    if att_title and not r.get('source_file'):
+                        r['source_file'] = att_title
+                    freshly_parsed_sigs.add((
+                        str(r.get('position_code') or ''),
+                        str(r.get('employer') or ''),
+                        str(r.get('position_name') or ''),
+                    ))
+                mark_identity_matched(att_url, att_title)
+                att['sha256'] = digest
+                att['parser_version'] = ATTACHMENT_PARSER_VERSION
+                if new_etag:
+                    att['etag'] = new_etag
+                else:
+                    att.pop('etag', None)
+                if new_lm:
+                    att['last_modified'] = new_lm
+                else:
+                    att.pop('last_modified', None)
                 att['parse_status'] = 'parsed'
+                per_att_rows.append((idx, att, rows, False))
             else:
                 any_failed = True
                 att['parse_status'] = 'deferred'
+                for meta_k in ('sha256', 'etag', 'last_modified'):
+                    att.pop(meta_k, None)
+                preserved = exact_fallback_rows(att_url, att_title)
+                if preserved:
+                    for r in preserved:
+                        used_fallback_ids.add(id(r))
+                    mark_identity_matched(att_url, att_title)
+                per_att_rows.append((idx, att, [dict(r) for r in preserved], True))
+
+        # Order-independent fallback for failed attachments whose URL/title changed:
+        # preserve all unclaimed old rows that do not belong to any already-matched attachment.
+        unmatched_failed = [entry for entry in per_att_rows if entry[3] and not entry[2]]
+        if unmatched_failed and fallback_positions:
+            unclaimed: List[Dict[str, Any]] = []
+            for r in fallback_positions:
+                if id(r) in used_fallback_ids:
+                    continue
+                r_url = str(r.get('source_url') or '')
+                r_file = str(r.get('source_file') or '')
+                if r_url and r_url in matched_old_urls:
+                    continue
+                if not r_url and r_file and r_file in matched_old_titles:
+                    continue
+                sig = (
+                    str(r.get('position_code') or ''),
+                    str(r.get('employer') or ''),
+                    str(r.get('position_name') or ''),
+                )
+                if any(sig) and sig in freshly_parsed_sigs:
+                    continue
+                unclaimed.append(dict(r))
+            if unclaimed:
+                target_idx = unmatched_failed[0][0]
+                for i, entry in enumerate(per_att_rows):
+                    if entry[0] == target_idx:
+                        per_att_rows[i] = (entry[0], entry[1], unclaimed, entry[3])
+                        break
+
+        parsed_rows: List[Dict[str, Any]] = []
+        for _, _, att_rows, _ in per_att_rows:
+            parsed_rows.extend(att_rows)
 
         if parsed_rows:
             item['exam_positions'] = parsed_rows
@@ -1350,7 +1539,7 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
             else:
                 item.pop('positions_pending_recheck', None)
         elif fallback_positions:
-            # New attachment download/parse failed: preserve previous verified positions intact.
+            # All candidate attachments failed without per-attachment attribution: preserve prior positions intact.
             item['exam_positions'] = fallback_positions
             if any_failed:
                 item['positions_pending_recheck'] = True
@@ -1536,6 +1725,7 @@ def collect_and_export_exams(
     live_crawl: bool = True,
     live_site: str = 'https://sites-project.job-radar.workers.dev',
     seed_dir: Optional[Path] = None,
+    reparse_exam_ids: Optional[set[str]] = None,
 ) -> Dict[str, Any]:
     public_dir = Path(public_dir)
     effective_seed_dir = Path(seed_dir) if seed_dir is not None else public_dir
@@ -1777,7 +1967,7 @@ def collect_and_export_exams(
             for att in merged_new_atts:
                 prev = old_att_map.get(att.get('url') or '')
                 if prev:
-                    for meta_k in ('sha256', 'etag', 'last_modified', 'parse_status'):
+                    for meta_k in ('sha256', 'etag', 'last_modified', 'parse_status', 'parser_version'):
                         if meta_k not in att and prev.get(meta_k):
                             att[meta_k] = prev[meta_k]
 
@@ -1814,9 +2004,46 @@ def collect_and_export_exams(
 
         # Parse .xlsx / .xls / .pdf / .docx position table attachments for announcements that lack tabular positions
         merge_sibling_position_table_entries(raw_by_url)
+        if reparse_exam_ids:
+            for rec in raw_by_url.values():
+                if rec.get('id') in reparse_exam_ids:
+                    rec['_needs_att_reparse'] = True
+                    rec['_force_reparse_parser_upgrade'] = True
         parse_position_attachments_for_items(list(raw_by_url.values()), max_items=60)
     else:
         merge_sibling_position_table_entries(raw_by_url)
+        if reparse_exam_ids:
+            targets = []
+            for rec in raw_by_url.values():
+                if rec.get('id') in reparse_exam_ids:
+                    rec['_needs_att_reparse'] = True
+                    rec['_force_reparse_parser_upgrade'] = True
+                    targets.append(rec)
+            if targets:
+                parse_position_attachments_for_items(targets, max_items=len(targets))
+
+    if reparse_exam_ids:
+        by_raw_id = {str(rec.get('id') or ''): rec for rec in raw_by_url.values() if rec.get('id')}
+        reparse_failures: List[str] = []
+        for req_id in sorted(reparse_exam_ids):
+            rec = by_raw_id.get(req_id)
+            if rec is None:
+                reparse_failures.append(f'{req_id} (exam_id not found in snapshot)')
+                continue
+            cand_atts = [a for a in (rec.get('attachments') or []) if is_position_table_attachment(a)][:6]
+            if not cand_atts:
+                reparse_failures.append(f'{req_id} (no position-table attachment)')
+                continue
+            unparsed_atts = [str(a.get('url') or '') for a in cand_atts if a.get('parse_status') != 'parsed']
+            if rec.get('positions_pending_recheck') or unparsed_atts:
+                reparse_failures.append(
+                    f'{req_id} (attachment reparse failed or pending recheck: {len(unparsed_atts)} unparsed)'
+                )
+                continue
+            if not (rec.get('exam_positions') or rec.get('positions')):
+                reparse_failures.append(f'{req_id} (zero parsed positions after reparse)')
+        if reparse_failures:
+            raise RuntimeError('Targeted reparse verification failed: ' + '; '.join(reparse_failures))
 
     for rec in raw_by_url.values():
         for tmp_key in (
@@ -1825,6 +2052,7 @@ def collect_and_export_exams(
             '_list_attachments',
             '_hydrated_seed',
             '_needs_att_reparse',
+            '_force_reparse_parser_upgrade',
             '_att_or_body_changed',
         ):
             rec.pop(tmp_key, None)
@@ -1897,6 +2125,20 @@ def collect_and_export_exams(
     total_headcount = sum(int(e['total_headcount']) for e in exams if e.get('total_headcount') is not None)
     total_exams_with_positions = sum(1 for e in exams if e.get('positions'))
     all_cities = sorted({c_name for e in exams for c_name in (e.get('cities') or []) if c_name})
+
+    if reparse_exam_ids:
+        exported_by_id = {str(e.get('id') or ''): e for e in exams if e.get('id')}
+        post_failures: List[str] = []
+        for req_id in sorted(reparse_exam_ids):
+            ex = exported_by_id.get(req_id)
+            if ex is None:
+                post_failures.append(f'{req_id} (missing from exported exams)')
+            elif ex.get('positions_pending_recheck'):
+                post_failures.append(f'{req_id} (still marked positions_pending_recheck)')
+            elif not (ex.get('positions') or []):
+                post_failures.append(f'{req_id} (zero exported positions)')
+        if post_failures:
+            raise RuntimeError('Targeted reparse export verification failed: ' + '; '.join(post_failures))
 
     payload = {
         'schema_version': 1,
@@ -2012,9 +2254,11 @@ def main() -> None:
     parser.add_argument('--seed-dir', default='', help='Optional seed directory to read baseline snapshot from before writing to --public-dir')
     parser.add_argument('--live-site', default='https://sites-project.job-radar.workers.dev', help='Live site origin for supplementing snapshot jobs (pass empty string to skip)')
     parser.add_argument('--offline-only', action='store_true', help='Only extract from existing snapshot without network requests')
+    parser.add_argument('--reparse-exam-ids', default='', help='Optional comma-separated exam IDs whose attachments should be re-parsed')
     parser.add_argument('--repack-existing', action='store_true', help='Losslessly repackage existing public/exams.json into externalized position/detail shards')
     args = parser.parse_args()
 
+    reparse_ids = {s.strip() for s in str(args.reparse_exam_ids or '').split(',') if s.strip()}
     if args.repack_existing:
         res = repack_existing_exam_snapshot(Path(args.public_dir))
     else:
@@ -2023,6 +2267,7 @@ def main() -> None:
             live_crawl=not args.offline_only,
             live_site=args.live_site,
             seed_dir=Path(args.seed_dir) if args.seed_dir else None,
+            reparse_exam_ids=reparse_ids or None,
         )
     print(
         f"Exported exams.json: total_exams={res['total_exams']}, "

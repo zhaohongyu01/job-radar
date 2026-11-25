@@ -13,6 +13,14 @@ on:
           - nas
           - cloud
         default: nas
+      reuse_run_id:
+        description: '可选：复用指定历史运行 ID 的 exams-collected 产物离线重整并发布（跳过本轮采集）'
+        type: string
+        default: ''
+      reparse_exam_ids:
+        description: '可选：配合 reuse_run_id 使用，逗号分隔仅定点重解析的公告 ID'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -65,6 +73,7 @@ jobs:
           retention-days: 2
 
       - name: Prepare compact exam seed from live snapshot
+        if: ${{ !inputs.reuse_run_id }}
         run: |
           python scripts/download_public.py --site https://sites-project.job-radar.workers.dev --public-dir data/live-public --prefer-newer-exams-dir public
           python scripts/collect_exams.py --public-dir data/live-public --offline-only --live-site ""
@@ -73,6 +82,7 @@ jobs:
           cp -rf data/live-public/exam-assets/. data/exams-seed/exam-assets/
 
       - name: Upload compact exam seed for NAS
+        if: ${{ !inputs.reuse_run_id }}
         uses: actions/upload-artifact@v7
         with:
           name: exams-seed
@@ -83,7 +93,7 @@ jobs:
 
   collect-exams-on-nas:
     needs: [prepare-and-build]
-    if: ${{ (inputs.runner_mode || vars.EXAMS_RUNNER_MODE || 'nas') == 'nas' }}
+    if: ${{ !inputs.reuse_run_id && (inputs.runner_mode || vars.EXAMS_RUNNER_MODE || 'nas') == 'nas' }}
     runs-on: [self-hosted, linux, job-radar-nas]
     timeout-minutes: 20
     steps:
@@ -138,6 +148,9 @@ jobs:
   deploy-exams:
     needs: [prepare-and-build, collect-exams-on-nas]
     if: ${{ !cancelled() && needs.prepare-and-build.result == 'success' && (needs.collect-exams-on-nas.result == 'success' || needs.collect-exams-on-nas.result == 'failure' || needs.collect-exams-on-nas.result == 'skipped') }}
+    permissions:
+      contents: read
+      actions: read
     concurrency:
       group: cloudflare-deployment
       cancel-in-progress: false
@@ -175,16 +188,37 @@ jobs:
         run: python scripts/download_public.py --site https://sites-project.job-radar.workers.dev --public-dir data/live-public --prefer-newer-exams-dir public
 
       - name: Download NAS collected exams snapshot
-        if: ${{ (inputs.runner_mode || vars.EXAMS_RUNNER_MODE || 'nas') == 'nas' }}
-        continue-on-error: true
+        if: ${{ inputs.reuse_run_id != '' || (inputs.runner_mode || vars.EXAMS_RUNNER_MODE || 'nas') == 'nas' }}
+        continue-on-error: ${{ inputs.reuse_run_id == '' }}
         uses: actions/download-artifact@v8
         with:
           name: exams-collected
           path: data/exams-collected
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.reuse_run_id || github.run_id }}
 
       - name: Merge NAS exams snapshot or run cloud fallback
+        env:
+          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
+          REPARSE_EXAM_IDS: ${{ inputs.reparse_exam_ids }}
         run: |
-          if [ -f data/exams-collected/exams.json ] && [ -d data/exams-collected/exam-assets ]; then
+          if [ -n "$REUSE_RUN_ID" ]; then
+            if [ ! -f data/exams-collected/exams.json ] || [ ! -d data/exams-collected/exam-assets ]; then
+              echo "::error::Requested reuse_run_id=$REUSE_RUN_ID but exams-collected artifact is missing."
+              exit 1
+            fi
+            echo "Reusing and normalizing exams-collected artifact from run $REUSE_RUN_ID..."
+            rm -rf data/exams-repaired
+            REPARSE_ARGS=()
+            if [ -n "$REPARSE_EXAM_IDS" ]; then
+              REPARSE_ARGS+=(--reparse-exam-ids "$REPARSE_EXAM_IDS")
+            fi
+            python scripts/collect_exams.py --offline-only --seed-dir data/exams-collected --public-dir data/exams-repaired --live-site "" "${REPARSE_ARGS[@]}"
+            rm -rf data/live-public/exam-assets
+            mkdir -p data/live-public/exam-assets
+            cp -f data/exams-repaired/exams.json data/live-public/exams.json
+            cp -rf data/exams-repaired/exam-assets/. data/live-public/exam-assets/
+          elif [ -f data/exams-collected/exams.json ] && [ -d data/exams-collected/exam-assets ]; then
             echo "Applying NAS-collected civil exam snapshot..."
             rm -rf data/live-public/exam-assets
             mkdir -p data/live-public/exam-assets

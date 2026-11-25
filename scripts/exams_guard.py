@@ -8,7 +8,8 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, Optional, Tuple
+import time
+from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.request import Request, urlopen
 
 try:
@@ -22,19 +23,28 @@ USER_AGENT = (
 )
 
 
-def fetch_baseline_exams(site: str) -> Tuple[Optional[bytes], Optional[Dict[str, Any]]]:
+def fetch_baseline_exams(
+    site: str,
+    retries: int = 3,
+    backoff_seconds: float = 1.0,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> Tuple[Optional[bytes], Optional[Dict[str, Any]]]:
     if not site:
         return None, None
     url = site.rstrip('/') + '/exams.json'
-    try:
-        req = Request(url, headers={'User-Agent': USER_AGENT, 'Cache-Control': 'no-cache'})
-        with urlopen(req, timeout=20) as resp:
-            raw = resp.read()
-        data = json.loads(raw.decode('utf-8'))
-        if isinstance(data, dict) and isinstance(data.get('exams'), list):
-            return raw, data
-    except Exception:
-        pass
+    attempts = max(1, int(retries))
+    for attempt in range(attempts):
+        try:
+            req = Request(url, headers={'User-Agent': USER_AGENT, 'Cache-Control': 'no-cache'})
+            with urlopen(req, timeout=20) as resp:
+                raw = resp.read()
+            data = json.loads(raw.decode('utf-8'))
+            if isinstance(data, dict) and isinstance(data.get('exams'), list):
+                return raw, data
+        except Exception:
+            pass
+        if attempt + 1 < attempts and backoff_seconds > 0:
+            sleep_fn(backoff_seconds * (2 ** attempt))
     return None, None
 
 
@@ -98,6 +108,8 @@ def validate_candidate(
                     False,
                     f'candidate last_success_at ({cand_ls}) is older than baseline ({base_ls})',
                 )
+    elif require_fresh:
+        return False, 'cannot verify freshness: live baseline is unavailable'
 
     has_schedule = any(
         bool((e.get('schedule') or {}).get('reg_end'))
@@ -372,7 +384,14 @@ def guard_exams(
         except Exception as exc:
             reason = f'{reason}; failed to restore baseline exam assets: {exc}'
 
-    print(f'Exams guard failed without baseline: {reason}', file=sys.stderr)
+    print(f'::error::Exams guard failed without baseline: {reason}', file=sys.stderr)
+    summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary_path:
+        try:
+            with Path(summary_path).open('a', encoding='utf-8') as sf:
+                sf.write(f"\n- **Exams Guard Halted**: `{reason}` (publication paused to prevent regression).\n")
+        except Exception:
+            pass
     return 1
 
 

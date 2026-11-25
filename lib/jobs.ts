@@ -4,6 +4,7 @@ import { matchesEducationRequirement, positionMatches } from './eligibility.ts';
 import { jobMatchesMajor, MAX_EXTRACTED_MAJORS } from './job-major-matcher.ts';
 import { PERSONAL_DETAIL_FIELDS, validatePersonalDetails, mergePersonalRecords } from './personal-records.ts';
 import employerBrands from '../config/employer-brands.json' with { type: 'json' };
+import campusLocations from '../config/campus-locations.json' with { type: 'json' };
 import type { CardSummaryMeta } from './card-summary.ts';
 
 export function shanghaiDay(value: string | number): string {
@@ -467,6 +468,109 @@ export function effectiveJobTypes(job: Pick<Job, 'types' | 'source_id' | 'kind'>
     return ['校招'];
   }
   return [];
+}
+
+const ONLINE_EVENT_VENUE_RE = /线上|直播|空中宣讲|腾讯会议|网络会议/;
+const CAMPUS_LOCATION_RULES = campusLocations.rules.map((rule) => ({
+  school: rule.school,
+  city: rule.city,
+  campusLabels:
+    'campus_labels' in rule && Array.isArray(rule.campus_labels) ? rule.campus_labels : [],
+  pattern: new RegExp(rule.venue_pattern),
+}));
+
+export function effectiveEventCity(
+  event: Pick<TalkEvent, 'city' | 'mode' | 'school' | 'venue'>,
+): string | null {
+  const venue = event.venue || '';
+  if (event.mode === 'online' || ONLINE_EVENT_VENUE_RE.test(venue)) return null;
+  if (event.city) return event.city;
+  const school = event.school || '';
+  const matches = CAMPUS_LOCATION_RULES.filter(
+    (rule) => (rule.school === school || venue.includes(rule.school)) && rule.pattern.test(venue),
+  );
+  let locationText = venue;
+  for (const rule of matches) {
+    for (const label of rule.campusLabels) {
+      locationText = locationText.replaceAll(label, '');
+    }
+  }
+  const explicit = citiesInText(locationText);
+  const inferred = new Set(matches.map((rule) => rule.city));
+  if (
+    explicit.length > 1 ||
+    inferred.size > 1 ||
+    (explicit.length === 1 && inferred.size === 1 && !inferred.has(explicit[0]))
+  ) {
+    return null;
+  }
+  if (explicit.length === 1) return explicit[0];
+  if (inferred.size === 1) return [...inferred][0];
+  return null;
+}
+
+export function effectiveJobSectors(
+  job: Pick<Job, 'company' | 'title' | 'sectors' | 'source_id'> & { kind?: string },
+): string[] {
+  const rawSectors = job.sectors ?? [];
+  if (!rawSectors.length) return rawSectors;
+
+  const comp = (job.company || '').trim();
+  const sourceId = job.source_id || '';
+  const brand =
+    employerBrand(sourceId) ||
+    (employerBrands.reference_sources as Record<string, string>)[sourceId] ||
+    '';
+  const rawTitle = (job.title || '').split('\n')[0].trim();
+  const titleEntity = rawTitle.includes('·')
+    ? rawTitle.split('·')[0].trim()
+    : job.kind === '具体岗位' && comp
+      ? ''
+      : rawTitle;
+  const employerEntity = `${comp} ${titleEntity}`;
+  const entityText = `${comp} ${brand} ${titleEntity}`;
+
+  const isExplicitBankEmployer =
+    /银行|农信|信用社|农商行|村镇银行/.test(employerEntity) &&
+    !/保险|人寿|财险|产险|寿险|再保险/.test(employerEntity);
+
+  const isExplicitInsurer =
+    (/(?:保险|人寿|财险|产险|寿险|再保险|太保|人保)/.test(entityText) ||
+      /^(?:chinalife|taiping|picc)-/.test(sourceId)) &&
+    !/银行|农信|信用社|农商行|村镇银行/.test(employerEntity);
+
+  const hasBankEntity =
+    !isExplicitInsurer &&
+    (/银行|农信|信用社|农商行|村镇银行/.test(entityText) ||
+      /^(?:boc|psbc)-/.test(sourceId) ||
+      ((!comp || comp === '单位名称待核实' || comp === '招聘单位见原页面') &&
+        /(?:总行|分行|支行)|柜员/.test(rawTitle)));
+
+  const isCorpEntity = /有限公司|股份有限公司|有限责任公司|集团公司|合伙企业|事务所/.test(
+    employerEntity,
+  );
+
+  const filtered = rawSectors.filter((sector) => {
+    if (sector === '银行' && !hasBankEntity) return false;
+    if (sector === '保险' && isExplicitBankEmployer) return false;
+    if ((sector === '公务员' || sector === '事业单位') && isCorpEntity) return false;
+    return true;
+  });
+
+  if (isExplicitInsurer && !filtered.includes('保险') && rawSectors.includes('银行')) {
+    filtered.unshift('保险');
+  }
+
+  if (filtered.length === 0) {
+    return ['企业 / 其他'];
+  }
+  if (
+    filtered.length === rawSectors.length &&
+    filtered.every((sector, idx) => sector === rawSectors[idx])
+  ) {
+    return rawSectors;
+  }
+  return filtered;
 }
 export function formatEducationDisplay(education?: string | null, fallback = '学历待核实'): string {
   if (!education) return fallback;
@@ -983,11 +1087,38 @@ export type SalaryRange = {
   raw: string;
 };
 
+const MIXED_SALARY_UNITS_RE =
+  /\d+(?:\.\d+)?\s*(?:k|K|元)\s*[-~至–—]\s*\d+(?:\.\d+)?\s*[万wW]|\d+(?:\.\d+)?\s*[万wW]\s*[-~至–—]\s*\d+(?:\.\d+)?\s*(?:k|K|元)/;
+
+function salaryUnitMultiplier(unit: string): number {
+  if (unit === '万' || unit === 'w' || unit === 'W') return 10000;
+  if (unit === 'k' || unit === 'K') return 1000;
+  return 1;
+}
+
+function isWanSalaryUnit(unit: string): boolean {
+  return unit === '万' || unit === 'w' || unit === 'W';
+}
+
 export function parseSalaryRange(job: Job): SalaryRange | null {
   if (job.listing_facts?.version === 1) {
     const salary = job.listing_facts.salary;
     if (!salary) return null;
     const rawMax = salary.max ?? Number.POSITIVE_INFINITY;
+    if (
+      salary.min <= 0 ||
+      rawMax < 1000 ||
+      salary.min > rawMax ||
+      MIXED_SALARY_UNITS_RE.test(salary.raw || '')
+    ) {
+      const reparsedFromRaw = salary.raw
+        ? parseSalaryRange({ ...job, listing_facts: undefined, title: `岗位 ${salary.raw}`, excerpt: '' })
+        : null;
+      if (reparsedFromRaw) {
+        return { ...reparsedFromRaw, raw: salary.raw };
+      }
+      return parseSalaryRange({ ...job, listing_facts: undefined });
+    }
     if (
       salary.min >= 60000 &&
       /[万wW]/.test(salary.raw) &&
@@ -1005,9 +1136,9 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
   const excerpt = job.excerpt || '';
   let salaryContext = title;
 
-  // 1. Check title end: (\n6000-8000元, (8k-15k), 20000元以上, 15~18W/年, 15W-50W)
+  // 1. Check title end: (\n6000-8000元, (8k-15k), 20000元以上, 15~18W/年, 15W-50W, 8k-1.2万/月)
   let m = title.match(
-    /(?:[（(\n\s])(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*[-~至–]\s*(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天|人民币)?(?:[)）\s]*)$/,
+    /(?:[（(\n\s])(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*[-~至–—]\s*(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?(?:·\d+薪)?(?:元|\/月|\/年|\/天|人民币)?(?:[)）\s]*)$/,
   );
   let isAbove = false;
   if (!m) {
@@ -1017,12 +1148,14 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
     if (m) isAbove = true;
   }
   if (!m) {
-    const exMatch = excerpt.match(/薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]+)/);
-    if (exMatch) {
+    const exMatch = excerpt.match(
+      /薪资(?:待遇)?[:：]\s*([^\s,，;；\n*]*(?:\s*[-~至–—]\s*[^\s,，;；\n*]+)?)/,
+    );
+    if (exMatch && exMatch[1].trim()) {
       const rawText = exMatch[1].trim();
       salaryContext = rawText;
       m = rawText.match(
-        /(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*[-~至–]\s*(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?/,
+        /(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?\s*[-~至–—]\s*(\d+(?:\.\d+)?)\s*(k|K|万|w|W|元)?/,
       );
       if (!m) {
         m = rawText.match(
@@ -1043,43 +1176,45 @@ export function parseSalaryRange(job: Job): SalaryRange | null {
   const matchedStr = m[0];
   const hasExplicitMonthly = /\/月|月薪|每月/.test(salaryContext) || /\/月|月薪|每月/.test(matchedStr);
   const hasExplicitAnnual =
-    salaryContext.includes('/年') ||
-    salaryContext.includes('年薪') ||
-    matchedStr.includes('/年') ||
-    matchedStr.includes('年');
+    /\/年|年薪|每年/.test(salaryContext) || /\/年|年薪|每年/.test(matchedStr);
 
   if (isAbove) {
-    const isWan = ['万', 'w', 'W'].includes(unit1);
-    if (isWan) val1 *= 10000;
-    else if (['k', 'K'].includes(unit1)) val1 *= 1000;
+    const isWan = isWanSalaryUnit(unit1);
+    val1 *= salaryUnitMultiplier(unit1);
     if (hasExplicitAnnual || (isWan && !hasExplicitMonthly && rawNum1 >= 6)) {
       val1 /= 12;
     }
-    if (val1 < 1000) return null;
+    if (!Number.isFinite(val1) || val1 < 1000) return null;
     return { min: Math.round(val1), max: Number.POSITIVE_INFINITY, raw: m[0].trim() };
   }
 
-  let val2 = Number.parseFloat(m[3]);
+  const rawNum2 = Number.parseFloat(m[3]);
   const unit2 = m[4] || '';
-  const unit = unit2 || unit1 || '';
-  const isWan = ['万', 'w', 'W'].includes(unit);
+  const effUnit1 = unit1 || unit2;
+  const effUnit2 = unit2 || unit1;
 
-  if (isWan) {
-    val1 *= 10000;
-    val2 *= 10000;
-  } else if (['k', 'K'].includes(unit)) {
-    val1 *= 1000;
-    val2 *= 1000;
-  }
+  val1 = rawNum1 * salaryUnitMultiplier(effUnit1);
+  let val2 = rawNum2 * salaryUnitMultiplier(effUnit2);
 
-  if (hasExplicitAnnual || (isWan && !hasExplicitMonthly && rawNum1 >= 6)) {
+  const isImplicitAnnualWan =
+    !hasExplicitMonthly &&
+    isWanSalaryUnit(effUnit1) &&
+    isWanSalaryUnit(effUnit2) &&
+    val1 >= 60000;
+
+  if (hasExplicitAnnual || isImplicitAnnualWan) {
     val1 /= 12;
     val2 /= 12;
   }
 
-  if (val2 < 1000) return null;
+  if (!Number.isFinite(val1) || !Number.isFinite(val2) || val1 <= 0 || val2 < 1000 || val1 > val2) {
+    return null;
+  }
   // Guard against calendar years e.g. 2024-2025 or 2026-0
-  if (rawNum1 >= 2010 && rawNum1 <= 2030 && Number.parseFloat(m[3]) < 100) return null;
+  if (!effUnit1 && !effUnit2 && rawNum1 >= 2010 && rawNum1 <= 2030 && rawNum2 >= 2010 && rawNum2 <= 2035) {
+    return null;
+  }
+  if (rawNum1 >= 2010 && rawNum1 <= 2030 && rawNum2 < 100 && !unit1 && !unit2) return null;
 
   return {
     min: Math.round(val1),
@@ -1463,9 +1598,14 @@ function jobLocation(j: Job, workCities: string[]): 'exact' | 'possible' | 'unkn
 }
 
 function hasUpcomingTalkIn(j: Job, workCities: string[], now: number): boolean {
-  return Boolean(j.talk_events?.some((event) =>
-    workCities.includes(event.city || '') && event.status !== 'cancelled' && Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now,
-  ));
+  return Boolean(
+    j.talk_events?.some(
+      (event) =>
+        workCities.includes(effectiveEventCity(event) || '') &&
+        event.status !== 'cancelled' &&
+        Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now,
+    ),
+  );
 }
 
 export function buildJobSearchText(j: Job, extraSearchText?: string): string {
@@ -1473,14 +1613,14 @@ export function buildJobSearchText(j: Job, extraSearchText?: string): string {
     j.title,
     j.company,
     employerBrand(j.source_id),
-    ...(j.talk_events?.map((event) => `${event.city ?? ''} ${event.school} ${event.venue} ${event.date}`) ?? []),
+    ...(j.talk_events?.map((event) => `${effectiveEventCity(event) ?? ''} ${event.school} ${event.venue} ${event.date}`) ?? []),
     // Version-2 browsing excerpts are display summaries (which may be
     // attributed to another exact-name company announcement). Search
     // continues to use this job's complete canonical text, not that bio.
     j.card_summary ? '' : j.excerpt,
     j.education,
     ...(j.directions ?? []),
-    ...(j.sectors ?? []),
+    ...effectiveJobSectors(j),
     ...(j.location_evidence ?? []),
     ...(j.sample_positions ?? []),
     ...(j.majors ?? []),
@@ -1608,11 +1748,12 @@ function matchesContentConditions(
     return false;
   }
   if (f.sector !== '全部') {
+    const sectors = effectiveJobSectors(j);
     if ([UNKNOWN_SECTOR, '综合（高校 / 平台公告）', '综合'].includes(f.sector)) {
-      if (j.sectors.some((sector) => !['综合', '综合（高校 / 平台公告）', UNKNOWN_SECTOR].includes(sector))) {
+      if (sectors.some((sector) => !['综合', '综合（高校 / 平台公告）', UNKNOWN_SECTOR].includes(sector))) {
         return false;
       }
-    } else if (!j.sectors.includes(f.sector)) {
+    } else if (!sectors.includes(f.sector)) {
       return false;
     }
   }

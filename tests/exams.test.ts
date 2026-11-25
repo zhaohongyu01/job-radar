@@ -8,13 +8,16 @@ import {
   DEFAULT_EXAM_PROFILE,
   deriveExamStage,
   evaluateExamPositionEligibility,
+  EXAM_STAGE_OPTIONS,
   examPersonalConflicts,
   filterExams,
   flattenAndFilterExamPositions,
   formatExamUrl,
+  isExamOpenForRegistration,
   isExamProfileActive,
   isTerminalTrackStatus,
   loadExamDetailShard,
+  loadExamPositionsAsset,
   mergeExamPersonal,
   mergeExamProfile,
   parseExamUrl,
@@ -165,20 +168,29 @@ void test('filterExams filters by noticeRole, bianzhi, city, and profile matchin
 
   const onlyJianzhang = filterExams(
     [mainExam, progressNotice],
-    { ...DEFAULT_EXAM_FILTERS, noticeRole: '仅看招考简章' },
+    { ...DEFAULT_EXAM_FILTERS, stage: '全部', noticeRole: '仅看招考简章' },
     DEFAULT_EXAM_PROFILE,
     {},
   );
   assert.equal(onlyJianzhang.length, 1);
   assert.equal(onlyJianzhang[0].id, 'exam-1');
 
-  const allNotices = filterExams(
+  const allStagesNotices = filterExams(
+    [mainExam, progressNotice],
+    { ...DEFAULT_EXAM_FILTERS, stage: '全部' },
+    DEFAULT_EXAM_PROFILE,
+    {},
+  );
+  assert.equal(allStagesNotices.length, 2);
+
+  // Default stage ('可报名/进行中', UI label '可报名') excludes interview/review notices
+  const defaultOpenOnly = filterExams(
     [mainExam, progressNotice],
     DEFAULT_EXAM_FILTERS,
     DEFAULT_EXAM_PROFILE,
     {},
   );
-  assert.equal(allNotices.length, 2);
+  assert.deepEqual(defaultOpenOnly.map((e) => e.id), ['exam-1']);
 });
 
 void test('flattenAndFilterExamPositions flattens and filters position rows by profile', () => {
@@ -648,4 +660,226 @@ void test('P1.3 strict city filtering (菏泽 vs 山东省直 vs 全国) and gra
     birthYear: currentYear - 38,
   });
   assert.equal(unstatedEdu38.status, 'unknown');
+});
+
+void test('P1-1 open registration filter excludes closed provincial exams and follow-up notices while routing stages accurately', () => {
+  const today = '2026-11-25';
+
+  // Closed registration (Nov 6-9), today Nov 25 in payment_confirm / admit_exam / interview_review
+  const closedInPayment = makeExam({
+    id: 'sd-prov-payment',
+    title: '2027年度山东省级机关及其直属机构考试录用公务员公告（缴费期）',
+    exam_category: '公务员省考',
+    notice_role: '招考简章',
+    stage: 'registering',
+    schedule: {
+      reg_start: '2026-11-06',
+      reg_end: '2026-11-09',
+      audit_end: '2026-11-10',
+      payment_end: '2026-11-26',
+      written_exam_date: '2026-12-08',
+    },
+  });
+  const closedInAdmit = makeExam({
+    id: 'sd-prov-admit',
+    title: '2027年度山东省考招录简章（准考证/笔试期）',
+    exam_category: '公务员省考',
+    notice_role: '招考简章',
+    stage: 'registering',
+    schedule: {
+      reg_start: '2026-11-06',
+      reg_end: '2026-11-09',
+      payment_end: '2026-11-12',
+      admit_card_start: '2026-12-02',
+      written_exam_date: '2026-12-08',
+    },
+  });
+  const closedInInterview = makeExam({
+    id: 'sd-prov-interview',
+    title: '2027年度选调生招录简章（待面试期）',
+    exam_category: '选调生招录',
+    notice_role: '招考简章',
+    stage: 'registering',
+    schedule: {
+      reg_start: '2026-11-06',
+      reg_end: '2026-11-09',
+      written_exam_date: '2026-11-16',
+      interview_date: '2026-12-12',
+    },
+  });
+
+  // Follow-up notices carrying stale open stages in raw snapshot
+  const scoreNotice = makeExam({
+    id: 'notice-score',
+    title: '2026年事业单位公开招聘笔试成绩及进入面试范围人员公告',
+    notice_role: '成绩/进面',
+    stage: 'registering',
+    published_at: '2026-11-20',
+    schedule: {},
+  });
+  const reviewNotice = makeExam({
+    id: 'notice-review',
+    title: '2026年事业单位公开招聘现场资格复审通知',
+    notice_role: '资格复审/面试',
+    stage: 'closing_soon',
+    published_at: '2026-11-21',
+    schedule: {},
+  });
+  const publicityNotice = makeExam({
+    id: 'notice-publicity',
+    title: '2026年公开招聘拟聘用人员公示',
+    notice_role: '体检/递补/公示',
+    stage: 'rolling',
+    published_at: '2026-11-22',
+    schedule: {},
+  });
+  const admitCardNotice = makeExam({
+    id: 'notice-admit',
+    title: '2026年公开招聘笔试准考证打印通知',
+    notice_role: '准考证/笔试',
+    stage: 'upcoming',
+    published_at: '2026-11-23',
+    schedule: {},
+  });
+  const supplementPastReg = makeExam({
+    id: 'notice-supp-closed',
+    title: '关于核减部分岗位计划的补充公告',
+    notice_role: '补充公告',
+    stage: 'registering',
+    published_at: '2026-11-15',
+    schedule: {
+      reg_start: '2026-11-06',
+      reg_end: '2026-11-09',
+      written_exam_date: '2026-12-08',
+    },
+  });
+
+  // Genuinely open registrations + upcoming
+  const activeRegistering = makeExam({
+    id: 'open-registering',
+    title: '2026年济南市事业单位公开招聘简章',
+    notice_role: '招考简章',
+    schedule: { reg_start: '2026-11-20', reg_end: '2026-12-02' },
+  });
+  const activeClosingSoon = makeExam({
+    id: 'open-closing',
+    title: '2026年青岛市教师公开招聘简章',
+    notice_role: '招考简章',
+    schedule: { reg_start: '2026-11-18', reg_end: '2026-11-27' },
+  });
+  const activeRolling = makeExam({
+    id: 'open-rolling',
+    title: '2026年高校高层次人才长期招聘公告',
+    notice_role: '招考简章',
+    schedule: { reg_mode: 'rolling', rolling_until: '2026-12-31' },
+  });
+  const upcomingExam = makeExam({
+    id: 'future-upcoming',
+    title: '2026年烟台市医疗卫生公开招聘简章',
+    notice_role: '招考简章',
+    schedule: { reg_start: '2026-11-29', reg_end: '2026-12-05' },
+  });
+
+  const rawPool = [
+    closedInPayment,
+    closedInAdmit,
+    closedInInterview,
+    scoreNotice,
+    reviewNotice,
+    publicityNotice,
+    admitCardNotice,
+    supplementPastReg,
+    activeRegistering,
+    activeClosingSoon,
+    activeRolling,
+    upcomingExam,
+  ];
+  const derivedPool = rawPool.map((e) => ({ ...e, stage: deriveExamStage(e, today) }));
+  const byId = Object.fromEntries(derivedPool.map((e) => [e.id, e]));
+
+  assert.equal(byId['sd-prov-payment'].stage, 'payment_confirm');
+  assert.equal(byId['sd-prov-admit'].stage, 'admit_exam');
+  assert.equal(byId['sd-prov-interview'].stage, 'interview_review');
+  assert.equal(byId['notice-score'].stage, 'interview_review');
+  assert.equal(byId['notice-review'].stage, 'interview_review');
+  assert.equal(byId['notice-publicity'].stage, 'publicity');
+  assert.equal(byId['notice-admit'].stage, 'admit_exam');
+  assert.equal(byId['notice-supp-closed'].stage, 'admit_exam');
+
+  // '可报名/进行中' (UI label '可报名') keeps ONLY registering, closing_soon, rolling
+  const openFiltered = filterExams(derivedPool, DEFAULT_EXAM_FILTERS, DEFAULT_EXAM_PROFILE, {});
+  assert.deepEqual(
+    openFiltered.map((e) => e.id).sort(),
+    ['open-closing', 'open-registering', 'open-rolling'],
+  );
+  assert.deepEqual(
+    derivedPool.filter((e) => isExamOpenForRegistration(e)).map((e) => e.id).sort(),
+    ['open-closing', 'open-registering', 'open-rolling'],
+  );
+
+  // '即将开始' keeps upcoming
+  const upcomingFiltered = filterExams(
+    derivedPool,
+    { ...DEFAULT_EXAM_FILTERS, stage: '即将开始' },
+    DEFAULT_EXAM_PROFILE,
+    {},
+  );
+  assert.deepEqual(upcomingFiltered.map((e) => e.id), ['future-upcoming']);
+
+  // '考务跟进（笔面试/资审）' (UI label '考试进行中') includes closed-reg active exams & follow-up notices
+  const followUpFiltered = filterExams(
+    derivedPool,
+    { ...DEFAULT_EXAM_FILTERS, stage: '考务跟进（笔面试/资审）' },
+    DEFAULT_EXAM_PROFILE,
+    {},
+  );
+  assert.deepEqual(
+    followUpFiltered.map((e) => e.id).sort(),
+    [
+      'notice-admit',
+      'notice-publicity',
+      'notice-review',
+      'notice-score',
+      'notice-supp-closed',
+      'sd-prov-admit',
+      'sd-prov-interview',
+      'sd-prov-payment',
+    ],
+  );
+
+  // Stage label mapping alignment
+  const stageMap = Object.fromEntries(EXAM_STAGE_OPTIONS);
+  assert.equal(stageMap['可报名/进行中'], '可报名');
+  assert.equal(stageMap['考务跟进（笔面试/资审）'], '考试进行中');
+});
+
+await test('P1-2 loadExamPositionsAsset evicts failed request from cache so retry succeeds', async () => {
+  const previous = globalThis.fetch;
+  const validPosUrl = '/exam-assets/positions-0123456789abcdef0123.json';
+  let calls = 0;
+  try {
+    clearExamDetailShardCache();
+    globalThis.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        return new Response('Bad Gateway', { status: 502 });
+      }
+      return Response.json({
+        schema_version: 1,
+        positions_by_exam: {
+          'exam-1': [makePosition()],
+        },
+      });
+    };
+
+    await assert.rejects(loadExamPositionsAsset(validPosUrl), /HTTP 502/);
+    assert.equal(calls, 1);
+
+    const recovered = await loadExamPositionsAsset(validPosUrl);
+    assert.equal(calls, 2);
+    assert.equal(recovered.positions_by_exam['exam-1']?.length, 1);
+  } finally {
+    clearExamDetailShardCache();
+    globalThis.fetch = previous;
+  }
 });

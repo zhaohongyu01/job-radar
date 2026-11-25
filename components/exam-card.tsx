@@ -80,6 +80,9 @@ export function ExamCard({ exam, profile, personal, today = '', onSelect, onTogg
             <MapPin size={12} />
             {cityLabel}
           </span>
+          {exam.positions_pending_recheck && (
+            <span className="exw-tag is-notice">新版职位表待核验</span>
+          )}
           {trackStage && <span className="exw-tag is-brand">{trackStage.shortLabel}</span>}
         </div>
 

@@ -1651,6 +1651,93 @@ def parse_sdei_position_detail(html, item, source):
     return job
 
 
+def extract_job_sectors(title, company, text, fields=None, structured=None, source=None, kind='招聘公告'):
+    """Derive employer sector tags from employer identity and structured nature, never duty/benefit prose."""
+    fields = fields or {}
+    structured = structured or {}
+    source = source or {}
+    source_sectors = list(source.get('sectors') or [])
+
+    nature_parts = []
+    for key in ('单位性质', '企业性质', '机构性质', '所属行业', '单位行业', '单位类别'):
+        val = fields.get(key)
+        if isinstance(val, str) and val.strip():
+            nature_parts.append(val.strip())
+    for key in ('company_property', 'industry_category', 'enterpriseNature', 'industry', 'xzyjmc', 'hyyjmc', 'unitProperty', 'dwXz'):
+        val = structured.get(key)
+        if isinstance(val, str) and val.strip():
+            nature_parts.append(val.strip())
+    for m in re.finditer(r'(?:^|\n)\s*(?:单位性质|企业性质|机构性质|所属行业|单位行业|单位类别)\s*[：:]\s*([^\n。；;]{1,40})', text or ''):
+        nature_parts.append(m.group(1).strip())
+    nature_text = '\n'.join(nature_parts)
+
+    comp = (company or '').strip()
+    inst = (source.get('institution') or '').strip()
+    raw_title_head = (title or '').splitlines()[0].strip()
+    if ' · ' in raw_title_head:
+        title_entity = raw_title_head.split(' · ', 1)[0].strip()
+    elif kind == '具体岗位' and comp:
+        title_entity = ''
+    else:
+        title_entity = raw_title_head
+    if title_entity in {'招聘单位见原页面', '单位名称待核实'}:
+        title_entity = ''
+
+    employer_entity = ' '.join(filter(None, [comp, title_entity]))
+    entity_text = ' '.join(filter(None, [comp, inst, title_entity]))
+    is_explicit_bank_employer = (
+        bool(re.search(r'银行|农信|农村信用社|农商行|村镇银行', employer_entity))
+        and not re.search(r'保险|人寿|财险|产险|寿险|再保险', employer_entity)
+    )
+    is_explicit_insurer = (
+        bool(re.search(r'保险|人寿|财险|产险|寿险|再保险|太保|人保', entity_text))
+        and not re.search(r'银行|农信|信用社|农商行|村镇银行', employer_entity)
+    )
+    is_corp_entity = bool(re.search(r'有限公司|股份有限公司|有限责任公司|集团公司|合伙企业|事务所', employer_entity))
+
+    intro_sentences = [
+        seg.strip()
+        for seg in re.split(r'[。！？；;\n]+', (text or '')[:1200])
+        if seg.strip()
+        and not re.search(
+            r'参照|体检|标准|客户|服务对象|合作(?:伙伴|单位|客户|银行|机构)|对接|面向|涵盖|培训|公考|备考|辅导|考生',
+            seg,
+        )
+    ]
+    clean_intro = '\n'.join(intro_sentences)
+
+    sectors = []
+    if not is_explicit_insurer and (
+        re.search(r'银行|农信|农村信用社|农商行|村镇银行', entity_text)
+        or (not comp and re.search(r'(?:总行|分行|支行)(?=.*招聘)|柜员', raw_title_head))
+        or re.search(r'商业银行|政策性银行|银行业', nature_text)
+        or source.get('adapter') == 'official_bank'
+    ):
+        sectors.append('银行')
+
+    if not is_explicit_bank_employer and (
+        (re.search(r'保险|人寿|财险|产险|寿险|再保险', entity_text)
+         and not re.search(r'社会保险|医疗保险事业|社保中心|养老保险经办', entity_text))
+        or re.search(r'保险(?:业|公司|集团|机构)', nature_text)
+        or ('保险' in source_sectors and not re.search(r'银行|农信|信用社|农商行|村镇银行', employer_entity))
+    ):
+        sectors.append('保险')
+
+    if re.search(
+        r'国有企业|国有独资|国有控股|央企|中央企业|省属企业|市属企业|省属国企|市属国企|国资控股|国有全资|国企',
+        f'{entity_text}\n{nature_text}\n{raw_title_head}\n{clean_intro}',
+    ):
+        sectors.append('国企')
+
+    if not is_corp_entity and re.search(r'事业单位', f'{entity_text}\n{nature_text}\n{raw_title_head}\n{clean_intro}'):
+        sectors.append('事业单位')
+
+    if not is_corp_entity and re.search(r'(?<!参照)公务员|参公|选调生', f'{entity_text}\n{nature_text}\n{raw_title_head}'):
+        sectors.append('公务员')
+
+    return sectors or list(source_sectors or ['企业 / 其他'])
+
+
 class SourceDetailExpired(ValueError):
     """The official detail endpoint explicitly declares this information expired."""
 
@@ -1796,7 +1883,8 @@ def parse_detail(html, item, source):
         # A list such as 2026/2027届 explicitly names both eligible cohorts.
         structured_years=[y for y in re.findall(r'20\d{2}',structured.get('graduationYear') or '') if VALID_GRADUATION_YEAR_MIN <= int(y) <= VALID_GRADUATION_YEAR_MAX]
         years=sorted(set(years+structured_years))
-    sectors=[label for label,pattern in [('银行',r'银行'),('保险',r'保险'),('国企',r'国有企业|国有独资|国有控股|央企|国企'),('事业单位',r'事业单位'),('公务员',r'公务员')] if re.search(pattern,combined)] or list(source.get('sectors') or ['企业 / 其他'])
+    job_kind = item.get('kind', '招聘公告')
+    sectors = extract_job_sectors(title, company, text, fields=fields, structured=structured, source=source, kind=job_kind)
     # City evidence comes from job-location fields/sections/tables, never a headquarters paragraph.
     location_evidence=[]
     if fields.get('工作地域'): location_evidence.append(fields['工作地域'])
@@ -1908,6 +1996,15 @@ def parse_detail(html, item, source):
             'application_url':application_url,'emails':emails,'attachments':attachments,'links':links[:20],
             'qr_attachment':bool(re.search(r'扫码|二维码',text)),
             'excerpt':text[:300],'body':text[:18000], 'classification_note':'标签根据公告文字整理；具体岗位资格请核对原文。'})
+    raw_job['sectors'] = extract_job_sectors(
+        raw_job['title'],
+        raw_job.get('company', ''),
+        text,
+        fields=fields,
+        structured=structured,
+        source=source,
+        kind=raw_job.get('kind', '招聘公告'),
+    )
     if source.get('channel') == 'talks':
         raw_job['detail_verification'] = 'verified'
         raw_job['classification_note'] = '宣讲会中的招聘简章；工作地点按招聘正文提取，宣讲结束不代表网申截止。'

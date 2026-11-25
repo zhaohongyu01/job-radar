@@ -147,6 +147,7 @@ export function ExamWorkspace() {
 
   const needsEagerPositions =
     filters.view === 'positions' ||
+    (filters.view === 'saved' && savedSubTab === 'candidates') ||
     profile.onlyMatchProfile ||
     isExamProfileActive(profile) ||
     Object.values(personal).some((rec) => (rec.savedPositionIds?.length || 0) > 0);
@@ -156,9 +157,11 @@ export function ExamWorkspace() {
     loading,
     positionsLoading,
     positionsReady,
+    positionsError,
     error,
     today,
     reload,
+    retryPositions,
     allExams,
     activeExamCount,
     endedExamCount,
@@ -471,6 +474,15 @@ export function ExamWorkspace() {
 
   const activeFilters = buildActiveExamFilters(filters, toggleCity, updateFilters);
 
+  const isPositionListView =
+    filters.view === 'positions' || (filters.view === 'saved' && savedSubTab === 'candidates');
+  const countReady = isPositionListView ? positionsReady : Boolean(snapshot);
+  const savedCandidateIdCount = useMemo(
+    () =>
+      Object.values(personal).reduce((sum, rec) => sum + (rec.savedPositionIds?.length || 0), 0),
+    [personal],
+  );
+
   const activeExamList =
     filters.view === 'saved'
       ? savedSubTab === 'hidden'
@@ -501,12 +513,17 @@ export function ExamWorkspace() {
     [personal, setNotice, updatePersonalRecord],
   );
 
-  const navTabs: { key: ExamFilters['view']; label: string; count: number }[] = [
+  const navTabs: { key: ExamFilters['view']; label: string; count: number | string }[] = [
     { key: 'announcements', label: '招考公告', count: filteredExams.length },
     {
       key: 'positions',
       label: '职位库',
-      count: !positionsReady && snapshot ? snapshot.total_positions : flattenedPositions.length,
+      count:
+        positionsError && !positionsReady
+          ? '—'
+          : !positionsReady && snapshot
+            ? snapshot.total_positions
+            : flattenedPositions.length,
     },
     { key: 'saved', label: '我的收藏', count: savedCount },
     { key: 'tracker', label: '报考进度', count: trackedCount },
@@ -564,7 +581,7 @@ export function ExamWorkspace() {
               hasData={Boolean(snapshot)}
               loading={loading || positionsLoading}
               stale={Boolean(freshnessMeta?.stale)}
-              lastSuccessAt={snapshot?.generated_at}
+              lastSuccessAt={snapshot?.last_success_at || snapshot?.generated_at}
               progressiveProgress={null}
               onClick={() => setSourceOpen(true)}
             />
@@ -705,7 +722,7 @@ export function ExamWorkspace() {
           filters={filters}
           filtersOpen={filtersOpen}
           activeFilterCount={activeFilters.length}
-          resultCount={listLength}
+          resultCount={countReady ? listLength : undefined}
           onCloseMobile={() => setFiltersOpen(false)}
           onToggleCity={toggleCity}
           onUpdateFilters={updateFilters}
@@ -778,7 +795,9 @@ export function ExamWorkspace() {
                 }}
               >
                 <span>候选岗位</span>
-                <span className="exw-tab-count">{candidateRows.length}</span>
+                <span className="exw-tab-count">
+                  {positionsReady ? candidateRows.length : savedCandidateIdCount}
+                </span>
               </button>
               <button
                 type="button"
@@ -799,10 +818,8 @@ export function ExamWorkspace() {
           {filters.view !== 'tracker' && (
             <div className="exw-results-head">
               <p className="exw-count">
-                共 <strong>{listLength}</strong>{' '}
-                {filters.view === 'positions' || (filters.view === 'saved' && savedSubTab === 'candidates')
-                  ? '个岗位'
-                  : '条公告'}
+                共 <strong>{countReady ? listLength : '—'}</strong>{' '}
+                {isPositionListView ? '个岗位' : '条公告'}
                 {profile.onlyMatchProfile && <span className="exw-muted"> · 已按我的条件过滤</span>}
               </p>
               {activeFilters.length > 0 && (
@@ -863,12 +880,35 @@ export function ExamWorkspace() {
 
           {/* Saved candidate compare */}
           {filters.view === 'saved' && savedSubTab === 'candidates' &&
-            ((loading && !snapshot) || (positionsLoading && !positionsReady) ? (
+            (loading && !snapshot ? (
               <div className="exw-skeleton-list" aria-label="加载岗位中">
                 {[0, 1, 2].map((i) => (
                   <div key={i} className="exw-skeleton" />
                 ))}
               </div>
+            ) : !snapshot ? (
+              <div className="exw-empty">
+                <p>{error || '考公考编数据暂未加载'}</p>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>
+                  重试
+                </button>
+              </div>
+            ) : !positionsReady ? (
+              positionsError && !positionsLoading ? (
+                <div className="exw-empty" role="alert">
+                  <p>职位表未加载，公告列表仍可正常查看</p>
+                  <p className="exw-muted">{positionsError}</p>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={retryPositions}>
+                    点击重试加载职位表
+                  </button>
+                </div>
+              ) : (
+                <div className="exw-skeleton-list" aria-label="加载岗位中">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="exw-skeleton" />
+                  ))}
+                </div>
+              )
             ) : (
               <ExamPositionTable
                 variant="candidates"
@@ -882,12 +922,35 @@ export function ExamWorkspace() {
 
           {/* Positions */}
           {filters.view === 'positions' &&
-            ((loading && !snapshot) || (positionsLoading && !positionsReady) ? (
+            (loading && !snapshot ? (
               <div className="exw-skeleton-list" aria-label="加载职位库中">
                 {[0, 1, 2, 3].map((i) => (
                   <div key={i} className="exw-skeleton" />
                 ))}
               </div>
+            ) : !snapshot ? (
+              <div className="exw-empty">
+                <p>{error || '考公考编数据暂未加载'}</p>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>
+                  重试
+                </button>
+              </div>
+            ) : !positionsReady ? (
+              positionsError && !positionsLoading ? (
+                <div className="exw-empty" role="alert">
+                  <p>职位表未加载，公告列表仍可正常查看</p>
+                  <p className="exw-muted">{positionsError}</p>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={retryPositions}>
+                    点击重试加载职位表
+                  </button>
+                </div>
+              ) : (
+                <div className="exw-skeleton-list" aria-label="加载职位库中">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="exw-skeleton" />
+                  ))}
+                </div>
+              )
             ) : (
               <ExamPositionTable
                 variant="workspace"

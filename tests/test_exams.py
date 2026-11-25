@@ -1,3 +1,4 @@
+import datetime as dt
 import hashlib
 import io
 import json
@@ -9,6 +10,8 @@ import zipfile
 
 from scripts.collect_exams import (
     EXAM_SOURCES,
+    TZ,
+    collect_and_export_exams,
     crawl_dtdjzx_exam,
     crawl_generic_gov_portal,
     extract_dtdjzx_embedded_html,
@@ -860,6 +863,598 @@ class ExamParserTests(unittest.TestCase):
         self.assertEqual(merged_taian[0]["id"], "ta-ann")
         self.assertEqual(len(merged_taian[0]["attachments"]), 1)
         self.assertEqual(len(merged_taian[0]["exam_positions"]), 1)
+
+    def test_offline_preserves_last_success_at_and_live_all_fail_aborts_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "exams-seed-in"
+            offline_out = root / "exams-offline-out"
+            failed_live_out = root / "exams-failed-out"
+            seed_dir.mkdir(parents=True)
+
+            genuine_success_ts = "2026-11-18T09:30:00+08:00"
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": "2026-11-18T09:35:00+08:00",
+                    "last_success_at": genuine_success_ts,
+                    "total_exams": 1,
+                    "total_positions": 1,
+                    "total_headcount": 2,
+                    "total_exams_with_positions": 1,
+                    "cities": ["济南"],
+                    "exams": [
+                        {
+                            "id": "0a111111111111111111",
+                            "title": "2026年济南市事业单位公开招聘工作人员简章",
+                            "organizer": "济南市人力资源和社会保障局",
+                            "source_id": "jinan-hrss-exam",
+                            "source_name": "济南市人社局 · 事业单位公开招聘",
+                            "source_url": "https://jnhrss.jinan.gov.cn/art/2026/11/18/art_18625_1.html",
+                            "published_at": "2026-11-18",
+                            "excerpt": "报名时间：2026年11月20日9:00—11月26日16:00。",
+                            "body": "本次公开招聘共2人。报名时间：2026年11月20日9:00—11月26日16:00。",
+                            "attachments": [{"title": "岗位汇总表.xlsx", "url": "https://jnhrss.jinan.gov.cn/1.xlsx"}],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "r1",
+                                    "exam_id": "0a111111111111111111",
+                                    "department": "济南市人力资源和社会保障局",
+                                    "employer": "济南市大数据中心",
+                                    "position_name": "数据分析岗",
+                                    "recruit_count": 2,
+                                    "major_raw": "计算机科学与技术",
+                                    "source": "attachment",
+                                }
+                            ],
+                        }
+                    ],
+                    "sources": [
+                        {
+                            "id": "jinan-hrss-exam",
+                            "name": "济南市人社局",
+                            "url": "https://jnhrss.jinan.gov.cn/",
+                            "status": "ok",
+                            "count": 1,
+                            "last_success_at": genuine_success_ts,
+                            "errors": [],
+                        }
+                    ],
+                },
+                seed_dir,
+            )
+
+            # 1. --offline-only with isolated --seed-dir -> --public-dir preserves genuine last_success_at
+            res = collect_and_export_exams(
+                public_dir=offline_out,
+                live_crawl=False,
+                live_site="",
+                seed_dir=seed_dir,
+            )
+            self.assertEqual(res["last_success_at"], genuine_success_ts)
+            self.assertNotEqual(res["generated_at"], genuine_success_ts)
+            written = json.loads((offline_out / "exams.json").read_text(encoding="utf-8"))
+            self.assertEqual(written["last_success_at"], genuine_success_ts)
+            jn_src = next(s for s in written["sources"] if s["id"] == "jinan-hrss-exam")
+            self.assertEqual(jn_src["last_success_at"], genuine_success_ts)
+
+            # 2. Live crawl when all active portals fail raises error and leaves output directory empty
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=OSError("network unreachable")),
+                patch("scripts.collect_exams.c.sdei_news_list", side_effect=OSError("network unreachable")),
+                patch("scripts.collect_exams.c.jinan_cms_list", side_effect=OSError("network unreachable")),
+            ):
+                with self.assertRaises(RuntimeError):
+                    collect_and_export_exams(
+                        public_dir=failed_live_out,
+                        live_crawl=True,
+                        live_site="",
+                        seed_dir=seed_dir,
+                    )
+            self.assertFalse((failed_live_out / "exams.json").exists())
+
+    def test_in_place_xlsx_replacement_rechecks_and_updates_positions(self):
+        today = dt.datetime.now(TZ).date()
+        pub_str = (today - dt.timedelta(days=2)).isoformat()
+        reg_start = (today - dt.timedelta(days=1)).isoformat()
+        reg_end = (today + dt.timedelta(days=7)).isoformat()
+        old_verified = (today - dt.timedelta(days=2)).isoformat()
+
+        url_updated = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/t20261120_1001.html"
+        id_updated = hashlib.sha256(url_updated.encode("utf-8")).hexdigest()[:20]
+        old_xlsx_url = "https://hrss.qingdao.gov.cn/attach/positions_v1.xls"
+        new_xlsx_url = "https://hrss.qingdao.gov.cn/attach/positions_v2.xls"
+
+        url_flaky = "https://hrss.zibo.gov.cn/art/2026/11/20/art_100_2002.html"
+        id_flaky = hashlib.sha256(url_flaky.encode("utf-8")).hexdigest()[:20]
+        flaky_xlsx_url = "https://hrss.zibo.gov.cn/attach/zb_positions.xls"
+
+        body_text = (
+            f"2026年青岛市市属事业单位公开招聘工作人员简章。"
+            f"报名时间：{reg_start[:4]}年{int(reg_start[5:7])}月{int(reg_start[8:10])}日9:00—"
+            f"{int(reg_end[5:7])}月{int(reg_end[8:10])}日16:00。详见附件岗位汇总表。"
+        )
+        flaky_body_text = (
+            f"2026年淄博市市属事业单位公开招聘工作人员简章。"
+            f"报名时间：{reg_start[:4]}年{int(reg_start[5:7])}月{int(reg_start[8:10])}日9:00—"
+            f"{int(reg_end[5:7])}月{int(reg_end[8:10])}日16:00。"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "seed"
+            out_dir = root / "out"
+            seed_dir.mkdir(parents=True)
+
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": f"{pub_str}T10:00:00+08:00",
+                    "last_success_at": f"{pub_str}T10:00:00+08:00",
+                    "total_exams": 2,
+                    "total_positions": 2,
+                    "total_headcount": 3,
+                    "total_exams_with_positions": 2,
+                    "cities": ["青岛", "淄博"],
+                    "exams": [
+                        {
+                            "id": id_updated,
+                            "title": "2026年青岛市市属事业单位公开招聘工作人员简章",
+                            "organizer": "青岛市人力资源和社会保障局",
+                            "notice_role": "招考简章",
+                            "stage": "registering",
+                            "schedule": {"reg_start": reg_start, "reg_end": reg_end, "reg_mode": "window"},
+                            "source_id": "qingdao-hrss-exam",
+                            "source_name": "青岛市人社局 · 公开招聘与引才专区",
+                            "source_url": url_updated,
+                            "published_at": pub_str,
+                            "last_verified_at": old_verified,
+                            "positions_status": "parsed",
+                            "excerpt": body_text[:120],
+                            "body": body_text,
+                            "attachments": [{"title": "附件1：公开招聘岗位汇总表.xls", "url": old_xlsx_url}],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "old-row-1",
+                                    "exam_id": id_updated,
+                                    "department": "青岛市人社局",
+                                    "employer": "青岛市某旧单位",
+                                    "position_name": "旧综合管理岗",
+                                    "recruit_count": 1,
+                                    "major_raw": "汉语言文学",
+                                    "source": "attachment",
+                                }
+                            ],
+                        },
+                        {
+                            "id": id_flaky,
+                            "title": "2026年淄博市市属事业单位公开招聘工作人员简章",
+                            "organizer": "淄博市人力资源和社会保障局",
+                            "notice_role": "招考简章",
+                            "stage": "registering",
+                            "schedule": {"reg_start": reg_start, "reg_end": reg_end, "reg_mode": "window"},
+                            "source_id": "zibo-hrss-exam",
+                            "source_name": "淄博市人社局 · 事业单位招考与引才",
+                            "source_url": url_flaky,
+                            "published_at": pub_str,
+                            "last_verified_at": old_verified,
+                            "positions_status": "parsed",
+                            "excerpt": flaky_body_text[:120],
+                            "body": flaky_body_text,
+                            "attachments": [{"title": "附件1：淄博岗位汇总表.xls", "url": flaky_xlsx_url}],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "zb-row-1",
+                                    "exam_id": id_flaky,
+                                    "department": "淄博市人社局",
+                                    "employer": "淄博市大数据局",
+                                    "position_name": "保留测试岗",
+                                    "recruit_count": 2,
+                                    "major_raw": "软件工程",
+                                    "source": "attachment",
+                                }
+                            ],
+                        },
+                    ],
+                    "sources": [],
+                },
+                seed_dir,
+            )
+
+            qd_list_html = f"""
+            <ul>
+              <li><a href="{url_updated}">2026年青岛市市属事业单位公开招聘工作人员简章</a> {pub_str}</li>
+            </ul>
+            """
+            updated_detail_html = f"""
+            <div class="TRS_Editor">
+              <p>{body_text}</p>
+              <p><a href="{new_xlsx_url}">附件1：公开招聘岗位汇总表（修订版）.xls</a></p>
+            </div>
+            """
+            new_xls_bytes = """<table>
+              <tr><th>招聘单位</th><th>岗位名称</th><th>计划人数</th><th>学历</th><th>专业要求</th></tr>
+              <tr><td>青岛市数字政府中心</td><td>云平台架构岗</td><td>4</td><td>硕士研究生</td><td>计算机科学与技术</td></tr>
+              <tr><td>青岛市数字政府中心</td><td>网络安全监管岗</td><td>2</td><td>本科及以上</td><td>网络空间安全</td></tr>
+            </table>""".encode("utf-8")
+
+            def fake_fetch_html(url: str, timeout: float = 6.0, referer: str = "") -> str:
+                if url == "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/":
+                    return qd_list_html
+                if url == url_updated:
+                    return updated_detail_html
+                if url == url_flaky:
+                    raise TimeoutError("transient detail timeout")
+                return "<html><body><ul></ul></body></html>"
+
+            def fake_fetch_bytes(url: str, timeout: float = 6.0, max_bytes: int = 4_000_000):
+                if url == new_xlsx_url:
+                    return new_xls_bytes
+                return None
+
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch("scripts.collect_exams.fetch_bytes_quick", side_effect=fake_fetch_bytes),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=out_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=seed_dir,
+                )
+
+            written_snap = json.loads((out_dir / "exams.json").read_text(encoding="utf-8"))
+            hydrated = hydrate_exam_snapshot(
+                written_snap,
+                lambda rel: json.loads((out_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            by_id = {e["id"]: e for e in hydrated["exams"]}
+
+            # 1. Updated Qingdao notice replaced old .xls with new .xls and parsed the 2 new positions
+            qd_exam = by_id[id_updated]
+            self.assertEqual([a["url"] for a in qd_exam["attachments"]], [new_xlsx_url])
+            self.assertEqual(len(qd_exam["positions"]), 2)
+            self.assertEqual(
+                {p["position_name"] for p in qd_exam["positions"]},
+                {"云平台架构岗", "网络安全监管岗"},
+            )
+            self.assertNotEqual(qd_exam["last_verified_at"], old_verified)
+            self.assertNotIn("_force_refresh_detail", qd_exam)
+
+            # 2. Transiently failing Zibo notice preserved its existing positions and attachments intact
+            zb_exam = by_id[id_flaky]
+            self.assertEqual(len(zb_exam["positions"]), 1)
+            self.assertEqual(zb_exam["positions"][0]["position_name"], "保留测试岗")
+            self.assertEqual([a["url"] for a in zb_exam["attachments"]], [flaky_xlsx_url])
+
+    def test_new_xlsx_download_failure_preserves_old_positions_and_recovers_next_round(self):
+        today = dt.datetime.now(TZ).date()
+        pub_str = (today - dt.timedelta(days=2)).isoformat()
+        reg_start = (today - dt.timedelta(days=1)).isoformat()
+        reg_end = (today + dt.timedelta(days=6)).isoformat()
+        old_verified = f"{(today - dt.timedelta(days=2)).isoformat()}T08:00:00+08:00"
+
+        url_notice = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/t20261120_retry.shtml"
+        exam_id = hashlib.sha256(url_notice.encode("utf-8")).hexdigest()[:20]
+        v1_xls_url = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/positions_v1.xls"
+        v2_xls_url = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/positions_v2.xls"
+        body_text = (
+            "青岛市人力资源和社会保障局面向社会公开招聘事业单位工作人员10名。"
+            f"报名时间：{reg_start[:4]}年{int(reg_start[5:7])}月{int(reg_start[8:10])}日9:00—"
+            f"{int(reg_end[5:7])}月{int(reg_end[8:10])}日16:00。"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "seed"
+            round2_dir = root / "round2"
+            round3_dir = root / "round3"
+            seed_dir.mkdir(parents=True)
+
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": f"{pub_str}T10:00:00+08:00",
+                    "last_success_at": f"{pub_str}T10:00:00+08:00",
+                    "total_exams": 1,
+                    "total_positions": 1,
+                    "total_headcount": 1,
+                    "total_exams_with_positions": 1,
+                    "cities": ["青岛"],
+                    "exams": [
+                        {
+                            "id": exam_id,
+                            "title": "2026年青岛市市属事业单位公开招聘工作人员简章",
+                            "organizer": "青岛市人力资源和社会保障局",
+                            "notice_role": "招考简章",
+                            "stage": "registering",
+                            "schedule": {"reg_start": reg_start, "reg_end": reg_end, "reg_mode": "window"},
+                            "source_id": "qingdao-hrss-exam",
+                            "source_name": "青岛市人社局 · 公开招聘与引才专区",
+                            "source_url": url_notice,
+                            "published_at": pub_str,
+                            "last_verified_at": old_verified,
+                            "positions_status": "parsed",
+                            "excerpt": body_text[:120],
+                            "body": body_text,
+                            "attachments": [{"title": "附件1：公开招聘岗位汇总表.xls", "url": v1_xls_url}],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "old-row-1",
+                                    "exam_id": exam_id,
+                                    "department": "青岛市人社局",
+                                    "employer": "青岛市某旧单位",
+                                    "position_name": "旧综合管理岗",
+                                    "recruit_count": 1,
+                                    "major_raw": "汉语言文学",
+                                    "source": "attachment",
+                                }
+                            ],
+                        }
+                    ],
+                    "sources": [],
+                },
+                seed_dir,
+            )
+
+            qd_list_html = f'<ul><li><a href="{url_notice}">2026年青岛市市属事业单位公开招聘工作人员简章</a> {pub_str}</li></ul>'
+            v2_detail_html = f'<div class="TRS_Editor"><p>{body_text}</p><p><a href="{v2_xls_url}">附件1：公开招聘岗位汇总表（修订版）.xls</a></p></div>'
+
+            def fake_fetch_html(url: str, timeout: float = 6.0, referer: str = "") -> str:
+                if url == "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/":
+                    return qd_list_html
+                if url == url_notice:
+                    return v2_detail_html
+                return "<html><body><ul></ul></body></html>"
+
+            # Round 2: new Excel URL download fails -> old 1 position MUST be preserved and marked pending recheck
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch("scripts.collect_exams.fetch_bytes_quick", return_value=None),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=round2_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=seed_dir,
+                )
+
+            snap_r2 = json.loads((round2_dir / "exams.json").read_text(encoding="utf-8"))
+            self.assertEqual(snap_r2["total_positions"], 1)
+            slim_r2 = snap_r2["exams"][0]
+            self.assertEqual(slim_r2["parsed_position_count"], 1)
+            self.assertTrue(slim_r2.get("positions_pending_recheck"))
+
+            hydrated_r2 = hydrate_exam_snapshot(
+                snap_r2,
+                lambda rel: json.loads((round2_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd_r2 = hydrated_r2["exams"][0]
+            self.assertEqual(len(qd_r2["positions"]), 1)
+            self.assertEqual(qd_r2["positions"][0]["position_name"], "旧综合管理岗")
+            self.assertEqual(qd_r2["attachments"][0]["url"], v2_xls_url)
+            self.assertEqual(qd_r2["attachments"][0].get("parse_status"), "deferred")
+
+            # Round 3: network recovers -> deferred v2 Excel parses into 2 new positions and clears pending flag
+            v2_xls_bytes = """<table>
+              <tr><th>招聘单位</th><th>岗位名称</th><th>计划人数</th><th>学历</th><th>专业要求</th></tr>
+              <tr><td>青岛市数字政府中心</td><td>云平台架构岗</td><td>4</td><td>硕士研究生</td><td>计算机科学与技术</td></tr>
+              <tr><td>青岛市数字政府中心</td><td>网络安全监管岗</td><td>2</td><td>本科及以上</td><td>网络空间安全</td></tr>
+            </table>""".encode("utf-8")
+
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch(
+                    "scripts.collect_exams.fetch_bytes_quick",
+                    side_effect=lambda u, timeout=6.0, max_bytes=4_000_000: v2_xls_bytes if u == v2_xls_url else None,
+                ),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=round3_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=round2_dir,
+                )
+
+            snap_r3 = json.loads((round3_dir / "exams.json").read_text(encoding="utf-8"))
+            self.assertEqual(snap_r3["total_positions"], 2)
+            self.assertNotIn("positions_pending_recheck", snap_r3["exams"][0])
+            hydrated_r3 = hydrate_exam_snapshot(
+                snap_r3,
+                lambda rel: json.loads((round3_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd_r3 = hydrated_r3["exams"][0]
+            self.assertEqual({p["position_name"] for p in qd_r3["positions"]}, {"云平台架构岗", "网络安全监管岗"})
+            self.assertEqual(qd_r3["attachments"][0].get("parse_status"), "parsed")
+
+    def test_same_url_xlsx_overwrite_and_conditional_304_revalidation(self):
+        import io
+        import urllib.error
+
+        today = dt.datetime.now(TZ).date()
+        pub_str = (today - dt.timedelta(days=2)).isoformat()
+        reg_start = (today - dt.timedelta(days=1)).isoformat()
+        reg_end = (today + dt.timedelta(days=6)).isoformat()
+        old_verified = f"{(today - dt.timedelta(days=2)).isoformat()}T08:00:00+08:00"
+
+        url_notice = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/t20261120_sameurl.shtml"
+        exam_id = hashlib.sha256(url_notice.encode("utf-8")).hexdigest()[:20]
+        same_xls_url = "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/202611/positions_same.xls"
+        body_text = (
+            "青岛市人力资源和社会保障局面向社会公开招聘事业单位工作人员10名。"
+            f"报名时间：{reg_start[:4]}年{int(reg_start[5:7])}月{int(reg_start[8:10])}日9:00—"
+            f"{int(reg_end[5:7])}月{int(reg_end[8:10])}日16:00。"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_dir = root / "seed"
+            round2_dir = root / "round2"
+            round3_dir = root / "round3"
+            seed_dir.mkdir(parents=True)
+
+            write_exam_snapshot(
+                {
+                    "schema_version": 1,
+                    "generated_at": f"{pub_str}T10:00:00+08:00",
+                    "last_success_at": f"{pub_str}T10:00:00+08:00",
+                    "total_exams": 1,
+                    "total_positions": 1,
+                    "total_headcount": 1,
+                    "total_exams_with_positions": 1,
+                    "cities": ["青岛"],
+                    "exams": [
+                        {
+                            "id": exam_id,
+                            "title": "2026年青岛市市属事业单位公开招聘工作人员简章",
+                            "organizer": "青岛市人力资源和社会保障局",
+                            "notice_role": "招考简章",
+                            "stage": "registering",
+                            "schedule": {"reg_start": reg_start, "reg_end": reg_end, "reg_mode": "window"},
+                            "source_id": "qingdao-hrss-exam",
+                            "source_name": "青岛市人社局 · 公开招聘与引才专区",
+                            "source_url": url_notice,
+                            "published_at": pub_str,
+                            "last_verified_at": old_verified,
+                            "positions_status": "parsed",
+                            "excerpt": body_text[:120],
+                            "body": body_text,
+                            "attachments": [{"title": "附件1：公开招聘岗位汇总表.xls", "url": same_xls_url}],
+                            "links": [],
+                            "positions": [
+                                {
+                                    "row_id": "old-row-1",
+                                    "exam_id": exam_id,
+                                    "department": "青岛市人社局",
+                                    "employer": "青岛市某旧单位",
+                                    "position_name": "旧综合管理岗",
+                                    "recruit_count": 1,
+                                    "major_raw": "汉语言文学",
+                                    "source": "attachment",
+                                    "source_url": same_xls_url,
+                                }
+                            ],
+                        }
+                    ],
+                    "sources": [],
+                },
+                seed_dir,
+            )
+
+            # Identical HTML body and identical attachment URL in both rounds
+            qd_list_html = f'<ul><li><a href="{url_notice}">2026年青岛市市属事业单位公开招聘工作人员简章</a> {pub_str}</li></ul>'
+            same_detail_html = f'<div class="TRS_Editor"><p>{body_text}</p><p><a href="{same_xls_url}">附件1：公开招聘岗位汇总表.xls</a></p></div>'
+            overwritten_xls_bytes = """<table>
+              <tr><th>招聘单位</th><th>岗位名称</th><th>计划人数</th><th>学历</th><th>专业要求</th></tr>
+              <tr><td>青岛市财政局</td><td>财政绩效管理岗</td><td>3</td><td>硕士研究生</td><td>财政学、金融学</td></tr>
+              <tr><td>青岛市财政局</td><td>预算评审岗</td><td>2</td><td>本科及以上</td><td>会计学、审计学</td></tr>
+            </table>""".encode("utf-8")
+
+            def fake_fetch_html(url: str, timeout: float = 6.0, referer: str = "") -> str:
+                if url == "https://hrss.qingdao.gov.cn/zxzx_47/tzgg_47/":
+                    return qd_list_html
+                if url == url_notice:
+                    return same_detail_html
+                return "<html><body><ul></ul></body></html>"
+
+            class FakeHttpResp(io.BytesIO):
+                def __init__(self, data: bytes, headers: dict):
+                    super().__init__(data)
+                    self.headers = headers
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    self.close()
+
+            att_requests_r2 = []
+
+            def fake_opener_r2(req, timeout=6.0):
+                att_requests_r2.append((req.full_url, dict(req.header_items())))
+                if req.full_url == same_xls_url:
+                    return FakeHttpResp(
+                        overwritten_xls_bytes,
+                        {"ETag": '"v2-hash"', "Last-Modified": "Wed, 25 Nov 2026 06:00:00 GMT"},
+                    )
+                raise urllib.error.URLError("unexpected url")
+
+            # Round 2: same URL overwritten with new Excel bytes -> must request attachment and update to 2 positions
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch("scripts.collect_exams.c.OPENER.open", side_effect=fake_opener_r2),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=round2_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=seed_dir,
+                )
+
+            self.assertEqual(len([u for u, _ in att_requests_r2 if u == same_xls_url]), 1)
+            snap_r2 = json.loads((round2_dir / "exams.json").read_text(encoding="utf-8"))
+            hydrated_r2 = hydrate_exam_snapshot(
+                snap_r2,
+                lambda rel: json.loads((round2_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd_r2 = hydrated_r2["exams"][0]
+            self.assertEqual(
+                {p["position_name"] for p in qd_r2["positions"]},
+                {"财政绩效管理岗", "预算评审岗"},
+            )
+            self.assertEqual(qd_r2["attachments"][0].get("etag"), '"v2-hash"')
+            self.assertEqual(
+                qd_r2["attachments"][0].get("sha256"),
+                hashlib.sha256(overwritten_xls_bytes).hexdigest(),
+            )
+
+            # Round 3: server supports conditional request (304 Not Modified) -> sends If-None-Match and reuses 2 rows
+            att_requests_r3 = []
+
+            def fake_opener_r3(req, timeout=6.0):
+                hdrs = {k.lower(): v for k, v in req.header_items()}
+                att_requests_r3.append((req.full_url, hdrs))
+                if req.full_url == same_xls_url and hdrs.get("if-none-match") == '"v2-hash"':
+                    raise urllib.error.HTTPError(same_xls_url, 304, "Not Modified", {}, None)
+                raise urllib.error.URLError("expected conditional 304")
+
+            with (
+                patch("scripts.collect_exams.fetch_html_quick", side_effect=fake_fetch_html),
+                patch("scripts.collect_exams.c.OPENER.open", side_effect=fake_opener_r3),
+                patch("scripts.collect_exams.c.sdei_news_list", return_value=([], 1)),
+                patch("scripts.collect_exams.c.jinan_cms_list", return_value=([], 1)),
+            ):
+                collect_and_export_exams(
+                    public_dir=round3_dir,
+                    live_crawl=True,
+                    live_site="",
+                    seed_dir=round2_dir,
+                )
+
+            self.assertEqual(len([u for u, _ in att_requests_r3 if u == same_xls_url]), 1)
+            snap_r3 = json.loads((round3_dir / "exams.json").read_text(encoding="utf-8"))
+            hydrated_r3 = hydrate_exam_snapshot(
+                snap_r3,
+                lambda rel: json.loads((round3_dir / rel.lstrip("/")).read_text(encoding="utf-8")),
+            )
+            qd_r3 = hydrated_r3["exams"][0]
+            self.assertEqual(
+                {p["position_name"] for p in qd_r3["positions"]},
+                {"财政绩效管理岗", "预算评审岗"},
+            )
+            self.assertEqual(qd_r3["attachments"][0].get("etag"), '"v2-hash"')
 
 
 if __name__ == "__main__":

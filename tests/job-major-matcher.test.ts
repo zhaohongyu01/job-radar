@@ -541,3 +541,45 @@ await test('finance major recalls financial institution notices & corporate trea
   assert.equal(resetFilters(custom).includeUnstatedMajor, false);
   assert.equal(countActiveFilters(custom), 2); // default 济南 + major
 });
+
+await test('nonprofit/charitable foundations never match finance or economics as financial institutions, while licensed fund companies still match', () => {
+  const publicFoundation = fixtureJob({
+    id: 'f001f001f001f001f001',
+    kind: '招聘公告',
+    title: '某公益基金会 2027 校园招聘',
+    company: '某公益基金会',
+    sectors: ['企业 / 其他'],
+    majors: undefined,
+  });
+  const emptyCompanyFoundation = fixtureJob({
+    id: 'f002f002f002f002f002',
+    kind: '招聘公告',
+    title: '北京立德未来助学公益基金会招聘',
+    company: '',
+    sectors: ['企业 / 其他'],
+    majors: undefined,
+  });
+  const eduFoundationRole = fixtureJob({
+    id: 'f003f003f003f003f003',
+    kind: '具体岗位',
+    title: '某大学教育发展基金会 · 基金会项目专员',
+    company: '某大学教育发展基金会',
+    sectors: ['企业 / 其他'],
+    majors: undefined,
+  });
+  const huaxiaFund = fixtureJob({
+    id: 'f004f004f004f004f004',
+    kind: '招聘公告',
+    title: '华夏基金管理有限公司 2027 校园招聘',
+    company: '华夏基金管理有限公司',
+    sectors: ['企业 / 其他'],
+    majors: undefined,
+  });
+
+  for (const major of ['金融', '经济学']) {
+    assert.equal(jobMatchesMajor(publicFoundation, major), false, `public foundation must not match ${major}`);
+    assert.equal(jobMatchesMajor(emptyCompanyFoundation, major), false, `title-only foundation must not match ${major}`);
+    assert.equal(jobMatchesMajor(eduFoundationRole, major), false, `foundation project role must not match ${major}`);
+    assert.equal(jobMatchesMajor(huaxiaFund, major), true, `licensed fund manager must match ${major}`);
+  }
+});

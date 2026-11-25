@@ -1981,4 +1981,81 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(deduped[0]['published_at'], '2026-09-05')
 
 
+    def test_sector_extraction_ignores_body_bank_or_civil_exam_mentions_and_keeps_insurers(self):
+        chinalife_source = next(s for s in c.SOURCES if s['id'] == 'chinalife-social')
+        chinalife_html = c.inline_detail(
+            [
+                ('招聘单位', '寿险山东济南分公司'),
+                ('岗位名称', '理赔支持岗'),
+                ('工作地点', '山东省济南市'),
+                ('学历要求', '本科'),
+            ],
+            [
+                ('岗位职责', '负责对接合作银行银保渠道客户理赔资料初审，薪酬按月发放至本人银行卡。'),
+                ('任职要求', '身体健康，参照公务员录用体检通用标准执行。'),
+            ],
+        )
+        chinalife_item = {
+            'url': 'https://chinalife.zhiye.com/social/detail?jobAdId=90001',
+            'application_url': 'https://chinalife.zhiye.com/social/detail?jobAdId=90001',
+            'title': '寿险山东济南分公司 · 理赔支持岗',
+            'company': '寿险山东济南分公司',
+            'published_at': '2026-11-20',
+            'structured': {'companyName': '寿险山东济南分公司'},
+            'kind': '具体岗位',
+        }
+        parsed_insurer = c.parse_detail(chinalife_html, chinalife_item, chinalife_source)
+        self.assertEqual(parsed_insurer['sectors'], ['保险'])
+        self.assertNotIn('银行', parsed_insurer['sectors'])
+        self.assertNotIn('公务员', parsed_insurer['sectors'])
+
+        sdu_source = next(s for s in c.SOURCES if s['id'] == 'sdu')
+        tech_html = '''
+        <div class="ggName">青岛某智能装备有限公司2027校园招聘简章</div>
+        <div class="ggTime">2026-11-20</div>
+        <div class="bd_one">
+          <p>一、公司简介：青岛某智能装备有限公司成立于2018年，服务客户涵盖各大银行、事业单位及国有企业。</p>
+          <p>二、福利待遇：五险一金及补充商业保险，工资每月打入招商银行卡；体检参照公务员录用体检通用标准。</p>
+          <p>工作地点：青岛市</p>
+        </div>
+        '''
+        parsed_tech = c.parse_detail(tech_html, {'url': 'https://job.sdu.edu.cn/tech1', 'title': 'fallback'}, sdu_source)
+        self.assertEqual(parsed_tech['sectors'], ['综合'])
+        for wrong in ('银行', '保险', '国企', '事业单位', '公务员'):
+            self.assertNotIn(wrong, parsed_tech['sectors'])
+
+        cgb_html = '''
+        <div class="ggName">广发银行股份有限公司济南分行2027校园招聘公告</div>
+        <div class="ggTime">2026-11-20</div>
+        <div class="bd_one"><p>广发银行济南分行面向2027届毕业生公开招聘，工作地点：济南。</p></div>
+        '''
+        parsed_cgb = c.parse_detail(cgb_html, {'url': 'https://job.sdu.edu.cn/cgb1', 'title': 'fallback'}, sdu_source)
+        self.assertIn('银行', parsed_cgb['sectors'])
+
+        # Bank subsidiary (广发银行广州分行) under parent insurance channel (chinalife-social) must only get ['银行']
+        cgb_on_chinalife_html = c.inline_detail(
+            [
+                ('招聘单位', '广发银行广州分行'),
+                ('岗位名称', '分行法律与合规部总经理'),
+                ('工作地点', '广东省广州市'),
+                ('学历要求', '本科'),
+            ],
+            [
+                ('岗位职责', '全面主持分行法律与合规部工作，防范合规风险。'),
+            ],
+        )
+        cgb_on_chinalife_item = {
+            'url': 'https://chinalife.zhiye.com/social/detail?jobAdId=90002',
+            'application_url': 'https://chinalife.zhiye.com/social/detail?jobAdId=90002',
+            'title': '广发银行广州分行 · 分行法律与合规部总经理',
+            'company': '广发银行广州分行',
+            'published_at': '2026-11-20',
+            'structured': {'companyName': '广发银行广州分行'},
+            'kind': '具体岗位',
+        }
+        parsed_cgb_sub = c.parse_detail(cgb_on_chinalife_html, cgb_on_chinalife_item, chinalife_source)
+        self.assertEqual(parsed_cgb_sub['sectors'], ['银行'])
+        self.assertNotIn('保险', parsed_cgb_sub['sectors'])
+
+
 if __name__=='__main__': unittest.main()

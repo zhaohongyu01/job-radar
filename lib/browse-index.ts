@@ -1,5 +1,5 @@
 import type { Job } from './jobs.ts';
-import { duplicateSourceNames, hasLongTermText, hasSelectionNotice, meaningfulChangeDates,
+import { duplicateSourceNames, effectiveEventCity, effectiveJobSectors, hasLongTermText, hasSelectionNotice, meaningfulChangeDates,
   mergeDuplicateOpportunities, parseSalaryRange, positionChangeDates } from './jobs.ts';
 import { extractSalary } from './salary-display.ts';
 import { buildCardSummaries, extractCardSummary, validateCardSummary } from './card-summary.ts';
@@ -39,6 +39,24 @@ export function projectBrowsingJobs(input: Job[], fullText: Readonly<Record<stri
     if (job.classification_note?.startsWith('仅核实')) listing_facts.detail_pending = true;
     excerpts[job.id] = job.excerpt || '';
     const result = { ...job, listing_facts };
+    if (result.sectors?.length) {
+      result.sectors = effectiveJobSectors(result);
+    }
+    if (result.talk_event && !result.talk_event.city) {
+      const resolvedCity = effectiveEventCity(result.talk_event);
+      if (resolvedCity) result.talk_event = { ...result.talk_event, city: resolvedCity };
+    }
+    if (result.talk_events?.length) {
+      let changed = false;
+      const normalizedEvents = result.talk_events.map((event) => {
+        if (event.city) return event;
+        const resolvedCity = effectiveEventCity(event);
+        if (!resolvedCity) return event;
+        changed = true;
+        return { ...event, city: resolvedCity };
+      });
+      if (changed) result.talk_events = normalizedEvents;
+    }
     if (!result.majors?.length || (!result.sample_positions?.length && !result.positions?.length && !result.position_matches?.length)) {
       const sourceProse = [
         job.body || '',

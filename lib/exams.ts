@@ -164,6 +164,7 @@ export interface ExamAnnouncement {
   total_headcount: number | null;
   parsed_position_count?: number;
   positions_status?: 'parsed' | 'prose' | 'attachment_only' | 'none';
+  positions_pending_recheck?: boolean;
   schedule: ExamSchedule;
   exam_subjects: string[];
   exam_ratio?: string | null;
@@ -795,13 +796,44 @@ export function computeExamNextStep(
   };
 }
 
-export function deriveExamStage(exam: ExamAnnouncement, today: string): ExamStage {
-  if (exam.notice_role !== '招考简章') {
-    if (exam.published_at && dayDiff(today, exam.published_at.slice(0, 10)) > 45) return 'ended';
-    return exam.stage === 'ended' ? 'ended' : exam.stage;
+export const EXAM_STAGE_OPTIONS: [string, string][] = [
+  ['可报名/进行中', '可报名'],
+  ['正在报名', '报名中'],
+  ['即将开始', '即将开始'],
+  ['长期招聘', '长期招聘'],
+  ['考务跟进（笔面试/资审）', '考试进行中'],
+  ['时间待确认', '时间待确认'],
+  ['报名已结束', '已结束'],
+];
+
+export const OPEN_REGISTRATION_STAGES: readonly ExamStage[] = [
+  'registering',
+  'closing_soon',
+  'rolling',
+];
+
+export const EXAM_FOLLOWUP_STAGES: readonly ExamStage[] = [
+  'payment_confirm',
+  'admit_exam',
+  'interview_review',
+  'publicity',
+];
+
+export function isFollowUpNoticeRole(role: ExamAnnouncement['notice_role']): boolean {
+  return role !== '招考简章' && role !== '补充公告';
+}
+
+export function isExamOpenForRegistration(
+  exam: Pick<ExamAnnouncement, 'stage' | 'notice_role'>,
+): boolean {
+  if (isFollowUpNoticeRole(exam.notice_role)) return false;
+  return OPEN_REGISTRATION_STAGES.includes(exam.stage);
+}
+
+function deriveStageFromSchedule(s: ExamSchedule, today: string): ExamStage | null {
+  if (s.reg_mode === 'rolling') {
+    return s.rolling_until && today > s.rolling_until ? 'ended' : 'rolling';
   }
-  const s = exam.schedule || {};
-  if (s.reg_mode === 'rolling') return s.rolling_until && today > s.rolling_until ? 'ended' : 'rolling';
   if (s.reg_start && today < s.reg_start) return 'upcoming';
   if (s.reg_end) {
     if (today <= s.reg_end) return dayDiff(s.reg_end, today) <= 3 ? 'closing_soon' : 'registering';
@@ -810,6 +842,30 @@ export function deriveExamStage(exam: ExamAnnouncement, today: string): ExamStag
     if (s.interview_date && today <= s.interview_date) return 'interview_review';
     return 'ended';
   }
+  return null;
+}
+
+export function deriveExamStage(exam: ExamAnnouncement, today: string): ExamStage {
+  if (isFollowUpNoticeRole(exam.notice_role)) {
+    if (exam.stage === 'ended') return 'ended';
+    if (exam.published_at && dayDiff(today, exam.published_at.slice(0, 10)) > 45) return 'ended';
+    if (EXAM_FOLLOWUP_STAGES.includes(exam.stage)) return exam.stage;
+    if (exam.notice_role === '体检/递补/公示') return 'publicity';
+    if (exam.notice_role === '准考证/笔试') return 'admit_exam';
+    if (exam.notice_role === '报名统计') return 'payment_confirm';
+    return 'interview_review';
+  }
+
+  const s = exam.schedule || {};
+  const scheduledStage = deriveStageFromSchedule(s, today);
+  if (scheduledStage) return scheduledStage;
+
+  if (exam.notice_role === '补充公告') {
+    if (exam.stage === 'ended') return 'ended';
+    if (exam.published_at && dayDiff(today, exam.published_at.slice(0, 10)) > 45) return 'ended';
+    return exam.stage;
+  }
+
   if (exam.published_at && dayDiff(today, exam.published_at.slice(0, 10)) > 60) return 'ended';
   return 'unknown';
 }
@@ -877,16 +933,29 @@ export function filterExams(
     // Stage filter
     if (filters.stage !== '全部') {
       if (filters.stage === '可报名/进行中') {
-        if (!['upcoming', 'registering', 'closing_soon', 'rolling', 'payment_confirm', 'admit_exam', 'interview_review'].includes(exam.stage)) return false;
-      } else if (filters.stage === '正在报名' && !['registering', 'closing_soon'].includes(exam.stage)) {
+        if (!isExamOpenForRegistration(exam)) return false;
+      } else if (
+        filters.stage === '正在报名' &&
+        (isFollowUpNoticeRole(exam.notice_role) || !['registering', 'closing_soon'].includes(exam.stage))
+      ) {
         return false;
-      } else if (filters.stage === '即将开始' && exam.stage !== 'upcoming') {
+      } else if (
+        filters.stage === '即将开始' &&
+        (isFollowUpNoticeRole(exam.notice_role) || exam.stage !== 'upcoming')
+      ) {
         return false;
-      } else if (filters.stage === '长期招聘' && exam.stage !== 'rolling') {
+      } else if (
+        filters.stage === '长期招聘' &&
+        (isFollowUpNoticeRole(exam.notice_role) || exam.stage !== 'rolling')
+      ) {
         return false;
       } else if (filters.stage === '时间待确认' && exam.stage !== 'unknown') {
         return false;
-      } else if (filters.stage === '考务跟进（笔面试/资审）' && !['payment_confirm', 'admit_exam', 'interview_review', 'publicity'].includes(exam.stage)) {
+      } else if (
+        filters.stage === '考务跟进（笔面试/资审）' &&
+        !EXAM_FOLLOWUP_STAGES.includes(exam.stage) &&
+        !(isFollowUpNoticeRole(exam.notice_role) && exam.stage !== 'ended')
+      ) {
         return false;
       } else if (filters.stage === '报名已结束' && exam.stage !== 'ended') {
         return false;

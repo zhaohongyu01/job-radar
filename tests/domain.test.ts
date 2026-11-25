@@ -22,6 +22,7 @@ import {
   formatCompanyDisplay,
   employerGroupName,
   effectiveJobTypes,
+  effectiveJobSectors,
   formatEducationDisplay,
   cardJobTitle,
   eventDisplayTitle,
@@ -1353,4 +1354,99 @@ void test('annual W/万 salaries normalize to monthly without inflating 12x, HK 
 
   const masterIds = filterJobs(eduPool, { ...defaultFilters, education: '硕士' }, {}, null, now).map((j) => j.id);
   assert.deepEqual(masterIds, ['edu-benke-up', 'edu-buxian', 'edu-shuoshi']);
+});
+
+void test('effectiveJobSectors heals prose-polluted bank tags on insurers/corporates while preserving real banks', () => {
+  const chinaLifeClaims: Job = {
+    ...job,
+    id: 'chinalife-claims',
+    source_id: 'chinalife-social',
+    company: '寿险山东济南分公司',
+    title: '寿险山东济南分公司 · 理赔支持岗',
+    kind: '具体岗位',
+    sectors: ['银行'],
+  };
+  const chinaLifeGroup: Job = {
+    ...job,
+    id: 'chinalife-group',
+    source_id: 'wondercv',
+    company: '中国人寿集团',
+    title: '中国人寿集团',
+    sectors: ['银行', '国企'],
+  };
+  const cgbBank: Job = {
+    ...job,
+    id: 'cgb-jinan',
+    source_id: 'sdu',
+    company: '广发银行股份有限公司济南分行',
+    title: '广发银行济南分行2027校园招聘',
+    sectors: ['银行'],
+  };
+  const cgbUnderChinaLife: Job = {
+    ...job,
+    id: 'cgb-chinalife',
+    source_id: 'chinalife-social',
+    company: '广发银行广州分行',
+    title: '广发银行广州分行 · 分行法律与合规部总经理',
+    kind: '具体岗位',
+    sectors: ['银行', '保险'],
+  };
+  const pollutedTech: Job = {
+    ...job,
+    id: 'polluted-tech',
+    source_id: 'sdu',
+    company: '某数字科技有限公司',
+    title: '某数字科技有限公司招聘',
+    sectors: ['银行', '公务员'],
+  };
+
+  assert.deepEqual(effectiveJobSectors(chinaLifeClaims), ['保险']);
+  assert.deepEqual(effectiveJobSectors(chinaLifeGroup), ['保险', '国企']);
+  assert.deepEqual(effectiveJobSectors(cgbBank), ['银行']);
+  assert.deepEqual(effectiveJobSectors(cgbUnderChinaLife), ['银行']);
+  assert.deepEqual(effectiveJobSectors(pollutedTech), ['企业 / 其他']);
+
+  const pool = [chinaLifeClaims, chinaLifeGroup, cgbBank, cgbUnderChinaLife, pollutedTech];
+  assert.deepEqual(
+    filterJobs(pool, { ...defaultFilters, sector: '银行' }, {}, null).map((j) => j.id).sort(),
+    ['cgb-chinalife', 'cgb-jinan'],
+  );
+  assert.deepEqual(
+    filterJobs(pool, { ...defaultFilters, sector: '保险' }, {}, null).map((j) => j.id).sort(),
+    ['chinalife-claims', 'chinalife-group'],
+  );
+});
+
+void test('parseSalaryRange converts mixed-unit salary ranges accurately and rejects inverted ranges', () => {
+  for (const titleSuffix of ['8k-1.2万/月', '8k–1.2万/月', '8k-1.2万', '8000元-1.2万/月']) {
+    const parsed = parseSalaryRange({ ...job, title: `管培生 ${titleSuffix}`, excerpt: '' });
+    assert.ok(parsed, `expected ${titleSuffix} to parse`);
+    assert.equal(parsed.min, 8000, `min for ${titleSuffix}`);
+    assert.equal(parsed.max, 12000, `max for ${titleSuffix}`);
+  }
+
+  for (const excerptSalary of ['8k-1.2万/月', '8k–1.2万/月', '8000元-1.2万/月']) {
+    const parsed = parseSalaryRange({ ...job, title: '销售代表', excerpt: `薪资待遇：${excerptSalary}，五险一金` });
+    assert.ok(parsed, `expected excerpt ${excerptSalary} to parse`);
+    assert.equal(parsed.min, 8000);
+    assert.equal(parsed.max, 12000);
+  }
+
+  const healedMixedFacts = parseSalaryRange({
+    ...job,
+    title: '理赔支持岗 8k-1.2万/月',
+    listing_facts: { version: 1, salary: { min: 80000, max: 12000, raw: '8k-1.2万/月' } },
+  });
+  assert.deepEqual(healedMixedFacts, { min: 8000, max: 12000, raw: '8k-1.2万/月' });
+
+  assert.equal(parseSalaryRange({ ...job, title: '异常薪资 15k-8k/月', excerpt: '' }), null);
+  assert.equal(parseSalaryRange({ ...job, title: '异常薪资', excerpt: '薪资待遇：1.5万-8k/月' }), null);
+  assert.equal(
+    parseSalaryRange({
+      ...job,
+      title: '异常快照',
+      listing_facts: { version: 1, salary: { min: 15000, max: 8000, raw: '15k-8k/月' } },
+    }),
+    null,
+  );
 });

@@ -9,7 +9,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { EXAM_TYPE_OPTIONS, SHANDONG_16 } from '@/lib/exams';
+import { EXAM_STAGE_OPTIONS, EXAM_TYPE_OPTIONS, SHANDONG_16 } from '@/lib/exams';
 import type { BianzhiCategory, ExamCategory, ExamFilters } from '@/lib/exams';
 import { bianzhiLabel, categoryLabel } from '@/components/exam-ui';
 
@@ -53,15 +53,7 @@ export const SUBJECT_OPTIONS = [
 ];
 
 /** value -> display label; values are what filterExams() expects. */
-export const STAGE_OPTIONS: [string, string][] = [
-  ['可报名/进行中', '可报名'],
-  ['正在报名', '报名中'],
-  ['即将开始', '即将开始'],
-  ['长期招聘', '长期招聘'],
-  ['考务跟进（笔面试/资审）', '考试进行中'],
-  ['时间待确认', '时间待确认'],
-  ['报名已结束', '已结束'],
-];
+export const STAGE_OPTIONS: [string, string][] = EXAM_STAGE_OPTIONS;
 
 export const NOTICE_OPTIONS: [string, string][] = [
   ['仅看招考简章', '只看招考简章'],
@@ -207,7 +199,7 @@ export function ExamFilterSidebar({
   filters,
   filtersOpen,
   activeFilterCount,
-  resultCount = 0,
+  resultCount,
   onCloseMobile,
   onToggleCity,
   onUpdateFilters,
@@ -412,7 +404,7 @@ export function ExamFilterSidebar({
               className="btn btn-primary"
               onClick={() => onCloseMobile?.()}
             >
-              查看 {resultCount} 条结果
+              {resultCount !== undefined ? `查看 ${resultCount} 条结果` : '查看结果'}
             </button>
           </div>
         </SheetContent>

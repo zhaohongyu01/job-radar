@@ -583,6 +583,12 @@ function DrawerContent({
                   </div>
                 </div>
 
+                {exam.positions_pending_recheck && (
+                  <p className="exw-muted" style={{ marginBottom: 8 }}>
+                    检测到新版职位表附件，暂因网络或格式未完成解析；当前展示上次已核验岗位明细，请结合原附件核对。
+                  </p>
+                )}
+
                 <ExamPositionTable
                   variant="drawer"
                   rows={rows}

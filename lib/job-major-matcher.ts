@@ -1869,7 +1869,7 @@ const PURE_ANNOUNCEMENT_SUFFIX_RE =
 const TRAILING_ATS_JOB_CODE_RE = /(?:\s*[（([][A-Za-z]{1,5}[-_]?\d{3,10}[)）\]])+\s*$/;
 
 const LEADING_EMPLOYER_PREFIX_RE =
-  /^[^\s·—-]{2,26}(?:股份有限公司|有限责任公司|有限公司|集团有限公司|集团|研究院|研究所|开发局|就业局|银行|分行|支行|财险|产险|寿险|人寿)(?:[-—·]?[^\s·—-]{0,12}(?:分行|支行|分公司|子公司|支公司|事业部))?/;
+  /^[^\s·—-]{2,26}(?:股份有限公司|有限责任公司|有限公司|集团有限公司|集团|研究院|研究所|开发局|就业局|基金会|银行|分行|支行|财险|产险|寿险|人寿)(?:[-—·]?[^\s·—-]{0,12}(?:分行|支行|分公司|子公司|支公司|事业部))?/;
 
 const LEADING_ORG_UNIT_PREFIX_RE =
   /^(?:[^-—·/\s]{1,20}(?:分公司|子公司|支公司|分行|支行|事业部|营销中心|研发中心|技术中心|共享中心|运营中心|服务中心|管理中心|制造中心|供应链中心|财经中心|交付中心|品牌中心|总部|中国区|华北区|华东区|华南区|华中区|西南区|西北区|东北区|大区|片区|省区)\s*[-—·]+\s*)+/;
@@ -1914,7 +1914,11 @@ function roleTitleMatchesSubProfile(
   sub: SingleTermMajorProfile,
   isBankBrokerageSector = false,
 ): boolean {
-  const combined = roleTexts.filter(Boolean).join(' · ').toLowerCase();
+  const combined = roleTexts
+    .filter(Boolean)
+    .join(' · ')
+    .replace(/基金会/g, '公益组织')
+    .toLowerCase();
   if (!combined) return false;
 
   for (const kw of sub.roleKeywords) {
@@ -2043,9 +2047,11 @@ function getEffectiveJobMajorFacts(job: Job): { majors: string[]; samplePosition
   return entry;
 }
 
-const BANK_BROKERAGE_CONTEXT_RE = /银行|证券|基金|期货|信托|投行|农信|信用社|理财子公司/;
+const BANK_BROKERAGE_CONTEXT_RE = /银行|证券|基金(?!会)|期货|信托|投行|农信|信用社|理财子公司/;
 const FINANCIAL_INSTITUTION_CONTEXT_RE =
-  /银行|证券|基金|期货|信托|投行|农信|信用社|理财子公司|资产管理公司|金融控股|金控|财务公司|融资租赁|保险|人寿|财险|产险/;
+  /银行|证券|基金(?!会)|期货|信托|投行|农信|信用社|理财子公司|资产管理公司|金融控股|金控|财务公司|融资租赁|保险|人寿|财险|产险/;
+const NONPROFIT_FOUNDATION_HEADER_RE = /公益基金|慈善基金|教育基金|发展基金会|基金会/;
+const LICENSED_FINANCE_ENTITY_RE = /基金管理|证券|银行|信托|期货/;
 
 function singleProfileMatchesJob(
   job: Job,
@@ -2127,12 +2133,21 @@ export function jobMatchesMajor(job: Job, rawQuery: string, options?: MajorMatch
   const explicitMajors = rawMajors.filter((m) => !isUnlimitedMajorText(m));
 
   const employerHeaderText = `${job.company || ''} ${job.title || ''}`;
+  const isNonprofitFoundation =
+    NONPROFIT_FOUNDATION_HEADER_RE.test(employerHeaderText) &&
+    !LICENSED_FINANCE_ENTITY_RE.test(employerHeaderText);
+  const hasBankSector =
+    job.sectors.includes('银行') &&
+    (/银行|农信|信用社|农商行|村镇银行|(?:总|分|支)行|柜员/.test(employerHeaderText) ||
+      /^(?:boc|psbc)-/.test(job.source_id || ''));
   const isBankBrokerageSector =
-    job.sectors.includes('银行') || BANK_BROKERAGE_CONTEXT_RE.test(employerHeaderText);
+    !isNonprofitFoundation &&
+    (hasBankSector || BANK_BROKERAGE_CONTEXT_RE.test(employerHeaderText));
   const isFinancialInstitution =
-    isBankBrokerageSector ||
-    job.sectors.includes('保险') ||
-    FINANCIAL_INSTITUTION_CONTEXT_RE.test(employerHeaderText);
+    !isNonprofitFoundation &&
+    (isBankBrokerageSector ||
+      job.sectors.includes('保险') ||
+      FINANCIAL_INSTITUTION_CONTEXT_RE.test(employerHeaderText));
   const roleTitle = extractRolePortionFromJobTitle(job);
   const roleTexts = [roleTitle, ...samplePositions];
   const singleRoleCheckText = roleTitle || samplePositions.join(' · ');

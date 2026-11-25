@@ -1,5 +1,5 @@
 import type { Job, Personal, TalkEvent } from './jobs.ts';
-import { personalFor, shanghaiDay } from './jobs.ts';
+import { effectiveEventCity, personalFor, shanghaiDay } from './jobs.ts';
 
 export const AGENDA_STORAGE = 'job-radar-agenda-v1';
 export const EVENT_PERSONAL_STORAGE = 'job-radar-event-personal-v1';
@@ -53,7 +53,8 @@ export function agendaEntries(jobs: Job[], personal: Personal, filters: AgendaFi
     for (const event of job.talk_events ?? (job.talk_event ? [job.talk_event] : [])) {
       if (onlySaved && !saved[event.id]?.saved) continue;
       if (!onlySaved && (event.status === 'cancelled' || Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) < now)) continue;
-      if (filters.city !== '全部城市' && event.city !== filters.city && !(filters.includeOnline && event.mode === 'online')) continue;
+      const eventCity = effectiveEventCity(event);
+      if (filters.city !== '全部城市' && eventCity !== filters.city && !(filters.includeOnline && event.mode === 'online')) continue;
       if (filters.school && event.school !== filters.school) continue;
       if (filters.mode !== 'all' && (event.mode || 'unknown') !== filters.mode) continue;
       if (filters.eventType !== 'all' && (event.event_type || 'unknown') !== filters.eventType) continue;
@@ -61,7 +62,12 @@ export function agendaEntries(jobs: Job[], personal: Personal, filters: AgendaFi
       const from = filters.range === 'today' || filters.range === 'week' ? today : filters.range === 'custom' ? filters.dateFrom : '';
       const to = filters.range === 'today' ? today : filters.range === 'week' ? shanghaiDay(now + 6 * 86400000) : filters.range === 'custom' ? filters.dateTo : '';
       if ((from && event.date < from) || (to && event.date > to)) continue;
-      if (!entries.has(event.id)) entries.set(event.id, { job: parent || job, event });
+      if (!entries.has(event.id)) {
+        entries.set(event.id, {
+          job: parent || job,
+          event: eventCity && !event.city ? { ...event, city: eventCity } : event,
+        });
+      }
     }
   }
   return [...entries.values()].sort((a, b) => `${a.event.date}T${a.event.start_time || '23:59'}`.localeCompare(`${b.event.date}T${b.event.start_time || '23:59'}`));

@@ -33,6 +33,8 @@ import {
   selectedWorkCities,
   formatCompanyDisplay,
   effectiveJobTypes,
+  effectiveEventCity,
+  effectiveJobSectors,
   formatEducationDisplay,
   cardJobTitle,
   sanitizeDisplayExcerpt,
@@ -150,11 +152,11 @@ function JobCardInner({
       job.talk_events
         ?.filter(
           (event) =>
-            workCities.includes(event.city || '') &&
+            workCities.includes(effectiveEventCity(event) || '') &&
             event.status !== 'cancelled' &&
             Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now,
         )
-        .map((event) => event.city),
+        .map((event) => effectiveEventCity(event)),
     ),
   ].join(' / ');
   const location =
@@ -167,7 +169,7 @@ function JobCardInner({
     filters.includeRelatedTalks &&
       job.talk_events?.some(
         (event) =>
-          workCities.includes(event.city || '') &&
+          workCities.includes(effectiveEventCity(event) || '') &&
           event.status !== 'cancelled' &&
           Date.parse(`${event.date}T${event.end_time || '23:59'}:00+08:00`) >= now,
       ),
@@ -254,9 +256,10 @@ function JobCardInner({
     applied || (personalRecord.application_stage && personalRecord.application_stage !== 'planned'),
   );
 
+  const effectiveSectors = effectiveJobSectors(job);
   const primaryUnitBadge =
-    job.sectors[0] && job.sectors[0] !== '综合'
-      ? { text: job.sectors[0], className: 'opp-sector' }
+    effectiveSectors[0] && effectiveSectors[0] !== '综合'
+      ? { text: effectiveSectors[0], className: 'opp-sector' }
       : job.kind === '具体岗位'
         ? { text: '具体岗位', className: 'opp-tag-sm' }
         : null;

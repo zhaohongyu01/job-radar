@@ -515,6 +515,42 @@ def fetch_bytes_quick(url: str, timeout: float = 6.0, max_bytes: int = 4_000_000
         return None
 
 
+_ORIG_FETCH_BYTES_QUICK = fetch_bytes_quick
+
+
+def fetch_attachment_conditional(
+    url: str,
+    timeout: float = 6.0,
+    max_bytes: int = 4_000_000,
+    etag: str = '',
+    last_modified: str = '',
+) -> Tuple[str, Optional[bytes], str, str]:
+    """Fetch attachment bytes with optional If-None-Match / If-Modified-Since conditional headers."""
+    if fetch_bytes_quick is not _ORIG_FETCH_BYTES_QUICK:
+        raw = fetch_bytes_quick(url, timeout=timeout, max_bytes=max_bytes)
+        if raw:
+            return 'ok', raw, '', ''
+        return 'error', None, '', ''
+    headers = dict(c.DEFAULT_HEADERS)
+    if etag:
+        headers['If-None-Match'] = etag
+    if last_modified:
+        headers['If-Modified-Since'] = last_modified
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with c.OPENER.open(req, timeout=timeout) as resp:
+            raw = resp.read(max_bytes)
+            resp_etag = str(resp.headers.get('ETag') or '').strip()
+            resp_lm = str(resp.headers.get('Last-Modified') or '').strip()
+            return 'ok', raw, resp_etag, resp_lm
+    except urllib.error.HTTPError as exc:
+        if exc.code == 304:
+            return 'not_modified', None, etag, last_modified
+        return 'error', None, '', ''
+    except Exception:
+        return 'error', None, '', ''
+
+
 def extract_dtdjzx_embedded_html(html: str) -> str:
     r"""Extract Vue template literal `content: \`...\`` from dtdjzx.gov.cn detail pages."""
     if 'v-html="content"' not in html and 'dtdjzx.gov.cn' not in html:
@@ -529,16 +565,26 @@ def extract_dtdjzx_embedded_html(html: str) -> str:
     return m.group(1).strip() if m else ''
 
 
-def parse_detail_body_and_tables(url: str, fallback_title: str, source_city: str = '') -> Dict[str, Any]:
+def parse_detail_body_and_tables(
+    url: str,
+    fallback_title: str,
+    source_city: str = '',
+    strict_fetch: bool = False,
+) -> Optional[Dict[str, Any]]:
     """Fetch an official exam detail page and extract body text, attachments, and position tables."""
     try:
         html = fetch_html_quick(url, timeout=6.0)
     except Exception:
+        if strict_fetch:
+            return None
         return {
             'body': f'{fallback_title}\n请点击上方「查看原公告」核对完整招考简章与岗位汇总表附件。',
             'attachments': [],
             'exam_positions': [],
         }
+
+    if strict_fetch and not (html or '').strip():
+        return None
 
     embedded_html = extract_dtdjzx_embedded_html(html)
     parse_html = f'<div class="content">{embedded_html}</div>' if embedded_html else html
@@ -595,6 +641,18 @@ def parse_detail_body_and_tables(url: str, fallback_title: str, source_city: str
         except Exception:
             pass
 
+    if strict_fetch:
+        stripped = text.strip()
+        if not stripped or (len(stripped) < 30 and not attachments and not exam_positions):
+            return None
+        if (
+            len(stripped) < 80
+            and not attachments
+            and not exam_positions
+            and re.search(r'404\s*Not\s*Found|502\s*Bad\s*Gateway|503\s*Service|系统维护|访问过于频繁', stripped, re.I)
+        ):
+            return None
+
     return {
         'body': text[:18000] if text else fallback_title,
         'attachments': attachments[:15],
@@ -602,7 +660,11 @@ def parse_detail_body_and_tables(url: str, fallback_title: str, source_city: str
     }
 
 
-def crawl_sdei_exam_channel(source: Dict[str, Any], max_pages: int = 3) -> List[Dict[str, Any]]:
+def crawl_sdei_exam_channel(
+    source: Dict[str, Any],
+    max_pages: int = 3,
+    raise_on_error: bool = False,
+) -> List[Dict[str, Any]]:
     """Crawl gxjy.sdei.edu.cn exam channels (classId=99 and classId=86)."""
     class_id = int(source.get('class_id') or 99)
     discovered: List[Dict[str, Any]] = []
@@ -610,6 +672,8 @@ def crawl_sdei_exam_channel(source: Dict[str, Any], max_pages: int = 3) -> List[
         try:
             items, total_pages = c.sdei_news_list(page, page_size=40, source={'id': source['id'], 'class_id': class_id})
         except Exception:
+            if page == 1 and raise_on_error:
+                raise
             break
         for it in items:
             title = clean_exam_title(it.get('title', ''))
@@ -633,7 +697,11 @@ def crawl_sdei_exam_channel(source: Dict[str, Any], max_pages: int = 3) -> List[
     return discovered
 
 
-def crawl_jinan_cms_exam(source: Dict[str, Any], max_pages: int = 2) -> List[Dict[str, Any]]:
+def crawl_jinan_cms_exam(
+    source: Dict[str, Any],
+    max_pages: int = 2,
+    raise_on_error: bool = False,
+) -> List[Dict[str, Any]]:
     """Crawl Jinan HRSS public institution recruitment column including exam progress notices."""
     discovered: List[Dict[str, Any]] = []
     for page in range(1, max_pages + 1):
@@ -655,16 +723,20 @@ def crawl_jinan_cms_exam(source: Dict[str, Any], max_pages: int = 2) -> List[Dic
                     'published_at': it.get('published_at'),
                 })
         except Exception:
+            if page == 1 and raise_on_error:
+                raise
             break
     return discovered
 
 
-def crawl_generic_gov_portal(source: Dict[str, Any]) -> List[Dict[str, Any]]:
+def crawl_generic_gov_portal(source: Dict[str, Any], raise_on_error: bool = False) -> List[Dict[str, Any]]:
     """Crawl provincial/municipal HRSS or military exam pages (static HTML + Hanweb JPAAS API + XML datastore)."""
     url = source['url']
     try:
         html = fetch_html_quick(url, timeout=6.0)
     except Exception:
+        if raise_on_error:
+            raise
         return []
 
     html_chunks = [html]
@@ -837,9 +909,9 @@ SD_16CITIES_GWY_PORTALS: List[Tuple[str, str, str]] = [
 ]
 
 
-def crawl_sd_16cities_gwy(source: Dict[str, Any]) -> List[Dict[str, Any]]:
+def crawl_sd_16cities_gwy(source: Dict[str, Any], raise_on_error: bool = False) -> List[Dict[str, Any]]:
     """Crawl the 16 municipal civil service columns linked from Shandong dtdjzx gwygzlygwy.html."""
-    def fetch_city(entry: Tuple[str, str, str]) -> List[Dict[str, Any]]:
+    def fetch_city(entry: Tuple[str, str, str]) -> Tuple[bool, List[Dict[str, Any]], Optional[Exception]]:
         city, url, mode = entry
         sub_src = {
             'id': source['id'],
@@ -849,23 +921,31 @@ def crawl_sd_16cities_gwy(source: Dict[str, Any]) -> List[Dict[str, Any]]:
         }
         try:
             if mode == 'dtdjzx':
-                return crawl_dtdjzx_exam(sub_src)[:10]
-            return crawl_generic_gov_portal(sub_src)[:10]
-        except Exception:
-            return []
+                return True, crawl_dtdjzx_exam(sub_src, raise_on_error=True)[:10], None
+            return True, crawl_generic_gov_portal(sub_src, raise_on_error=True)[:10], None
+        except Exception as exc:
+            return False, [], exc
 
     discovered: List[Dict[str, Any]] = []
     seen_urls: set[str] = set()
+    ok_cities = 0
+    last_err: Optional[Exception] = None
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for city_items in pool.map(fetch_city, SD_16CITIES_GWY_PORTALS):
+        for city_ok, city_items, err in pool.map(fetch_city, SD_16CITIES_GWY_PORTALS):
+            if city_ok:
+                ok_cities += 1
+            elif err is not None:
+                last_err = err
             for it in city_items:
                 if it['source_url'] not in seen_urls:
                     seen_urls.add(it['source_url'])
                     discovered.append(it)
+    if raise_on_error and ok_cities == 0 and last_err is not None:
+        raise last_err
     return discovered
 
 
-def crawl_dtdjzx_exam(source: Dict[str, Any]) -> List[Dict[str, Any]]:
+def crawl_dtdjzx_exam(source: Dict[str, Any], raise_on_error: bool = False) -> List[Dict[str, Any]]:
     """Crawl Shandong Organization Dept (灯塔-党建在线) Civil Service & Selected Graduate columns."""
     urls = [source['url'], *(source.get('extra_urls') or [])]
     discovered: List[Dict[str, Any]] = []
@@ -874,10 +954,14 @@ def crawl_dtdjzx_exam(source: Dict[str, Any]) -> List[Dict[str, Any]]:
     if src_city in ('省属/全省', '全国', '山东及全国'):
         src_city = ''
 
+    any_page_ok = False
+    last_err: Optional[Exception] = None
     for page_url in urls:
         try:
             html = fetch_html_quick(page_url, timeout=6.0)
-        except Exception:
+            any_page_ok = True
+        except Exception as exc:
+            last_err = exc
             continue
         for row in parse_dtdjzx_basic_lines(html, page_url):
             if row['url'] in seen_urls:
@@ -895,6 +979,9 @@ def crawl_dtdjzx_exam(source: Dict[str, Any]) -> List[Dict[str, Any]]:
                 'published_at': row['published_at'] or None,
                 'excerpt': row['description'],
             })
+
+    if raise_on_error and not any_page_ok and last_err is not None:
+        raise last_err
 
     # Attach standalone position-table download entries (e.g. lyxgxz.html) to their matching announcement
     dl_url = source.get('download_url')
@@ -1138,31 +1225,51 @@ def merge_sibling_position_table_entries(raw_by_url: Dict[str, Dict[str, Any]]) 
 
 
 def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items: int = 60) -> None:
-    """Download and parse .xlsx/.xls/.pdf/.docx position table attachments for announcements lacking parsed positions."""
+    """Download and parse .xlsx/.xls/.pdf/.docx position table attachments, preserving prior positions on failure."""
     candidates: List[Dict[str, Any]] = []
     for item in items:
-        if item.get('exam_positions') or (item.get('positions') and item.get('positions_status') == 'parsed'):
+        atts = item.get('attachments') or []
+        has_deferred_att = any(
+            is_position_table_attachment(a) and a.get('parse_status') == 'deferred'
+            for a in atts
+        )
+        needs_reparse = bool(
+            item.get('_needs_att_reparse')
+            or item.get('positions_pending_recheck')
+            or has_deferred_att
+        )
+        has_existing_parsed = bool(
+            item.get('exam_positions') or (item.get('positions') and item.get('positions_status') == 'parsed')
+        )
+        if has_existing_parsed and not needs_reparse:
             continue
         item_title = clean_exam_title(item.get('title') or '')
         if infer_notice_role(item_title) not in ('招考简章', '补充公告') or re.search(
             r'核减|取消.*计划|拟聘用|拟录用|进入面试|成绩', item_title
         ):
             continue
-        atts = item.get('attachments') or []
         if any(is_position_table_attachment(a) for a in atts):
             candidates.append(item)
 
-    def sort_key(x: Dict[str, Any]) -> Tuple[int, str]:
+    def sort_key(x: Dict[str, Any]) -> Tuple[int, int, str]:
+        reparse_prio = 1 if (x.get('_needs_att_reparse') or x.get('positions_pending_recheck')) else 0
         st = str(x.get('stage') or '')
         is_active = 1 if st in ('registering', 'closing_soon', 'upcoming', 'rolling', 'payment_confirm', 'admit_exam', '') else 0
-        return (is_active, str(x.get('published_at') or ''))
+        return (reparse_prio, is_active, str(x.get('published_at') or ''))
 
     candidates.sort(key=sort_key, reverse=True)
 
     def parse_item_atts(item: Dict[str, Any]) -> None:
         exam_id = item.get('id') or hashlib.sha256((item.get('source_url') or '').encode('utf-8')).hexdigest()[:20]
         src_city = item.get('source_city') or (item.get('cities') or [''])[0]
+        fallback_positions = list(item.get('exam_positions') or item.get('positions') or [])
+        old_att_by_url = {
+            str(a.get('url') or ''): a
+            for a in (item.get('_pre_crawl_attachments') or item.get('attachments') or [])
+            if isinstance(a, dict) and a.get('url')
+        }
         parsed_rows: List[Dict[str, Any]] = []
+        any_failed = False
         gov_m = re.search(r'https?://[a-z0-9.-]+\.gov\.cn(?::\d+)?', str(item.get('body') or ''), re.I)
         gov_origin = gov_m.group(0) if gov_m else ''
         cleaned_atts = clean_exam_attachments(item.get('attachments') or [], fallback_origin=gov_origin)
@@ -1171,10 +1278,51 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
         for att in candidate_atts:
             att_url = str(att.get('url') or '')
             att_title = str(att.get('title') or '')
+            prev_att = old_att_by_url.get(att_url) or {}
             is_zip = '.zip' in att_url.lower() or '.zip' in att_title.lower()
-            raw_bytes = fetch_bytes_quick(att_url, timeout=12.0 if is_zip else 6.0)
-            if not raw_bytes:
+            status, raw_bytes, new_etag, new_lm = fetch_attachment_conditional(
+                att_url,
+                timeout=12.0 if is_zip else 6.0,
+                etag=str(prev_att.get('etag') or ''),
+                last_modified=str(prev_att.get('last_modified') or ''),
+            )
+            if status == 'not_modified' and fallback_positions:
+                reused = [r for r in fallback_positions if r.get('source_url') == att_url]
+                if not reused and len(candidate_atts) == 1:
+                    reused = fallback_positions
+                if reused:
+                    parsed_rows.extend(reused)
+                    for meta_k in ('sha256', 'etag', 'last_modified'):
+                        if prev_att.get(meta_k):
+                            att[meta_k] = prev_att[meta_k]
+                    att['parse_status'] = 'parsed'
+                    continue
+
+            if status != 'ok' or not raw_bytes:
+                any_failed = True
+                att['parse_status'] = 'deferred'
                 continue
+
+            digest = hashlib.sha256(raw_bytes).hexdigest()
+            att['sha256'] = digest
+            if new_etag:
+                att['etag'] = new_etag
+            if new_lm:
+                att['last_modified'] = new_lm
+
+            if (
+                prev_att.get('sha256') == digest
+                and not item.get('_att_or_body_changed')
+                and fallback_positions
+            ):
+                reused = [r for r in fallback_positions if r.get('source_url') == att_url]
+                if not reused and len(candidate_atts) == 1:
+                    reused = fallback_positions
+                if reused:
+                    parsed_rows.extend(reused)
+                    att['parse_status'] = 'parsed'
+                    continue
+
             default_bz = '公务员（行政编）' if '公务员' in str(item.get('title') or '') else '事业编'
             rows = parse_exam_attachment_bytes(
                 raw_bytes,
@@ -1189,8 +1337,23 @@ def parse_position_attachments_for_items(items: List[Dict[str, Any]], max_items:
                     r['source_url'] = att_url
                 parsed_rows.extend(rows)
                 att['parse_status'] = 'parsed'
+            else:
+                any_failed = True
+                att['parse_status'] = 'deferred'
+
         if parsed_rows:
             item['exam_positions'] = parsed_rows
+            item.pop('positions', None)
+            item['positions_status'] = 'parsed'
+            if any_failed:
+                item['positions_pending_recheck'] = True
+            else:
+                item.pop('positions_pending_recheck', None)
+        elif fallback_positions:
+            # New attachment download/parse failed: preserve previous verified positions intact.
+            item['exam_positions'] = fallback_positions
+            if any_failed:
+                item['positions_pending_recheck'] = True
 
     if candidates:
         with ThreadPoolExecutor(max_workers=6) as pool:
@@ -1270,13 +1433,116 @@ def link_related_exam_notices(exams: List[Dict[str, Any]]) -> None:
                 best_parent['related_notices'] = rel_list
 
 
+def _load_seed_exam_metadata(seed_dir: Path) -> Tuple[Optional[str], Dict[str, Optional[str]]]:
+    """Read genuine last_success_at (and per-source last_success_at) from existing seed snapshot."""
+    seed_dir = Path(seed_dir)
+    last_success_at: Optional[str] = None
+    source_last_success: Dict[str, Optional[str]] = {}
+
+    exams_path = seed_dir / 'exams.json'
+    if exams_path.is_file():
+        try:
+            snap = json.loads(exams_path.read_text(encoding='utf-8'))
+            if isinstance(snap, dict):
+                raw_ls = snap.get('last_success_at')
+                raw_gen = snap.get('generated_at')
+                if isinstance(raw_ls, str) and raw_ls.strip():
+                    last_success_at = raw_ls.strip()
+                elif isinstance(raw_gen, str) and raw_gen.strip():
+                    last_success_at = raw_gen.strip()
+                for src in snap.get('sources') or []:
+                    if isinstance(src, dict) and src.get('id'):
+                        sid = str(src['id'])
+                        if 'last_success_at' in src:
+                            s_ls = src.get('last_success_at')
+                            source_last_success[sid] = s_ls.strip() if isinstance(s_ls, str) and s_ls.strip() else None
+                        elif last_success_at:
+                            source_last_success[sid] = last_success_at
+        except Exception:
+            pass
+
+    if last_success_at is None:
+        jobs_path = seed_dir / 'jobs.json'
+        if jobs_path.is_file():
+            try:
+                jsnap = json.loads(jobs_path.read_text(encoding='utf-8'))
+                if isinstance(jsnap, dict):
+                    raw_jls = jsnap.get('last_success_at') or jsnap.get('generated_at')
+                    if isinstance(raw_jls, str) and raw_jls.strip():
+                        last_success_at = raw_jls.strip()
+            except Exception:
+                pass
+
+    return last_success_at, source_last_success
+
+
+def _normalize_body_for_diff(text: str) -> str:
+    """Strip whitespace and dynamic hit counters before comparing detail bodies."""
+    s = re.sub(r'(?:浏览|点击|阅读|访问)(?:次数|量|人数)?\s*[：:]\s*\d+', '', str(text or ''))
+    return re.sub(r'\s+', '', s)
+
+
+def _is_active_recruitment_for_recheck(item: Dict[str, Any], today_str: str) -> bool:
+    """Determine if an existing exam announcement is an active/upcoming recruitment eligible for bounded re-verification."""
+    src_url = str(item.get('source_url') or '').strip()
+    if not src_url.startswith(('http://', 'https://')):
+        return False
+
+    title = clean_exam_title(item.get('title') or '')
+    role = item.get('notice_role') or infer_notice_role(title)
+    if role not in ('招考简章', '补充公告'):
+        return False
+    if re.search(
+        r'核减|取消.*计划|改报|拟聘用|拟录用|拟录取|进入面试|入围.*名单|成绩|体检|考察|递补',
+        title,
+    ):
+        return False
+
+    schedule = item.get('schedule')
+    if isinstance(schedule, dict):
+        if schedule.get('reg_mode') == 'rolling':
+            rolling_until = str(schedule.get('rolling_until') or '')[:10]
+            return not (rolling_until and today_str > rolling_until)
+        reg_end = str(schedule.get('reg_end') or '')[:10]
+        if reg_end:
+            return reg_end >= today_str
+        reg_start = str(schedule.get('reg_start') or '')[:10]
+        if reg_start:
+            return reg_start >= today_str
+
+    stage = str(item.get('stage') or '')
+    if stage in ('ended', 'publicity', 'interview_review', 'admit_exam', 'payment_confirm'):
+        return False
+    if stage in ('registering', 'closing_soon', 'upcoming', 'rolling'):
+        return True
+
+    deadline = str(item.get('deadline') or '')[:10]
+    if re.fullmatch(r'202\d-\d{2}-\d{2}', deadline):
+        return deadline >= today_str
+
+    pub_date = str(item.get('published_at') or '')[:10]
+    if pub_date:
+        try:
+            d_pub = dt.date.fromisoformat(pub_date)
+            d_today = dt.date.fromisoformat(today_str)
+            return -2 <= (d_today - d_pub).days <= 30
+        except Exception:
+            pass
+    return False
+
+
 def collect_and_export_exams(
     public_dir: Path = ROOT / 'public',
     live_crawl: bool = True,
     live_site: str = 'https://sites-project.job-radar.workers.dev',
+    seed_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
+    public_dir = Path(public_dir)
+    effective_seed_dir = Path(seed_dir) if seed_dir is not None else public_dir
     now_iso = dt.datetime.now(TZ).isoformat(timespec='seconds')
     today_str = now_iso[:10]
+
+    seed_last_success_at, seed_source_last_success = _load_seed_exam_metadata(effective_seed_dir)
 
     raw_by_url: Dict[str, Dict[str, Any]] = {}
     source_stats: Dict[str, Dict[str, Any]] = {
@@ -1288,7 +1554,11 @@ def collect_and_export_exams(
             'level': s.get('level', '官方招考源'),
             'status': 'ok',
             'count': 0,
-            'last_success_at': now_iso,
+            'last_success_at': (
+                seed_source_last_success[s['id']]
+                if s['id'] in seed_source_last_success
+                else seed_last_success_at
+            ),
             'errors': [],
         }
         for s in EXAM_SOURCES
@@ -1313,9 +1583,9 @@ def collect_and_export_exams(
         '菏泽': 'heze-hrss-exam',
     }
 
-    # 1. Extract civil exam records already present in public/jobs.json and live snapshot
+    # 1. Extract civil exam records already present in seed directory and live snapshot
     existing_exam_jobs = load_hydrated_existing_jobs(
-        public_dir,
+        effective_seed_dir,
         live_site=live_site if live_crawl else '',
     )
     for job in existing_exam_jobs:
@@ -1341,47 +1611,95 @@ def collect_and_export_exams(
 
         rec = dict(job)
         rec['source_id'] = mapped_src
+        rec['_pre_crawl_attachments'] = list(rec.get('attachments') or [])
+        if str(rec.get('body') or '').strip():
+            rec['_hydrated_seed'] = True
         raw_by_url[url] = rec
 
     # 2. Live crawl official exam portals in parallel
+    effective_last_success_at = seed_last_success_at
     if live_crawl:
         def run_source(src: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]], Optional[str]]:
             sid = src['id']
             adapter = src.get('adapter')
             try:
                 if adapter == 'sdei_exam_channel':
-                    return sid, crawl_sdei_exam_channel(src, max_pages=3), None
+                    return sid, crawl_sdei_exam_channel(src, max_pages=3, raise_on_error=True), None
                 if adapter == 'jinan_cms_exam':
-                    return sid, crawl_jinan_cms_exam(src, max_pages=2), None
+                    return sid, crawl_jinan_cms_exam(src, max_pages=2, raise_on_error=True), None
                 if adapter == 'dtdjzx_exam':
-                    return sid, crawl_dtdjzx_exam(src), None
+                    return sid, crawl_dtdjzx_exam(src, raise_on_error=True), None
                 if adapter == 'sd_16cities_gwy':
-                    return sid, crawl_sd_16cities_gwy(src), None
+                    return sid, crawl_sd_16cities_gwy(src, raise_on_error=True), None
                 if adapter == 'generic_gov':
-                    return sid, crawl_generic_gov_portal(src), None
+                    return sid, crawl_generic_gov_portal(src, raise_on_error=True), None
                 return sid, [], None
             except Exception as exc:
                 return sid, [], str(exc)
 
         active_sources = [s for s in EXAM_SOURCES if s.get('adapter') != 'snapshot_extract']
+        succeeded_active_sources = 0
         with ThreadPoolExecutor(max_workers=8) as pool:
             for sid, items, err in pool.map(run_source, active_sources):
                 if err:
                     source_stats[sid]['status'] = 'partial'
                     source_stats[sid]['errors'] = [err]
+                else:
+                    succeeded_active_sources += 1
+                    source_stats[sid]['last_success_at'] = now_iso
                 for it in items:
                     u = it['source_url']
                     if u not in raw_by_url:
                         raw_by_url[u] = it
-                    elif it.get('attachments') and not raw_by_url[u].get('attachments'):
-                        raw_by_url[u]['attachments'] = it['attachments']
+                    else:
+                        existing_rec = raw_by_url[u]
+                        existing_rec.setdefault('_pre_crawl_attachments', list(existing_rec.get('attachments') or []))
+                        signal_changed = False
 
-        # Fetch details for newly discovered items that lack full body text (bounded to top 50 newest)
+                        new_title = clean_exam_title(it.get('title') or '')
+                        old_title = clean_exam_title(existing_rec.get('title') or '')
+                        if new_title and new_title != old_title and not old_title.endswith(f' · {new_title}'):
+                            existing_rec['title'] = new_title
+                            signal_changed = True
+
+                        new_pub = str(it.get('published_at') or '')[:10]
+                        old_pub = str(existing_rec.get('published_at') or '')[:10]
+                        if new_pub and new_pub != old_pub:
+                            existing_rec['published_at'] = it['published_at']
+                            signal_changed = True
+
+                        it_atts = clean_exam_attachments(it.get('attachments') or [])
+                        if it_atts:
+                            existing_rec['_list_attachments'] = it_atts
+                            cur_atts = clean_exam_attachments(existing_rec.get('attachments') or [])
+                            it_att_urls = {a['url'] for a in it_atts if a.get('url')}
+                            cur_att_urls = {a['url'] for a in cur_atts if a.get('url')}
+                            if it_att_urls != cur_att_urls:
+                                merged_atts = list(cur_atts)
+                                for att in it_atts:
+                                    if att.get('url') not in cur_att_urls:
+                                        merged_atts.append(att)
+                                existing_rec['attachments'] = merged_atts
+                                signal_changed = True
+
+                        if signal_changed:
+                            existing_rec['_force_refresh_detail'] = True
+
+        if active_sources and succeeded_active_sources == 0:
+            raise RuntimeError('All active civil exam sources failed; refusing to write fabricated snapshot')
+
+        effective_last_success_at = now_iso
+        if 'campus-exam-hub' in source_stats and live_site:
+            source_stats['campus-exam-hub']['last_success_at'] = now_iso
+
+        # Fetch details for newly discovered items that lack full body text (bounded to top 80 newest)
         need_detail = [
             it for it in raw_by_url.values()
-            if len(str(it.get('body') or '')) < 80
+            if not it.get('_hydrated_seed') and len(str(it.get('body') or '')) < 80
         ]
         need_detail.sort(key=lambda x: x.get('published_at') or '', reverse=True)
+        need_detail_batch = need_detail[:80]
+        need_detail_urls = {it['source_url'] for it in need_detail_batch if it.get('source_url')}
 
         def enrich_one(item: Dict[str, Any]) -> None:
             detail_info = parse_detail_body_and_tables(
@@ -1389,6 +1707,8 @@ def collect_and_export_exams(
                 item['title'],
                 source_city=item.get('source_city', ''),
             )
+            if not detail_info:
+                return
             if len(detail_info.get('body') or '') >= len(str(item.get('body') or '')):
                 item['body'] = detail_info['body']
             if detail_info.get('attachments'):
@@ -1400,15 +1720,114 @@ def collect_and_export_exams(
                 item['attachments'] = existing_atts
             if detail_info.get('exam_positions') and not item.get('exam_positions'):
                 item['exam_positions'] = detail_info['exam_positions']
+            item['last_verified_at'] = now_iso
 
         with ThreadPoolExecutor(max_workers=8) as pool:
-            list(pool.map(enrich_one, need_detail[:80]))
+            list(pool.map(enrich_one, need_detail_batch))
+
+        # Bounded re-verification for signal-triggered updates + up to 8 active recruitments per round (cap 16 total)
+        forced_recheck = [
+            it for it in raw_by_url.values()
+            if it.get('source_url') not in need_detail_urls and it.get('_force_refresh_detail')
+        ]
+        forced_recheck.sort(key=lambda x: (str(x.get('published_at') or ''), str(x.get('id') or '')), reverse=True)
+        forced_batch = forced_recheck[:16]
+
+        routine_quota = min(8, max(0, 16 - len(forced_batch)))
+        routine_candidates = [
+            it for it in raw_by_url.values()
+            if it.get('source_url') not in need_detail_urls
+            and not it.get('_force_refresh_detail')
+            and _is_active_recruitment_for_recheck(it, today_str)
+        ]
+        routine_candidates.sort(
+            key=lambda x: (
+                str(x.get('last_verified_at') or ''),
+                str(x.get('published_at') or ''),
+                str(x.get('id') or ''),
+            )
+        )
+        recheck_batch = forced_batch + routine_candidates[:routine_quota]
+
+        def recheck_one(item: Dict[str, Any]) -> None:
+            detail_info = parse_detail_body_and_tables(
+                item['source_url'],
+                item['title'],
+                source_city=item.get('source_city', ''),
+                strict_fetch=True,
+            )
+            if detail_info is None:
+                return
+
+            item['last_verified_at'] = now_iso
+            new_body = str(detail_info.get('body') or '').strip()
+            old_body = str(item.get('body') or '').strip()
+            gov_m = re.search(r'https?://[a-z0-9.-]+\.gov\.cn(?::\d+)?', f'{new_body}\n{old_body}', re.I)
+            gov_origin = gov_m.group(0) if gov_m else ''
+
+            detail_atts = list(detail_info.get('attachments') or [])
+            list_atts = list(item.get('_list_attachments') or [])
+            merged_new_atts = clean_exam_attachments(detail_atts + list_atts, fallback_origin=gov_origin)
+            old_atts = clean_exam_attachments(
+                item.get('_pre_crawl_attachments', item.get('attachments')) or [],
+                fallback_origin=gov_origin,
+            )
+
+            old_att_map = {a['url']: a for a in old_atts if a.get('url')}
+            for att in merged_new_atts:
+                prev = old_att_map.get(att.get('url') or '')
+                if prev:
+                    for meta_k in ('sha256', 'etag', 'last_modified', 'parse_status'):
+                        if meta_k not in att and prev.get(meta_k):
+                            att[meta_k] = prev[meta_k]
+
+            new_att_urls = {a['url'] for a in merged_new_atts if a.get('url')}
+            old_att_urls = set(old_att_map.keys())
+            att_changed = bool(new_att_urls) and new_att_urls != old_att_urls
+            body_changed = (
+                bool(new_body)
+                and len(_normalize_body_for_diff(new_body)) >= 20
+                and _normalize_body_for_diff(new_body) != _normalize_body_for_diff(old_body)
+            )
+
+            if att_changed or body_changed:
+                if new_body:
+                    item['body'] = new_body
+                if merged_new_atts or not old_atts:
+                    item['attachments'] = merged_new_atts
+                item['_att_or_body_changed'] = True
+            elif merged_new_atts:
+                item['attachments'] = merged_new_atts
+
+            has_pos_att = any(is_position_table_attachment(a) for a in (item.get('attachments') or []))
+            if has_pos_att:
+                # Re-verify position table attachments within the bounded active quota
+                # (covers both URL changes and in-place Excel overwrites without dropping old rows on failure).
+                item['_needs_att_reparse'] = True
+            elif (att_changed or body_changed) and detail_info.get('exam_positions'):
+                item['exam_positions'] = detail_info['exam_positions']
+                item.pop('positions', None)
+
+        if recheck_batch:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(recheck_one, recheck_batch))
 
         # Parse .xlsx / .xls / .pdf / .docx position table attachments for announcements that lack tabular positions
         merge_sibling_position_table_entries(raw_by_url)
         parse_position_attachments_for_items(list(raw_by_url.values()), max_items=60)
     else:
         merge_sibling_position_table_entries(raw_by_url)
+
+    for rec in raw_by_url.values():
+        for tmp_key in (
+            '_force_refresh_detail',
+            '_pre_crawl_attachments',
+            '_list_attachments',
+            '_hydrated_seed',
+            '_needs_att_reparse',
+            '_att_or_body_changed',
+        ):
+            rec.pop(tmp_key, None)
 
     # 3. Enrich all records into ExamAnnouncement objects and deduplicate identical announcements
     deduped_exams: Dict[str, Dict[str, Any]] = {}
@@ -1482,7 +1901,7 @@ def collect_and_export_exams(
     payload = {
         'schema_version': 1,
         'generated_at': now_iso,
-        'last_success_at': now_iso,
+        'last_success_at': effective_last_success_at,
         'total_exams': len(exams),
         'total_positions': total_positions,
         'total_headcount': total_headcount,
@@ -1590,6 +2009,7 @@ def repack_existing_exam_snapshot(public_dir: Path) -> Dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description='Collect and export Civil Service & Public Institution exams.')
     parser.add_argument('--public-dir', default=str(ROOT / 'public'))
+    parser.add_argument('--seed-dir', default='', help='Optional seed directory to read baseline snapshot from before writing to --public-dir')
     parser.add_argument('--live-site', default='https://sites-project.job-radar.workers.dev', help='Live site origin for supplementing snapshot jobs (pass empty string to skip)')
     parser.add_argument('--offline-only', action='store_true', help='Only extract from existing snapshot without network requests')
     parser.add_argument('--repack-existing', action='store_true', help='Losslessly repackage existing public/exams.json into externalized position/detail shards')
@@ -1602,6 +2022,7 @@ def main() -> None:
             public_dir=Path(args.public_dir),
             live_crawl=not args.offline_only,
             live_site=args.live_site,
+            seed_dir=Path(args.seed_dir) if args.seed_dir else None,
         )
     print(
         f"Exported exams.json: total_exams={res['total_exams']}, "

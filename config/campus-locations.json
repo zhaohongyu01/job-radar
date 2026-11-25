@@ -243,6 +243,22 @@
       "city": "上海",
       "evidence_url": "https://gk.sjtu.edu.cn/Data/List/bxdd",
       "verified_on": "2026-11-02"
+    },
+    {
+      "id": "qau-qingdao-campuses",
+      "school": "青岛农业大学",
+      "venue_pattern": "城阳校区|平度校区",
+      "city": "青岛",
+      "evidence_url": "https://grad.qau.edu.cn/content/zhaoshengxinxi/26304172082e451d9f0a154e4dd4ba931ea392978b8d",
+      "verified_on": "2026-11-25"
+    },
+    {
+      "id": "qau-laiyang-campus",
+      "school": "青岛农业大学",
+      "venue_pattern": "莱阳校区",
+      "city": "烟台",
+      "evidence_url": "https://grad.qau.edu.cn/content/zhaoshengxinxi/26304172082e451d9f0a154e4dd4ba931ea392978b8d",
+      "verified_on": "2026-11-25"
     }
   ]
 }

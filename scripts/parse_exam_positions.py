@@ -1741,6 +1741,11 @@ def enrich_exam_record(
         'total_positions': total_positions,
         'total_headcount': total_headcount,
         'positions_status': positions_status,
+        **(
+            {'positions_pending_recheck': True}
+            if raw_item.get('positions_pending_recheck')
+            else {}
+        ),
         'schedule': schedule,
         'exam_subjects': exam_subjects,
         'exam_ratio': exam_ratio,

@@ -99,7 +99,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: exams-seed
-          path: data/exams-work
+          path: data/exams-seed-in
 
       - name: Retry compact exam seed download
         if: ${{ steps.seed_download.outcome == 'failure' }}
@@ -107,7 +107,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: exams-seed
-          path: data/exams-work
+          path: data/exams-seed-in
 
       - name: Set up NAS Python environment
         timeout-minutes: 6
@@ -121,17 +121,18 @@ jobs:
           NO_PROXY: '*'
         run: |
           export no_proxy="$NO_PROXY"
-          "$NAS_PYTHON" scripts/collect_exams.py --public-dir data/exams-work --live-site ""
+          rm -rf data/exams-out
+          "$NAS_PYTHON" scripts/collect_exams.py --seed-dir data/exams-seed-in --public-dir data/exams-out --live-site ""
 
       - name: Upload NAS collected exams snapshot
         timeout-minutes: 3
-        if: ${{ always() && hashFiles('data/exams-work/exams.json') != '' }}
+        if: ${{ steps.collector.outcome == 'success' && hashFiles('data/exams-out/exams.json') != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: exams-collected
           path: |
-            data/exams-work/exams.json
-            data/exams-work/exam-assets
+            data/exams-out/exams.json
+            data/exams-out/exam-assets
           retention-days: 2
 
   deploy-exams:
@@ -191,11 +192,22 @@ jobs:
             cp -rf data/exams-collected/exam-assets/. data/live-public/exam-assets/
           else
             echo "::warning::NAS exam snapshot unavailable; running cloud fallback collection."
-            python scripts/collect_exams.py --public-dir data/live-public || true
+            rm -rf data/exams-cloud-out
+            if python scripts/collect_exams.py --seed-dir data/live-public --public-dir data/exams-cloud-out; then
+              rm -rf data/live-public/exam-assets
+              mkdir -p data/live-public/exam-assets
+              cp -f data/exams-cloud-out/exams.json data/live-public/exams.json
+              cp -rf data/exams-cloud-out/exam-assets/. data/live-public/exam-assets/
+            else
+              echo "::warning::Cloud fallback collection failed; preserving live baseline snapshot with original last_success_at."
+              if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+                echo "- **Exams Fallback**: NAS and cloud exam collection both failed; preserved live baseline snapshot without advancing \`last_success_at\`." >> "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
           fi
 
       - name: Guard exams snapshot quality
-        run: python scripts/exams_guard.py --public-dir data/live-public --site https://sites-project.job-radar.workers.dev
+        run: python scripts/exams_guard.py --public-dir data/live-public --site https://sites-project.job-radar.workers.dev --require-fresh
 
       - name: Build lightweight browsing index, static feeds, and first-screen snapshot
         env:

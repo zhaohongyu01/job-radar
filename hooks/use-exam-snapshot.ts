@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   clearExamDetailShardCache,
   deriveExamStage,
+  isExamOpenForRegistration,
   loadExamPositionsAsset,
 } from '@/lib/exams';
 import type { ExamAnnouncement, ExamPositionRow, ExamSnapshot } from '@/lib/exams';
@@ -25,10 +26,12 @@ export interface UseExamSnapshotResult {
   loading: boolean;
   positionsLoading: boolean;
   positionsReady: boolean;
+  positionsError: string;
   error: string;
   today: string;
   nowMs: number;
   reload: () => void;
+  retryPositions: () => void;
   ensurePositionsLoaded: () => void;
   allExams: ExamAnnouncement[];
   activeExamCount: number;
@@ -46,7 +49,9 @@ export function useExamSnapshot({
     byExam: Record<string, ExamPositionRow[]>;
   } | null>(null);
   const [positionsLoading, setPositionsLoading] = useState(false);
+  const [positionsError, setPositionsError] = useState('');
   const [forcePositionsLoad, setForcePositionsLoad] = useState(false);
+  const [positionsRetryTick, setPositionsRetryTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [today, setToday] = useState('');
@@ -85,14 +90,17 @@ export function useExamSnapshot({
     const triggerFetch = () => {
       if (!active) return;
       setPositionsLoading(true);
+      setPositionsError('');
       loadExamPositionsAsset(positionsUrl)
         .then((asset) => {
           if (!active) return;
+          setPositionsError('');
           setPositionsState({ url: positionsUrl, byExam: asset.positions_by_exam });
         })
         .catch(() => {
-          // Keep announcement list usable even if background position table asset fails;
-          // per-exam detail shards still include positions when opening an announcement.
+          if (active) {
+            setPositionsError('职位表未加载，请检查网络后点击重试。');
+          }
         })
         .finally(() => {
           if (active) setPositionsLoading(false);
@@ -109,15 +117,25 @@ export function useExamSnapshot({
       active = false;
       if (timerId !== undefined) clearTimeout(timerId);
     };
-  }, [positionsUrl, positionsState?.url, eagerPositions, forcePositionsLoad]);
+  }, [positionsUrl, positionsState?.url, eagerPositions, forcePositionsLoad, positionsRetryTick]);
 
   const ensurePositionsLoaded = useCallback(() => {
     setForcePositionsLoad(true);
   }, []);
 
+  const retryPositions = useCallback(() => {
+    if (positionsUrl) {
+      clearExamDetailShardCache(positionsUrl);
+    }
+    setPositionsError('');
+    setForcePositionsLoad(true);
+    setPositionsRetryTick((n) => n + 1);
+  }, [positionsUrl]);
+
   const reload = useCallback(() => {
     setLoading(true);
     setError('');
+    setPositionsError('');
     setPositionsState(null);
     clearExamDetailShardCache();
     fetchExamSnapshot()
@@ -125,6 +143,7 @@ export function useExamSnapshot({
         setSnapshot(data);
         setToday(chinaToday());
         setNowMs(Date.now());
+        setPositionsRetryTick((n) => n + 1);
         onNotice?.('数据已刷新');
       })
       .catch(() => setError('考公考编数据读取失败，请稍后重试。'))
@@ -147,10 +166,7 @@ export function useExamSnapshot({
   }, [snapshot, today, positionsUrl, positionsState]);
 
   const activeExamCount = useMemo(
-    () =>
-      allExams.filter((e) =>
-        ['upcoming', 'registering', 'closing_soon', 'rolling'].includes(e.stage),
-      ).length,
+    () => allExams.filter((e) => isExamOpenForRegistration(e)).length,
     [allExams],
   );
 
@@ -160,8 +176,9 @@ export function useExamSnapshot({
   );
 
   const freshnessMeta = useMemo(() => {
-    if (!snapshot?.generated_at || !nowMs) return null;
-    const ms = Date.parse(snapshot.generated_at);
+    const freshnessTimestamp = snapshot?.last_success_at || snapshot?.generated_at;
+    if (!freshnessTimestamp || !nowMs) return null;
+    const ms = Date.parse(freshnessTimestamp);
     if (!Number.isFinite(ms)) return null;
     const hours = Math.max(0, Math.round((nowMs - ms) / 3600_000));
     const stale = hours > 36;
@@ -174,10 +191,12 @@ export function useExamSnapshot({
     loading,
     positionsLoading,
     positionsReady,
+    positionsError,
     error,
     today,
     nowMs,
     reload,
+    retryPositions,
     ensurePositionsLoaded,
     allExams,
     activeExamCount,

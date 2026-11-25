@@ -44,6 +44,16 @@ class CityRegistryTests(unittest.TestCase):
         self.assertIsNone(resolve_event_city('未知学校', '百周年纪念讲堂')[0])
         self.assertIsNone(resolve_event_city('北京大学', '线上直播 百周年纪念讲堂')[0])
 
+    def test_qau_chengyang_campus_resolves_to_qingdao_and_sdu_air_talk_stays_online(self):
+        city_cy, meta_cy = resolve_event_city('青岛农业大学', '文经楼 A102【城阳校区】')
+        self.assertEqual(city_cy, '青岛')
+        self.assertEqual(meta_cy['method'], 'campus')
+        self.assertEqual(resolve_event_city('青岛农业大学', '平度校区学术报告厅')[0], '青岛')
+        self.assertEqual(resolve_event_city('青岛农业大学', '莱阳校区实验楼')[0], '烟台')
+        air_city, air_meta = resolve_event_city('山东大学', '空中宣讲')
+        self.assertIsNone(air_city)
+        self.assertEqual(air_meta, {'method': 'unknown', 'reason': 'online'})
+
 
 if __name__ == '__main__':
     unittest.main()

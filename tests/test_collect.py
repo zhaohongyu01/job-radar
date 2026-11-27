@@ -2187,5 +2187,65 @@ class CollectionTests(unittest.TestCase):
         yxt_27 = dict(yxt_2, id='yxt-27', source_url='https://qdu.example/27', title='山东燕喜堂医药连锁有限公司2027届校园招聘', graduation_years=['2027'])
         self.assertEqual(len(c.deduplicate([yxt_26, yxt_27])), 2)
 
+        # Peer university merge prefers 山东财经大学 as primary while keeping official enterprise portals primary.
+        sdut_pos = {
+            'id': 'aaa1',
+            'company': '山东联兴绿厦建筑科技有限公司',
+            'title': '山东联兴绿厦建筑科技有限公司 · 互联网软件开发工程师',
+            'kind': '具体岗位',
+            'types': ['校招'],
+            'cities': ['济南'],
+            'source_id': 'sdut-positions',
+            'source_name': '山东理工大学 · 具体岗位',
+            'source_url': 'https://school.gxjy.sdei.edu.cn/sdut/school/companyissueinfo/edit1/42929',
+            'provenance': '公开原始来源',
+            'published_at': '2026-11-25',
+            'first_seen_at': '2026-11-25T08:00:00+08:00',
+        }
+        sdufe_pos = dict(
+            sdut_pos,
+            id='zzz2',
+            source_id='jobsdufe-positions',
+            source_name='山东财经大学 · 具体岗位',
+            source_url='https://school.gxjy.sdei.edu.cn/jobsdufe/school/companyissueinfo/edit1/42929',
+            first_seen_at='2026-11-25T09:00:00+08:00',
+        )
+        peer_merged = c.deduplicate([sdut_pos, sdufe_pos])
+        self.assertEqual(len(peer_merged), 1)
+        self.assertEqual(peer_merged[0]['id'], 'aaa1')
+        self.assertEqual(peer_merged[0]['source_id'], 'jobsdufe-positions')
+        self.assertEqual(peer_merged[0]['source_name'], '山东财经大学 · 具体岗位')
+        self.assertIn('/jobsdufe/', peer_merged[0]['source_url'])
+        self.assertEqual(peer_merged[0]['duplicate_sources'][0]['source_name'], '山东理工大学 · 具体岗位')
+
+        hisense_official = {
+            'id': 'hs1',
+            'company': '海信集团',
+            'title': '海信集团2027届校园招聘',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'source_id': 'hisense-campus',
+            'source_name': '海信集团 · 校园招聘',
+            'source_url': 'https://hisense.zhiye.com/campus/1',
+            'application_url': 'https://hisense.zhiye.com/apply/1',
+            'provenance': '公开原始来源',
+            'published_at': '2026-11-25',
+            'first_seen_at': '2026-11-25T08:00:00+08:00',
+        }
+        hisense_sdufe = dict(
+            hisense_official,
+            id='hs2',
+            source_id='jobsdufe-announcements',
+            source_name='山东财经大学 · 招聘公告',
+            source_url='https://school.gxjy.sdei.edu.cn/jobsdufe/jiuye/zhaopingg/detail/99999',
+            application_url=None,
+            first_seen_at='2026-11-25T09:00:00+08:00',
+        )
+        official_merged = c.deduplicate([hisense_official, hisense_sdufe])
+        self.assertEqual(len(official_merged), 1)
+        self.assertEqual(official_merged[0]['source_name'], '海信集团 · 校园招聘')
+        self.assertEqual(official_merged[0]['application_url'], 'https://hisense.zhiye.com/apply/1')
+
 
 if __name__=='__main__': unittest.main()

@@ -1035,6 +1035,146 @@ export function mergeJobIntoExisting(existing: Job, job: Job): void {
   }
 }
 
+const UNIVERSITY_SOURCE_ID_RE =
+  /(?:-announcements|-positions|-jobs)$|^(?:sdu|nankai|upc|sdei-news|sdei-jobfairs)$/;
+const UNIVERSITY_SOURCE_NAME_RE = /大学|学院|高校|学生就业服务平台/;
+
+function isUniversityOrThirdPartyPrimary(job: Job): boolean {
+  if (job.source_id?.endsWith('-talks')) return false;
+  if (job.provenance === '第三方线索') return true;
+  if (UNIVERSITY_SOURCE_ID_RE.test(job.source_id ?? '')) return true;
+  return UNIVERSITY_SOURCE_NAME_RE.test(job.source_name ?? '');
+}
+
+function isSdufeSourceEntry(entry: { source?: string; source_name?: string; title?: string; url?: string }): boolean {
+  const name = entry.source_name || entry.source || entry.title || '';
+  return name.includes('山东财经大学') || (entry.url ?? '').includes('/jobsdufe/');
+}
+
+function inferSdufeSourceId(sourceName: string, url: string, kind: string): string {
+  if (
+    kind === '具体岗位' ||
+    sourceName.includes('具体岗位') ||
+    url.includes('/companyissueinfo/')
+  ) {
+    return 'jobsdufe-positions';
+  }
+  return 'jobsdufe-announcements';
+}
+
+function trailingUrlNumericId(url: string | undefined): number {
+  const match = (url ?? '').match(/(\d{4,})(?:\/)?(?:\?.*)?$/);
+  return match ? Number(match[1]) : 0;
+}
+
+/**
+ * Among equal-tier university portals (or third-party clues), promote
+ * 山东财经大学 as the primary display source while keeping `job.id`,
+ * `duplicate_ids`, official enterprise `application_url`, and all other
+ * merged channels intact. Enterprise official portals and government portals
+ * are never demoted.
+ */
+export function promotePreferredCampusPrimary(job: Job): Job {
+  if (!job.duplicate_sources?.length) return job;
+  if (job.source_id?.endsWith('-talks')) return job;
+  if ((job.source_name ?? '').includes('山东财经大学') || (job.source_id ?? '').startsWith('jobsdufe')) {
+    return job;
+  }
+  if (!isUniversityOrThirdPartyPrimary(job)) return job;
+
+  let bestIdx = -1;
+  for (let i = 0; i < job.duplicate_sources.length; i += 1) {
+    const candidate = job.duplicate_sources[i];
+    if (!candidate.url || !isSdufeSourceEntry(candidate)) continue;
+    if (bestIdx < 0) {
+      bestIdx = i;
+      continue;
+    }
+    const curr = job.duplicate_sources[bestIdx];
+    const candApp = candidate.application_url ? 1 : 0;
+    const currApp = curr.application_url ? 1 : 0;
+    if (candApp !== currApp) {
+      if (candApp > currApp) bestIdx = i;
+      continue;
+    }
+    const candTitle = candidate.announcement_title || candidate.title || '';
+    const currTitle = curr.announcement_title || curr.title || '';
+    const candClean = candTitle.includes('面向我校') ? 0 : 1;
+    const currClean = currTitle.includes('面向我校') ? 0 : 1;
+    if (candClean !== currClean) {
+      if (candClean > currClean) bestIdx = i;
+      continue;
+    }
+    const candBody = typeof candidate.facts?.body === 'string' ? candidate.facts.body.length : 0;
+    const currBody = typeof curr.facts?.body === 'string' ? curr.facts.body.length : 0;
+    if (candBody !== currBody) {
+      if (candBody > currBody) bestIdx = i;
+      continue;
+    }
+    const candDate = candidate.published_at ?? '';
+    const currDate = curr.published_at ?? '';
+    if (candDate !== currDate) {
+      if (candDate > currDate) bestIdx = i;
+      continue;
+    }
+    if (trailingUrlNumericId(candidate.url) > trailingUrlNumericId(curr.url)) {
+      bestIdx = i;
+    }
+  }
+  if (bestIdx < 0) return job;
+
+  const preferred = job.duplicate_sources[bestIdx];
+  const formerPrimary = {
+    source: job.source || job.source_id,
+    source_name: job.source_name,
+    title: job.source_name || job.title,
+    announcement_title: job.title,
+    url: job.source_url,
+    ...(job.published_at ? { published_at: job.published_at } : {}),
+    ...(job.application_url ? { application_url: job.application_url } : {}),
+    ...(job.body
+      ? {
+          facts: {
+            body: job.body,
+            ...(job.excerpt ? { excerpt: job.excerpt } : {}),
+            title: job.title,
+            ...(job.published_at ? { published_at: job.published_at } : {}),
+            ...(job.application_url ? { application_url: job.application_url } : {}),
+          },
+        }
+      : {}),
+  };
+
+  const nextDuplicates = job.duplicate_sources.filter((_, i) => i !== bestIdx);
+  if (formerPrimary.url && !nextDuplicates.some((d) => d.url === formerPrimary.url)) {
+    nextDuplicates.unshift(formerPrimary);
+  }
+  job.duplicate_sources = nextDuplicates;
+
+  const nextSourceName = preferred.source_name || preferred.source || '山东财经大学';
+  job.source_name = nextSourceName;
+  job.source_url = preferred.url;
+  job.source_id = inferSdufeSourceId(nextSourceName, preferred.url, job.kind ?? '招聘公告');
+  if (job.source) job.source = nextSourceName;
+  job.provenance = '公开原始来源';
+  if (!job.application_url && preferred.application_url) {
+    job.application_url = preferred.application_url;
+  }
+  const preferredTitle =
+    preferred.announcement_title ||
+    (typeof preferred.facts?.title === 'string' ? preferred.facts.title : '');
+  if ((job.title ?? '').includes('面向我校') && preferredTitle && !preferredTitle.includes('面向我校')) {
+    job.title = preferredTitle;
+  }
+  const prefBody = typeof preferred.facts?.body === 'string' ? preferred.facts.body : '';
+  const prefExcerpt = typeof preferred.facts?.excerpt === 'string' ? preferred.facts.excerpt : '';
+  if (prefBody && prefBody.length >= Math.max(100, Math.floor((job.body?.length ?? 0) * 0.8))) {
+    job.body = prefBody;
+    if (prefExcerpt) job.excerpt = prefExcerpt;
+  }
+  return job;
+}
+
 export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
   // The optional browsing index is already merged with this same function.
   if (jobs.length && jobs.every((job) => job.listing_facts?.version === 1)) return jobs;
@@ -1155,6 +1295,9 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
       candidates.push(item);
       result.push(item);
     }
+  }
+  for (const item of result) {
+    promotePreferredCampusPrimary(item);
   }
   return result;
 }

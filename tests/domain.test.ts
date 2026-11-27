@@ -1164,6 +1164,60 @@ void test('mergeDuplicateOpportunities merges multi-cohort slash titles and iden
   const cohort26: Job = { ...yxtExplicit, id: 'yxt-26', source_url: 'https://qdu.example/yxt-26', title: '山东燕喜堂医药连锁有限公司2026届校园招聘', graduation_years: ['2026'] };
   const cohort27: Job = { ...yxtExplicit, id: 'yxt-27', source_url: 'https://qdu.example/yxt-27', title: '山东燕喜堂医药连锁有限公司2027届校园招聘', graduation_years: ['2027'] };
   assert.equal(mergeDuplicateOpportunities([cohort26, cohort27]).length, 2, '互不相交的2026届与2027届公告即使简介一致也不得合并');
+
+  // Among peer universities, 山东财经大学 becomes primary display source while enterprise official portals keep primacy.
+  const sdutPos: Job = {
+    ...job,
+    id: 'sdut-pos-1',
+    source_id: 'sdut-positions',
+    source_name: '山东理工大学 · 具体岗位',
+    source_url: 'https://school.gxjy.sdei.edu.cn/sdut/school/companyissueinfo/edit1/42929',
+    company: '山东联兴绿厦建筑科技有限公司',
+    title: '山东联兴绿厦建筑科技有限公司 · 互联网软件开发工程师',
+    kind: '具体岗位',
+    types: ['校招'],
+    cities: ['济南'],
+  };
+  const sdufePos: Job = {
+    ...sdutPos,
+    id: 'sdufe-pos-2',
+    source_id: 'jobsdufe-positions',
+    source_name: '山东财经大学 · 具体岗位',
+    source_url: 'https://school.gxjy.sdei.edu.cn/jobsdufe/school/companyissueinfo/edit1/42929',
+  };
+  const mergedPeer = mergeDuplicateOpportunities([sdutPos, sdufePos]);
+  assert.equal(mergedPeer.length, 1);
+  assert.equal(mergedPeer[0].id, 'sdut-pos-1', '提升主来源不得改变记录主 ID');
+  assert.equal(mergedPeer[0].source_name, '山东财经大学 · 具体岗位');
+  assert.equal(mergedPeer[0].source_id, 'jobsdufe-positions');
+  assert.equal(mergedPeer[0].source_url, 'https://school.gxjy.sdei.edu.cn/jobsdufe/school/companyissueinfo/edit1/42929');
+  assert.equal(mergedPeer[0].duplicate_sources?.[0]?.source_name, '山东理工大学 · 具体岗位');
+
+  const officialAnn: Job = {
+    ...job,
+    id: 'hisense-1',
+    source_id: 'hisense-campus',
+    source_name: '海信集团 · 校园招聘',
+    source_url: 'https://hisense.zhiye.com/campus/1',
+    application_url: 'https://hisense.zhiye.com/apply/1',
+    company: '海信集团',
+    title: '海信集团2027届校园招聘',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2027'],
+  };
+  const sdufeAnn: Job = {
+    ...officialAnn,
+    id: 'sdufe-hs-2',
+    source_id: 'jobsdufe-announcements',
+    source_name: '山东财经大学 · 招聘公告',
+    source_url: 'https://school.gxjy.sdei.edu.cn/jobsdufe/jiuye/zhaopingg/detail/99999',
+    application_url: null,
+  };
+  const mergedOfficial = mergeDuplicateOpportunities([officialAnn, sdufeAnn]);
+  assert.equal(mergedOfficial.length, 1);
+  assert.equal(mergedOfficial[0].source_name, '海信集团 · 校园招聘', '企业官网渠道不得被高校渠道降级');
+  assert.equal(mergedOfficial[0].application_url, 'https://hisense.zhiye.com/apply/1');
 });
 
 void test('hasRecentJobChange and generateJobTimeline filter out generic boilerplate and accept specific diffs', () => {

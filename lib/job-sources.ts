@@ -1,5 +1,5 @@
 import type { Job } from './jobs.ts';
-import { duplicateSourceNames, mergeJobIntoExisting } from './jobs.ts';
+import { duplicateSourceNames, mergeJobIntoExisting, promotePreferredCampusPrimary } from './jobs.ts';
 
 export type JobSourceChannel = {
   /** Stable identifier for active selection (URL when available, else fallback key). */
@@ -132,7 +132,7 @@ export function mergeDetailRecords(
     merged.title = browseJob.title;
   }
 
-  return merged;
+  return promotePreferredCampusPrimary(merged);
 }
 
 /**

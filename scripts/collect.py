@@ -2878,6 +2878,119 @@ def _merge_job_into_parent(parent, job):
         parent['lifecycle_stage'] = job['lifecycle_stage']
 
 
+_UNIVERSITY_SOURCE_ID_RE = re.compile(
+    r'(?:-announcements|-positions|-jobs)$|^(?:sdu|nankai|upc|sdei-news|sdei-jobfairs)$'
+)
+_UNIVERSITY_SOURCE_NAME_RE = re.compile(r'大学|学院|高校|学生就业服务平台')
+
+
+def _is_university_or_third_party_primary(job):
+    sid = job.get('source_id') or ''
+    if sid.endswith('-talks'):
+        return False
+    if job.get('provenance') == '第三方线索':
+        return True
+    if _UNIVERSITY_SOURCE_ID_RE.search(sid):
+        return True
+    return bool(_UNIVERSITY_SOURCE_NAME_RE.search(job.get('source_name') or ''))
+
+
+def _is_sdufe_source_entry(entry):
+    name = entry.get('source_name') or entry.get('source') or entry.get('title') or ''
+    url = entry.get('url') or ''
+    return '山东财经大学' in name or '/jobsdufe/' in url
+
+
+def _trailing_url_numeric_id(url):
+    m = re.search(r'(\d{4,})(?:/)?(?:\?.*)?$', url or '')
+    return int(m.group(1)) if m else 0
+
+
+def _promote_preferred_campus_primary(parent):
+    """Prefer 山东财经大学 as the primary display source among peer university
+    portals (or third-party clues) without changing record id or demoting
+    official enterprise / government portals.
+    """
+    dup_sources = parent.get('duplicate_sources') or []
+    if not dup_sources:
+        return parent
+    sid = parent.get('source_id') or ''
+    if sid.endswith('-talks'):
+        return parent
+    if '山东财经大学' in (parent.get('source_name') or '') or sid.startswith('jobsdufe'):
+        return parent
+    if not _is_university_or_third_party_primary(parent):
+        return parent
+
+    best_idx = -1
+    best_rank = None
+    for idx, cand in enumerate(dup_sources):
+        url = cand.get('url') or ''
+        if not url or not _is_sdufe_source_entry(cand):
+            continue
+        facts = cand.get('facts') if isinstance(cand.get('facts'), dict) else {}
+        cand_title = cand.get('announcement_title') or facts.get('title') or cand.get('title') or ''
+        rank = (
+            1 if (cand.get('application_url') or facts.get('application_url')) else 0,
+            0 if '面向我校' in cand_title else 1,
+            len(facts.get('body') or ''),
+            cand.get('published_at') or facts.get('published_at') or '',
+            _trailing_url_numeric_id(url),
+        )
+        if best_rank is None or rank > best_rank:
+            best_rank = rank
+            best_idx = idx
+    if best_idx < 0:
+        return parent
+
+    preferred = dup_sources[best_idx]
+    pref_facts = preferred.get('facts') if isinstance(preferred.get('facts'), dict) else {}
+    former_facts = parent.get('primary_facts') or {
+        field: value for field, value in parent.items()
+        if field not in {'duplicate_ids', 'duplicate_sources', 'primary_facts', 'fingerprint', 'content_fingerprint', 'details_available', 'search_text'}
+    }
+    former_entry = {
+        'id': parent['id'],
+        'identity': parent.get('identity'),
+        'source': parent.get('source_name') or parent.get('source_id', ''),
+        'source_name': parent.get('source_name', ''),
+        'title': parent.get('source_name', ''),
+        'announcement_title': parent.get('title', ''),
+        'url': parent.get('source_url', ''),
+        'facts': former_facts,
+        **({'published_at': parent['published_at']} if parent.get('published_at') else {}),
+        **({'application_url': parent['application_url']} if parent.get('application_url') else {}),
+    }
+
+    next_dups = [d for i, d in enumerate(dup_sources) if i != best_idx]
+    if former_entry['url'] and not any(d.get('url') == former_entry['url'] for d in next_dups):
+        next_dups.insert(0, former_entry)
+    parent['duplicate_sources'] = next_dups
+
+    next_name = preferred.get('source_name') or preferred.get('source') or '山东财经大学'
+    next_url = preferred.get('url') or ''
+    parent['source_name'] = next_name
+    parent['source_url'] = next_url
+    if parent.get('kind') == '具体岗位' or '具体岗位' in next_name or '/companyissueinfo/' in next_url:
+        parent['source_id'] = 'jobsdufe-positions'
+    else:
+        parent['source_id'] = 'jobsdufe-announcements'
+    parent['provenance'] = '公开原始来源'
+    if pref_facts:
+        parent['primary_facts'] = pref_facts
+    if not parent.get('application_url') and (preferred.get('application_url') or pref_facts.get('application_url')):
+        parent['application_url'] = preferred.get('application_url') or pref_facts.get('application_url')
+    pref_title = preferred.get('announcement_title') or pref_facts.get('title') or ''
+    if '面向我校' in (parent.get('title') or '') and pref_title and '面向我校' not in pref_title:
+        parent['title'] = pref_title
+    pref_body = pref_facts.get('body') or ''
+    if pref_body and len(pref_body) >= max(100, int(len(parent.get('body') or '') * 0.8)):
+        parent['body'] = pref_body
+        if pref_facts.get('excerpt'):
+            parent['excerpt'] = pref_facts['excerpt']
+    return parent
+
+
 def deduplicate(jobs):
     """Collapse same-opportunity reposts and cross-channel listings.
     Preserve every source URL, application URLs, and differing job/location facts.
@@ -2982,6 +3095,9 @@ def deduplicate(jobs):
         if not merged:
             candidates.append(item)
             result.append(item)
+
+    for item in result:
+        _promote_preferred_campus_primary(item)
 
     return result
 

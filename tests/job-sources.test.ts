@@ -201,26 +201,60 @@ void test('extractJobChannels collapses repeat postings from the same university
   });
   assert.equal(extractJobChannels(singleSchoolDup).length, 1);
 
-  // When 山东财经大学 is among the channels, place it at the top while keeping primary as default active source.
-  const withSdufe: Job = fixtureJob({
+  // Official enterprise portals are NEVER demoted by SDUFE, while SDUFE still sorts first in the channel list.
+  const enterpriseWithSdufe: Job = fixtureJob({
     id: 'with-sdufe',
-    source_name: '齐鲁工业大学 · 招聘公告',
-    source_url: 'https://qlu.example/1',
+    source_id: 'hisense-campus',
+    source_name: '海信集团 · 校园招聘',
+    source_url: 'https://hisense.zhiye.com/1',
+    application_url: 'https://hisense.zhiye.com/apply/1',
     duplicate_sources: [
       { source_name: '青岛大学 · 招聘公告', title: '青岛大学 · 招聘公告', url: 'https://qdu.example/2' },
       { source_name: '山东财经大学 · 招聘公告', title: '山东财经大学 · 招聘公告', url: 'https://sdufe.example/3', facts: { body: '山财大原文' } },
       { source_name: '烟台大学 · 招聘公告', title: '烟台大学 · 招聘公告', url: 'https://ytu.example/4' },
     ],
   });
-  const sdufeChannels = extractJobChannels(withSdufe);
+  const sdufeChannels = extractJobChannels(enterpriseWithSdufe);
   assert.deepEqual(
     sdufeChannels.map((c) => c.sourceName),
-    ['山东财经大学 · 招聘公告', '齐鲁工业大学 · 招聘公告', '青岛大学 · 招聘公告', '烟台大学 · 招聘公告'],
+    ['山东财经大学 · 招聘公告', '海信集团 · 校园招聘', '青岛大学 · 招聘公告', '烟台大学 · 招聘公告'],
   );
-  const defaultState = applyActiveChannel(withSdufe, null);
+  const defaultState = applyActiveChannel(enterpriseWithSdufe, null);
   assert.equal(defaultState.activeChannel.isPrimary, true);
-  assert.equal(defaultState.activeChannel.sourceName, '齐鲁工业大学 · 招聘公告');
-  const switchedToSdufe = applyActiveChannel(withSdufe, 'https://sdufe.example/3');
+  assert.equal(defaultState.activeChannel.sourceName, '海信集团 · 校园招聘');
+  const switchedToSdufe = applyActiveChannel(enterpriseWithSdufe, 'https://sdufe.example/3');
   assert.equal(switchedToSdufe.activeChannel.sourceName, '山东财经大学 · 招聘公告');
   assert.equal(switchedToSdufe.jobView.body, '山财大原文');
+
+  // Among peer university portals, mergeDetailRecords promotes 山东财经大学 as primary while keeping job.id stable.
+  const peerUniBrowse: Job = fixtureJob({
+    id: '2b9fe2f21996a367aa27',
+    source_id: 'sdut-positions',
+    source_name: '山东理工大学 · 具体岗位',
+    source_url: 'https://school.gxjy.sdei.edu.cn/sdut/school/companyissueinfo/edit1/42929',
+    kind: '具体岗位',
+  });
+  const peerUniDetail: Job = fixtureJob({
+    id: '2b9fe2f21996a367aa27',
+    source_id: 'sdut-positions',
+    source_name: '山东理工大学 · 具体岗位',
+    source_url: 'https://school.gxjy.sdei.edu.cn/sdut/school/companyissueinfo/edit1/42929',
+    kind: '具体岗位',
+    body: '山理工原文内容足够长以便测试正文保留策略'.repeat(6),
+    duplicate_sources: [
+      {
+        source_name: '山东财经大学 · 具体岗位',
+        title: '山东财经大学 · 具体岗位',
+        url: 'https://school.gxjy.sdei.edu.cn/jobsdufe/school/companyissueinfo/edit1/42929',
+        published_at: '2026-11-25',
+        facts: { body: '山财大原文内容足够长以便测试正文切换策略'.repeat(6) },
+      },
+    ],
+  });
+  const promoted = mergeDetailRecords(peerUniBrowse, peerUniDetail, []);
+  assert.equal(promoted.id, '2b9fe2f21996a367aa27');
+  assert.equal(promoted.source_id, 'jobsdufe-positions');
+  assert.equal(promoted.source_name, '山东财经大学 · 具体岗位');
+  assert.equal(promoted.source_url, 'https://school.gxjy.sdei.edu.cn/jobsdufe/school/companyissueinfo/edit1/42929');
+  assert.equal(promoted.duplicate_sources?.[0]?.source_name, '山东理工大学 · 具体岗位');
 });

@@ -6,6 +6,7 @@ import {
   Bookmark,
   Briefcase,
   Check,
+  ChevronDown,
   Clock3,
   EyeOff,
   GraduationCap,
@@ -51,6 +52,7 @@ import { extractSalary } from '@/lib/salary-display';
 import { EmployerEntry } from '@/components/employer-workspace';
 import { APPLICATION_STAGES } from '@/lib/personal-records';
 import { cardSummaryFor } from '@/lib/card-summary';
+import { applyActiveChannel } from '@/lib/job-sources';
 
 export { extractSalary } from '@/lib/salary-display';
 
@@ -118,6 +120,8 @@ export interface JobCardProps {
   since: string | null;
   density?: 'standard' | 'compact';
   onDetail: (job: Job) => void;
+  onLoadDetail?: (job: Job) => Promise<Job | null>;
+  onOpenChannels?: (job: Job, channelKey?: string | null, focusChannels?: boolean) => void;
   onRead: (job: Job) => void;
   onReadChange: (job: Job, read: boolean) => void;
   onToggle: (job: Job, key: 'saved' | 'applied' | 'hidden') => void;
@@ -135,6 +139,8 @@ function JobCardInner({
   since,
   density = 'standard',
   onDetail,
+  onLoadDetail,
+  onOpenChannels,
   onRead,
   onReadChange,
   onToggle,
@@ -142,6 +148,13 @@ function JobCardInner({
   onCopy,
 }: JobCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [hydratedDetail, setHydratedDetail] = useState<Job | null>(null);
+  const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [channelSelection, setChannelSelection] = useState<{ jobId: string; key: string | null }>({
+    jobId: '',
+    key: null,
+  });
   const workCities = selectedWorkCities(filters);
   const hasCityFilter = workCities.length > 0;
   const locationScopes = workCities.map((city) => locationMatch(job, city));
@@ -208,6 +221,48 @@ function JobCardInner({
     job.kind !== '宣讲会' &&
     Boolean(filters.validity && filters.validity !== 'all' && validity.status !== 'unconfirmed');
   const dupSourceNames = useMemo(() => duplicateSourceNames(job), [job]);
+  const hydratedForCard = hydratedDetail?.id === job.id ? hydratedDetail : null;
+  const activeChannelKey = channelSelection.jobId === job.id ? channelSelection.key : null;
+  const channelState = useMemo(
+    () => applyActiveChannel(hydratedForCard ?? job, activeChannelKey),
+    [hydratedForCard, job, activeChannelKey],
+  );
+  const activeChannel = channelState.activeChannel;
+  const allChannels = channelState.channels;
+  const totalSourceCount = Math.max(allChannels.length, dupSourceNames.length + 1);
+  const hasMultipleSources = totalSourceCount > 1;
+  const effectiveSourceName = activeChannel.sourceName || job.source_name;
+  const effectiveSourceUrl = activeChannel.url || job.source_url;
+  const effectiveApplyUrl = activeChannel.isPrimary
+    ? job.application_url || effectiveSourceUrl
+    : activeChannel.applicationUrl || effectiveSourceUrl;
+  const effectiveApplyLabel = activeChannel.isPrimary
+    ? job.application_url
+      ? '前往投递'
+      : job.provenance === '第三方线索'
+        ? '查看线索'
+        : '查看原公告'
+    : activeChannel.applicationUrl
+      ? '前往投递'
+      : '查看该源公告';
+
+  const handleSourcesOpenChange = (nextOpen: boolean) => {
+    setSourcesOpen(nextOpen);
+    if (
+      nextOpen &&
+      !hydratedForCard &&
+      !job.duplicate_sources?.length &&
+      onLoadDetail &&
+      !sourcesLoading
+    ) {
+      setSourcesLoading(true);
+      void onLoadDetail(job)
+        .then((loaded) => {
+          if (loaded) setHydratedDetail(loaded);
+        })
+        .finally(() => setSourcesLoading(false));
+    }
+  };
 
   const deadlineState = expired
     ? 'is-closed'
@@ -344,7 +399,11 @@ function JobCardInner({
             <button
               type="button"
               className="opp-card-title-btn"
-              onClick={() => onDetail(job)}
+              onClick={() =>
+                activeChannelKey && onOpenChannels
+                  ? onOpenChannels(job, activeChannelKey, false)
+                  : onDetail(job)
+              }
             >
               <HighlightText text={displayTitle} query={filters.query} />
             </button>
@@ -462,17 +521,118 @@ function JobCardInner({
             {job.provenance === '第三方线索' && (
               <span className="opp-trust is-unverified">第三方线索 · 待核验</span>
             )}
-            <span>
-              {job.source_name}
-              {dupSourceNames.length > 0 ? ` 等 ${dupSourceNames.length + 1} 源` : ''} ·{' '}
-              {job.date_label || '发布'} {publicationText(job, now)}
+            <span className="opp-source-text">
+              {effectiveSourceName}
+              {!activeChannel.isPrimary && (
+                <span className="opp-source-switched">已切源</span>
+              )}
+              {hasMultipleSources && (
+                <Popover open={sourcesOpen} onOpenChange={handleSourcesOpenChange}>
+                  <PopoverTrigger
+                    type="button"
+                    className="opp-source-trigger"
+                    aria-label={`查看并切换全部 ${totalSourceCount} 个发布来源`}
+                    title="点击查看全部发布渠道、切换来源或直达对应原公告"
+                  >
+                    <span>
+                      {activeChannel.isPrimary
+                        ? `等 ${totalSourceCount} 源`
+                        : `共 ${totalSourceCount} 源`}
+                    </span>
+                    <ChevronDown size={12} />
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    sideOffset={6}
+                    className="opp-sources-popover"
+                  >
+                    <div className="opp-sources-head">
+                      <strong>发布渠道（{totalSourceCount}）</strong>
+                      <span>点击可切换当前来源，或直接打开原公告</span>
+                    </div>
+                    {sourcesLoading && (
+                      <div className="opp-sources-loading">正在读取全部渠道链接…</div>
+                    )}
+                    <ul className="opp-sources-list" aria-label="全部发布渠道">
+                      {allChannels.map((ch) => {
+                        const isActive = ch.key === activeChannel.key;
+                        const href = externalUrl(ch.url);
+                        return (
+                          <li
+                            key={ch.key}
+                            className={`opp-source-row${isActive ? ' is-active' : ''}`}
+                          >
+                            <button
+                              type="button"
+                              aria-pressed={isActive}
+                              disabled={Boolean(ch.previewOnly)}
+                              className="opp-source-select"
+                              onClick={() => {
+                                if (ch.previewOnly) return;
+                                setChannelSelection({
+                                  jobId: job.id,
+                                  key: ch.isPrimary ? null : ch.key,
+                                });
+                                setSourcesOpen(false);
+                              }}
+                              title={
+                                ch.previewOnly
+                                  ? '渠道链接加载中…'
+                                  : `切换当前卡片来源为「${ch.sourceName}」`
+                              }
+                            >
+                              <span className="opp-source-row-name">{ch.sourceName}</span>
+                              {isActive ? (
+                                <span className="opp-source-tag is-current">当前</span>
+                              ) : ch.isPrimary ? (
+                                <span className="opp-source-tag">主源</span>
+                              ) : null}
+                              {ch.publishedAt && (
+                                <span className="opp-source-date">{ch.publishedAt}</span>
+                              )}
+                            </button>
+                            {href && (
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="opp-source-ext"
+                                aria-label={`打开${ch.sourceName}原公告`}
+                                title={`直接打开「${ch.sourceName}」原公告`}
+                                onClick={() => onRead(job)}
+                              >
+                                <ArrowUpRight size={13} />
+                              </a>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <button
+                      type="button"
+                      className="opp-sources-footer-btn"
+                      onClick={() => {
+                        setSourcesOpen(false);
+                        if (onOpenChannels) {
+                          onOpenChannels(job, activeChannelKey, true);
+                        } else {
+                          onDetail(job);
+                        }
+                      }}
+                    >
+                      在详情中对比全部 {totalSourceCount} 个来源与原文
+                    </button>
+                  </PopoverContent>
+                </Popover>
+              )}{' '}
+              · {job.date_label || '发布'} {publicationText(job, now)}
             </span>
-            {sdeiPositionListUrl(job.source_url) && (
+            {sdeiPositionListUrl(effectiveSourceUrl) && (
               <span className="opp-fallback">
                 ·{' '}
                 <OutLink
                   className=""
-                  url={sdeiPositionListUrl(job.source_url)}
+                  url={sdeiPositionListUrl(effectiveSourceUrl)}
                   onOpen={() => onRead(job)}
                 >
                   来源岗位列表
@@ -485,17 +645,13 @@ function JobCardInner({
         <div className="opp-actions">
           <OutLink
             className="btn btn-tonal btn-sm opp-apply-cta"
-            url={job.application_url || job.source_url}
+            url={effectiveApplyUrl}
             onOpen={() => {
               report('event', 'click_apply');
               onRead(job);
             }}
           >
-            {job.application_url
-              ? '前往投递'
-              : job.provenance === '第三方线索'
-                ? '查看线索'
-                : '查看原公告'}
+            {effectiveApplyLabel}
           </OutLink>
 
           <Popover open={menuOpen} onOpenChange={setMenuOpen}>
@@ -598,9 +754,9 @@ function JobCardInner({
                 </button>
               )}
 
-              {externalUrl(job.source_url) && (
+              {externalUrl(effectiveSourceUrl) && (
                 <a
-                  href={externalUrl(job.source_url)}
+                  href={externalUrl(effectiveSourceUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="opp-more-item"
@@ -652,6 +808,8 @@ export const JobCard = memo(JobCardInner, (prev, next) => {
     prev.since === next.since &&
     prev.density === next.density &&
     prev.onDetail === next.onDetail &&
+    prev.onLoadDetail === next.onLoadDetail &&
+    prev.onOpenChannels === next.onOpenChannels &&
     prev.onRead === next.onRead &&
     prev.onReadChange === next.onReadChange &&
     prev.onToggle === next.onToggle &&

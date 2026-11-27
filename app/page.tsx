@@ -166,6 +166,9 @@ function HomeContent() {
     detailError,
     detailNavIds,
     setDetailNavIds,
+    initialChannelKey,
+    focusChannelsNonce,
+    loadJobDetail,
     openDetail,
     closeDetail,
     dismissDetailSilently,
@@ -404,6 +407,14 @@ function HomeContent() {
     (job: Job) => {
       setDetailNavIds(filteredRef.current.map((j) => j.id));
       void openDetail(job);
+    },
+    [openDetail, setDetailNavIds],
+  );
+
+  const openDetailWithChannels = useCallback(
+    (job: Job, channelKey: string | null = null, focusChannels = true) => {
+      setDetailNavIds(filteredRef.current.map((j) => j.id));
+      void openDetail(job, job.id, true, { channelKey, focusChannels });
     },
     [openDetail, setDetailNavIds],
   );
@@ -864,6 +875,8 @@ function HomeContent() {
                     cardDensity={cardDensity}
                     selectedId={selected?.id ?? null}
                     onDetail={openDetailFromList}
+                    onLoadDetail={loadJobDetail}
+                    onOpenChannels={openDetailWithChannels}
                     onRead={markRead}
                     onReadChange={setRead}
                     onToggle={toggle}
@@ -892,6 +905,8 @@ function HomeContent() {
                     cardDensity={cardDensity}
                     selectedId={selected?.id ?? null}
                     onDetail={openDetailFromList}
+                    onLoadDetail={loadJobDetail}
+                    onOpenChannels={openDetailWithChannels}
                     onRead={markRead}
                     onReadChange={setRead}
                     onToggle={toggle}
@@ -1074,6 +1089,8 @@ function HomeContent() {
         onNavigate={navigateDetail}
         siblingJobs={selectedGroupJobs}
         onSelectJob={(job) => void openDetail(job)}
+        initialChannelKey={initialChannelKey}
+        focusChannelsNonce={focusChannelsNonce}
         onClose={() => {
           if (splitFullOpen) {
             setSplitFullOpen(false);

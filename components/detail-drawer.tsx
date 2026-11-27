@@ -39,13 +39,13 @@ import {
   isExpired,
   isUnread,
   personalFor,
-  displayJobTitle,
   sdeiPositionListUrl,
   effectiveJobTypes,
   formatEducationDisplay,
   selectedWorkCities,
 } from '@/lib/jobs';
 import type { Filters, Job, Personal, PersonalRecord } from '@/lib/jobs';
+import { applyActiveChannel } from '@/lib/job-sources';
 import { buildGroupRoleItems } from '@/lib/grouping';
 import type { GroupRoleItem } from '@/lib/grouping';
 import { positionMatches } from '@/lib/eligibility';
@@ -86,6 +86,8 @@ export function DetailDrawer({
   onNavigate,
   siblingJobs = [],
   onSelectJob,
+  initialChannelKey = null,
+  focusChannelsNonce = 0,
 }: {
   filters?: Filters;
   selected: Job | null;
@@ -107,19 +109,64 @@ export function DetailDrawer({
   onNavigate?: (delta: -1 | 1) => void;
   siblingJobs?: Job[];
   onSelectJob?: (job: Job) => void;
+  initialChannelKey?: string | null;
+  focusChannelsNonce?: number;
 }) {
   const [positionSearch, setPositionSearch] = useState({ jobId: '', value: '' });
   const [expandedCityJobId, setExpandedCityJobId] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [channelSelection, setChannelSelection] = useState<{ jobId: string; key: string | null }>({
+    jobId: '',
+    key: null,
+  });
+  const [channelsFoldState, setChannelsFoldState] = useState<{ jobId: string; open: boolean }>({
+    jobId: '',
+    open: false,
+  });
   const positionFilter = positionSearch.jobId === selected?.id ? positionSearch.value : '';
   const citiesExpanded = Boolean(selected && expandedCityJobId === selected.id);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const lastFocusNonceRef = useRef(0);
+
+  const effectiveChannelKey =
+    selected && channelSelection.jobId === selected.id ? channelSelection.key : initialChannelKey;
+  const channelView = useMemo(
+    () => (selected ? applyActiveChannel(selected, effectiveChannelKey) : null),
+    [selected, effectiveChannelKey],
+  );
+  const activeSelected = channelView?.jobView ?? selected;
+  const channels = channelView?.channels ?? [];
+  const activeChannel = channelView?.activeChannel ?? null;
+  const hasMultipleChannels = channels.length > 1;
+  const channelsOpen = Boolean(
+    selected && channelsFoldState.jobId === selected.id && channelsFoldState.open,
+  );
 
   useEffect(() => {
     if (bodyRef.current) {
       bodyRef.current.scrollTop = 0;
     }
   }, [selected?.id]);
+
+  useEffect(() => {
+    if (!selected || !focusChannelsNonce || focusChannelsNonce === lastFocusNonceRef.current) {
+      return;
+    }
+    lastFocusNonceRef.current = focusChannelsNonce;
+    const timer = setTimeout(() => {
+      setChannelsFoldState({ jobId: selected.id, open: true });
+      requestAnimationFrame(() => {
+        const el = document.getElementById('drawer-sec-channels');
+        if (el) {
+          el.scrollIntoView({
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+            block: 'start',
+          });
+        }
+      });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [selected, focusChannelsNonce]);
 
   useEffect(() => {
     if (!selected || !onNavigate || totalCount <= 1) return;
@@ -154,8 +201,8 @@ export function DetailDrawer({
   }, [filters, city]);
 
   const titleInfo = useMemo(
-    () => (selected ? formatDetailTitle(selected) : null),
-    [selected],
+    () => (activeSelected ? formatDetailTitle(activeSelected) : null),
+    [activeSelected],
   );
 
   const locationInfo = useMemo(
@@ -164,8 +211,8 @@ export function DetailDrawer({
   );
 
   const structuredBody = useMemo(
-    () => (selected ? parseStructuredJobBody(selected) : null),
-    [selected],
+    () => (activeSelected ? parseStructuredJobBody(activeSelected) : null),
+    [activeSelected],
   );
 
   const headingAnchors = useMemo(
@@ -345,7 +392,7 @@ export function DetailDrawer({
       }}
     >
       <SheetContent className="detail-sheet">
-        {selected && titleInfo && locationInfo && structuredBody && (
+        {selected && activeSelected && titleInfo && locationInfo && structuredBody && (
           <>
             <SheetHeader className="detail-header">
               <div className="detail-eyebrow-row">
@@ -355,13 +402,22 @@ export function DetailDrawer({
                   </span>
                 )}
                 <span className="eyebrow">
-                  {selected.kind} · {selected.source_name} · {selected.date_label || '发布'}{' '}
-                  {publicationText(selected)}
+                  {activeSelected.kind} · {activeSelected.source_name} · {activeSelected.date_label || '发布'}{' '}
+                  {publicationText(activeSelected)}
                 </span>
-                {!!selected.duplicate_sources?.length && (
-                  <span className="channel-badge primary">
-                    多渠道 ({selected.duplicate_sources.length + 1})
-                  </span>
+                {hasMultipleChannels && (
+                  <button
+                    type="button"
+                    className="channel-badge primary is-clickable"
+                    onClick={() => {
+                      setChannelsFoldState({ jobId: selected.id, open: true });
+                      requestAnimationFrame(() => scrollToSection('drawer-sec-channels'));
+                    }}
+                    title="点击展开并切换全部整合发布渠道"
+                  >
+                    多渠道 ({channels.length})
+                    <ChevronDown size={11} />
+                  </button>
                 )}
               </div>
               <div className="detail-title-row">
@@ -488,11 +544,11 @@ export function DetailDrawer({
                         <span>标为未读</span>
                       </button>
                     )}
-                    {selected.application_url &&
-                      selected.source_url &&
-                      selected.application_url !== selected.source_url && (
+                    {activeSelected.application_url &&
+                      activeSelected.source_url &&
+                      activeSelected.application_url !== activeSelected.source_url && (
                         <a
-                          href={selected.source_url}
+                          href={activeSelected.source_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="opp-more-item"
@@ -509,11 +565,11 @@ export function DetailDrawer({
                 </Popover>
 
                 <div className="detail-sticky-cta detail-desktop-only">
-                  {selected.application_url &&
-                    selected.source_url &&
-                    selected.application_url !== selected.source_url && (
+                  {activeSelected.application_url &&
+                    activeSelected.source_url &&
+                    activeSelected.application_url !== activeSelected.source_url && (
                       <OutLink
-                        url={selected.source_url}
+                        url={activeSelected.source_url}
                         onOpen={() => onRead(selected)}
                         className="quiet-link detail-sticky-source"
                       >
@@ -523,13 +579,23 @@ export function DetailDrawer({
                   <OutLink
                     primary
                     className="primary-link detail-sticky-apply"
-                    url={selected.application_url || selected.source_url}
+                    url={
+                      activeChannel && !activeChannel.isPrimary
+                        ? activeChannel.applicationUrl || activeSelected.source_url
+                        : activeSelected.application_url || activeSelected.source_url
+                    }
                     onOpen={() => {
                       report('event', 'click_apply');
                       onRead(selected);
                     }}
                   >
-                    {selected.application_url ? '前往投递' : '查看原公告'}
+                    {activeChannel && !activeChannel.isPrimary
+                      ? activeChannel.applicationUrl
+                        ? '前往投递'
+                        : '查看该源公告'
+                      : activeSelected.application_url
+                        ? '前往投递'
+                        : '查看原公告'}
                   </OutLink>
                 </div>
               </div>
@@ -682,13 +748,27 @@ export function DetailDrawer({
                     <div className="detail-card-head">
                       <h3 className="detail-card-title">公告文字</h3>
                       <OutLink
-                        url={selected.source_url}
+                        url={activeSelected.source_url}
                         onOpen={() => onRead(selected)}
                         className="quiet-link"
                       >
                         原网页核对
                       </OutLink>
                     </div>
+                    {activeChannel && !activeChannel.isPrimary && (
+                      <output className="detail-channel-banner">
+                        <span>
+                          当前查看渠道：<strong>{activeChannel.sourceName}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          className="detail-channel-reset"
+                          onClick={() => setChannelSelection({ jobId: selected.id, key: null })}
+                        >
+                          切回主来源
+                        </button>
+                      </output>
+                    )}
                     <div className="announcement-text">
                       <StructuredJobProse
                         sections={structuredBody.sections}
@@ -907,61 +987,81 @@ export function DetailDrawer({
                     />
                   </div>
 
-                  {!!selected.duplicate_sources?.length && (
-                    <details className="drawer-fold drawer-fold-channels">
-                      <summary>整合发布渠道（{(selected.duplicate_sources?.length ?? 0) + 1}）</summary>
+                  {hasMultipleChannels && (
+                    <details
+                      id="drawer-sec-channels"
+                      className="drawer-fold drawer-fold-channels"
+                      open={channelsOpen}
+                      onToggle={(event) => {
+                        const isOpen = (event.currentTarget as HTMLDetailsElement).open;
+                        setChannelsFoldState({ jobId: selected.id, open: isOpen });
+                      }}
+                    >
+                      <summary>整合发布渠道（{channels.length}）</summary>
                       <div className="channels-panel">
                         <div className="channels-panel-header">
-                          <h3>整合全网发布渠道 ({selected.duplicate_sources.length + 1})</h3>
-                          <span className="channels-panel-badge">智能合并去重</span>
+                          <h3>整合全网发布渠道 ({channels.length})</h3>
+                          <span className="channels-panel-badge">可切源对比</span>
                         </div>
                         <p className="channels-panel-desc">
-                          已合并该单位在多平台发布的同一招聘信息：
+                          已合并该单位在多平台发布的同一招聘信息，点击「切换到此源」可切换当前查看的公告正文与原链接：
                         </p>
                         <div className="channels-list">
-                          <div className="channel-card primary">
-                            <div className="channel-card-top">
-                              <span className="channel-tag primary">主来源</span>
-                              <span className="channel-name">
-                                {selected.source_name || selected.source || selected.source_id}
-                              </span>
-                              {selected.published_at && (
-                                <span className="channel-date">{selected.published_at}</span>
-                              )}
-                            </div>
-                            <div className="channel-card-title">{displayJobTitle(selected)}</div>
-                            <div className="channel-card-actions">
-                              <OutLink url={selected.source_url} onOpen={() => onRead(selected)}>
-                                查看原公告
-                              </OutLink>
-                              {selected.application_url &&
-                                selected.application_url !== selected.source_url && (
-                                  <OutLink primary url={selected.application_url} onOpen={() => onRead(selected)}>
-                                    直达投递
-                                  </OutLink>
-                                )}
-                            </div>
-                          </div>
-                          {selected.duplicate_sources.map((dup, idx) => (
-                            <div className="channel-card" key={`${dup.url}-${idx}`}>
-                              <div className="channel-card-top">
-                                <span className="channel-tag">同步渠道</span>
-                                <span className="channel-name">{dup.source_name || dup.source || dup.title}</span>
-                                {dup.published_at && <span className="channel-date">{dup.published_at}</span>}
+                          {channels.map((ch) => {
+                            const isActive = activeChannel?.key === ch.key;
+                            return (
+                              <div
+                                className={`channel-card${ch.isPrimary ? ' primary' : ''}${isActive ? ' is-active' : ''}`}
+                                key={ch.key}
+                              >
+                                <div className="channel-card-top">
+                                  <span className={`channel-tag${isActive || ch.isPrimary ? ' primary' : ''}`}>
+                                    {isActive ? '当前查看' : ch.isPrimary ? '主来源' : '同步渠道'}
+                                  </span>
+                                  <span className="channel-name">{ch.sourceName}</span>
+                                  {ch.publishedAt && (
+                                    <span className="channel-date">{ch.publishedAt}</span>
+                                  )}
+                                </div>
+                                <div className="channel-card-title">{ch.title}</div>
+                                <div className="channel-card-actions">
+                                  {!ch.previewOnly && (
+                                    <button
+                                      type="button"
+                                      className="channel-switch-btn"
+                                      disabled={isActive}
+                                      onClick={() => {
+                                        setChannelSelection({
+                                          jobId: selected.id,
+                                          key: ch.isPrimary ? null : ch.key,
+                                        });
+                                        if (bodyRef.current) {
+                                          bodyRef.current.scrollTo({
+                                            top: 0,
+                                            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                                              ? 'auto'
+                                              : 'smooth',
+                                          });
+                                        }
+                                      }}
+                                    >
+                                      {isActive ? '正在查看' : '切换到此源'}
+                                    </button>
+                                  )}
+                                  {ch.url && (
+                                    <OutLink url={ch.url} onOpen={() => onRead(selected)}>
+                                      查看原公告
+                                    </OutLink>
+                                  )}
+                                  {ch.applicationUrl && ch.applicationUrl !== ch.url && (
+                                    <OutLink primary url={ch.applicationUrl} onOpen={() => onRead(selected)}>
+                                      直达投递
+                                    </OutLink>
+                                  )}
+                                </div>
                               </div>
-                              <div className="channel-card-title">{dup.title || dup.source_name || dup.source}</div>
-                              <div className="channel-card-actions">
-                                <OutLink url={dup.url} onOpen={() => onRead(selected)}>
-                                  查看原公告
-                                </OutLink>
-                                {dup.application_url && dup.application_url !== dup.url && (
-                                  <OutLink primary url={dup.application_url} onOpen={() => onRead(selected)}>
-                                    直达投递
-                                  </OutLink>
-                                )}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     </details>
@@ -1053,13 +1153,23 @@ export function DetailDrawer({
               <OutLink
                 primary
                 className="primary-link detail-mobile-apply"
-                url={selected.application_url || selected.source_url}
+                url={
+                  activeChannel && !activeChannel.isPrimary
+                    ? activeChannel.applicationUrl || activeSelected.source_url
+                    : activeSelected.application_url || activeSelected.source_url
+                }
                 onOpen={() => {
                   report('event', 'click_apply');
                   onRead(selected);
                 }}
               >
-                {selected.application_url ? '前往投递' : '查看原公告'}
+                {activeChannel && !activeChannel.isPrimary
+                  ? activeChannel.applicationUrl
+                    ? '前往投递'
+                    : '查看该源公告'
+                  : activeSelected.application_url
+                    ? '前往投递'
+                    : '查看原公告'}
               </OutLink>
             </footer>
           </>

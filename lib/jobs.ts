@@ -829,7 +829,7 @@ function datesWithinDays(
   return Math.abs(t1 - t2) <= maxDays * 86400000;
 }
 
-function mergeJobIntoExisting(existing: Job, job: Job): void {
+export function mergeJobIntoExisting(existing: Job, job: Job): void {
   const existingUrls = new Set([
     existing.source_url,
     ...(existing.duplicate_sources ?? []).map((s) => s.url),

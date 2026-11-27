@@ -23,6 +23,8 @@ export interface GroupedResultsProps {
   cardDensity: CardDensity;
   selectedId: string | null;
   onDetail: (job: Job) => void;
+  onLoadDetail?: (job: Job) => Promise<Job | null>;
+  onOpenChannels?: (job: Job, channelKey?: string | null, focusChannels?: boolean) => void;
   onRead: (job: Job) => void;
   onReadChange: (job: Job, read: boolean) => void;
   onToggle: (job: Job, key: 'saved' | 'applied' | 'hidden') => void;
@@ -41,6 +43,8 @@ export function GroupedResults({
   cardDensity,
   selectedId,
   onDetail,
+  onLoadDetail,
+  onOpenChannels,
   onRead,
   onReadChange,
   onToggle,
@@ -77,6 +81,8 @@ export function GroupedResults({
                 since={since}
                 density={cardDensity}
                 onDetail={onDetail}
+                onLoadDetail={onLoadDetail}
+                onOpenChannels={onOpenChannels}
                 onRead={onRead}
                 onReadChange={onReadChange}
                 onToggle={onToggle}

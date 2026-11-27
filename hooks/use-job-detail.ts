@@ -4,7 +4,13 @@ import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { resolveJobId } from '@/lib/jobs';
 import type { Job, Snapshot } from '@/lib/jobs';
+import { findMissingSiblingIds, mergeDetailRecords } from '@/lib/job-sources';
 import { report } from '@/lib/rum';
+
+export interface OpenDetailOptions {
+  focusChannels?: boolean;
+  channelKey?: string | null;
+}
 
 export interface UseJobDetailOptions {
   markRead: (job: Job) => void;
@@ -19,7 +25,15 @@ export interface UseJobDetailState {
   detailError: string;
   detailNavIds: string[] | null;
   setDetailNavIds: Dispatch<SetStateAction<string[] | null>>;
-  openDetail: (job: Job, linkId?: string, pushHistory?: boolean) => Promise<void>;
+  initialChannelKey: string | null;
+  focusChannelsNonce: number;
+  loadJobDetail: (job: Job) => Promise<Job | null>;
+  openDetail: (
+    job: Job,
+    linkId?: string,
+    pushHistory?: boolean,
+    options?: OpenDetailOptions,
+  ) => Promise<void>;
   closeDetail: () => void;
   dismissDetailSilently: () => void;
   resetDetailOnPopState: (nextLinkedJobId: string | null) => void;
@@ -31,6 +45,8 @@ export interface UseJobDetailState {
   ) => (() => void) | undefined;
 }
 
+const MAX_SIBLING_SHARD_FETCHES = 6;
+
 export function useJobDetail({
   markRead,
   onNotice,
@@ -40,9 +56,12 @@ export function useJobDetail({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
   const [detailNavIds, setDetailNavIds] = useState<string[] | null>(null);
+  const [initialChannelKey, setInitialChannelKey] = useState<string | null>(null);
+  const [focusChannelsNonce, setFocusChannelsNonce] = useState(0);
 
   const activeSnapshot = useRef<Snapshot | null>(null);
   const detailCache = useRef<Record<string, Job>>({});
+  const hydratedCache = useRef<Record<string, Job>>({});
   const detailRequest = useRef(0);
   const detailsPromise = useRef<Record<string, Promise<Record<string, Job>>>>({});
   const missingLink = useRef<string | null>(null);
@@ -50,16 +69,115 @@ export function useJobDetail({
   const activateDetailSnapshot = useCallback((snapshot: Snapshot | null) => {
     activeSnapshot.current = snapshot;
     detailCache.current = {};
+    hydratedCache.current = {};
     detailsPromise.current = {};
     ++detailRequest.current;
     setSelected(null);
+    setInitialChannelKey(null);
     setDetailLoading(false);
     setDetailError('');
   }, []);
 
+  const fetchDetailShard = useCallback(async (jobId: string): Promise<Record<string, Job> | null> => {
+    const snapshot = activeSnapshot.current;
+    const url = snapshot?.detail_shards?.[jobId.slice(0, 2)] ?? snapshot?.details_url;
+    if (!url) return null;
+    const pending = detailsPromise.current;
+    if (!pending[url]) {
+      pending[url] = fetch(url, {
+        cache: snapshot?.detail_shards ? 'force-cache' : 'no-store',
+      })
+        .then(async (response) => {
+          if (!response.ok) throw Error('完整公告暂时无法读取。');
+          const payload = (await response.json()) as {
+            schema_version?: number;
+            jobs?: Record<string, Job>;
+          };
+          if (
+            payload.schema_version !== 1 ||
+            !payload.jobs ||
+            typeof payload.jobs !== 'object'
+          ) {
+            throw Error('完整公告数据格式异常。');
+          }
+          detailCache.current = { ...detailCache.current, ...payload.jobs };
+          return payload.jobs;
+        })
+        .catch((err) => {
+          delete pending[url];
+          throw err;
+        });
+    }
+    return pending[url];
+  }, []);
+
+  const hydrateJobDetail = useCallback(
+    async (job: Job): Promise<Job> => {
+      const cachedHydrated = hydratedCache.current[job.id];
+      if (cachedHydrated) {
+        return { ...cachedHydrated, talk_events: job.talk_events ?? cachedHydrated.talk_events };
+      }
+      let primary = detailCache.current[job.id];
+      if (!primary) {
+        const records = await fetchDetailShard(job.id);
+        if (!records) {
+          throw Error('这条公告的详情暂未生成，请打开原公告核对。');
+        }
+        primary = records[job.id];
+        if (!primary) {
+          throw Error('这条公告的详情暂未生成，请打开原公告核对。');
+        }
+      }
+
+      // If browse-index deduplication merged cross-shard sibling canonical records
+      // into this job, lazily hydrate those sibling detail shards so every channel
+      // URL, title and body is available without re-crawling.
+      let remaining = findMissingSiblingIds(job, primary);
+      const siblings: Job[] = [];
+      let fetches = 0;
+      while (remaining.length > 0 && fetches < MAX_SIBLING_SHARD_FETCHES) {
+        const nextId = remaining.shift()!;
+        let sibling: Job | undefined = detailCache.current[nextId];
+        if (!sibling) {
+          fetches += 1;
+          try {
+            const records = await fetchDetailShard(nextId);
+            sibling = records?.[nextId];
+          } catch {
+            // Non-fatal: keep primary detail and any already-hydrated siblings.
+            sibling = undefined;
+          }
+        }
+        if (sibling) {
+          siblings.push(sibling);
+          const newlyCovered = new Set([sibling.id, ...(sibling.duplicate_ids ?? [])]);
+          remaining = remaining.filter((id) => !newlyCovered.has(id));
+        }
+      }
+
+      const merged = mergeDetailRecords(job, primary, siblings);
+      hydratedCache.current[job.id] = merged;
+      return merged;
+    },
+    [fetchDetailShard],
+  );
+
+  const loadJobDetail = useCallback(
+    async (job: Job): Promise<Job | null> => {
+      if (job.body && !findMissingSiblingIds(job, job).length) return job;
+      try {
+        return await hydrateJobDetail(job);
+      } catch {
+        return null;
+      }
+    },
+    [hydrateJobDetail],
+  );
+
   const resetDetailOnPopState = useCallback((nextLinkedJobId: string | null) => {
     ++detailRequest.current;
     setSelected(null);
+    setInitialChannelKey(null);
     setDetailNavIds(null);
     setDetailLoading(false);
     setLinkedJobId(nextLinkedJobId);
@@ -69,6 +187,7 @@ export function useJobDetail({
     ++detailRequest.current;
     setLinkedJobId(null);
     setSelected(null);
+    setInitialChannelKey(null);
     setDetailNavIds(null);
     setDetailLoading(false);
   }, []);
@@ -82,9 +201,13 @@ export function useJobDetail({
   }, [dismissDetailSilently]);
 
   const openDetail = useCallback(
-    async (job: Job, linkId = job.id, pushHistory = true) => {
+    async (job: Job, linkId = job.id, pushHistory = true, options?: OpenDetailOptions) => {
       report('event', 'open_detail');
       setLinkedJobId(linkId);
+      setInitialChannelKey(options?.channelKey ?? null);
+      if (options?.focusChannels) {
+        setFocusChannelsNonce((n) => n + 1);
+      }
       if (pushHistory && typeof window !== 'undefined') {
         const url = new URL(window.location.href);
         url.searchParams.delete('employer');
@@ -111,7 +234,7 @@ export function useJobDetail({
       const request = ++detailRequest.current;
       setDetailError('');
       setDetailLoading(false);
-      const cached = detailCache.current[job.id];
+      const cached = hydratedCache.current[job.id];
       setSelected(
         cached
           ? { ...cached, talk_events: job.talk_events ?? cached.talk_events }
@@ -127,48 +250,23 @@ export function useJobDetail({
         markRead(cached);
         return;
       }
-      if (job.body) {
+      if (job.body && !findMissingSiblingIds(job, job).length) {
         markRead(job);
         return;
       }
       const snapshot = activeSnapshot.current;
-      const url = snapshot?.detail_shards?.[job.id.slice(0, 2)] ?? snapshot?.details_url;
-      if (!url) {
+      if (!snapshot?.detail_shards?.[job.id.slice(0, 2)] && !snapshot?.details_url) {
         setDetailError('这条公告的详情暂未生成，请打开原公告核对。');
         return;
       }
-      const pending = detailsPromise.current;
       setDetailLoading(true);
       try {
-        if (!pending[url]) {
-          pending[url] = fetch(url, {
-            cache: snapshot?.detail_shards ? 'force-cache' : 'no-store',
-          }).then(async (response) => {
-            if (!response.ok) throw Error('完整公告暂时无法读取。');
-            const payload = (await response.json()) as {
-              schema_version?: number;
-              jobs?: Record<string, Job>;
-            };
-            if (
-              payload.schema_version !== 1 ||
-              !payload.jobs ||
-              typeof payload.jobs !== 'object'
-            ) {
-              throw Error('完整公告数据格式异常。');
-            }
-            return payload.jobs;
-          });
-        }
-        const records = await pending[url];
-        const full = records[job.id];
-        if (!full) throw Error('这条公告的详情暂未生成，请打开原公告核对。');
+        const full = await hydrateJobDetail(job);
         if (request === detailRequest.current) {
-          detailCache.current = { ...detailCache.current, ...records };
-          setSelected({ ...full, talk_events: job.talk_events ?? full.talk_events });
+          setSelected(full);
           markRead(full);
         }
       } catch (e) {
-        delete pending[url];
         if (request === detailRequest.current) {
           setSelected(job);
           setDetailError(e instanceof Error ? e.message : '完整公告读取失败。');
@@ -177,7 +275,7 @@ export function useJobDetail({
         if (request === detailRequest.current) setDetailLoading(false);
       }
     },
-    [markRead],
+    [hydrateJobDetail, markRead],
   );
 
   const resolveDeepLink = useCallback(
@@ -209,6 +307,9 @@ export function useJobDetail({
     detailError,
     detailNavIds,
     setDetailNavIds,
+    initialChannelKey,
+    focusChannelsNonce,
+    loadJobDetail,
     openDetail,
     closeDetail,
     dismissDetailSilently,

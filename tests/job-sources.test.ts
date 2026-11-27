@@ -125,3 +125,79 @@ void test('extractJobChannels falls back to preview source names before detail s
   assert.equal(unchanged.activeChannel.isPrimary, true);
   assert.equal(unchanged.jobView.source_url, 'https://qlu.example/1');
 });
+
+void test('extractJobChannels collapses repeat postings from the same university portal into one distinct channel', () => {
+  const repeatedBrowse: Job = fixtureJob({
+    id: 'gl-browse',
+    source_name: '齐鲁工业大学 · 招聘公告',
+    source_url: 'https://qlu.example/27444',
+    duplicate_sources: undefined,
+    listing_facts: {
+      version: 1,
+      source_names: [
+        '齐鲁工业大学 · 招聘公告',
+        '鲁东大学 · 招聘公告',
+        '鲁东大学 · 招聘公告',
+        '青岛大学 · 招聘公告',
+        '青岛大学 · 招聘公告',
+      ],
+    },
+  });
+  const previewChannels = extractJobChannels(repeatedBrowse);
+  assert.deepEqual(
+    previewChannels.map((c) => c.sourceName),
+    ['齐鲁工业大学 · 招聘公告', '鲁东大学 · 招聘公告', '青岛大学 · 招聘公告'],
+  );
+
+  const repeatedDetail: Job = fixtureJob({
+    id: 'gl-detail',
+    source_name: '齐鲁工业大学 · 招聘公告',
+    source_url: 'https://qlu.example/27444',
+    title: '山东冠龙2026/2027届校园招聘公告',
+    body: '齐鲁工业大学正文',
+    duplicate_sources: [
+      {
+        source_name: '齐鲁工业大学 · 招聘公告',
+        title: '齐鲁工业大学 · 招聘公告',
+        announcement_title: '山东冠龙面向我校招聘',
+        url: 'https://qlu.example/27480',
+        published_at: '2026-11-25',
+      },
+      {
+        source_name: '青岛大学 · 招聘公告',
+        title: '青岛大学 · 招聘公告',
+        announcement_title: '山东冠龙2026/2027届校园招聘公告',
+        url: 'https://qdu.example/27471',
+        published_at: '2026-11-25',
+        facts: { body: '青大旧版' },
+      },
+      {
+        source_name: '青岛大学 · 招聘公告',
+        title: '青岛大学 · 招聘公告',
+        announcement_title: '山东冠龙2026/2027届校园招聘公告',
+        url: 'https://qdu.example/27522',
+        published_at: '2026-11-25',
+        facts: { body: '青大更完整新版正文' },
+      },
+    ],
+  });
+  const detailChannels = extractJobChannels(repeatedDetail);
+  assert.deepEqual(
+    detailChannels.map((c) => c.sourceName),
+    ['齐鲁工业大学 · 招聘公告', '青岛大学 · 招聘公告'],
+  );
+  assert.equal(detailChannels[0].postCount, 2);
+  assert.equal(detailChannels[1].url, 'https://qdu.example/27522');
+  assert.equal(detailChannels[1].postCount, 2);
+
+  // When a single school accidentally double-posted with no other school, collapse to 1 channel.
+  const singleSchoolDup: Job = fixtureJob({
+    id: 'single-dup',
+    source_name: '鲁东大学 · 招聘公告',
+    source_url: 'https://ldu.example/1',
+    duplicate_sources: [
+      { source_name: '鲁东大学 · 招聘公告', title: '鲁东大学 · 招聘公告', url: 'https://ldu.example/2' },
+    ],
+  });
+  assert.equal(extractJobChannels(singleSchoolDup).length, 1);
+});

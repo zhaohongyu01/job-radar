@@ -40,7 +40,6 @@ import {
   cardJobTitle,
   sanitizeDisplayExcerpt,
   chinaDayStart,
-  duplicateSourceNames,
 } from '@/lib/jobs';
 import type { Job, Personal, PersonalRecord, Filters } from '@/lib/jobs';
 import { HighlightText } from '@/components/highlight-text';
@@ -220,7 +219,6 @@ function JobCardInner({
   const showValidityChip =
     job.kind !== '宣讲会' &&
     Boolean(filters.validity && filters.validity !== 'all' && validity.status !== 'unconfirmed');
-  const dupSourceNames = useMemo(() => duplicateSourceNames(job), [job]);
   const hydratedForCard = hydratedDetail?.id === job.id ? hydratedDetail : null;
   const activeChannelKey = channelSelection.jobId === job.id ? channelSelection.key : null;
   const channelState = useMemo(
@@ -229,7 +227,7 @@ function JobCardInner({
   );
   const activeChannel = channelState.activeChannel;
   const allChannels = channelState.channels;
-  const totalSourceCount = Math.max(allChannels.length, dupSourceNames.length + 1);
+  const totalSourceCount = allChannels.length;
   const hasMultipleSources = totalSourceCount > 1;
   const effectiveSourceName = activeChannel.sourceName || job.source_name;
   const effectiveSourceUrl = activeChannel.url || job.source_url;

@@ -22,11 +22,40 @@ export type JobSourceChannel = {
   excerpt?: string;
   /** True when the entry is a name-only preview from listing_facts before detail loads. */
   previewOnly?: boolean;
+  /** Number of raw duplicate postings merged under this same channel name (when > 1). */
+  postCount?: number;
 };
 
 function readFactString(facts: Record<string, unknown> | undefined, key: string): string | undefined {
   const val = facts?.[key];
   return typeof val === 'string' && val.trim() ? val : undefined;
+}
+
+function normalizeChannelNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, '');
+}
+
+function trailingUrlNumericId(url: string): number {
+  const match = url.match(/(\d{4,})(?:\/)?(?:\?.*)?$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function isBetterChannelCandidate(candidate: JobSourceChannel, current: JobSourceChannel): boolean {
+  if (candidate.isPrimary !== current.isPrimary) return candidate.isPrimary;
+  if (Boolean(candidate.previewOnly) !== Boolean(current.previewOnly)) return !candidate.previewOnly;
+  const candApp = candidate.applicationUrl ? 1 : 0;
+  const currApp = current.applicationUrl ? 1 : 0;
+  if (candApp !== currApp) return candApp > currApp;
+  const candGenericTitle = candidate.title.includes('面向我校') ? 0 : 1;
+  const currGenericTitle = current.title.includes('面向我校') ? 0 : 1;
+  if (candGenericTitle !== currGenericTitle) return candGenericTitle > currGenericTitle;
+  const candBody = (candidate.body ?? '').length;
+  const currBody = (current.body ?? '').length;
+  if (candBody !== currBody) return candBody > currBody;
+  const candDate = candidate.publishedAt ?? '';
+  const currDate = current.publishedAt ?? '';
+  if (candDate !== currDate) return candDate > currDate;
+  return trailingUrlNumericId(candidate.url) > trailingUrlNumericId(current.url);
 }
 
 /**
@@ -103,18 +132,20 @@ export function mergeDetailRecords(
 }
 
 /**
- * Extract an ordered, URL-deduplicated list of channels for a job.
+ * Extract an ordered list of distinct channels for a job, deduplicating both
+ * identical URLs and same-channel repeat submissions (e.g. an HR posting the
+ * exact same announcement twice to the same university portal).
  * When called on a lightweight browse-index record before detail shards load,
- * falls back to `listing_facts.source_names` as name-only preview items so the UI
- * can immediately show every source name while links hydrate.
+ * falls back to deduplicated `listing_facts.source_names` preview items so the
+ * count stays identical before and after hydration.
  */
 export function extractJobChannels(job: Job): JobSourceChannel[] {
-  const channels: JobSourceChannel[] = [];
+  const rawChannels: JobSourceChannel[] = [];
   const seenUrls = new Set<string>();
 
   const primaryUrl = job.source_url || '';
   const primaryName = job.source_name || job.source || job.source_id || '原发布渠道';
-  channels.push({
+  rawChannels.push({
     key: primaryUrl || `primary:${job.id}`,
     isPrimary: true,
     sourceName: primaryName,
@@ -135,12 +166,15 @@ export function extractJobChannels(job: Job): JobSourceChannel[] {
       if (url) seenUrls.add(url);
       const sourceName = dup.source_name || dup.source || dup.title || '同步渠道';
       const factTitle = readFactString(dup.facts, 'title');
-      const title = dup.announcement_title || factTitle || (dup.title && dup.title !== sourceName ? dup.title : job.title || sourceName);
+      const title =
+        dup.announcement_title ||
+        factTitle ||
+        (dup.title && dup.title !== sourceName ? dup.title : job.title || sourceName);
       const body = readFactString(dup.facts, 'body');
       const excerpt = readFactString(dup.facts, 'excerpt');
       const appUrl = dup.application_url || readFactString(dup.facts, 'application_url') || null;
       const pubAt = dup.published_at || readFactString(dup.facts, 'published_at') || null;
-      channels.push({
+      rawChannels.push({
         key: url || `dup:${dup.id || idx}:${sourceName}`,
         isPrimary: false,
         sourceName,
@@ -156,7 +190,7 @@ export function extractJobChannels(job: Job): JobSourceChannel[] {
     const previewNames = duplicateSourceNames(job);
     previewNames.forEach((name, idx) => {
       const cleanName = (name || '').trim() || '同步渠道';
-      channels.push({
+      rawChannels.push({
         key: `preview:${idx}:${cleanName}`,
         isPrimary: false,
         sourceName: cleanName,
@@ -169,7 +203,26 @@ export function extractJobChannels(job: Job): JobSourceChannel[] {
     });
   }
 
-  return channels;
+  // Collapse repeat submissions on the exact same school/channel portal while
+  // keeping the primary entry first and selecting the cleanest/richest record per channel.
+  const byChannel = new Map<string, JobSourceChannel>();
+  const order: string[] = [];
+  for (const ch of rawChannels) {
+    const nameKey = normalizeChannelNameKey(ch.sourceName) || ch.key;
+    const existing = byChannel.get(nameKey);
+    if (!existing) {
+      byChannel.set(nameKey, { ...ch, postCount: 1 });
+      order.push(nameKey);
+    } else {
+      const nextCount = (existing.postCount ?? 1) + 1;
+      if (isBetterChannelCandidate(ch, existing)) {
+        byChannel.set(nameKey, { ...ch, isPrimary: existing.isPrimary || ch.isPrimary, postCount: nextCount });
+      } else {
+        existing.postCount = nextCount;
+      }
+    }
+  }
+  return order.map((k) => byChannel.get(k)!);
 }
 
 /**

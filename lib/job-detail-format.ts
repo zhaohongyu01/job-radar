@@ -71,9 +71,13 @@ const PROMOTED_META_LABEL_MAP: Record<string, string> = {
   拟招人数: '招聘人数',
   所属部门: '所属部门',
   用人部门: '所属部门',
+  业务部门: '所属部门',
+  招聘部门: '所属部门',
   部门: '所属部门',
   单位性质: '单位性质',
   企业性质: '单位性质',
+  单位规模: '单位规模',
+  企业规模: '单位规模',
   所属行业: '所属行业',
   行业类别: '所属行业',
   详细地址: '详细地址',
@@ -81,10 +85,19 @@ const PROMOTED_META_LABEL_MAP: Record<string, string> = {
   公司地址: '详细地址',
   联系人: '联系人',
   联系电话: '联系电话',
+  联系人电话: '联系电话',
+  联系手机: '联系电话',
   年龄要求: '年龄要求',
   外语要求: '外语要求',
+  性别要求: '性别要求',
   工作经验: '经验要求',
+  岗位性质: '工作性质',
 };
+
+const LOGIN_GATED_VALUE_RE = /(?:登录后|登录即可)(?:查看|可见)|请先登录/;
+const UNCONSTRAINED_VALUE_RE = /^(?:无|暂无|不限|无要求|没有|空|-|—|\/)$/;
+const SKIP_UNCONSTRAINED_LABELS = new Set(['年龄要求', '外语要求', '性别要求', '经验要求']);
+const STANDALONE_KV_KEY_RE = /^([\u4e00-\u9fa5A-Za-z]{2,10})\s*[:：]$/;
 
 const KNOWN_SECTION_KEYWORDS = [
   '单位介绍', '单位简介', '公司介绍', '公司简介', '企业介绍', '企业简介', '集团简介', '企业概况', '公司概况', '关于我们',
@@ -387,6 +400,8 @@ export function parseStructuredJobBody(
   const pushMeta = (label: string, value: string) => {
     const cleanVal = value.trim();
     if (!cleanVal || cleanVal === '-' || cleanVal === '无' || cleanVal === '暂无') return;
+    if (LOGIN_GATED_VALUE_RE.test(cleanVal)) return;
+    if (SKIP_UNCONSTRAINED_LABELS.has(label) && UNCONSTRAINED_VALUE_RE.test(cleanVal)) return;
     if (!extraMeta.some((m) => m.label === label && m.value === cleanVal)) {
       extraMeta.push({ label, value: cleanVal });
     }
@@ -447,25 +462,64 @@ export function parseStructuredJobBody(
     if (detectHeadingLine(line)) break;
     if (SINGLE_ROLE_LINE_RE.test(line)) break;
 
+    let key = '';
+    let val = '';
+    let advance = 1;
     const kvMatch = /^([\u4e00-\u9fa5A-Za-z]{2,10})\s*[:：]\s*(.{1,520})$/.exec(line);
-    if (!kvMatch) break;
+    if (kvMatch) {
+      key = kvMatch[1].trim();
+      val = kvMatch[2].trim();
+    } else {
+      // Support two-line form exports such as SDEI specific positions:
+      // "单位名称：\n济南感知起源信息科技有限公司"
+      const keyOnlyMatch = STANDALONE_KV_KEY_RE.exec(line);
+      if (!keyOnlyMatch) break;
+      const candidateKey = keyOnlyMatch[1].trim();
+      const isRecognizedKey =
+        REDUNDANT_COMPANY_KEYS.has(candidateKey) ||
+        REDUNDANT_TITLE_KEYS.has(candidateKey) ||
+        LOCATION_META_KEYS.has(candidateKey) ||
+        DEADLINE_META_KEYS.has(candidateKey) ||
+        BATCH_META_KEYS.has(candidateKey) ||
+        URL_EMAIL_META_KEYS.has(candidateKey) ||
+        candidateKey === '学历要求' ||
+        candidateKey === '学历' ||
+        candidateKey === '毕业届别与学历' ||
+        candidateKey === '招聘岗位' ||
+        Boolean(PROMOTED_META_LABEL_MAP[candidateKey]);
+      if (!isRecognizedKey) break;
+      key = candidateKey;
+      let valIdx = cursor + 1;
+      while (valIdx < workingLines.length && !workingLines[valIdx]) valIdx += 1;
+      const nextLine = workingLines[valIdx] ?? '';
+      if (
+        !nextLine ||
+        detectHeadingLine(nextLine) ||
+        STANDALONE_KV_KEY_RE.test(nextLine) ||
+        /^([\u4e00-\u9fa5A-Za-z]{2,10})\s*[:：]\s*\S/.test(nextLine)
+      ) {
+        // Standalone empty metadata key with no value before next key/heading
+        cursor += 1;
+        continue;
+      }
+      val = nextLine;
+      advance = valIdx - cursor + 1;
+    }
 
-    const key = kvMatch[1].trim();
-    const val = kvMatch[2].trim();
     if (KNOWN_SECTION_SET.has(key)) break;
     if (!LOCATION_META_KEYS.has(key) && val.length > 160) break;
 
     if (REDUNDANT_COMPANY_KEYS.has(key)) {
       if (job.company && (val.includes(job.company) || job.company.includes(val))) {
-        cursor += 1;
+        cursor += advance;
         continue;
       }
       if (job.title && job.title.includes(val)) {
-        cursor += 1;
+        cursor += advance;
         continue;
       }
       pushMeta('招聘单位', val);
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 
@@ -473,11 +527,11 @@ export function parseStructuredJobBody(
       const cleanVal = stripTrailingAtsCode(val);
       const cleanJobTitle = stripTrailingAtsCode(job.title || '');
       if (cleanJobTitle && (cleanVal === cleanJobTitle || cleanJobTitle.includes(cleanVal) || cleanVal.includes(cleanJobTitle))) {
-        cursor += 1;
+        cursor += advance;
         continue;
       }
       pushMeta('招聘岗位', val);
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 
@@ -491,9 +545,10 @@ export function parseStructuredJobBody(
         }
         const dutyRest = val.slice(dutySplit.index).replace(/^[；;：:\s]+/, '').trim();
         if (dutyRest) {
-          workingLines[cursor] = `岗位职责：${dutyRest}`;
+          workingLines[cursor + advance - 1] = `岗位职责：${dutyRest}`;
+          cursor += advance - 1;
         } else {
-          cursor += 1;
+          cursor += advance;
         }
         break;
       }
@@ -501,7 +556,7 @@ export function parseStructuredJobBody(
       if (cleanedLoc && !isRedundantWithCities(cleanedLoc, cities)) {
         extractedLocationSupplement = cleanedLoc;
       }
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 
@@ -509,7 +564,7 @@ export function parseStructuredJobBody(
       if (!job.deadline && val) {
         extractedDeadline = val;
       }
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 
@@ -519,7 +574,7 @@ export function parseStructuredJobBody(
       if (!hasYear && !hasCampus && val.length <= 24) {
         pushMeta(key, val);
       }
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 
@@ -533,31 +588,39 @@ export function parseStructuredJobBody(
       } else if (val.length > 10 && val !== job.education) {
         pushMeta('学历说明', val);
       }
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 
     if (key === '招聘岗位' && val.length <= 60) {
       pushMeta('招聘岗位', val);
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 
     if (URL_EMAIL_META_KEYS.has(key)) {
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 
     const promotedLabel = PROMOTED_META_LABEL_MAP[key];
     if (promotedLabel) {
       if (promotedLabel === '薪资参考' && /^(?:面议|薪资面议|待定|面谈)$/.test(val)) {
-        cursor += 1;
+        cursor += advance;
+        continue;
+      }
+      if (
+        promotedLabel === '经验要求' &&
+        (job.types ?? []).includes('校招') &&
+        /^(?:应届生|应届毕业生|在校生\/应届生)$/.test(val)
+      ) {
+        cursor += advance;
         continue;
       }
       const formattedVal =
         promotedLabel === '招聘人数' && /^\d+$/.test(val) ? `${val}人` : val;
       pushMeta(promotedLabel, formattedVal);
-      cursor += 1;
+      cursor += advance;
       continue;
     }
 

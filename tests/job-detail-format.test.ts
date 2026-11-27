@@ -191,3 +191,63 @@ void test('parseStructuredJobBody strips SDU boilerplate, splits inline numbered
   assert.equal(hisenseReal.sections.length, 2);
   assert.equal(hisenseReal.sections[0].heading, '岗位职责');
 });
+
+void test('parseStructuredJobBody strips two-line SDEI metadata headers and login placeholders before JD sections', () => {
+  const sdeiTwoLine = parseStructuredJobBody({
+    title: '济南感知起源信息科技有限公司 · 化验/检验员',
+    company: '济南感知起源信息科技有限公司',
+    cities: ['济南'],
+    education: '本科生毕业',
+    deadline: '2027-04-23T23:59:59+08:00',
+    types: ['校招'],
+    graduation_years: [],
+    body: [
+      '单位名称：',
+      '济南感知起源信息科技有限公司',
+      '职位类别：',
+      '工业/工厂类',
+      '学历要求：',
+      '本科生毕业',
+      '专业要求：',
+      '精密仪器',
+      '薪资状况：',
+      '面议',
+      '工作性质：',
+      '全职',
+      '工作地点：',
+      '山东省济南市市中区',
+      '联系人：',
+      '马兵强',
+      '联系人电话：',
+      '(登录后查看联系方式)',
+      '年龄要求：',
+      '无',
+      '外语要求：',
+      '无',
+      '招聘人数：',
+      '3',
+      '工作经验：',
+      '应届生',
+      '职位描述',
+      '负责实验室日常检验与数据记录工作。',
+      '岗位职责',
+      '1. 完成样品检测并出具报告；',
+      '2. 维护精密检测仪器。',
+      '任职要求',
+      '1. 精密仪器及相关专业本科及以上学历。',
+    ].join('\n'),
+  });
+
+  assert.equal(sdeiTwoLine.extractedLocationSupplement, '山东省济南市市中区');
+  assert.deepEqual(sdeiTwoLine.extraMeta, [
+    { label: '岗位类别', value: '工业/工厂类' },
+    { label: '专业要求', value: '精密仪器' },
+    { label: '工作性质', value: '全职' },
+    { label: '联系人', value: '马兵强' },
+    { label: '招聘人数', value: '3人' },
+  ]);
+  assert.equal(sdeiTwoLine.sections.length, 3);
+  assert.equal(sdeiTwoLine.sections[0].heading, '职位描述');
+  assert.equal(sdeiTwoLine.sections[1].heading, '岗位职责');
+  assert.equal(sdeiTwoLine.sections[2].heading, '任职要求');
+});

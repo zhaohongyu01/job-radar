@@ -331,7 +331,7 @@ export function JobSplitPreview({
         )}
 
         <section className="split-preview-sec">
-          <h4>公告正文</h4>
+          <h4>{job.kind === '具体岗位' ? '职位详情' : '公告正文'}</h4>
           {isHydrating ? (
             <div aria-busy="true">
               <div className="opp-skeleton" style={{ height: 16, marginBottom: 8 }} />

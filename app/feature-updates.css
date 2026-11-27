@@ -747,9 +747,27 @@
   color: var(--urgent);
 }
 
-.employer-entry > span:first-child {
-  text-decoration: underline dotted color-mix(in srgb, currentColor 35%, transparent);
+.employer-entry.has-evidence > span:first-child {
+  text-decoration: underline dotted color-mix(in srgb, var(--brand) 55%, transparent);
   text-underline-offset: 3px;
+}
+.employer-entry-empty {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-4);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--paper-sunken);
+}
+.employer-tips-fold summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.employer-tips-fold[open] summary {
+  margin-bottom: 8px;
 }
 
 /* Company groups: newest record visible, the rest on demand */

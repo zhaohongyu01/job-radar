@@ -398,7 +398,7 @@ export function DetailDrawer({
               <div className="detail-eyebrow-row">
                 {selected.company && (
                   <span className="opp-company-name font-semibold text-sm">
-                    <EmployerEntry job={selected} name={titleInfo.displayCompany} />
+                    <EmployerEntry job={selected} name={titleInfo.displayCompany} showEntryStatus />
                   </span>
                 )}
                 <span className="eyebrow">
@@ -612,13 +612,15 @@ export function DetailDrawer({
                         岗位明细 ({selected.positions?.length})
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className="detail-jump-pill"
-                      onClick={() => scrollToSection('drawer-sec-body')}
-                    >
-                      公告正文
-                    </button>
+                    {(structuredBody.sections.length === 0 || !structuredBody.sections[0]?.heading) && (
+                      <button
+                        type="button"
+                        className="detail-jump-pill"
+                        onClick={() => scrollToSection('drawer-sec-body')}
+                      >
+                        {selected.kind === '具体岗位' ? '职位详情' : '公告正文'}
+                      </button>
+                    )}
                     {headingAnchors.map((sec) => (
                       <button
                         key={sec.id}
@@ -744,9 +746,11 @@ export function DetailDrawer({
                     </div>
                   )}
 
-                  <section className="detail-prose-card" id="drawer-sec-body" aria-label="公告正文内容">
+                  <section className="detail-prose-card" id="drawer-sec-body" aria-label="职位与公告详情">
                     <div className="detail-card-head">
-                      <h3 className="detail-card-title">公告文字</h3>
+                      <h3 className="detail-card-title">
+                        {selected.kind === '具体岗位' ? '职位详情' : '公告文字'}
+                      </h3>
                       <OutLink
                         url={activeSelected.source_url}
                         onOpen={() => onRead(selected)}

@@ -17,8 +17,8 @@ import { ReputationPanel, PublicEmployerReferences } from '@/components/reputati
 type Edits = Partial<Record<'rating' | 'notes', { value: string; base: string }>>;
 const labels = { rating: '意向评分', notes: '个人备注' };
 
-export default function EmployerDrawer({ profile, job, jobs, now, complete, onDetail, open, onClose, record, ready, error, onSave }: {
-  profile: EmployerProfile; job: Job; open: boolean; onClose: () => void;
+export default function EmployerDrawer({ profile, jobs, now, complete, onDetail, open, onClose, record, ready, error, onSave }: {
+  profile: EmployerProfile; open: boolean; onClose: () => void;
   jobs: Job[]; now: number; onDetail: (job: Job) => void;
   complete: boolean;
   record?: EmployerRecord; ready: boolean; error: string;
@@ -26,7 +26,7 @@ export default function EmployerDrawer({ profile, job, jobs, now, complete, onDe
 }) {
   const [keyword, setKeyword] = useState(profile.name);
   const [city, setCity] = useState('全部城市'), [includeUnknown, setIncludeUnknown] = useState(true), [history, setHistory] = useState(false);
-  const [limit, setLimit] = useState(20), [shareMessage, setShareMessage] = useState('');
+  const [limit, setLimit] = useState(5), [shareMessage, setShareMessage] = useState('');
   const [eventLimit, setEventLimit] = useState(20);
   const cities = useMemo(() => [...new Set(jobs.flatMap(row => row.cities))].sort(), [jobs]);
   const opportunities = useMemo(() => jobs.filter(row => (history || !isExpired(row, now)) &&
@@ -137,51 +137,21 @@ export default function EmployerDrawer({ profile, job, jobs, now, complete, onDe
     clearDebounce();
     void submitWithEdits(edits);
   };
+
   const scopeText = profile.scope === 'department'
     ? '本档案仅对应所列品牌下的招聘部门，不代表其他子公司或部门。'
     : profile.scope === 'brand' ? '这是集团品牌参考，不代表某家子公司或某个团队的工作体验。'
       : profile.scope === 'source' ? '企业简称或名称范围尚未明确，本档案仅对应当前招聘来源。'
         : '按招聘中的完整企业名称对应，保留分公司名称；尚未作工商主体核验。';
+
   return <Sheet open={open} onOpenChange={next => { if (!next && !saving) onClose(); }}>
     <SheetContent className="employer-sheet">
-      <SheetHeader><SheetTitle>企业口碑 · {employerLabel(profile)}</SheetTitle>
-        <SheetDescription>{scopeText}</SheetDescription></SheetHeader>
+      <SheetHeader><SheetTitle>企业档案与口碑 · {employerLabel(profile)}</SheetTitle>
+        <SheetDescription>
+          {scopeText}
+          {profile.brand && profile.scope !== 'brand' ? `（集团参考：${profile.brand}，个人评分分别保存）` : ''}
+        </SheetDescription></SheetHeader>
       <div className="employer-content">
-        <section className="employer-section"><h3>当前招聘机会</h3>
-          <p>{extractSalary(job).cleanTitle}</p><p className="small muted">{locationSummary(job)} · {job.source_name}</p>
-          {profile.brand && profile.scope !== 'brand' && <p className="small muted">集团参考：{profile.brand}。集团与本档案的个人评分分别保存。</p>}
-        </section>
-        <section className="employer-section" aria-label="企业全部机会">
-          <div className="employer-section-head"><h3>{complete ? '企业全部机会' : '企业机会预览'}</h3><span className="chip">{complete ? `${jobs.length}条已收录` : '完整索引尚未就绪'}</span>
-            <button type="button" className="text-btn" onClick={() => void copyCompany()}>分享企业</button></div>
-          <output className="small muted">{shareMessage}</output>
-          {!complete && <output className="small muted">当前仅展示已读取的资料；索引可能尚未完成，或该企业已不在当前索引中，不能当作完整统计。</output>}
-          <div className="reputation-controls">
-            <label>岗位工作城市<select aria-label="企业岗位工作城市" value={city} onChange={event => { setCity(event.target.value); setLimit(20); }}>
-              <option>全部城市</option>{cities.map(value => <option key={value}>{value}</option>)}
-            </select></label>
-            <label className="check-row"><input type="checkbox" checked={history} onChange={event => { setHistory(event.target.checked); setLimit(20); }} />包含已截止与撤回记录</label>
-            <label className="check-row"><input type="checkbox" checked={includeUnknown} onChange={event => setIncludeUnknown(event.target.checked)} />保留工作城市未明确的机会</label>
-          </div>
-          <p className="small muted">当前{opportunities.length}条；按同一企业档案聚合，集团、子公司和分公司分别保留。未标截止不代表已经核验在招。</p>
-          <div className="employer-opportunities">{opportunities.slice(0, limit).map(row => <article key={row.id}>
-            <button type="button" className="quiet-link" onClick={() => onDetail(row)}>{extractSalary(row).cleanTitle}</button>
-            <p className="small muted">{locationSummary(row)} · {row.source_name} · {row.published_at || '发布日期未明确'}</p>
-            <p className="small muted">{row.deadline ? `截止 ${row.deadline.slice(0, 10)}` : '未写明截止日期'}{isExpired(row, now) && ' · 已截止/撤回'}</p>
-          </article>)}</div>
-          {!opportunities.length && <p className="small muted">当前条件没有已收录机会，可更换城市或查看历史。</p>}
-          {opportunities.length > limit && <button type="button" className="text-btn" onClick={() => setLimit(value => value + 20)}>再显示20条机会</button>}
-        </section>
-        <section className="employer-section" aria-label="企业宣讲安排"><h3>宣讲与校园活动</h3>
-          <p className="small muted">{upcoming.length}场后续活动；按举办地点展示，与上方岗位工作城市筛选独立。</p>
-          {upcoming.slice(0, eventLimit).map(({ event, job: parent }) => <article key={event.id} className="employer-event">
-            <strong>{event.date} {event.start_time || '时间待确认'}</strong>
-            <p>{event.city || '城市待确认'} · {event.school} · {event.venue || '场地待确认'}</p>
-            <button type="button" className="text-btn" onClick={() => onDetail(parent)}>查看活动与原公告</button>
-          </article>)}
-          {!upcoming.length && <p className="small muted">暂无已收录的后续活动，不代表该企业没有宣讲安排。</p>}
-          {upcoming.length > eventLimit && <button type="button" className="text-btn" onClick={() => setEventLimit(value => value + 20)}>再显示20场活动（还有{upcoming.length - eventLimit}场）</button>}
-        </section>
         <section className="employer-section" aria-label="外部口碑">
           <ReputationPanel profile={profile} />
           <PublicEmployerReferences profile={profile} />
@@ -221,10 +191,45 @@ export default function EmployerDrawer({ profile, job, jobs, now, complete, onDe
           <output aria-live="polite">{saving ? '正在保存…' : message}</output>
           {record && <p className="small muted">上次保存 {new Date(record.updated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>}
         </section>
-        <section className="employer-section"><h3>投递前可确认</h3><ul className="employer-questions">
-          <li>薪资由哪些部分组成，奖金和补贴如何发放？</li><li>实际工作城市、部门，以及合同签署单位是什么？</li>
-          <li>休假、加班补偿、培训和晋升安排如何？</li>
-        </ul></section>
+        <section className="employer-section" aria-label="企业全部机会">
+          <div className="employer-section-head"><h3>{complete ? '企业全部机会' : '企业机会预览'}</h3><span className="chip">{complete ? `${jobs.length}条已收录` : '完整索引尚未就绪'}</span>
+            <button type="button" className="text-btn" onClick={() => void copyCompany()}>分享企业</button></div>
+          <output className="small muted">{shareMessage}</output>
+          {!complete && <output className="small muted">当前仅展示已读取的资料；索引可能尚未完成，或该企业已不在当前索引中，不能当作完整统计。</output>}
+          <div className="reputation-controls">
+            <label>岗位工作城市<select aria-label="企业岗位工作城市" value={city} onChange={event => { setCity(event.target.value); setLimit(5); }}>
+              <option>全部城市</option>{cities.map(value => <option key={value}>{value}</option>)}
+            </select></label>
+            <label className="check-row"><input type="checkbox" checked={history} onChange={event => { setHistory(event.target.checked); setLimit(5); }} />包含已截止与撤回记录</label>
+            <label className="check-row"><input type="checkbox" checked={includeUnknown} onChange={event => { setIncludeUnknown(event.target.checked); setLimit(5); }} />保留工作城市未明确的机会</label>
+          </div>
+          <p className="small muted">当前{opportunities.length}条；按同一企业档案聚合，集团、子公司和分公司分别保留。未标截止不代表已经核验在招。</p>
+          <div className="employer-opportunities">{opportunities.slice(0, limit).map(row => <article key={row.id}>
+            <button type="button" className="quiet-link" onClick={() => onDetail(row)}>{extractSalary(row).cleanTitle}</button>
+            <p className="small muted">{locationSummary(row)} · {row.source_name} · {row.published_at || '发布日期未明确'}</p>
+            <p className="small muted">{row.deadline ? `截止 ${row.deadline.slice(0, 10)}` : '未写明截止日期'}{isExpired(row, now) && ' · 已截止/撤回'}</p>
+          </article>)}</div>
+          {!opportunities.length && <p className="small muted">当前条件没有已收录机会，可更换城市或查看历史。</p>}
+          {opportunities.length > limit && <button type="button" className="text-btn" onClick={() => setLimit(value => value + 20)}>展开其余 {opportunities.length - limit} 条机会</button>}
+        </section>
+        <section className="employer-section" aria-label="企业宣讲安排"><h3>宣讲与校园活动</h3>
+          <p className="small muted">{upcoming.length}场后续活动；按举办地点展示，与上方岗位工作城市筛选独立。</p>
+          {upcoming.slice(0, eventLimit).map(({ event, job: parent }) => <article key={event.id} className="employer-event">
+            <strong>{event.date} {event.start_time || '时间待确认'}</strong>
+            <p>{event.city || '城市待确认'} · {event.school} · {event.venue || '场地待确认'}</p>
+            <button type="button" className="text-btn" onClick={() => onDetail(parent)}>查看活动与原公告</button>
+          </article>)}
+          {!upcoming.length && <p className="small muted">暂无已收录的后续活动，不代表该企业没有宣讲安排。</p>}
+          {upcoming.length > eventLimit && <button type="button" className="text-btn" onClick={() => setEventLimit(value => value + 20)}>再显示20场活动（还有{upcoming.length - eventLimit}场）</button>}
+        </section>
+        <details className="employer-section employer-tips-fold">
+          <summary>投递前可确认清单（3 项）</summary>
+          <ul className="employer-questions">
+            <li>薪资由哪些部分组成，奖金和补贴如何发放？</li>
+            <li>实际工作城市、部门，以及合同签署单位是什么？</li>
+            <li>休假、加班补偿、培训和晋升安排如何？</li>
+          </ul>
+        </details>
       </div>
     </SheetContent>
   </Sheet>;

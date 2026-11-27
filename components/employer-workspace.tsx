@@ -10,6 +10,7 @@ import type { EmployerPatch, EmployerRecord, EmployerRecords } from '@/lib/emplo
 import { withPersonalLock } from '@/lib/personal-store';
 import { useReputation } from '@/hooks/use-reputation';
 import { currentReputationScore, matchReputation, REPUTATION_PROVIDERS } from '@/lib/reputation';
+import { employerPublicReferences } from '@/lib/reputation-references';
 import { buildEmployerCatalog } from '@/lib/employer-catalog';
 
 const EmployerDrawer = lazy(() => import('./employer-drawer'));
@@ -97,7 +98,7 @@ export function EmployerWorkspace({ children }: { children: ReactNode }) {
     missing: !!requestedId && registration.complete && !catalog.has(requestedId) }}>
     {children}
     {selection && <Suspense fallback={open ? <output className="toast">正在打开企业口碑…</output> : null}>
-      <EmployerDrawer key={selection.profile.id} profile={selection.profile} job={selection.job} open={open}
+      <EmployerDrawer key={selection.profile.id} profile={selection.profile} open={open}
         jobs={catalog.get(selection.profile.id)?.jobs || [selection.job]} now={reputation.now} complete={registration.complete && catalog.has(selection.profile.id)}
         onDetail={job => { setRequestedId(null); registration.onDetail(job); }}
         onClose={() => {
@@ -113,25 +114,69 @@ export function EmployerWorkspace({ children }: { children: ReactNode }) {
 }
 
 /** Visible cards share one optional reputation index and lazy drawer. */
-export function EmployerEntry({ job, name }: { job: Job; name: string }) {
+export function EmployerEntry({
+  job,
+  name,
+  showEntryStatus = false,
+}: {
+  job: Job;
+  name: string;
+  /** When true (e.g. inside DetailDrawer header), explicitly label zero-review companies so users know before clicking. */
+  showEntryStatus?: boolean;
+}) {
   const workspace = useContext(EmployerContext);
   const profile = resolveEmployer(job);
   if (!workspace || !profile) return <span>{name}</span>;
   const rating = workspace.records[profile.id]?.rating;
   const match = matchReputation(profile, workspace.reputation.index);
   const score = currentReputationScore(match, workspace.reputation.now);
-  // Only advertise reputation when this employer actually has public evidence;
-  // the name stays clickable for personal intent notes either way.
-  const hasEvidence = !!match && (match.item.experience_count + match.item.interview_count + match.item.question_count) > 0;
+  const curatedRefs = employerPublicReferences(profile);
+  const totalEvidence =
+    (match ? match.item.experience_count + match.item.interview_count + match.item.question_count : 0) +
+    curatedRefs.length;
+  const hasEvidence = totalEvidence > 0;
+  const hasBadge = hasEvidence || rating != null;
   const hintLabel =
-    hasEvidence && score == null && match!.item.experience_count === 0 && match!.item.interview_count > 0
-      ? `面经 ${match!.item.interview_count}`
-      : '口碑';
-  return <button type="button" className="employer-entry" aria-label={`查看企业口碑：${name}`}
-    title="查看企业评价来源与我的意向评分" onClick={() => workspace.open(job)}>
-    <span>{name}</span>{hasEvidence && <span className="employer-entry-hint">{hintLabel}</span>}
-    {rating != null && <span className="employer-rating-pill">我的 {rating}/5</span>}
-    {score != null ? <span className="employer-public-pill">{REPUTATION_PROVIDERS[match!.item.provider].label}体验参考 {score}/5</span>
-      : match && match.item.experience_count > 0 && <span className="employer-public-pill">{match.reference ? '范围参考 · ' : ''}{match.item.experience_count}条体验</span>}
-  </button>;
+    score != null
+      ? null
+      : match && match.item.experience_count > 0
+        ? null
+        : match && match.item.interview_count > 0
+          ? `面经 ${match.item.interview_count}`
+          : match && match.item.question_count > 0
+            ? `口碑讨论 ${match.item.question_count}`
+            : curatedRefs.length > 0
+              ? '公开面经'
+              : null;
+  const tooltip = hasEvidence
+    ? `查看企业口碑（已收录 ${totalEvidence} 条公开参考）与我的意向评分`
+    : '暂无站内公开口碑 · 点击可去牛客/看准/脉脉外链检索、记录个人意向或查看该企业其他岗位';
+  return (
+    <button
+      type="button"
+      className={`employer-entry${hasBadge ? ' has-evidence' : ''}`}
+      aria-label={`查看企业口碑：${name}`}
+      title={tooltip}
+      onClick={() => workspace.open(job)}
+    >
+      <span>{name}</span>
+      {hintLabel && <span className="employer-entry-hint">{hintLabel}</span>}
+      {rating != null && <span className="employer-rating-pill">我的 {rating}/5</span>}
+      {score != null ? (
+        <span className="employer-public-pill">
+          {REPUTATION_PROVIDERS[match!.item.provider].label}体验参考 {score}/5
+        </span>
+      ) : (
+        match &&
+        match.item.experience_count > 0 && (
+          <span className="employer-public-pill">
+            {match.reference ? '范围参考 · ' : ''}口碑 {match.item.experience_count}条
+          </span>
+        )
+      )}
+      {showEntryStatus && !hasEvidence && rating == null && (
+        <span className="employer-entry-empty">企业档案 · 暂无口碑</span>
+      )}
+    </button>
+  );
 }

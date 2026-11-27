@@ -200,4 +200,27 @@ void test('extractJobChannels collapses repeat postings from the same university
     ],
   });
   assert.equal(extractJobChannels(singleSchoolDup).length, 1);
+
+  // When 山东财经大学 is among the channels, place it at the top while keeping primary as default active source.
+  const withSdufe: Job = fixtureJob({
+    id: 'with-sdufe',
+    source_name: '齐鲁工业大学 · 招聘公告',
+    source_url: 'https://qlu.example/1',
+    duplicate_sources: [
+      { source_name: '青岛大学 · 招聘公告', title: '青岛大学 · 招聘公告', url: 'https://qdu.example/2' },
+      { source_name: '山东财经大学 · 招聘公告', title: '山东财经大学 · 招聘公告', url: 'https://sdufe.example/3', facts: { body: '山财大原文' } },
+      { source_name: '烟台大学 · 招聘公告', title: '烟台大学 · 招聘公告', url: 'https://ytu.example/4' },
+    ],
+  });
+  const sdufeChannels = extractJobChannels(withSdufe);
+  assert.deepEqual(
+    sdufeChannels.map((c) => c.sourceName),
+    ['山东财经大学 · 招聘公告', '齐鲁工业大学 · 招聘公告', '青岛大学 · 招聘公告', '烟台大学 · 招聘公告'],
+  );
+  const defaultState = applyActiveChannel(withSdufe, null);
+  assert.equal(defaultState.activeChannel.isPrimary, true);
+  assert.equal(defaultState.activeChannel.sourceName, '齐鲁工业大学 · 招聘公告');
+  const switchedToSdufe = applyActiveChannel(withSdufe, 'https://sdufe.example/3');
+  assert.equal(switchedToSdufe.activeChannel.sourceName, '山东财经大学 · 招聘公告');
+  assert.equal(switchedToSdufe.jobView.body, '山财大原文');
 });

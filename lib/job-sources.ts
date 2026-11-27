@@ -35,6 +35,10 @@ function normalizeChannelNameKey(name: string): string {
   return name.trim().replace(/\s+/g, '');
 }
 
+function isPreferredChannelName(name: string): boolean {
+  return name.includes('山东财经大学');
+}
+
 function trailingUrlNumericId(url: string): number {
   const match = url.match(/(\d{4,})(?:\/)?(?:\?.*)?$/);
   return match ? Number(match[1]) : 0;
@@ -222,7 +226,13 @@ export function extractJobChannels(job: Job): JobSourceChannel[] {
       }
     }
   }
-  return order.map((k) => byChannel.get(k)!);
+  const deduped = order.map((k) => byChannel.get(k)!);
+  // Prioritize Shandong University of Finance and Economics channels at the top
+  // while preserving original relative order for all other channels.
+  const preferred = deduped.filter((ch) => isPreferredChannelName(ch.sourceName));
+  if (!preferred.length) return deduped;
+  const others = deduped.filter((ch) => !isPreferredChannelName(ch.sourceName));
+  return [...preferred, ...others];
 }
 
 /**
@@ -234,11 +244,12 @@ export function applyActiveChannel(
   channelKey: string | null | undefined,
 ): { jobView: Job; activeChannel: JobSourceChannel; channels: JobSourceChannel[] } {
   const channels = extractJobChannels(job);
+  const primaryChannel = channels.find((c) => c.isPrimary) ?? channels[0];
   const activeChannel =
-    (channelKey ? channels.find((c) => c.key === channelKey) : undefined) ?? channels[0];
+    (channelKey ? channels.find((c) => c.key === channelKey) : undefined) ?? primaryChannel;
 
   if (!activeChannel || activeChannel.isPrimary || activeChannel.previewOnly) {
-    return { jobView: job, activeChannel: channels[0], channels };
+    return { jobView: job, activeChannel: primaryChannel, channels };
   }
 
   const jobView: Job = {

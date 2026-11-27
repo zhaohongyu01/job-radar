@@ -533,6 +533,7 @@ function JobCardInner({
                     className="opp-source-trigger"
                     aria-label={`查看并切换全部 ${totalSourceCount} 个发布来源`}
                     title="点击查看全部发布渠道、切换来源或直达对应原公告"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <span>
                       {activeChannel.isPrimary
@@ -545,6 +546,7 @@ function JobCardInner({
                     align="start"
                     sideOffset={6}
                     className="opp-sources-popover"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <div className="opp-sources-head">
                       <strong>发布渠道（{totalSourceCount}）</strong>

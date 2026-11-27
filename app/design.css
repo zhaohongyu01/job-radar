@@ -3661,6 +3661,7 @@ button.chip:hover {
 .opp-aside,
 .opp-summary-actions,
 .opp-card .talk-events,
+.opp-source-trigger,
 .opp-fallback,
 .opp-actions {
   position: relative;

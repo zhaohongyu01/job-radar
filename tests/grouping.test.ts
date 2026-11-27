@@ -78,3 +78,61 @@ void test('legal suffix variants normalize into one group and empty-company bran
   assert.equal(roleItems[1].cleanRole, '制剂研发工程师 / 质量分析研究员 等3岗');
   assert.ok(roleItems[1].searchText.includes('注册专员'));
 });
+
+void test('groupJobs folds nested multi-cohort sets within the same company and phase while keeping disjoint or unstated cohorts separate', () => {
+  const ann = {
+    ...base,
+    id: 'gl-ann',
+    company: '山东冠龙医疗用品有限公司',
+    title: '山东冠龙医疗用品有限公司（冠龙医疗集团）2026/2027届校园招聘公告',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2025', '2026', '2027'],
+    published_at: '2026-11-25',
+  } as unknown as Job;
+  const pos = {
+    ...base,
+    id: 'gl-pos',
+    company: '山东冠龙医疗用品有限公司',
+    title: '山东冠龙医疗用品有限公司 · 销售助理',
+    kind: '具体岗位',
+    types: ['校招'],
+    graduation_years: ['2026', '2027'],
+    published_at: '2026-11-20',
+  } as unknown as Job;
+  const unstated = {
+    ...base,
+    id: 'gl-unstated',
+    company: '山东冠龙医疗用品有限公司',
+    title: '山东冠龙医疗用品有限公司招聘公告',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: [],
+    published_at: '2026-11-18',
+  } as unknown as Job;
+
+  // Order-independent subset folding: [ann, pos] and [pos, ann] both fold into one group.
+  const forward = groupJobs([ann, pos, unstated]);
+  assert.deepEqual(forward.map((g) => g.jobs.map((j) => j.id)), [['gl-ann', 'gl-pos'], ['gl-unstated']]);
+  assert.equal(forward[0].label, '2025 / 2026 / 2027 届 · 校招');
+  assert.equal(forward[1].label, '届别未明确 · 校招');
+
+  const reversed = groupJobs([pos, ann]);
+  assert.deepEqual(reversed.map((g) => g.jobs.map((j) => j.id)), [['gl-pos', 'gl-ann']]);
+  assert.equal(reversed[0].label, '2025 / 2026 / 2027 届 · 校招');
+
+  // Disjoint cohorts (pure 2026届 vs pure 2027届) stay separate.
+  const disjoint = groupJobs([
+    { ...base, id: 'd-26', company: '示例企业', title: '示例企业2026届校园招聘', graduation_years: ['2026'] },
+    { ...base, id: 'd-27', company: '示例企业', title: '示例企业2027届校园招聘', graduation_years: ['2027'] },
+  ]);
+  assert.equal(disjoint.length, 2);
+
+  // Ambiguous subset covered by two different maximal supersets does not arbitrarily pick one.
+  const ambiguous = groupJobs([
+    { ...base, id: 'a-2526', company: '示例企业', title: '示例企业2025/2026届校园招聘', graduation_years: ['2025', '2026'] },
+    { ...base, id: 'a-2627', company: '示例企业', title: '示例企业2026/2027届校园招聘', graduation_years: ['2026', '2027'] },
+    { ...base, id: 'a-26', company: '示例企业', title: '示例企业2026届销售专员', graduation_years: ['2026'] },
+  ]);
+  assert.equal(ambiguous.length, 3);
+});

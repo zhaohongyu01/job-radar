@@ -657,6 +657,384 @@ export function normalizeTitleCore(title: string): string {
     .replace(/(?:校园招聘(?:简章|公告|启事)?|招聘(?:简章|公告|启事|信息)?|简章|公告|启事|专场)$/g, '')
     .replace(/(20\d{2})年$/, '$1');
 }
+const COHORT_CHAIN_WITH_CAMPAIGN_RE =
+  /((?:20\d{2})(?:\s*[/、,，\-—–~至及和]\s*(?:20\d{2}|\d{2}))*)\s*(?:届|应届|年应届|年(?:高校)?毕业|(?=校园招聘|校招))/g;
+const COHORT_CHAIN_STRICT_RE =
+  /((?:20\d{2})(?:\s*[/、,，\-—–~至及和]\s*(?:20\d{2}|\d{2}))*)\s*(?:届|应届|年应届|年(?:高校)?毕业)/g;
+const COHORT_CHAIN_TOKEN_RE = /([/、,，\-—–~至及和]?)\s*(20\d{2}|\d{2})/g;
+const GENERIC_ANNOUNCEMENT_TAIL_RE =
+  /^(?:面向(?:我校|高校|全国|社会))?(?:(?:20\d{2}(?:[/、,，\-—–~至及和](?:20)?\d{2})*(?:年(?:度)?|届|应届|年应届|年(?:高校)?毕业)?))*(?:面向(?:我校|高校|全国|社会|(?:20\d{2}(?:[/、,，\-—–~至及和](?:20)?\d{2})*)?届)?|诚聘|招贤纳士|人才)?(?:春季|秋季|暑期|寒假|校园|高校|毕业生|应届生|应届毕业生|线上|线下|网络|空中|专场|公开|社会|联合){0,3}(?:校园招聘|校招|春招|秋招|社招|招聘|引才)(?:公告|简章|启事|信息|计划|通知|专场|合集|汇总|职位|岗位|启动|火热进行中|进行中|正式启动)?$/;
+
+export function extractTitleCohorts(title: string, includeCampaignLookahead = false): string[] {
+  if (!title) return [];
+  const pattern = includeCampaignLookahead ? COHORT_CHAIN_WITH_CAMPAIGN_RE : COHORT_CHAIN_STRICT_RE;
+  const found = new Set<string>();
+  for (const match of title.matchAll(pattern)) {
+    const chain = match[1];
+    let prevYear: number | null = null;
+    for (const token of chain.matchAll(COHORT_CHAIN_TOKEN_RE)) {
+      const sep = token[1];
+      const raw = token[2];
+      let year: number;
+      if (raw.length === 4) {
+        year = Number(raw);
+      } else {
+        const two = Number(raw);
+        if (two < 20 || two > 39) {
+          prevYear = null;
+          continue;
+        }
+        year = 2000 + two;
+      }
+      if (year < 2020 || year > 2035) {
+        prevYear = null;
+        continue;
+      }
+      if (
+        (sep === '-' || sep === '—' || sep === '–' || sep === '~' || sep === '至') &&
+        prevYear !== null &&
+        year > prevYear &&
+        year - prevYear <= 4
+      ) {
+        for (let y = prevYear; y <= year; y += 1) found.add(String(y));
+      } else {
+        found.add(String(year));
+      }
+      prevYear = year;
+    }
+  }
+  return [...found].sort();
+}
+
+export function resolveEffectiveCohorts(
+  titleCohorts: readonly string[],
+  graduationYears: readonly string[] | undefined,
+  campaignYears: readonly string[] = [],
+): string[] {
+  const grad = [...new Set((graduationYears ?? []).filter(Boolean))].sort();
+  const title = [...new Set(titleCohorts.filter(Boolean))].sort();
+  if (title.length > 0) {
+    // Only expand to body-derived graduation_years when the title itself already
+    // names multiple cohorts (e.g. "2026/2027届" with body "2025/2026/2027届").
+    // An explicit single-cohort title ("2026届" vs "2027届") keeps its own cohort
+    // so separate annual campaigns whose bodies both mention ["2026", "2027"]
+    // never collide.
+    if (title.length >= 2 && grad.length >= title.length && title.every((y) => grad.includes(y))) {
+      return grad;
+    }
+    return title;
+  }
+  if (grad.length > 0) return grad;
+  return [...new Set(campaignYears.filter(Boolean))].sort();
+}
+
+function extractDedupPhaseAndBatch(title: string): { phase: string; batchTag: string } {
+  const t = title ?? '';
+  let phase = '校招';
+  if (/春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]/.test(t)) phase = '春招补录';
+  else if (/秋(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?秋[季招]/.test(t)) phase = '秋招补录';
+  else if (/补录|补招|追加|第[二两三]批|续聘/.test(t)) phase = '补录';
+  else if (/提前批/.test(t)) phase = '提前批';
+  else if (/春(?:季校园招聘|季招聘|招)/.test(t)) phase = '春招';
+  else if (/秋(?:季校园招聘|季招聘|招)/.test(t)) phase = '秋招';
+  else if (/社招|社会/.test(t)) phase = '社招';
+  else if (/实习/.test(t)) phase = '实习';
+
+  const batchMatch = t.match(/(第[一二两三四五1-5]批|第[一二两三四五1-5]期)/);
+  return { phase, batchTag: batchMatch ? batchMatch[1] : '' };
+}
+
+function isGenericAnnouncementTitle(title: string, company: string, normComp: string): boolean {
+  let t = (title ?? '').replace(/\s+/g, '').replace(/（/g, '(').replace(/）/g, ')');
+  while (true) {
+    const stripped = t.replace(/^[【[][^】\]]{1,24}[】\]]/, '');
+    if (stripped === t) break;
+    t = stripped;
+  }
+  const compClean = (company ?? '').replace(/\s+/g, '').replace(/（/g, '(').replace(/）/g, ')');
+  if (compClean && t.startsWith(compClean)) {
+    t = t.slice(compClean.length);
+  } else if (normComp && t.startsWith(normComp)) {
+    t = t.slice(normComp.length).replace(/^(?:有限责任|股份有限|有限|集团有限|集团)?(?:公司)?/, '');
+  }
+  t = t.replace(/^(?:\([^)]{1,24}\))+/, '').replace(/^[·•—\-:：]+/, '');
+  return Boolean(t && GENERIC_ANNOUNCEMENT_TAIL_RE.test(t));
+}
+
+function normContentForDedup(value: string | undefined): string {
+  return (value ?? '')
+    .replace(/[\s\u200b-\u200d\ufeff]+/g, '')
+    .replace(/^(?:单位介绍|企业简介|公司简介|企业介绍|公司介绍|单位简介)[:：]/, '')
+    .replace(/(?:…|\.{2,})+$/, '');
+}
+
+function textMatchesWithOptionalHeader(
+  a: string,
+  b: string,
+  minOverlap: number,
+  minRatio = 0,
+  maxHeaderOffset = 50,
+): boolean {
+  if (a === b) return true;
+  const maxLen = Math.max(a.length, b.length);
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  if (shorter.length >= minOverlap && longer.startsWith(shorter)) {
+    if (minRatio <= 0 || shorter.length / maxLen >= minRatio) return true;
+  }
+  for (const [lead, shifted] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    if (lead.length < minOverlap) continue;
+    const idx = shifted.indexOf(lead.slice(0, minOverlap));
+    if (idx > 0 && idx <= maxHeaderOffset) {
+      const overlapLen = Math.min(lead.length, shifted.length - idx);
+      if (
+        overlapLen >= minOverlap &&
+        (minRatio <= 0 || overlapLen / maxLen >= minRatio) &&
+        shifted.slice(idx, idx + overlapLen) === lead.slice(0, overlapLen)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function contentMatchesForGenericRepost(existing: Job, candidate: Job): boolean {
+  const b1 = normContentForDedup(existing.body);
+  const b2 = normContentForDedup(candidate.body);
+  if (b1.length >= 100 && b2.length >= 100) {
+    return textMatchesWithOptionalHeader(b1, b2, 120, 0.85);
+  }
+  const e1 = normContentForDedup(existing.excerpt);
+  const e2 = normContentForDedup(candidate.excerpt);
+  if (e1.length >= 60 && e2.length >= 60) {
+    return textMatchesWithOptionalHeader(e1, e2, 60);
+  }
+  return false;
+}
+
+function datesWithinDays(
+  d1: string | null | undefined,
+  d2: string | null | undefined,
+  maxDays = 120,
+): boolean {
+  const s1 = d1 ? shanghaiDay(d1) : '';
+  const s2 = d2 ? shanghaiDay(d2) : '';
+  if (!s1 || !s2) return true;
+  const t1 = Date.parse(`${s1}T00:00:00Z`);
+  const t2 = Date.parse(`${s2}T00:00:00Z`);
+  if (!Number.isFinite(t1) || !Number.isFinite(t2)) return true;
+  return Math.abs(t1 - t2) <= maxDays * 86400000;
+}
+
+function mergeJobIntoExisting(existing: Job, job: Job): void {
+  const existingUrls = new Set([
+    existing.source_url,
+    ...(existing.duplicate_sources ?? []).map((s) => s.url),
+  ]);
+  if (job.source_url && !existingUrls.has(job.source_url)) {
+    existing.duplicate_sources = existing.duplicate_sources ?? [];
+    existing.duplicate_sources.push({
+      source: job.source || job.source_id,
+      source_name: job.source_name,
+      title: job.title || job.source_name,
+      url: job.source_url,
+      ...(job.published_at ? { published_at: job.published_at } : {}),
+      ...(job.application_url ? { application_url: job.application_url } : {}),
+    });
+    existingUrls.add(job.source_url);
+  }
+  if (job.duplicate_sources?.length) {
+    for (const ds of job.duplicate_sources) {
+      if (ds.url && !existingUrls.has(ds.url)) {
+        existing.duplicate_sources = existing.duplicate_sources ?? [];
+        existing.duplicate_sources.push({ ...ds });
+        existingUrls.add(ds.url);
+      }
+    }
+  }
+  existing.duplicate_ids = existing.duplicate_ids ?? [];
+  if (job.id && job.id !== existing.id && !existing.duplicate_ids.includes(job.id)) {
+    existing.duplicate_ids.push(job.id);
+  }
+  if (job.talk_events?.length) {
+    const events = new Map((existing.talk_events ?? []).map((event) => [event.id, event]));
+    for (const event of job.talk_events) events.set(event.id, event);
+    existing.talk_events = [...events.values()].sort((a, b) =>
+      `${a.date} ${a.start_time ?? ''}`.localeCompare(`${b.date} ${b.start_time ?? ''}`),
+    );
+  }
+  if (job.duplicate_ids?.length) {
+    existing.duplicate_ids = [...new Set([...existing.duplicate_ids, ...job.duplicate_ids])].filter(
+      (id) => id !== existing.id,
+    );
+  }
+
+  if (job.published_at) {
+    if (!existing.published_at) {
+      const exFirstDay = existing.first_seen_at ? shanghaiDay(existing.first_seen_at) : '';
+      const exVerDay = existing.last_verified_at ? shanghaiDay(existing.last_verified_at) : '';
+      const jobPubDay = shanghaiDay(job.published_at);
+      existing.published_at =
+        exFirstDay && exVerDay > exFirstDay && jobPubDay > exFirstDay
+          ? exFirstDay
+          : job.published_at;
+    } else if (job.published_at < existing.published_at) {
+      existing.published_at = job.published_at;
+    }
+  }
+  if (!existing.application_url && job.application_url) {
+    existing.application_url = job.application_url;
+  }
+  if (job.deadline) {
+    if (!existing.deadline || job.deadline > existing.deadline) {
+      existing.deadline = job.deadline;
+      existing.deadline_evidence = job.deadline_evidence;
+      existing.deadline_precision = job.deadline_precision;
+    }
+  }
+  if (job.emails?.length) {
+    existing.emails = [...new Set([...(existing.emails ?? []), ...job.emails])];
+  }
+  if (job.cities?.length) {
+    existing.cities = [...new Set([...(existing.cities ?? []), ...job.cities])].sort();
+  }
+  if (job.location_evidence?.length) {
+    existing.location_evidence = [...new Set([...(existing.location_evidence ?? []), ...job.location_evidence])];
+  }
+  if (job.graduation_years?.length) {
+    existing.graduation_years = [...new Set([...(existing.graduation_years ?? []), ...job.graduation_years])].sort();
+  }
+  if (job.types?.length) {
+    existing.types = [...new Set([...(existing.types ?? []), ...job.types])];
+  }
+  if (job.attachments?.length) {
+    const attUrls = new Set((existing.attachments ?? []).map((a) => a.url));
+    for (const a of job.attachments) {
+      if (!attUrls.has(a.url)) {
+        existing.attachments = existing.attachments ?? [];
+        existing.attachments.push(a);
+        attUrls.add(a.url);
+      }
+    }
+  }
+  if (job.position_matches?.length) {
+    const candidates = [...(existing.position_matches || []), ...job.position_matches];
+    existing.position_matches = [...new Map(candidates.map((p) => [JSON.stringify(p), p])).values()];
+  }
+  if (job.positions?.length) {
+    existing.positions = existing.positions ?? [];
+    const posKey = (p: PositionRequirement) =>
+      `${p.name}-${p.city ?? ''}-${p.education ?? ''}-${(p.majors ?? []).slice().sort().join(',')}`;
+    const existingKeys = new Set(existing.positions.map(posKey));
+    for (const p of job.positions) {
+      const key = posKey(p);
+      if (!existingKeys.has(key)) {
+        existing.positions.push(p);
+        existingKeys.add(key);
+      }
+    }
+    existing.position_count = existing.positions.length;
+  }
+  if (job.majors?.length) {
+    existing.majors = [...new Set([...(existing.majors ?? []), ...job.majors])].slice(0, MAX_EXTRACTED_MAJORS);
+  }
+  if (job.sample_positions?.length && !(existing.sample_positions?.length)) {
+    existing.sample_positions = job.sample_positions;
+  }
+  if (existing.provenance === '第三方线索' && job.provenance === '公开原始来源') {
+    existing.source_name = job.source_name;
+    existing.source_url = job.source_url;
+    existing.source_id = job.source_id;
+    existing.provenance = '公开原始来源';
+    existing.title = job.title;
+    if (job.body) {
+      existing.body = job.body;
+      existing.excerpt = job.excerpt || existing.excerpt;
+    }
+  } else {
+    if (
+      (existing.title ?? '').includes('面向我校') &&
+      job.title &&
+      !job.title.includes('面向我校') &&
+      !(existing.provenance === '公开原始来源' && job.provenance === '第三方线索')
+    ) {
+      existing.title = job.title;
+    }
+    if ((job.body?.length ?? 0) > (existing.body?.length ?? 0) + 200) {
+      existing.body = job.body;
+      existing.excerpt = job.excerpt || existing.excerpt;
+    }
+  }
+
+  if (job.timeline?.length) {
+    existing.timeline = existing.timeline ?? [];
+    const existingKeys = new Set(
+      existing.timeline.map((e) => `${e.date}-${e.type}-${e.title}`),
+    );
+    for (const e of job.timeline) {
+      const key = `${e.date}-${e.type}-${e.title}`;
+      if (!existingKeys.has(key)) {
+        existing.timeline.push({ ...e });
+        existingKeys.add(key);
+      }
+    }
+    existing.timeline.sort((a, b) => a.date.localeCompare(b.date));
+
+    let hasFirstPublished = false;
+    for (const evt of existing.timeline) {
+      if (evt.type === 'published' || evt.title === '首次发布') {
+        if (!hasFirstPublished) {
+          hasFirstPublished = true;
+          evt.type = 'published';
+          evt.title = '首次发布';
+        } else {
+          evt.type = 'source_repost';
+          evt.title = '跨渠道发布';
+          if (evt.source && !evt.detail.includes('同步发布')) {
+            evt.detail = `在「${evt.source}」同步发布`;
+          }
+        }
+      }
+    }
+  }
+
+  if (job.recent_change) {
+    const changePrio: Record<string, number> = {
+      deadline_extended: 5,
+      supplemental: 4,
+      selection_stage: 3,
+      positions_updated: 2,
+      content_updated: 1,
+    };
+    if (!existing.recent_change) {
+      existing.recent_change = job.recent_change;
+      if ((job.updated_at ?? '') > (existing.updated_at ?? '')) {
+        existing.updated_at = job.updated_at;
+      }
+    } else {
+      const currP = changePrio[existing.recent_change.type] ?? 0;
+      const newP = changePrio[job.recent_change.type] ?? 0;
+      if (newP > currP) {
+        existing.recent_change = job.recent_change;
+        if ((job.updated_at ?? '') > (existing.updated_at ?? '')) {
+          existing.updated_at = job.updated_at;
+        }
+      }
+    }
+  }
+
+  if ((job.listing_checked_at ?? '') > (existing.listing_checked_at ?? '')) {
+    existing.listing_status = job.listing_status;
+    existing.listing_checked_at = job.listing_checked_at;
+  }
+  if (!existing.lifecycle_stage && job.lifecycle_stage) {
+    existing.lifecycle_stage = job.lifecycle_stage;
+  }
+}
+
 export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
   // The optional browsing index is already merged with this same function.
   if (jobs.length && jobs.every((job) => job.listing_facts?.version === 1)) return jobs;
@@ -678,24 +1056,14 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         key = `pos_${normComp}_${job.title.replace(/\s+/g, '')}_${cities}`;
       }
     } else {
-      // Keep campaign years separate from graduation cohorts.  A title such
-      // as "2026年校园招聘" may recruit the 2027届 cohort; prefer explicit
-      // cohort evidence and use a campaign year only when no cohort is known.
-      const titleCohorts = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*(?:届|应届|年应届|年(?:高校)?毕业|(?=校园招聘|校招))/g)].map((m) => m[1]))];
+      // Keep campaign years separate from graduation cohorts. A title such as
+      // "2026年校园招聘" may recruit the 2027届 cohort; prefer explicit cohorts
+      // and let fuller body-derived graduation_years win when it already covers
+      // every cohort named in the title.
+      const titleCohorts = extractTitleCohorts(job.title ?? '', true);
       const campaignYears = [...new Set([...(job.title ?? '').matchAll(/(20\d{2})\s*(?:年(?:度)?\s*)?(?=校园招聘|校招)/g)].map((m) => m[1]))];
-      const cohorts = (titleCohorts.length ? titleCohorts : (job.graduation_years?.length ? job.graduation_years : campaignYears)).slice().sort().join(',');
-      let phase = '校招';
-      if (/春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]/.test(job.title)) phase = '春招补录';
-      else if (/秋(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?秋[季招]/.test(job.title)) phase = '秋招补录';
-      else if (/补录|补招|追加|第[二两三]批|续聘/.test(job.title)) phase = '补录';
-      else if (/提前批/.test(job.title)) phase = '提前批';
-      else if (/春(?:季校园招聘|季招聘|招)/.test(job.title)) phase = '春招';
-      else if (/秋(?:季校园招聘|季招聘|招)/.test(job.title)) phase = '秋招';
-      else if (/社招|社会/.test(job.title)) phase = '社招';
-      else if (/实习/.test(job.title)) phase = '实习';
-
-      const batchMatch = (job.title ?? '').match(/(第[一二两三四五1-5]批|第[一二两三四五1-5]期)/);
-      const batchTag = batchMatch ? batchMatch[1] : '';
+      const cohorts = resolveEffectiveCohorts(titleCohorts, job.graduation_years, campaignYears).join(',');
+      const { phase, batchTag } = extractDedupPhaseAndBatch(job.title ?? '');
 
       if (!company && !normTitle) {
         key = `ann_id_${job.id}`;
@@ -718,198 +1086,77 @@ export function mergeDuplicateOpportunities(jobs: Job[]): Job[] {
         duplicate_ids: job.duplicate_ids ? [...job.duplicate_ids] : [],
       });
     } else {
-      const existingUrls = new Set([
-        existing.source_url,
-        ...(existing.duplicate_sources ?? []).map((s) => s.url),
-      ]);
-      if (job.source_url && !existingUrls.has(job.source_url)) {
-        existing.duplicate_sources = existing.duplicate_sources ?? [];
-        existing.duplicate_sources.push({
-          source: job.source || job.source_id,
-          source_name: job.source_name,
-          title: job.title || job.source_name,
-          url: job.source_url,
-          ...(job.published_at ? { published_at: job.published_at } : {}),
-          ...(job.application_url ? { application_url: job.application_url } : {}),
-        });
-        existingUrls.add(job.source_url);
-      }
-      if (job.duplicate_sources?.length) {
-        for (const ds of job.duplicate_sources) {
-          if (ds.url && !existingUrls.has(ds.url)) {
-            existing.duplicate_sources = existing.duplicate_sources ?? [];
-            existing.duplicate_sources.push({ ...ds });
-            existingUrls.add(ds.url);
-          }
-        }
-      }
-      existing.duplicate_ids = existing.duplicate_ids ?? [];
-      existing.duplicate_ids.push(job.id);
-      if (job.talk_events?.length) {
-        const events = new Map((existing.talk_events ?? []).map((event) => [event.id, event]));
-        for (const event of job.talk_events) events.set(event.id, event);
-        existing.talk_events = [...events.values()].sort((a, b) =>
-          `${a.date} ${a.start_time ?? ''}`.localeCompare(`${b.date} ${b.start_time ?? ''}`),
-        );
-      }
-      if (job.duplicate_ids?.length) {
-        existing.duplicate_ids = [...new Set([...existing.duplicate_ids, ...job.duplicate_ids])];
-      }
-
-      if (job.published_at) {
-        if (!existing.published_at) {
-          const exFirstDay = existing.first_seen_at ? shanghaiDay(existing.first_seen_at) : '';
-          const exVerDay = existing.last_verified_at ? shanghaiDay(existing.last_verified_at) : '';
-          const jobPubDay = shanghaiDay(job.published_at);
-          existing.published_at =
-            exFirstDay && exVerDay > exFirstDay && jobPubDay > exFirstDay
-              ? exFirstDay
-              : job.published_at;
-        } else if (job.published_at < existing.published_at) {
-          existing.published_at = job.published_at;
-        }
-      }
-      if (!existing.application_url && job.application_url) {
-        existing.application_url = job.application_url;
-      }
-      if (job.deadline) {
-        if (!existing.deadline || job.deadline > existing.deadline) {
-          existing.deadline = job.deadline;
-          existing.deadline_evidence = job.deadline_evidence;
-          existing.deadline_precision = job.deadline_precision;
-        }
-      }
-      if (job.emails?.length) {
-        existing.emails = [...new Set([...(existing.emails ?? []), ...job.emails])];
-      }
-      if (job.cities?.length) {
-        existing.cities = [...new Set([...(existing.cities ?? []), ...job.cities])].sort();
-      }
-      if (job.location_evidence?.length) {
-        existing.location_evidence = [...new Set([...(existing.location_evidence ?? []), ...job.location_evidence])];
-      }
-      if (job.graduation_years?.length) {
-        existing.graduation_years = [...new Set([...(existing.graduation_years ?? []), ...job.graduation_years])].sort();
-      }
-      if (job.types?.length) {
-        existing.types = [...new Set([...(existing.types ?? []), ...job.types])];
-      }
-      if (job.attachments?.length) {
-        const attUrls = new Set((existing.attachments ?? []).map((a) => a.url));
-        for (const a of job.attachments) {
-          if (!attUrls.has(a.url)) {
-            existing.attachments = existing.attachments ?? [];
-            existing.attachments.push(a);
-            attUrls.add(a.url);
-          }
-        }
-      }
-      if (job.position_matches?.length) {
-        const candidates = [...(existing.position_matches || []), ...job.position_matches];
-        existing.position_matches = [...new Map(candidates.map((p) => [JSON.stringify(p), p])).values()];
-      }
-      if (job.positions?.length) {
-        existing.positions = existing.positions ?? [];
-        const posKey = (p: PositionRequirement) =>
-          `${p.name}-${p.city ?? ''}-${p.education ?? ''}-${(p.majors ?? []).slice().sort().join(',')}`;
-        const existingKeys = new Set(existing.positions.map(posKey));
-        for (const p of job.positions) {
-          const key = posKey(p);
-          if (!existingKeys.has(key)) {
-            existing.positions.push(p);
-            existingKeys.add(key);
-          }
-        }
-        existing.position_count = existing.positions.length;
-      }
-      if (job.majors?.length) {
-        existing.majors = [...new Set([...(existing.majors ?? []), ...job.majors])].slice(0, MAX_EXTRACTED_MAJORS);
-      }
-      if (job.sample_positions?.length && !(existing.sample_positions?.length)) {
-        existing.sample_positions = job.sample_positions;
-      }
-      if (existing.provenance === '第三方线索' && job.provenance === '公开原始来源') {
-        existing.source_name = job.source_name;
-        existing.source_url = job.source_url;
-        existing.source_id = job.source_id;
-        existing.provenance = '公开原始来源';
-        existing.title = job.title;
-        if (job.body) {
-          existing.body = job.body;
-          existing.excerpt = job.excerpt || existing.excerpt;
-        }
-      } else if ((job.body?.length ?? 0) > (existing.body?.length ?? 0) + 200) {
-        existing.body = job.body;
-        existing.excerpt = job.excerpt || existing.excerpt;
-      }
-
-      if (job.timeline?.length) {
-        existing.timeline = existing.timeline ?? [];
-        const existingKeys = new Set(
-          existing.timeline.map((e) => `${e.date}-${e.type}-${e.title}`),
-        );
-        for (const e of job.timeline) {
-          const key = `${e.date}-${e.type}-${e.title}`;
-          if (!existingKeys.has(key)) {
-            existing.timeline.push({ ...e });
-            existingKeys.add(key);
-          }
-        }
-        existing.timeline.sort((a, b) => a.date.localeCompare(b.date));
-
-        let hasFirstPublished = false;
-        for (const evt of existing.timeline) {
-          if (evt.type === 'published' || evt.title === '首次发布') {
-            if (!hasFirstPublished) {
-              hasFirstPublished = true;
-              evt.type = 'published';
-              evt.title = '首次发布';
-            } else {
-              evt.type = 'source_repost';
-              evt.title = '跨渠道发布';
-              if (evt.source && !evt.detail.includes('同步发布')) {
-                evt.detail = `在「${evt.source}」同步发布`;
-              }
-            }
-          }
-        }
-      }
-
-      if (job.recent_change) {
-        const changePrio: Record<string, number> = {
-          deadline_extended: 5,
-          supplemental: 4,
-          selection_stage: 3,
-          positions_updated: 2,
-          content_updated: 1,
-        };
-        if (!existing.recent_change) {
-          existing.recent_change = job.recent_change;
-          if ((job.updated_at ?? '') > (existing.updated_at ?? '')) {
-            existing.updated_at = job.updated_at;
-          }
-        } else {
-          const currP = changePrio[existing.recent_change.type] ?? 0;
-          const newP = changePrio[job.recent_change.type] ?? 0;
-          if (newP > currP) {
-            existing.recent_change = job.recent_change;
-            if ((job.updated_at ?? '') > (existing.updated_at ?? '')) {
-              existing.updated_at = job.updated_at;
-            }
-          }
-        }
-      }
-
-      if ((job.listing_checked_at ?? '') > (existing.listing_checked_at ?? '')) {
-        existing.listing_status = job.listing_status;
-        existing.listing_checked_at = job.listing_checked_at;
-      }
-      if (!existing.lifecycle_stage && job.lifecycle_stage) {
-        existing.lifecycle_stage = job.lifecycle_stage;
-      }
+      mergeJobIntoExisting(existing, job);
     }
   }
-  return [...groups.values()];
+
+  // Pass 2: collapse generic cross-channel announcement reposts (e.g. "面向我校招聘"
+  // lacking graduation_years + "2027届校园招聘" from another university) ONLY when
+  // company, phase, batch, recruitment type, cohort compatibility, date window, and
+  // normalized body/excerpt all match strictly.
+  const result: Job[] = [];
+  const genericBuckets = new Map<string, Job[]>();
+  for (const item of groups.values()) {
+    const company = item.company?.trim() ?? '';
+    const normComp = normalizeCompanyName(company);
+    const kind = item.kind ?? '招聘公告';
+    if (
+      !normComp ||
+      kind === '具体岗位' ||
+      item.source_id?.endsWith('-talks') ||
+      !isGenericAnnouncementTitle(item.title ?? '', company, normComp)
+    ) {
+      result.push(item);
+      continue;
+    }
+    const { phase, batchTag } = extractDedupPhaseAndBatch(item.title ?? '');
+    const bucketKey = `${normComp}\u0000${phase}\u0000${batchTag}`;
+    let candidates = genericBuckets.get(bucketKey);
+    if (!candidates) {
+      candidates = [];
+      genericBuckets.set(bucketKey, candidates);
+    }
+    const itemTypes = effectiveJobTypes(item);
+    const itemCampaignYears = [...new Set([...(item.title ?? '').matchAll(/(20\d{2})\s*(?:年(?:度)?\s*)?(?=校园招聘|校招)/g)].map((m) => m[1]))];
+    const itemCohorts = resolveEffectiveCohorts(
+      extractTitleCohorts(item.title ?? '', true),
+      item.graduation_years,
+      itemCampaignYears,
+    );
+    let merged = false;
+    for (const existing of candidates) {
+      const exTypes = effectiveJobTypes(existing);
+      if (
+        exTypes.includes('社招') !== itemTypes.includes('社招') ||
+        exTypes.includes('实习') !== itemTypes.includes('实习')
+      ) {
+        continue;
+      }
+      const exCampaignYears = [...new Set([...(existing.title ?? '').matchAll(/(20\d{2})\s*(?:年(?:度)?\s*)?(?=校园招聘|校招)/g)].map((m) => m[1]))];
+      const exCohorts = resolveEffectiveCohorts(
+        extractTitleCohorts(existing.title ?? '', true),
+        existing.graduation_years,
+        exCampaignYears,
+      );
+      if (
+        exCohorts.length > 0 &&
+        itemCohorts.length > 0 &&
+        !(exCohorts.every((y) => itemCohorts.includes(y)) || itemCohorts.every((y) => exCohorts.includes(y)))
+      ) {
+        continue;
+      }
+      if (!datesWithinDays(existing.published_at, item.published_at)) continue;
+      if (!contentMatchesForGenericRepost(existing, item)) continue;
+      mergeJobIntoExisting(existing, item);
+      merged = true;
+      break;
+    }
+    if (!merged) {
+      candidates.push(item);
+      result.push(item);
+    }
+  }
+  return result;
 }
 export function personalFor(job: Job, personal: Personal) {
   const master = personal[job.id];

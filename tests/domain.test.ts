@@ -1035,6 +1035,137 @@ void test('mergeDuplicateOpportunities merges branch company names with intermed
   assert.equal(merged[0].duplicate_sources?.length, 1);
 });
 
+void test('mergeDuplicateOpportunities merges multi-cohort slash titles and identical generic school reposts without merging distinct roles', () => {
+  const sharedExcerpt =
+    '山东冠龙医疗用品有限公司（冠龙医疗集团）深耕骨科脊柱微创医疗器械领域，产品与业务覆盖国内市场并持续拓展海外。集团国际部负责全球出口业务，涵盖海外市场准入、渠道开发与大客户管理。';
+  const glSchoolRepost: Job = {
+    ...job,
+    id: 'gl-qlu',
+    source_name: '齐鲁工业大学 · 招聘公告',
+    source_url: 'https://qlu.example/gl-1',
+    company: '山东冠龙医疗用品有限公司',
+    title: '山东冠龙医疗用品有限公司（冠龙医疗集团）面向我校招聘',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2025', '2026', '2027'],
+    published_at: '2026-11-25',
+    excerpt: sharedExcerpt,
+    duplicate_sources: [
+      { source: 'sdnu', source_name: '山东师范大学 · 招聘公告', title: '山东师范大学 · 招聘公告', url: 'https://sdnu.example/gl-2' },
+    ],
+    duplicate_ids: ['gl-sdnu'],
+  };
+  const glSlashTitle: Job = {
+    ...job,
+    id: 'gl-sdfmu',
+    source_name: '山东第一医科大学 · 招聘公告',
+    source_url: 'https://sdfmu.example/gl-3',
+    company: '山东冠龙医疗用品有限公司',
+    title: '山东冠龙医疗用品有限公司（冠龙医疗集团）2026/2027届校园招聘公告',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2025', '2026', '2027'],
+    published_at: '2026-11-25',
+    excerpt: sharedExcerpt,
+    duplicate_sources: [
+      { source: 'sdu', source_name: '山东大学 · 招聘公告', title: '山东大学 · 招聘公告', url: 'https://sdu.example/gl-4' },
+    ],
+    duplicate_ids: ['gl-sdu'],
+  };
+
+  const mergedGl = mergeDuplicateOpportunities([glSchoolRepost, glSlashTitle]);
+  assert.equal(mergedGl.length, 1, '「面向我校招聘」与「2026/2027届校园招聘公告」应合并为同一卡片');
+  assert.equal(mergedGl[0].duplicate_sources?.length, 3, '应完整保留两侧已合并的所有渠道来源');
+  assert.ok(mergedGl[0].title.includes('2026/2027届校园招聘公告'), '合并后优先展示更完整的正式公告标题');
+
+  const yxtExcerpt =
+    '山东燕喜堂医药连锁有限公司成立于1998年，现拥有直营门店千余家，覆盖烟台、威海、青岛、济南等多地，提供完善的管培生与药学专业培养体系，欢迎应届毕业生投递。';
+  const yxtNoCohort: Job = {
+    ...job,
+    id: 'yxt-1',
+    source_name: '山东中医药大学 · 招聘公告',
+    source_url: 'https://sdutcm.example/yxt-1',
+    company: '山东燕喜堂医药连锁有限公司',
+    title: '山东燕喜堂医药连锁有限公司面向我校招聘',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: [],
+    published_at: '2026-11-20',
+    excerpt: yxtExcerpt,
+  };
+  const yxtExplicit: Job = {
+    ...job,
+    id: 'yxt-2',
+    source_name: '青岛大学 · 招聘公告',
+    source_url: 'https://qdu.example/yxt-2',
+    company: '山东燕喜堂医药连锁有限公司',
+    title: '山东燕喜堂医药连锁有限公司2027届校园招聘',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2027'],
+    published_at: '2026-11-22',
+    excerpt: `山东燕喜堂医药连锁有限公司招聘简章\n${yxtExcerpt}`,
+  };
+  const mergedYxt = mergeDuplicateOpportunities([yxtNoCohort, yxtExplicit]);
+  assert.equal(mergedYxt.length, 1, '缺少届别的通用「面向我校招聘」在正文摘要一致时应与「2027届校园招聘」合并');
+  assert.deepEqual(mergedYxt[0].graduation_years, ['2027']);
+
+  // Explicit single-cohort titles (2026届 vs 2027届) must stay separate even when both bodies mention ['2026', '2027'].
+  const nio26: Job = {
+    ...job,
+    id: 'nio-26',
+    source_url: 'https://example.org/nio-26',
+    company: '上海蔚来汽车有限公司',
+    title: '蔚来汽车2026届区域公司校园招聘简章',
+    kind: '招聘公告',
+    types: ['校招'],
+    graduation_years: ['2026', '2027'],
+    published_at: '2026-10-10',
+    excerpt: '蔚来汽车区域公司2026届校园招聘简章，面向海内外高校毕业生开放销售、服务与运营类多个岗位。',
+  };
+  const nio27: Job = {
+    ...nio26,
+    id: 'nio-27',
+    source_url: 'https://example.org/nio-27',
+    title: '蔚来汽车2027届区域公司校园招聘简章',
+    published_at: '2026-11-10',
+  };
+  assert.equal(mergeDuplicateOpportunities([nio26, nio27]).length, 2, '标题明确为不同单届别的2026届与2027届公告不得合并');
+
+  // Disjoint cohorts (2026届 vs 2027届) or distinct single-role postings must NOT merge.
+  const chipIntro =
+    '广东匠芯创科技有限公司成立于2021年，专注RISC-V工业级芯片研发与设计，团队来自海内外知名半导体企业，提供有竞争力的薪酬与股票期权激励。';
+  const roleA: Job = {
+    ...job,
+    id: 'chip-a',
+    source_url: 'https://nk.example/chip-1',
+    company: '广东匠芯创科技有限公司',
+    title: 'IC模拟电路工程师',
+    kind: '招聘公告',
+    types: ['社招'],
+    graduation_years: [],
+    published_at: '2026-11-20',
+    excerpt: chipIntro,
+  };
+  const roleB: Job = {
+    ...job,
+    id: 'chip-b',
+    source_url: 'https://nk.example/chip-2',
+    company: '广东匠芯创科技有限公司',
+    title: 'IC数字电路工程师',
+    kind: '招聘公告',
+    types: ['社招'],
+    graduation_years: [],
+    published_at: '2026-11-20',
+    excerpt: chipIntro,
+  };
+  assert.equal(mergeDuplicateOpportunities([roleA, roleB]).length, 2, '共享企业简介的不同单一岗位公告不得误合并');
+
+  const cohort26: Job = { ...yxtExplicit, id: 'yxt-26', source_url: 'https://qdu.example/yxt-26', title: '山东燕喜堂医药连锁有限公司2026届校园招聘', graduation_years: ['2026'] };
+  const cohort27: Job = { ...yxtExplicit, id: 'yxt-27', source_url: 'https://qdu.example/yxt-27', title: '山东燕喜堂医药连锁有限公司2027届校园招聘', graduation_years: ['2027'] };
+  assert.equal(mergeDuplicateOpportunities([cohort26, cohort27]).length, 2, '互不相交的2026届与2027届公告即使简介一致也不得合并');
+});
+
 void test('hasRecentJobChange and generateJobTimeline filter out generic boilerplate and accept specific diffs', () => {
   const now = Date.parse('2026-09-14T12:00:00+08:00');
   const boilerplateJob: Job = {

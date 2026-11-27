@@ -3,9 +3,11 @@ import {
   cardJobTitle,
   effectiveJobTypes,
   employerGroupName,
+  extractTitleCohorts,
   formatCompanyDisplay,
   formatEducationDisplay,
   normalizeCompanyName,
+  resolveEffectiveCohorts,
   stripTrailingAtsCode,
 } from './jobs.ts';
 import { extractSalary } from './salary-display.ts';
@@ -139,26 +141,109 @@ export function buildGroupRoleItems(jobs: Job[], groupCompany?: string): GroupRo
 
 /** Presentation only: keep every matching record and its own application/read state. */
 export function groupJobs(jobs: Job[], enabled = true): JobGroup[] {
-  const groups = new Map<string, JobGroup>();
-  for (const job of jobs) {
+  if (!enabled) {
+    return jobs.map((job) => ({
+      id: job.id,
+      company: employerGroupName(job),
+      label: '',
+      jobs: [job],
+    }));
+  }
+
+  type Entry = {
+    job: Job;
+    groupName: string;
+    company: string;
+    type: string;
+    phase: string;
+    kindLabel: string;
+    cohorts: string[];
+    cohortKey: string;
+    bucketKey: string;
+  };
+
+  const entries: Entry[] = jobs.map((job) => {
     const groupName = employerGroupName(job);
     const rawTrimmed = groupName.trim().replace(/\s+/g, '').replace(/（/g, '(').replace(/）/g, ')');
     const company = normalizeCompanyName(groupName) || rawTrimmed;
-    const titleCohorts = [...new Set([...job.title.matchAll(/(20\d{2})\s*届/g)].map((m) => m[1]))];
-    const cohorts = titleCohorts.length ? titleCohorts : job.graduation_years;
-    const phase = /提前批|春(?:季校园招聘|季招聘|招)|秋(?:季校园招聘|季招聘|招)|补录|补招/.exec(job.title)?.[0]?.replace(/^春.*/, '春招').replace(/^秋.*/, '秋招') || '校招';
+    const titleCohorts = extractTitleCohorts(job.title ?? '', false);
+    const cohorts = resolveEffectiveCohorts(titleCohorts, job.graduation_years);
+    const phase =
+      /提前批|春(?:季校园招聘|季招聘|招)|秋(?:季校园招聘|季招聘|招)|补录|补招/
+        .exec(job.title)?.[0]
+        ?.replace(/^春.*/, '春招')
+        .replace(/^秋.*/, '秋招') || '校招';
     // Preserve branches and legal entities verbatim. Do not guess aliases or a
     // missing cohort: records without a cohort/type only group with others that
     // are equally unstated, and the label says so.
     const types = effectiveJobTypes(job);
-    const type = types.length === 1 ? types[0] : types.length === 0 ? '' : [...new Set(types)].sort().join(' / ');
-    const cohort = [...new Set(cohorts)].sort().join(' / ');
-    const canGroup = enabled && !!company;
+    const type =
+      types.length === 1
+        ? types[0]
+        : types.length === 0
+          ? ''
+          : [...new Set(types)].sort().join(' / ');
+    const cohortKey = cohorts.join(' / ');
     const kindLabel = type === '社招' ? '社招' : type === '校招' ? phase : type || '类型未明确';
-    const id = canGroup ? JSON.stringify([company, type, cohort, type === '校招' ? phase : '']) : job.id;
+    const bucketKey = company ? JSON.stringify([company, type, type === '校招' ? phase : '']) : '';
+    return { job, groupName, company, type, phase, kindLabel, cohorts, cohortKey, bucketKey };
+  });
+
+  // Within the same (company, type, phase) bucket, fold non-empty cohort sets
+  // into a unique maximal superset present in that bucket (e.g. 2026/2027届
+  // folds into 2025/2026/2027届), while keeping disjoint cohorts (2026届 vs
+  // 2027届) and unstated cohorts ([]) strictly separate.
+  const bucketCohorts = new Map<string, Map<string, string[]>>();
+  for (const e of entries) {
+    if (!e.bucketKey || !e.cohorts.length) continue;
+    let map = bucketCohorts.get(e.bucketKey);
+    if (!map) {
+      map = new Map<string, string[]>();
+      bucketCohorts.set(e.bucketKey, map);
+    }
+    if (!map.has(e.cohortKey)) map.set(e.cohortKey, e.cohorts);
+  }
+
+  const cohortAlias = new Map<string, Map<string, string>>();
+  for (const [bucketKey, cohortMap] of bucketCohorts.entries()) {
+    if (cohortMap.size <= 1) continue;
+    const allSets = [...cohortMap.entries()];
+    const isSubset = (sub: string[], sup: string[]) =>
+      sub.length <= sup.length && sub.every((y) => sup.includes(y));
+    const maximals = allSets.filter(
+      ([kA, setA]) => !allSets.some(([kB, setB]) => kA !== kB && isSubset(setA, setB)),
+    );
+    const resolved = new Map<string, string>();
+    for (const [key, set] of allSets) {
+      const covering = maximals.filter(([, maxSet]) => isSubset(set, maxSet));
+      if (covering.length === 1) resolved.set(key, covering[0][0]);
+    }
+    if (resolved.size) cohortAlias.set(bucketKey, resolved);
+  }
+
+  const groups = new Map<string, JobGroup>();
+  for (const e of entries) {
+    const canGroup = !!e.company;
+    const effectiveCohort =
+      canGroup && e.cohortKey
+        ? (cohortAlias.get(e.bucketKey)?.get(e.cohortKey) ?? e.cohortKey)
+        : e.cohortKey;
+    const id = canGroup
+      ? JSON.stringify([e.company, e.type, effectiveCohort, e.type === '校招' ? e.phase : ''])
+      : e.job.id;
     const existing = groups.get(id);
-    if (existing) existing.jobs.push(job);
-    else groups.set(id, { id, company: groupName, label: canGroup ? `${cohort ? `${cohort} 届` : '届别未明确'} · ${kindLabel}` : '', jobs: [job] });
+    if (existing) {
+      existing.jobs.push(e.job);
+    } else {
+      groups.set(id, {
+        id,
+        company: e.groupName,
+        label: canGroup
+          ? `${effectiveCohort ? `${effectiveCohort} 届` : '届别未明确'} · ${e.kindLabel}`
+          : '',
+        jobs: [e.job],
+      });
+    }
   }
   // Input is already sorted; insertion order gives each group its newest member's position.
   return [...groups.values()];

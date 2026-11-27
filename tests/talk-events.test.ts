@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { talkDateLabel, talkEventsForCity } from '../lib/talk-events.ts';
-import { agendaEntries, defaultAgenda } from '../lib/agenda.ts';
+import { agendaEntries, defaultAgenda, normalizeVenueForDedup } from '../lib/agenda.ts';
 import { projectBrowsingJobs } from '../lib/browse-index.ts';
 import { defaultFilters, effectiveEventCity, filterJobs, mergeDuplicateOpportunities } from '../lib/jobs.ts';
 import type { Job, TalkEvent } from '../lib/jobs.ts';
@@ -151,4 +151,145 @@ await test('Qingdao Agricultural University Chengyang campus resolves to Qingdao
   const { jobs: projected } = projectBrowsingJobs(talkJobs);
   assert.equal(projected[0].talk_event?.city, '青岛');
   assert.equal(projected[1].talk_event?.city, null);
+});
+
+await test('agendaEntries deduplicates equivalent campus rooms while keeping distinct parallel rooms separate', () => {
+  const now = Date.parse('2026-11-27T09:20:00+08:00');
+  assert.equal(
+    normalizeVenueForDedup('舜耕校区6号教学楼114教室', '山东财经大学'),
+    normalizeVenueForDedup('舜耕校区6教114教室', '山东财经大学'),
+  );
+  assert.equal(
+    normalizeVenueForDedup('舜耕校区第六教学楼114', '山东财经大学'),
+    normalizeVenueForDedup('舜耕校区6教114室', '山东财经大学'),
+  );
+  assert.notEqual(
+    normalizeVenueForDedup('面试专用-就业中心401-1室【主校区】', '济南大学'),
+    normalizeVenueForDedup('面试专用-就业中心401-2室【主校区】', '济南大学'),
+  );
+
+  const makeTalkJob = (
+    id: string,
+    title: string,
+    school: string,
+    venue: string,
+    eventType: TalkEvent['event_type'],
+    company = '',
+  ): Job => ({
+    ...job,
+    id,
+    title,
+    company,
+    source_id: 'jobsdufe-talks',
+    source_name: `${school} · 宣讲会招聘`,
+    source_url: `https://example.org/${id}`,
+    kind: '招聘公告',
+    cities: [],
+    location_evidence: [],
+    types: ['校招'],
+    graduation_years: ['2027'],
+    sectors: ['保险'],
+    directions: [],
+    education: '本科',
+    deadline: null,
+    published_at: '2026-11-25',
+    excerpt: '宣讲会',
+    first_seen_at: '2026-11-25T23:19:00+08:00',
+    updated_at: '2026-11-26T22:53:00+08:00',
+    last_verified_at: '2026-11-26T22:53:00+08:00',
+    revision: 1,
+    application_url: null,
+    deadline_precision: null,
+    talk_events: undefined,
+    talk_event: {
+      id,
+      date: '2026-11-30',
+      start_time: '14:00',
+      end_time: '16:00',
+      city: '济南',
+      school,
+      venue,
+      mode: 'offline',
+      event_type: eventType,
+      status: 'scheduled',
+      url: `https://example.org/${id}`,
+    },
+  });
+
+  // Duplicate Fuze Life talks at SDUFE (6号教学楼114教室 vs 6教114教室)
+  const fuzeFull = makeTalkJob(
+    'fuze-full',
+    '富泽人寿保险股份有限公司宣讲会',
+    '山东财经大学',
+    '舜耕校区6号教学楼114教室',
+    'talk',
+  );
+  const fuzeShort = makeTalkJob(
+    'fuze-short',
+    '富泽人寿保险股份有限公司宣讲会',
+    '山东财经大学',
+    '舜耕校区6教114教室',
+    'talk',
+  );
+
+  // Parallel distinct interview rooms at UJN (401-1 vs 401-2) MUST both remain visible
+  const ujnRoom1 = makeTalkJob(
+    'ujn-r1',
+    '（面试）山东铂源药业股份有限公司',
+    '济南大学',
+    '面试专用-就业中心401-1室【主校区】',
+    'interview',
+    '山东铂源药业股份有限公司',
+  );
+  const ujnRoom2 = makeTalkJob(
+    'ujn-r2',
+    '（面试）山东铂源药业股份有限公司',
+    '济南大学',
+    '面试专用-就业中心401-2室【主校区】',
+    'interview',
+    '山东铂源药业股份有限公司',
+  );
+
+  // Default preference: collapses Fuze duplicate and keeps fuller venue description
+  const sdufeEntries = agendaEntries(
+    [fuzeShort, fuzeFull],
+    {},
+    { ...defaultAgenda('济南'), school: '山东财经大学' },
+    now,
+  );
+  assert.equal(sdufeEntries.length, 1);
+  assert.equal(sdufeEntries[0].event.id, 'fuze-full');
+  assert.equal(sdufeEntries[0].event.venue, '舜耕校区6号教学楼114教室');
+
+  // If user saved the shorter variant earlier, keep the saved event ID so bookmark stays active
+  const sdufeWithSaved = agendaEntries(
+    [fuzeFull, fuzeShort],
+    {},
+    { ...defaultAgenda('济南'), school: '山东财经大学' },
+    now,
+    { 'fuze-short': { saved: true } },
+  );
+  assert.equal(sdufeWithSaved.length, 1);
+  assert.equal(sdufeWithSaved[0].event.id, 'fuze-short');
+
+  // Distinct interview rooms are NOT merged
+  const ujnEntries = agendaEntries(
+    [ujnRoom1, ujnRoom2],
+    {},
+    { ...defaultAgenda('济南'), school: '济南大学' },
+    now,
+  );
+  assert.deepEqual(
+    ujnEntries.map((entry) => entry.event.id).sort(),
+    ['ujn-r1', 'ujn-r2'],
+  );
+
+  // talkEventsForCity also collapses equivalent rooms attached to one parent job
+  const mergedCampaign = {
+    ...fuzeFull,
+    talk_events: [fuzeShort.talk_event!, fuzeFull.talk_event!],
+  } as Job;
+  const cityEvents = talkEventsForCity(mergedCampaign, '济南', now);
+  assert.equal(cityEvents.length, 1);
+  assert.equal(cityEvents[0].venue, '舜耕校区6号教学楼114教室');
 });

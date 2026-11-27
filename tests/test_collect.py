@@ -2057,5 +2057,135 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(parsed_cgb_sub['sectors'], ['银行'])
         self.assertNotIn('保险', parsed_cgb_sub['sectors'])
 
+    def test_deduplicate_merges_multi_cohort_slash_and_generic_reposts_without_merging_distinct_roles(self):
+        shared_body = (
+            '山东冠龙医疗用品有限公司（冠龙医疗集团）深耕骨科脊柱微创医疗器械领域，'
+            '产品与业务覆盖国内市场并持续拓展海外。集团国际部负责全球出口业务，'
+            '涵盖海外市场准入、渠道开发与大客户管理，诚邀2025届、2026届、2027届优秀毕业生加入。'
+        )
+        gl_generic = {
+            'id': 'gl-1',
+            'company': '山东冠龙医疗用品有限公司',
+            'title': '山东冠龙医疗用品有限公司（冠龙医疗集团）面向我校招聘',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2025', '2026', '2027'],
+            'source_name': '齐鲁工业大学 · 招聘公告',
+            'source_url': 'https://qlu.example/1',
+            'published_at': '2026-11-25',
+            'first_seen_at': '2026-11-25T08:00:00+08:00',
+            'body': shared_body,
+            'excerpt': shared_body[:120],
+        }
+        gl_slash = {
+            'id': 'gl-2',
+            'company': '山东冠龙医疗用品有限公司',
+            'title': '山东冠龙医疗用品有限公司（冠龙医疗集团）2026/2027届校园招聘公告',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2025', '2026', '2027'],
+            'source_name': '山东第一医科大学 · 招聘公告',
+            'source_url': 'https://sdfmu.example/2',
+            'published_at': '2026-11-25',
+            'first_seen_at': '2026-11-25T09:00:00+08:00',
+            'body': shared_body,
+            'excerpt': shared_body[:120],
+        }
+        gl_merged = c.deduplicate([gl_generic, gl_slash])
+        self.assertEqual(len(gl_merged), 1)
+        self.assertEqual(len(gl_merged[0]['duplicate_sources']), 1)
+        self.assertIn('2026/2027届校园招聘公告', gl_merged[0]['title'])
+
+        # Generic school repost without graduation_years merges with explicit 2027届 repost
+        # when both are generic recruitment titles with identical body/excerpt.
+        yxt_body = (
+            '山东燕喜堂医药连锁有限公司成立于1998年，现拥有直营门店千余家，'
+            '覆盖烟台、威海、青岛、济南等多地，提供完善的管培生与药学专业培养体系，欢迎应届生投递。'
+        )
+        yxt_1 = {
+            'id': 'yxt-1',
+            'company': '山东燕喜堂医药连锁有限公司',
+            'title': '山东燕喜堂医药连锁有限公司面向我校招聘',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': [],
+            'source_name': '山东中医药大学 · 招聘公告',
+            'source_url': 'https://sdutcm.example/1',
+            'published_at': '2026-11-20',
+            'body': yxt_body,
+            'excerpt': yxt_body,
+        }
+        yxt_2 = {
+            'id': 'yxt-2',
+            'company': '山东燕喜堂医药连锁有限公司',
+            'title': '山东燕喜堂医药连锁有限公司2027届校园招聘',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2027'],
+            'source_name': '青岛大学 · 招聘公告',
+            'source_url': 'https://qdu.example/2',
+            'published_at': '2026-11-22',
+            'body': f'山东燕喜堂医药连锁有限公司招聘简章\n{yxt_body}',
+            'excerpt': f'山东燕喜堂医药连锁有限公司招聘简章\n{yxt_body}',
+        }
+        yxt_merged = c.deduplicate([yxt_1, yxt_2])
+        self.assertEqual(len(yxt_merged), 1)
+        self.assertEqual(yxt_merged[0]['graduation_years'], ['2027'])
+        self.assertIn('2027届校园招聘', yxt_merged[0]['title'])
+
+        # Explicit single-cohort titles (2026届 vs 2027届) stay separate even when both bodies mention ['2026', '2027'].
+        nio_26 = {
+            'id': 'nio-26',
+            'company': '上海蔚来汽车有限公司',
+            'title': '蔚来汽车2026届区域公司校园招聘简章',
+            'kind': '招聘公告',
+            'types': ['校招'],
+            'graduation_years': ['2026', '2027'],
+            'source_name': '测试高校A',
+            'source_url': 'https://example.org/nio-26',
+            'published_at': '2026-10-10',
+            'excerpt': '蔚来汽车区域公司2026届校园招聘简章，面向海内外高校毕业生开放销售、服务与运营类多个岗位。',
+        }
+        nio_27 = dict(nio_26, id='nio-27', source_url='https://example.org/nio-27', title='蔚来汽车2027届区域公司校园招聘简章', published_at='2026-11-10')
+        self.assertEqual(len(c.deduplicate([nio_26, nio_27])), 2)
+
+        # Distinct single-role postings sharing the same company intro must NEVER merge.
+        chip_intro = (
+            '广东匠芯创科技有限公司成立于2021年，专注RISC-V工业级芯片研发与设计，'
+            '团队来自海内外知名半导体企业，提供有竞争力的薪酬与股票期权激励。'
+        )
+        role_analog_social = {
+            'id': 'chip-s1',
+            'company': '广东匠芯创科技有限公司',
+            'title': 'IC模拟电路工程师',
+            'kind': '招聘公告',
+            'types': ['社招'],
+            'graduation_years': [],
+            'source_name': '南开大学就业网',
+            'source_url': 'https://nk.example/1',
+            'published_at': '2026-11-20',
+            'excerpt': chip_intro,
+        }
+        role_digital_social = {
+            'id': 'chip-s2',
+            'company': '广东匠芯创科技有限公司',
+            'title': 'IC数字电路工程师',
+            'kind': '招聘公告',
+            'types': ['社招'],
+            'graduation_years': [],
+            'source_name': '南开大学就业网',
+            'source_url': 'https://nk.example/2',
+            'published_at': '2026-11-20',
+            'excerpt': chip_intro,
+        }
+        self.assertEqual(len(c.deduplicate([role_analog_social, role_digital_social])), 2)
+        self.assertFalse(c._is_generic_announcement_title('（2027届）IC模拟电路工程师', '广东匠芯创科技有限公司', c.normalize_company('广东匠芯创科技有限公司')))
+        self.assertFalse(c._is_generic_announcement_title('（2027届）IC数字电路工程师', '广东匠芯创科技有限公司', c.normalize_company('广东匠芯创科技有限公司')))
+
+        # Disjoint cohorts (pure 2026届 vs pure 2027届) stay separate even with identical intro.
+        yxt_26 = dict(yxt_2, id='yxt-26', source_url='https://qdu.example/26', title='山东燕喜堂医药连锁有限公司2026届校园招聘', graduation_years=['2026'])
+        yxt_27 = dict(yxt_2, id='yxt-27', source_url='https://qdu.example/27', title='山东燕喜堂医药连锁有限公司2027届校园招聘', graduation_years=['2027'])
+        self.assertEqual(len(c.deduplicate([yxt_26, yxt_27])), 2)
+
 
 if __name__=='__main__': unittest.main()

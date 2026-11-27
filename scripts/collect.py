@@ -2566,6 +2566,318 @@ def normalize_title_core(title):
     return t.strip()
 
 
+_COHORT_CHAIN_WITH_CAMPAIGN_RE = re.compile(
+    r'((?:20\d{2})(?:\s*[/、,，\-—–~至及和]\s*(?:20\d{2}|\d{2}))*)\s*(?:届|应届|年应届|年(?:高校)?毕业|(?=校园招聘|校招))'
+)
+_COHORT_CHAIN_STRICT_RE = re.compile(
+    r'((?:20\d{2})(?:\s*[/、,，\-—–~至及和]\s*(?:20\d{2}|\d{2}))*)\s*(?:届|应届|年应届|年(?:高校)?毕业)'
+)
+_COHORT_CHAIN_TOKEN_RE = re.compile(r'([/、,，\-—–~至及和]?)\s*(20\d{2}|\d{2})')
+_GENERIC_ANNOUNCEMENT_TAIL_RE = re.compile(
+    r'^(?:面向(?:我校|高校|全国|社会))?'
+    r'(?:(?:20\d{2}(?:[/、,，\-—–~至及和](?:20)?\d{2})*(?:年(?:度)?|届|应届|年应届|年(?:高校)?毕业)?))*'
+    r'(?:面向(?:我校|高校|全国|社会|(?:20\d{2}(?:[/、,，\-—–~至及和](?:20)?\d{2})*)?届)?|诚聘|招贤纳士|人才)?'
+    r'(?:春季|秋季|暑期|寒假|校园|高校|毕业生|应届生|应届毕业生|线上|线下|网络|空中|专场|公开|社会|联合){0,3}'
+    r'(?:校园招聘|校招|春招|秋招|社招|招聘|引才)'
+    r'(?:公告|简章|启事|信息|计划|通知|专场|合集|汇总|职位|岗位|启动|火热进行中|进行中|正式启动)?$'
+)
+
+
+def extract_title_cohorts(title, include_campaign_lookahead=True):
+    if not title:
+        return []
+    pattern = _COHORT_CHAIN_WITH_CAMPAIGN_RE if include_campaign_lookahead else _COHORT_CHAIN_STRICT_RE
+    found = set()
+    for chain in pattern.findall(title):
+        prev_year = None
+        for sep, raw in _COHORT_CHAIN_TOKEN_RE.findall(chain):
+            if len(raw) == 4:
+                year = int(raw)
+            else:
+                two = int(raw)
+                if not (20 <= two <= 39):
+                    prev_year = None
+                    continue
+                year = 2000 + two
+            if not (2020 <= year <= 2035):
+                prev_year = None
+                continue
+            if sep in {'-', '—', '–', '~', '至'} and prev_year is not None and 0 < year - prev_year <= 4:
+                for y in range(prev_year, year + 1):
+                    found.add(str(y))
+            else:
+                found.add(str(year))
+            prev_year = year
+    return sorted(found)
+
+
+def resolve_effective_cohorts(title_cohorts, graduation_years=None, campaign_years=None):
+    grad = sorted({y for y in (graduation_years or []) if y})
+    title = sorted({y for y in (title_cohorts or []) if y})
+    if title:
+        # Only expand to body-derived graduation_years when the title itself already
+        # names multiple cohorts (e.g. "2026/2027届" with body "2025/2026/2027届").
+        # Explicit single-cohort titles ("2026届" vs "2027届") keep their own cohort
+        # so separate annual campaigns whose bodies both mention ["2026", "2027"]
+        # never collide.
+        if len(title) >= 2 and len(grad) >= len(title) and all(y in grad for y in title):
+            return grad
+        return title
+    if grad:
+        return grad
+    return sorted({y for y in (campaign_years or []) if y})
+
+
+def _extract_dedup_phase_and_batch(title):
+    t = title or ''
+    phase = '校招'
+    if re.search(r'春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]', t):
+        phase = '春招补录'
+    elif re.search(r'秋(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?秋[季招]', t):
+        phase = '秋招补录'
+    elif re.search(r'补录|补招|追加|第[二两三]批|续聘', t):
+        phase = '补录'
+    elif re.search(r'提前批', t):
+        phase = '提前批'
+    elif re.search(r'春(?:季校园招聘|季招聘|招)', t):
+        phase = '春招'
+    elif re.search(r'秋(?:季校园招聘|季招聘|招)', t):
+        phase = '秋招'
+    elif re.search(r'社招|社会', t):
+        phase = '社招'
+    elif re.search(r'实习', t):
+        phase = '实习'
+    batch_m = re.search(r'(第[一二两三四五1-5]批|第[一二两三四五1-5]期)', t)
+    return phase, (batch_m.group(1) if batch_m else '')
+
+
+def _is_generic_announcement_title(title, company, norm_comp):
+    t = re.sub(r'\s+', '', title or '').translate(str.maketrans('（）', '()'))
+    while True:
+        stripped = re.sub(r'^[【\[][^】\]]{1,24}[】\]]', '', t)
+        if stripped == t:
+            break
+        t = stripped
+    comp_clean = re.sub(r'\s+', '', company or '').translate(str.maketrans('（）', '()'))
+    if comp_clean and t.startswith(comp_clean):
+        t = t[len(comp_clean):]
+    elif norm_comp and t.startswith(norm_comp):
+        t = re.sub(r'^(?:有限责任|股份有限|有限|集团有限|集团)?(?:公司)?', '', t[len(norm_comp):])
+    t = re.sub(r'^(?:\([^)]{1,24}\))+', '', t)
+    t = re.sub(r'^[·•—\-:：]+', '', t)
+    return bool(t and _GENERIC_ANNOUNCEMENT_TAIL_RE.match(t))
+
+
+def _norm_content_for_dedup(value):
+    text = re.sub(r'[\s\u200b-\u200d\ufeff]+', '', value or '')
+    text = re.sub(r'^(?:单位介绍|企业简介|公司简介|企业介绍|公司介绍|单位简介)[:：]', '', text)
+    return re.sub(r'(?:…|\.{2,})+$', '', text)
+
+
+def _text_matches_with_optional_header(a, b, min_overlap, min_ratio=0.0, max_header_offset=50):
+    if a == b:
+        return True
+    max_len = max(len(a), len(b))
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    if len(shorter) >= min_overlap and longer.startswith(shorter):
+        if min_ratio <= 0.0 or (len(shorter) / max_len) >= min_ratio:
+            return True
+    for lead, shifted in ((a, b), (b, a)):
+        if len(lead) < min_overlap:
+            continue
+        idx = shifted.find(lead[:min_overlap])
+        if 0 < idx <= max_header_offset:
+            overlap_len = min(len(lead), len(shifted) - idx)
+            if (
+                overlap_len >= min_overlap
+                and (min_ratio <= 0.0 or (overlap_len / max_len) >= min_ratio)
+                and shifted[idx:idx + overlap_len] == lead[:overlap_len]
+            ):
+                return True
+    return False
+
+
+def _content_matches_for_generic_repost(parent, job):
+    b1 = _norm_content_for_dedup(parent.get('body'))
+    b2 = _norm_content_for_dedup(job.get('body'))
+    if len(b1) >= 100 and len(b2) >= 100:
+        return _text_matches_with_optional_header(b1, b2, 120, 0.85)
+    e1 = _norm_content_for_dedup(parent.get('excerpt'))
+    e2 = _norm_content_for_dedup(job.get('excerpt'))
+    if len(e1) >= 60 and len(e2) >= 60:
+        return _text_matches_with_optional_header(e1, e2, 60)
+    return False
+
+
+def _dates_within_days(d1, d2, max_days=120):
+    s1 = _valid_iso_day(d1)
+    s2 = _valid_iso_day(d2)
+    if not s1 or not s2:
+        return True
+    try:
+        dt1 = dt.date.fromisoformat(s1)
+        dt2 = dt.date.fromisoformat(s2)
+        return abs((dt1 - dt2).days) <= max_days
+    except ValueError:
+        return True
+
+
+def _merge_job_into_parent(parent, job):
+    existing_urls = {parent.get('source_url')} | {s.get('url') for s in parent['duplicate_sources'] if s.get('url')}
+    existing_ids = {parent.get('id')} | set(parent.get('duplicate_ids', []))
+    duplicate_facts = job.get('primary_facts') or {
+        field: value for field, value in job.items()
+        if field not in {'duplicate_ids', 'duplicate_sources', 'primary_facts', 'fingerprint', 'content_fingerprint', 'details_available', 'search_text'}
+    }
+    if (job.get('listing_checked_at') or '') > (parent.get('listing_checked_at') or ''):
+        parent.update({field: job.get(field) for field in LISTING_FIELDS})
+    job_url = job.get('source_url', '')
+    if not job_url or job_url not in existing_urls or job['id'] not in existing_ids:
+        parent['duplicate_sources'].append({
+            'id': job['id'],
+            'identity': job.get('identity'),
+            'source': job.get('source_name') or job.get('source_id', ''),
+            'source_name': job.get('source_name', ''),
+            'title': job.get('source_name', ''),
+            'announcement_title': job.get('title', ''),
+            'url': job_url,
+            'facts': duplicate_facts,
+            **({'published_at': job['published_at']} if job.get('published_at') else {}),
+            **({'application_url': job['application_url']} if job.get('application_url') else {}),
+        })
+        if job_url:
+            existing_urls.add(job_url)
+    for ds in job.get('duplicate_sources') or []:
+        ds_url = ds.get('url', '')
+        ds_id = ds.get('id')
+        if (ds_url and ds_url in existing_urls) or (ds_id and ds_id in existing_ids):
+            continue
+        parent['duplicate_sources'].append(dict(ds))
+        if ds_url:
+            existing_urls.add(ds_url)
+        if ds_id:
+            existing_ids.add(ds_id)
+    if job['id'] not in existing_ids:
+        parent['duplicate_ids'].append(job['id'])
+        existing_ids.add(job['id'])
+    for dup_id in job.get('duplicate_ids') or []:
+        if dup_id not in existing_ids:
+            parent['duplicate_ids'].append(dup_id)
+            existing_ids.add(dup_id)
+
+    if job.get('published_at'):
+        if not parent.get('published_at'):
+            p_first = _valid_iso_day(parent.get('first_seen_at'))
+            p_ver = _valid_iso_day(parent.get('last_verified_at'))
+            j_pub = _valid_iso_day(job.get('published_at'))
+            if p_first and p_ver > p_first and j_pub > p_first:
+                parent['published_at'] = p_first
+            else:
+                parent['published_at'] = job['published_at']
+        elif job['published_at'] < parent['published_at']:
+            parent['published_at'] = job['published_at']
+    if not parent.get('application_url') and job.get('application_url'):
+        parent['application_url'] = job['application_url']
+    if job.get('deadline'):
+        if not parent.get('deadline') or job['deadline'] > parent['deadline']:
+            parent['deadline'] = job['deadline']
+            parent['deadline_evidence'] = job.get('deadline_evidence')
+            parent['deadline_precision'] = job.get('deadline_precision')
+    if job.get('emails'):
+        parent['emails'] = list(dict.fromkeys(parent.get('emails', []) + job['emails']))
+    if job.get('cities'):
+        parent['cities'] = sorted(set(parent.get('cities', []) + job['cities']))
+    if job.get('location_evidence'):
+        parent['location_evidence'] = list(dict.fromkeys(parent.get('location_evidence', []) + job['location_evidence']))
+    if job.get('graduation_years'):
+        parent['graduation_years'] = sorted(set(parent.get('graduation_years', []) + job['graduation_years']))
+    if job.get('types'):
+        parent['types'] = sorted(set(parent.get('types', []) + job['types']))
+    if job.get('attachments'):
+        att_urls = {a.get('url') for a in parent.get('attachments', [])}
+        for a in job['attachments']:
+            if a.get('url') not in att_urls:
+                parent.setdefault('attachments', []).append(a)
+                att_urls.add(a.get('url'))
+    if parent.get('provenance') == '第三方线索' and job.get('provenance') == '公开原始来源':
+        parent['source_name'] = job['source_name']
+        parent['source_url'] = job['source_url']
+        parent['source_id'] = job['source_id']
+        parent['provenance'] = '公开原始来源'
+        parent['title'] = job['title']
+        if job.get('body'):
+            parent['body'] = job['body']
+            parent['excerpt'] = job.get('excerpt', parent.get('excerpt', ''))
+    else:
+        if (
+            '面向我校' in (parent.get('title') or '')
+            and job.get('title')
+            and '面向我校' not in job['title']
+            and not (parent.get('provenance') == '公开原始来源' and job.get('provenance') == '第三方线索')
+        ):
+            parent['title'] = job['title']
+        if len(job.get('body', '')) > len(parent.get('body', '')) + 200:
+            parent['body'] = job['body']
+            parent['excerpt'] = job.get('excerpt', parent.get('excerpt', ''))
+
+    # Merge positions across duplicate sources
+    if job.get('positions'):
+        current_positions = parent.get('positions') or []
+        combined_positions = deduplicate_positions(current_positions + job['positions'])
+        enrich_job_with_positions(parent, combined_positions)
+
+    # Merge timeline events across duplicate sources
+    if job.get('timeline'):
+        p_timeline = [dict(event) for event in (parent.get('timeline') or [])]
+        p_keys = {(e.get('date'), e.get('type'), e.get('title')) for e in p_timeline}
+        for e in job['timeline']:
+            k = (e.get('date'), e.get('type'), e.get('title'))
+            if k not in p_keys:
+                p_timeline.append(dict(e))
+                p_keys.add(k)
+        p_timeline.sort(key=lambda e: e.get('date') or '')
+        has_first_published = False
+        for evt in p_timeline:
+            if evt.get('type') == 'published' or evt.get('title') == '首次发布':
+                if not has_first_published:
+                    has_first_published = True
+                    evt['type'] = 'published'
+                    evt['title'] = '首次发布'
+                else:
+                    evt['type'] = 'source_repost'
+                    evt['title'] = '跨渠道发布'
+                    src = evt.get('source') or job.get('source_name', '')
+                    if src and '同步发布' not in evt.get('detail', ''):
+                        evt['detail'] = f'在「{src}」同步发布'
+        parent['timeline'] = p_timeline
+
+    # Merge recent_change with priority
+    change_prio = {
+        'deadline_extended': 5,
+        'supplemental': 4,
+        'selection_stage': 3,
+        'positions_updated': 2,
+        'content_updated': 1,
+    }
+    if job.get('recent_change'):
+        if not parent.get('recent_change'):
+            parent['recent_change'] = job['recent_change']
+            if (job.get('updated_at') or '') > (parent.get('updated_at') or ''):
+                parent['updated_at'] = job['updated_at']
+        else:
+            curr_p = change_prio.get(parent['recent_change'].get('type'), 0)
+            new_p = change_prio.get(job['recent_change'].get('type'), 0)
+            curr_is_placeholder = parent['recent_change'].get('detail') == '招聘公告正文或附件内容已同步最新变动'
+            new_is_placeholder = job['recent_change'].get('detail') == '招聘公告正文或附件内容已同步最新变动'
+            if new_p > curr_p or (new_p == curr_p and curr_is_placeholder and not new_is_placeholder):
+                parent['recent_change'] = job['recent_change']
+                if (job.get('updated_at') or '') > (parent.get('updated_at') or ''):
+                    parent['updated_at'] = job['updated_at']
+
+    if not parent.get('lifecycle_stage') and job.get('lifecycle_stage'):
+        parent['lifecycle_stage'] = job['lifecycle_stage']
+
+
 def deduplicate(jobs):
     """Collapse same-opportunity reposts and cross-channel listings.
     Preserve every source URL, application URLs, and differing job/location facts.
@@ -2592,23 +2904,12 @@ def deduplicate(jobs):
         else:
             # Keep campaign years separate from graduation cohorts.  A title
             # such as ``2026年校园招聘`` may recruit the 2027届 cohort; use
-            # the explicit body-derived cohort first and only fall back to a
-            # campaign year when no cohort evidence exists for deduplication.
-            title_cohorts = re.findall(r'(20\d{2})\s*(?:届|应届|年应届|年(?:高校)?毕业|(?=校园招聘|校招))', job.get('title', ''))
+            # explicit cohorts and let fuller body-derived graduation_years win
+            # when it already covers every cohort named in the title.
+            title_cohorts = extract_title_cohorts(job.get('title', ''), include_campaign_lookahead=True)
             campaign_years = re.findall(r'(20\d{2})\s*(?:年(?:度)?\s*)?(?=校园招聘|校招)', job.get('title', ''))
-            cohorts = tuple(sorted(set(title_cohorts or job.get('graduation_years', []) or campaign_years)))
-            phase = '校招'
-            if re.search(r'春(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?春[季招]', job.get('title', '')): phase = '春招补录'
-            elif re.search(r'秋(?:季校园招聘|季招聘|招).*?补[录招]|补[录招].*?秋[季招]', job.get('title', '')): phase = '秋招补录'
-            elif re.search(r'补录|补招|追加|第[二两三]批|续聘', job.get('title', '')): phase = '补录'
-            elif re.search(r'提前批', job.get('title', '')): phase = '提前批'
-            elif re.search(r'春(?:季校园招聘|季招聘|招)', job.get('title', '')): phase = '春招'
-            elif re.search(r'秋(?:季校园招聘|季招聘|招)', job.get('title', '')): phase = '秋招'
-            elif re.search(r'社招|社会', job.get('title', '')): phase = '社招'
-            elif re.search(r'实习', job.get('title', '')): phase = '实习'
-
-            batch_m = re.search(r'(第[一二两三四五1-5]批|第[一二两三四五1-5]期)', job.get('title', ''))
-            batch_tag = batch_m.group(1) if batch_m else ''
+            cohorts = tuple(resolve_effective_cohorts(title_cohorts, job.get('graduation_years', []), campaign_years))
+            phase, batch_tag = _extract_dedup_phase_and_batch(job.get('title', ''))
 
             if not company and not norm_title:
                 key = ('announcement_id', job['id'])
@@ -2630,131 +2931,59 @@ def deduplicate(jobs):
             if isinstance(job.get('attachments'), list):
                 groups[key]['attachments'] = list(job['attachments'])
         else:
-            parent = groups[key]
-            existing_urls = {parent.get('source_url')} | {s.get('url') for s in parent['duplicate_sources']}
-            duplicate_facts = {field: value for field, value in job.items()
-                               if field not in {'duplicate_ids', 'duplicate_sources', 'primary_facts', 'fingerprint', 'content_fingerprint', 'details_available', 'search_text'}}
-            if (job.get('listing_checked_at') or '') > (parent.get('listing_checked_at') or ''):
-                parent.update({field: job.get(field) for field in LISTING_FIELDS})
-            parent['duplicate_sources'].append({
-                'id': job['id'],
-                'identity': job.get('identity'),
-                'source': job.get('source_name') or job.get('source_id', ''),
-                'source_name': job.get('source_name', ''),
-                'title': job.get('source_name', ''),
-                'announcement_title': job.get('title', ''),
-                'url': job.get('source_url', ''),
-                'facts': duplicate_facts,
-                **({'published_at': job['published_at']} if job.get('published_at') else {}),
-                **({'application_url': job['application_url']} if job.get('application_url') else {}),
-            })
-            parent['duplicate_ids'].append(job['id'])
+            _merge_job_into_parent(groups[key], job)
 
-            if job.get('published_at'):
-                if not parent.get('published_at'):
-                    p_first = _valid_iso_day(parent.get('first_seen_at'))
-                    p_ver = _valid_iso_day(parent.get('last_verified_at'))
-                    j_pub = _valid_iso_day(job.get('published_at'))
-                    if p_first and p_ver > p_first and j_pub > p_first:
-                        parent['published_at'] = p_first
-                    else:
-                        parent['published_at'] = job['published_at']
-                elif job['published_at'] < parent['published_at']:
-                    parent['published_at'] = job['published_at']
-            if not parent.get('application_url') and job.get('application_url'):
-                parent['application_url'] = job['application_url']
-            if job.get('deadline'):
-                if not parent.get('deadline') or job['deadline'] > parent['deadline']:
-                    parent['deadline'] = job['deadline']
-                    parent['deadline_evidence'] = job.get('deadline_evidence')
-                    parent['deadline_precision'] = job.get('deadline_precision')
-            if job.get('emails'):
-                parent['emails'] = list(dict.fromkeys(parent.get('emails', []) + job['emails']))
-            if job.get('cities'):
-                parent['cities'] = sorted(set(parent.get('cities', []) + job['cities']))
-            if job.get('location_evidence'):
-                parent['location_evidence'] = list(dict.fromkeys(parent.get('location_evidence', []) + job['location_evidence']))
-            if job.get('graduation_years'):
-                parent['graduation_years'] = sorted(set(parent.get('graduation_years', []) + job['graduation_years']))
-            if job.get('types'):
-                parent['types'] = sorted(set(parent.get('types', []) + job['types']))
-            if job.get('attachments'):
-                att_urls = {a.get('url') for a in parent.get('attachments', [])}
-                for a in job['attachments']:
-                    if a.get('url') not in att_urls:
-                        parent.setdefault('attachments', []).append(a)
-                        att_urls.add(a.get('url'))
-            if parent.get('provenance') == '第三方线索' and job.get('provenance') == '公开原始来源':
-                parent['source_name'] = job['source_name']
-                parent['source_url'] = job['source_url']
-                parent['source_id'] = job['source_id']
-                parent['provenance'] = '公开原始来源'
-                parent['title'] = job['title']
-                if job.get('body'):
-                    parent['body'] = job['body']
-                    parent['excerpt'] = job.get('excerpt', parent.get('excerpt', ''))
-            elif len(job.get('body', '')) > len(parent.get('body', '')) + 200:
-                parent['body'] = job['body']
-                parent['excerpt'] = job.get('excerpt', parent.get('excerpt', ''))
+    # Pass 2: collapse generic cross-channel announcement reposts (e.g. "面向我校招聘"
+    # lacking graduation_years + "2027届校园招聘" from another university) ONLY when
+    # company, phase, batch, recruitment type, cohort compatibility, date window, and
+    # normalized body/excerpt all match strictly.
+    result = []
+    generic_buckets = {}
+    for item in groups.values():
+        company = re.sub(r'\s+', '', item.get('company') or '')
+        norm_comp = normalize_company(company)
+        kind = item.get('kind', '招聘公告')
+        if (
+            not norm_comp
+            or kind == '具体岗位'
+            or item.get('source_id', '').endswith('-talks')
+            or not _is_generic_announcement_title(item.get('title', ''), company, norm_comp)
+        ):
+            result.append(item)
+            continue
+        phase, batch_tag = _extract_dedup_phase_and_batch(item.get('title', ''))
+        bucket_key = (norm_comp, phase, batch_tag)
+        candidates = generic_buckets.setdefault(bucket_key, [])
+        item_types = set(item.get('types') or ['校招'])
+        item_cohorts = set(resolve_effective_cohorts(
+            extract_title_cohorts(item.get('title', ''), include_campaign_lookahead=True),
+            item.get('graduation_years', []),
+            re.findall(r'(20\d{2})\s*(?:年(?:度)?\s*)?(?=校园招聘|校招)', item.get('title', '')),
+        ))
+        merged = False
+        for existing in candidates:
+            ex_types = set(existing.get('types') or ['校招'])
+            if ('社招' in ex_types) != ('社招' in item_types) or ('实习' in ex_types) != ('实习' in item_types):
+                continue
+            ex_cohorts = set(resolve_effective_cohorts(
+                extract_title_cohorts(existing.get('title', ''), include_campaign_lookahead=True),
+                existing.get('graduation_years', []),
+                re.findall(r'(20\d{2})\s*(?:年(?:度)?\s*)?(?=校园招聘|校招)', existing.get('title', '')),
+            ))
+            if ex_cohorts and item_cohorts and not (ex_cohorts <= item_cohorts or item_cohorts <= ex_cohorts):
+                continue
+            if not _dates_within_days(existing.get('published_at'), item.get('published_at')):
+                continue
+            if not _content_matches_for_generic_repost(existing, item):
+                continue
+            _merge_job_into_parent(existing, item)
+            merged = True
+            break
+        if not merged:
+            candidates.append(item)
+            result.append(item)
 
-            # Merge positions across duplicate sources
-            if job.get('positions'):
-                current_positions = parent.get('positions') or []
-                combined_positions = deduplicate_positions(current_positions + job['positions'])
-                enrich_job_with_positions(parent, combined_positions)
-
-            # Merge timeline events across duplicate sources
-            if job.get('timeline'):
-                p_timeline = [dict(event) for event in (parent.get('timeline') or [])]
-                p_keys = {(e.get('date'), e.get('type'), e.get('title')) for e in p_timeline}
-                for e in job['timeline']:
-                    k = (e.get('date'), e.get('type'), e.get('title'))
-                    if k not in p_keys:
-                        p_timeline.append(dict(e))
-                        p_keys.add(k)
-                p_timeline.sort(key=lambda e: e.get('date') or '')
-                has_first_published = False
-                for evt in p_timeline:
-                    if evt.get('type') == 'published' or evt.get('title') == '首次发布':
-                        if not has_first_published:
-                            has_first_published = True
-                            evt['type'] = 'published'
-                            evt['title'] = '首次发布'
-                        else:
-                            evt['type'] = 'source_repost'
-                            evt['title'] = '跨渠道发布'
-                            src = evt.get('source') or job.get('source_name', '')
-                            if src and '同步发布' not in evt.get('detail', ''):
-                                evt['detail'] = f'在「{src}」同步发布'
-                parent['timeline'] = p_timeline
-
-            # Merge recent_change with priority
-            change_prio = {
-                'deadline_extended': 5,
-                'supplemental': 4,
-                'selection_stage': 3,
-                'positions_updated': 2,
-                'content_updated': 1,
-            }
-            if job.get('recent_change'):
-                if not parent.get('recent_change'):
-                    parent['recent_change'] = job['recent_change']
-                    if (job.get('updated_at') or '') > (parent.get('updated_at') or ''):
-                        parent['updated_at'] = job['updated_at']
-                else:
-                    curr_p = change_prio.get(parent['recent_change'].get('type'), 0)
-                    new_p = change_prio.get(job['recent_change'].get('type'), 0)
-                    curr_is_placeholder = parent['recent_change'].get('detail') == '招聘公告正文或附件内容已同步最新变动'
-                    new_is_placeholder = job['recent_change'].get('detail') == '招聘公告正文或附件内容已同步最新变动'
-                    if new_p > curr_p or (new_p == curr_p and curr_is_placeholder and not new_is_placeholder):
-                        parent['recent_change'] = job['recent_change']
-                        if (job.get('updated_at') or '') > (parent.get('updated_at') or ''):
-                            parent['updated_at'] = job['updated_at']
-
-            if not parent.get('lifecycle_stage') and job.get('lifecycle_stage'):
-                parent['lifecycle_stage'] = job['lifecycle_stage']
-
-    return list(groups.values())
+    return result
 
 
 def extract_talk_event(job):
